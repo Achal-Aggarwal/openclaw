@@ -445,8 +445,11 @@ through its own notifications. Selected native-model discovery has an independen
 acquisition owner and does not wait for provider inventory renewal. Both owners
 merge their results with the latest accepted counterpart before publication.
 Catalog workers use a 512 MiB V8 old-generation limit rather than inheriting the
-Gateway's default heap budget. Explicit process-wide heap flags override this
-limit; native and external allocations are outside it.
+Gateway's heap budget. Startup clears V8's process-wide heap overrides after the
+main isolate is initialized, so explicit heap flags still size the Gateway while
+worker limits remain effective. Explicit V8 flag-freezing or contradictory-flag
+checks prevent this reset and emit a warning. Native and external allocations
+are outside the worker limit.
 
 Catalog and authentication refresh tasks carry the host's prepared Claw consent
 provenance. Worker config reconstruction and provider imports consume these facts
