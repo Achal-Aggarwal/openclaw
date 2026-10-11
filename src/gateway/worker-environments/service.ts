@@ -37,6 +37,7 @@ import type {
 } from "./service.types.js";
 import { createWorkerEnvironmentSessionAttachments } from "./session-attachment-service.js";
 import type { WorkerEnvironmentState } from "./state.js";
+import { WorkerEnvironmentInventoryClosedError } from "./store-errors.js";
 import type {
   WorkerEnvironmentRecord,
   WorkerEnvironmentTransitionPatch as TransitionPatch,
@@ -354,7 +355,17 @@ export function createWorkerEnvironmentService(options: WorkerEnvironmentService
   };
 
   const reconcilePass = async (environmentId?: string) => {
-    await store.ready();
+    try {
+      await store.ready();
+    } catch (error) {
+      if (stopping && error instanceof WorkerEnvironmentInventoryClosedError) {
+        return;
+      }
+      throw error;
+    }
+    if (stopping) {
+      return;
+    }
     if (environmentId === undefined) {
       await sessionAttachments.reconcileSessionAttachments();
     }

@@ -36,6 +36,10 @@ leave time for cancellation and cleanup. These caps also apply to `--wait 0`. Lo
 heartbeat timeouts do not extend it. When available, the drain log reports the
 largest observed model request timeout for context.
 
+If the worker inventory has already retired when shutdown starts, the Gateway
+still drains its retained worker tunnels and workspace transfers. Inventory
+retirement alone does not fail shutdown; other cleanup failures still do.
+
 If work still ignores cancellation at the shutdown deadline under systemd or launchd,
 a native service stop or supervisor-owned restart logs
 the remaining work categories, writes a diagnostic stability bundle, and exits
