@@ -83,6 +83,40 @@ describe("completeWithPreparedSimpleCompletionModel", () => {
     expect(completionRequests()[0]?.options).not.toHaveProperty("reasoning");
   });
 
+  it("forces configured local thinking switches off for explicit off requests", async () => {
+    await completeWithPreparedSimpleCompletionModel({
+      model: baseModel,
+      auth: { apiKey: "test-key", source: "test", mode: "api-key" },
+      context,
+      options: { reasoning: "off" },
+    });
+    const options = completionRequests()[0]?.options;
+    expect(options?.reasoning).toBe("off");
+    const payload: Record<string, unknown> = {
+      think: true,
+      enable_thinking: true,
+      chat_template_kwargs: { enable_thinking: true, keep: 1 },
+      temperature: 0.2,
+    };
+    options?.onPayload?.(payload, baseModel);
+    expect(payload).toEqual({
+      think: false,
+      enable_thinking: false,
+      chat_template_kwargs: { enable_thinking: false, keep: 1 },
+      temperature: 0.2,
+    });
+  });
+
+  it("leaves configured thinking switches alone for other efforts", async () => {
+    await completeWithPreparedSimpleCompletionModel({
+      model: baseModel,
+      auth: { apiKey: "test-key", source: "test", mode: "api-key" },
+      context,
+      options: { reasoning: "high" },
+    });
+    expect(completionRequests()[0]?.options).not.toHaveProperty("onPayload");
+  });
+
   it("passes only selected auth facts to transport preparation", async () => {
     await completeWithPreparedSimpleCompletionModel({
       model: baseModel,

@@ -67,6 +67,14 @@ Related model-config surfaces:
 
 Full key reference, defaults, and JSON5 examples: [Configuration reference](/gateway/config-agents#agent-defaults).
 
+Utility tasks request thinking off so their bounded output budgets go to the
+title, observer digest, or summary rather than hidden reasoning. This also
+overrides configured native Ollama `think`/`thinking` and OpenAI-compatible
+`enable_thinking` switches for these requests, without changing ordinary chat
+reasoning, other model parameters, or task timeouts. Providers that require
+reasoning still apply their supported minimum; see
+[Ollama thinking control](/providers/ollama/advanced).
+
 For the typed decision model class, available models, rubrics, and plugin API,
 see [Decision models](/concepts/decision-models).
 

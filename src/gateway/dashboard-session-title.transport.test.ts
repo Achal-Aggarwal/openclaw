@@ -112,7 +112,7 @@ describe("generated titles over the real OpenAI-compatible transport", () => {
       name: "model aliases overriding global defaults",
       params: {
         chatTemplateKwargs: { enable_thinking: false, configured_only: true },
-        extraBody: { min_p: 0.2, store: false },
+        extraBody: { min_p: 0.2, store: false, enable_thinking: true },
       },
       defaultParams: {
         chat_template_kwargs: { enable_thinking: true, default_only: true },
@@ -128,9 +128,10 @@ describe("generated titles over the real OpenAI-compatible transport", () => {
           chat_template_kwargs: { enable_thinking: true, extra_body_only: true },
           min_p: 0.2,
           store: false,
+          enable_thinking: true,
         },
       },
-      expectedTemplate: { enable_thinking: true, extra_body_only: true },
+      expectedTemplate: { enable_thinking: false, extra_body_only: true },
     },
   ])(
     "preserves $name through registered utility completion transport",
@@ -147,7 +148,7 @@ describe("generated titles over the real OpenAI-compatible transport", () => {
           ).resolves.toBe("Utility payload verified");
           expect(requests).toHaveLength(1);
           const body = requests[0]!.body;
-          expect(body).toMatchObject({ model, stream: true, min_p: 0.2 });
+          expect(body).toMatchObject({ model, stream: true, min_p: 0.2, enable_thinking: false });
           expect(body.chat_template_kwargs).toEqual(expectedTemplate);
           expect(Object.hasOwn(body, "store")).toBe(false);
           expect(body.tools ?? []).toEqual([]);
@@ -202,7 +203,7 @@ describe("generated titles over the real OpenAI-compatible transport", () => {
           })),
         ).toEqual([
           { template: { enable_thinking: false }, minP: 0.3 },
-          { template: { enable_thinking: true }, minP: 0.7 },
+          { template: { enable_thinking: false }, minP: 0.7 },
           { template: { enable_thinking: false }, minP: 0.3 },
         ]);
       },

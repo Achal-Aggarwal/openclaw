@@ -82,6 +82,7 @@ describe("generateConversationLabel", () => {
         prompt: userMessage,
         timeoutMs: 15_000,
         outputTextPolicy: "strict-visible",
+        thinkLevel: "off",
         streamParams: { maxTokens: 4_096 },
       });
     },

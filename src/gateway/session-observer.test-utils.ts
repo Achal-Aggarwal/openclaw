@@ -56,6 +56,7 @@ export function preparedModel() {
     provider: "openai",
     model: "gpt-test",
     outputTextPolicy: "strict-visible" as const,
+    thinkLevel: "off" as const,
     agentId: "main",
     agentDir: "/tmp/agent",
   };

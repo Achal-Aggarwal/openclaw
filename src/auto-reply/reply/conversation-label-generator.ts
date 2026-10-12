@@ -158,6 +158,7 @@ async function runLabelAttempts(
         assertCurrent: params.assertCurrent,
         ...(params.operatorAuthority ? { operatorAuthority: params.operatorAuthority } : {}),
         outputTextPolicy: "strict-visible",
+        thinkLevel: "off",
         streamParams: { maxTokens: CONVERSATION_LABEL_MAX_TOKENS },
       });
       assertCurrent();
