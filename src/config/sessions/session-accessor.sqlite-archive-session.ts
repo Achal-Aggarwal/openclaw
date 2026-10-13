@@ -24,6 +24,8 @@ type ArchiveConnection = {
   worker: Worker;
   exited: Promise<void>;
   didExit: boolean;
+  // The Worker requires contiguous ids, so the sequence follows execution across scope handoff.
+  operationId: number;
   failure?: Error;
   retiring?: Promise<void>;
 };
@@ -71,7 +73,6 @@ class ArchiveSession {
   private connection?: ArchiveConnection;
   private dispatched?: Promise<SqliteArchiveSessionResponse>;
   private revoked = false;
-  private operationId = 0;
 
   constructor(options: OpenClawAgentDatabaseOptions) {
     const env = { ...(options.env ?? process.env) };
@@ -137,16 +138,28 @@ class ArchiveSession {
     ) {
       throw new Error("SQLite archive request changed its captured database owner");
     }
-    // The global FIFO ensures the previous scope is idle; never multiply warm heaps.
-    if (sessions.warm && sessions.warm !== this) {
-      await sessions.warm.retire();
+    // The FIFO leaves no native handles in the idle worker; transfer execution, not authority.
+    const previous = sessions.warm;
+    if (previous && previous !== this) {
+      if (
+        previous.options.env.OPENCLAW_STATE_DIR === this.options.env.OPENCLAW_STATE_DIR &&
+        !previous.connection?.retiring &&
+        !previous.connection?.failure &&
+        !previous.connection?.didExit
+      ) {
+        this.connection = previous.connection;
+        previous.connection = undefined;
+        sessions.warm = this;
+      } else {
+        await previous.retire();
+      }
     }
     this.assertCurrent();
     await this.connection?.retiring;
     this.assertCurrent();
     const connection = (this.connection ??= this.start(createWorker));
     sessions.warm = this;
-    const operationId = ++this.operationId;
+    const operationId = ++connection.operationId;
     const dispatched = new Promise<SqliteArchiveSessionResponse>((resolve, reject) => {
       const cleanup = () => {
         connection.worker.off("message", receive);
@@ -226,13 +239,17 @@ class ArchiveSession {
   }
 
   private start(createWorker: (data: object) => Worker): ArchiveConnection {
-    this.operationId = 0;
     const worker = createWorker({
       type: "sqlite-transcript-archive-v2",
       operation: "archive-session",
       env: this.options.env,
     });
-    const connection: ArchiveConnection = { worker, didExit: false, exited: Promise.resolve() };
+    const connection: ArchiveConnection = {
+      worker,
+      didExit: false,
+      exited: Promise.resolve(),
+      operationId: 0,
+    };
     worker.on("error", (error) => {
       connection.failure ??= toStringifiedError(error);
     });
