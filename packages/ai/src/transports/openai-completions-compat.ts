@@ -6,6 +6,10 @@
  */
 import type { Model, OpenAICompletionsCompat } from "@openclaw/llm-core";
 import type { AiProviderRequestCapabilities, AiProviderRequestPolicyInput } from "../host.js";
+import {
+  resolveOpenAIReasoningEffortMapping,
+  supportsOpenAIReasoningEffort,
+} from "../providers/openai-reasoning-effort.js";
 import { isKnownOpenAIJsonSchemaModelId } from "../providers/openai-response-format.js";
 import { resolveProviderRequestCapabilities as resolveModelProviderRequestCapabilities } from "./host-policy.js";
 
@@ -61,6 +65,7 @@ export type ResolvedOpenAICompletionsCompat = Omit<
     visibleReasoningDetailTypes: string[];
     requiresNonEmptyUserOrAssistantMessage: boolean;
     configuredSupportsLongCacheRetention?: boolean;
+    thinkingOffControlUndeclared?: boolean;
   };
 
 function isDefaultRouteProvider(provider: string | undefined, ...ids: string[]) {
@@ -314,8 +319,16 @@ export function resolveOpenAICompletionsCompat(
   model: Pick<Model<"openai-completions">, "id" | "provider" | "baseUrl" | "compat">,
   resolveCapabilities?: (input: AiProviderRequestPolicyInput) => ProviderRequestCapabilities,
 ): ResolvedOpenAICompletionsCompat {
-  const { defaults } = detectOpenAICompletionsCompat(model, resolveCapabilities);
+  const { defaults, capabilities } = detectOpenAICompletionsCompat(model, resolveCapabilities);
   const configured = model.compat;
+  const thinkingFormat = configured?.thinkingFormat ?? defaults.thinkingFormat;
+  const thinkingOffControlUndeclared =
+    capabilities.usesExplicitProxyLikeEndpoint &&
+    thinkingFormat === "zai" &&
+    configured?.thinkingFormat === undefined &&
+    !supportsOpenAIReasoningEffort({ compat: configured }, "none") &&
+    !supportsOpenAIReasoningEffort({ compat: configured }, "off") &&
+    resolveOpenAIReasoningEffortMapping("off", configured?.reasoningEffortMap) === undefined;
   return {
     supportsStore: configured?.supportsStore ?? defaults.supportsStore,
     supportsDeveloperRole: configured?.supportsDeveloperRole ?? defaults.supportsDeveloperRole,
@@ -323,6 +336,7 @@ export function resolveOpenAICompletionsCompat(
       configured?.supportsReasoningEffort ?? defaults.supportsReasoningEffort,
     supportedReasoningEfforts: configured?.supportedReasoningEfforts,
     reasoningEffortMap: configured?.reasoningEffortMap,
+    thinkingOffControlUndeclared,
     supportsUsageInStreaming:
       configured?.supportsUsageInStreaming ?? defaults.supportsUsageInStreaming,
     maxTokensField: configured?.maxTokensField ?? defaults.maxTokensField,

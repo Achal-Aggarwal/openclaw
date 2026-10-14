@@ -11,7 +11,15 @@ export function applyDirectCompletionsReasoningAndRouting(
   const nativeEffort = compat.thinkingFormat === "openrouter" ? undefined : reasoning.effort;
   const reasoningEnabled = reasoning.thinkingEnabled ?? false;
 
-  if (compat.thinkingFormat === "zai" && model.reasoning) {
+  if (
+    compat.thinkingFormat === "zai" &&
+    model.reasoning &&
+    compat.thinkingOffControlUndeclared &&
+    reasoning.thinkingEnabled === false
+  ) {
+    // Custom endpoints with inferred Z.AI format may serve always-thinking models that
+    // reject an explicit off control; keep the provider default unless declared.
+  } else if (compat.thinkingFormat === "zai" && model.reasoning) {
     params.thinking = reasoningEnabled
       ? { type: "enabled", clear_thinking: false }
       : { type: "disabled" };
