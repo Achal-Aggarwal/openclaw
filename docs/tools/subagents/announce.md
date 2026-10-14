@@ -95,9 +95,17 @@ The result is the child's complete visible final answer for the completed run,
 including ACP-backed runs and CLI fallback transcripts. A later turn in the same
 child session does not replace that run's answer.
 OpenClaw preserves prompt-data escaping and stable order when it delivers several
-results together. It does not shorten an answer to fit the former announce
-projection limits. The bounded lifecycle snapshot remains separate from the
-complete answer sent to the parent.
+results together. Completion findings have a strict shared 160,000-character cap,
+including escaping and framing. Small answers stay intact; larger answers keep
+their beginning and an explicit truncation marker pointing to `sessions_history`
+with the child session key. `sessions_history` truncates text fields to 4,000
+characters; this pointer does not provide lossless retrieval of an omitted tail.
+Each shown child keeps its task and status, with result heads sharing the remaining
+space above a small floor. If even floor-sized blocks would exceed the cap, the
+remaining children become one bounded summary line with their count, the first few
+session keys, and guidance to inspect them with the session tools. Ordering stays
+deterministic. The bounded lifecycle snapshot and retained complete transcript
+stay separate from these prompt limits.
 
 For nested work, descendant findings help the child form its answer. The child's
 own final answer is what travels onward to its parent. If the child sends its
