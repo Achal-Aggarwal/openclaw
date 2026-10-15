@@ -190,6 +190,7 @@ export type ChildState = NativeSubagentAssignment & {
   pendingCompletion?: RecoveredCompletion;
   subscriptionClosed?: true;
   nativeCompletionDelivered: boolean;
+  completionDeliveryAbandoned?: true;
   completionDeliveryAttempt: number;
   completionDeliveryTimer?: ReturnType<typeof setTimeout>;
   deliveringCompletion: boolean;

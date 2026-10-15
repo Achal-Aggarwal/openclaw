@@ -1,6 +1,9 @@
 import { isDurableAgentHarnessCompletionDelivery } from "openclaw/plugin-sdk/agent-harness-completion";
 import { embeddedAgentLog, formatErrorMessage } from "openclaw/plugin-sdk/agent-harness-runtime";
-import { readCodexNativeSubagentRunId } from "./native-subagent-assignment.js";
+import {
+  codexNativeSubagentRunId,
+  readCodexNativeSubagentRunId,
+} from "./native-subagent-assignment.js";
 import { assertHistoryOwnerMatchesRegistration } from "./native-subagent-history-owner.js";
 import type {
   ChildState,
@@ -19,6 +22,7 @@ type CompletionDeliveryDependencies = {
   isRetiredParent: (state: ParentState) => boolean;
   getParent: (parentThreadId: string) => ParentState | undefined;
   unregisterChild: (child: ChildState) => void;
+  abandon: (state: ParentState, child: ChildState, assertCurrent: () => void) => Promise<void>;
   releaseClientRetentionIfIdle: () => void;
 };
 
@@ -65,6 +69,10 @@ export class CodexNativeSubagentCompletionDelivery {
     let deferredToForeground = false;
     try {
       if (!this.prepareDelivery(state, childState)) {
+        return;
+      }
+      if (childState.completionDeliveryAbandoned) {
+        await this.abandon(state, childState);
         return;
       }
       // Foreground parents receive native completion input. Only wake a detached
@@ -119,11 +127,12 @@ export class CodexNativeSubagentCompletionDelivery {
         return;
       }
       if (delivery.recoveryBlocked) {
-        this.dependencies.unregisterChild(childState);
+        await this.abandon(state, childState);
         return;
       }
       if (delivery.recoveryPending) {
-        this.scheduleRetry(
+        await this.scheduleRetry(
+          state,
           childState,
           delivery.error ?? "requester recovery owns completion",
           false,
@@ -131,7 +140,7 @@ export class CodexNativeSubagentCompletionDelivery {
         return;
       }
       const error = delivery.error ?? "completion delivery did not produce a parent response";
-      this.scheduleRetry(childState, error);
+      await this.scheduleRetry(state, childState, error);
     } catch (error) {
       if (
         !this.dependencies.isCurrentChild(childState) ||
@@ -145,7 +154,7 @@ export class CodexNativeSubagentCompletionDelivery {
         return;
       }
       const message = formatErrorMessage(error);
-      this.scheduleRetry(childState, message);
+      await this.scheduleRetry(state, childState, message, !childState.completionDeliveryAbandoned);
       embeddedAgentLog.warn("Failed to deliver Codex native subagent completion", {
         parentThreadId: state.parentThreadId,
         childThreadId: completion.childThreadId,
@@ -261,7 +270,38 @@ export class CodexNativeSubagentCompletionDelivery {
     return true;
   }
 
-  private scheduleRetry(childState: ChildState, error: string, chargeAttempt = true): void {
+  private async abandon(state: ParentState, child: ChildState): Promise<void> {
+    child.completionDeliveryAbandoned = true;
+    try {
+      await this.dependencies.abandon(state, child, () => {
+        if (
+          child.nativeCompletionDelivered ||
+          !this.isCurrent(state, child) ||
+          !this.claim(state, child)
+        ) {
+          throw new Error("Native completion retirement is no longer current.");
+        }
+      });
+      this.dependencies.unregisterChild(child);
+    } catch (error) {
+      if (this.isCurrent(state, child) && child.nativeCompletionDelivered) {
+        this.prepareDelivery(state, child);
+        return;
+      }
+      embeddedAgentLog.warn("Native completion retirement remains pending", {
+        childThreadId: child.childThreadId,
+        error: formatErrorMessage(error),
+      });
+      await this.scheduleRetry(state, child, formatErrorMessage(error), false);
+    }
+  }
+
+  private async scheduleRetry(
+    state: ParentState,
+    childState: ChildState,
+    error: string,
+    chargeAttempt = true,
+  ): Promise<void> {
     if (
       !childState.pendingCompletion ||
       childState.completionDeliveryTimer ||
@@ -274,7 +314,7 @@ export class CodexNativeSubagentCompletionDelivery {
         childThreadId: childState.childThreadId,
         error,
       });
-      this.dependencies.unregisterChild(childState);
+      await this.abandon(state, childState);
       return;
     }
     const delayMs = delayForAttempt(
@@ -286,9 +326,9 @@ export class CodexNativeSubagentCompletionDelivery {
       if (!this.dependencies.isCurrentChild(childState)) {
         return;
       }
-      const state = this.dependencies.getParent(childState.parentThreadId);
-      if (state) {
-        void this.deliverPending(state, childState);
+      const currentParent = this.dependencies.getParent(childState.parentThreadId);
+      if (currentParent) {
+        void this.deliverPending(currentParent, childState);
       }
     }, delayMs);
     childState.completionDeliveryTimer.unref();
@@ -302,7 +342,9 @@ export class CodexNativeSubagentCompletionDelivery {
     if (!requesterSessionKey) {
       return true;
     }
-    const key = `${requesterSessionKey}\0${childState.runId}`;
+    const key =
+      childState.deliveryOwnerKey ??
+      `${requesterSessionKey}\0${childState.nativeTurnId ? codexNativeSubagentRunId(childState.childThreadId, childState.nativeTurnId) : childState.runId}`;
     try {
       state.assignmentStore?.assertCurrent();
       assertHistoryOwnerMatchesRegistration(
