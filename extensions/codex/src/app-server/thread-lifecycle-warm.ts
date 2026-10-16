@@ -157,13 +157,23 @@ async function releaseCodexRetainedLiveThread(
 
 /** Release follows the physical owner across connection rotation, never a copied thread id. */
 export async function releaseCodexBoundLiveThread(
-  options: CodexLiveThreadReleaseParams & { clientId?: string; ownerClientId?: string },
+  options: CodexLiveThreadReleaseParams & {
+    clientId?: string;
+    ownerClientId?: string;
+    /** Runs synchronously when `signal` ends a wait for the previous owner's exit. */
+    onExitWaitCancelled?: () => void;
+  },
 ): Promise<boolean> {
+  const exitWaitAbortError = (signal: AbortSignal) => {
+    // Abort dispatch calls this synchronously, before any rejection handler runs.
+    options.onExitWaitCancelled?.();
+    return codexThreadLifecycleAbortError(signal);
+  };
   const changedClient = options.ownerClientId && options.ownerClientId !== options.clientId;
   const previous = changedClient
     ? await retainSharedCodexAppServerClientByInstanceId(options.ownerClientId!, {
         signal: options.signal,
-        createAbortError: codexThreadLifecycleAbortError,
+        createAbortError: exitWaitAbortError,
       })
     : undefined;
   if (changedClient && !previous) {
@@ -227,7 +237,7 @@ export async function releaseCodexBoundLiveThread(
         await racePromiseWithAbortSignal(
           threadClosed ? Promise.race([retiredExit, threadClosed]) : retiredExit,
           options.signal,
-          codexThreadLifecycleAbortError,
+          exitWaitAbortError,
         );
       }
     } finally {
