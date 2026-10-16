@@ -360,9 +360,10 @@ in-process service preparation before package mutation.
 
 ## Options
 
-Post-core repair Doctor and `openclaw update finalize` run without a separate
-per-Doctor deadline unless the operator supplies `--timeout`. A fresh post-core
-process receives the operator choice separately from its internal step allowance.
+Post-core repair Doctor uses the supplied step allowance when `--timeout` is
+omitted. An explicit `--timeout` takes precedence. On expiry, the updater stops
+the worker tree before continuing through its existing maintenance-warning or
+recovery path.
 Older targets retain their existing allowance and deadline behavior.
 
 When `--timeout` is omitted, current CLI and RPC finalization do not add an aggregate
