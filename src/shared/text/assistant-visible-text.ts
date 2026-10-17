@@ -4,7 +4,7 @@ import { escapeRegExp } from "../regexp.js";
 import { findCodeRegions, isInsideCode, stripLinesOutsideCode } from "./code-regions.js";
 import { downgradedToolCallTextFilter } from "./downgraded-tool-call-text.js";
 import { stripModelSpecialTokens } from "./model-special-tokens.js";
-import { stripReasoningTagsFromText } from "./reasoning-tags.js";
+import { createReasoningTagProbe, stripReasoningTagsFromText } from "./reasoning-tags.js";
 import {
   applyTextFilters,
   createConditionalTextProjector,
@@ -242,16 +242,17 @@ export function assistantVisibleTextFilters(
       : options?.preserveTrailingWhitespace
         ? "start"
         : "both";
+  const stripReasoning = (text: string) =>
+    stripReasoningTagsFromText(text, {
+      mode: preserve ? "preserve" : "strict",
+      scope: profile === "final-answer-delivery" ? "leading" : "all",
+      trim: preserveCodeIndentation ? "none" : trim,
+      // An unfinished stream cannot use terminal malformed-output recovery.
+      recoverUnclosed: !streaming,
+    });
   const reasoning: TextFilter = {
-    activationTokens: ["<"],
-    transform: (text) =>
-      stripReasoningTagsFromText(text, {
-        mode: preserve ? "preserve" : "strict",
-        scope: profile === "final-answer-delivery" ? "leading" : "all",
-        trim: preserveCodeIndentation ? "none" : trim,
-        // An unfinished stream cannot use terminal malformed-output recovery.
-        recoverUnclosed: !streaming,
-      }),
+    transform: stripReasoning,
+    create: () => createConditionalTextProjector(stripReasoning, createReasoningTagProbe()),
   };
   const filters: TextFilter[] = [
     ...(!preserve ? [minimaxToolCallTextFilter] : []),

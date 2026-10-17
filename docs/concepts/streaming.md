@@ -79,6 +79,10 @@ the nested shape before starting the Gateway. See the
   output. Still uses the chunker if the buffered text exceeds `maxChars`, so it
   can emit multiple chunks at the end.
 
+Shared text filtering skips repeated reasoning/final-tag scans for marker-free
+HTML, generic types, and comparisons. Recognized or ambiguous marker heads use
+the existing tag handling, including tags split across provider chunks.
+
 ### Media delivery with block streaming
 
 When a plugin uses `before_agent_finalize` to validate the built-in runtime's
