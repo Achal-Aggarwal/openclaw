@@ -240,21 +240,17 @@ describe("doctor config analysis helpers", () => {
       }
     });
 
-    it("returns input unchanged when OPENCLAW_UPDATE_IN_PROGRESS=1", () => {
-      process.env.OPENCLAW_UPDATE_IN_PROGRESS = "1";
-      const input = { hooks: {}, unexpected: true } as never;
-      const result = stripUnknownConfigKeys(input);
-      expect(result.config).toBe(input);
-      expect(result.removed).toEqual([]);
-    });
-
-    it("returns input unchanged when OPENCLAW_UPDATE_IN_PROGRESS=true", () => {
-      process.env.OPENCLAW_UPDATE_IN_PROGRESS = "true";
-      const input = { hooks: {}, unexpected: true } as never;
-      const result = stripUnknownConfigKeys(input);
-      expect(result.config).toBe(input);
-      expect(result.removed).toEqual([]);
-    });
+    it.each(["1", "true"])(
+      "cleans unowned keys during updates (OPENCLAW_UPDATE_IN_PROGRESS=%s), preserving deferred inputs",
+      (value) => {
+        process.env.OPENCLAW_UPDATE_IN_PROGRESS = value;
+        const input = { hooks: {}, deferred: { setting: true }, unexpected: true };
+        const result = stripUnknownConfigKeys(input as never, [["deferred", "setting"]]);
+        expect(result.config).toEqual({ hooks: {}, deferred: { setting: true } });
+        expect(result.removed).toEqual(["unexpected"]);
+        expect(input.unexpected).toBe(true);
+      },
+    );
   });
 
   describe("plugins.installs whitelist", () => {

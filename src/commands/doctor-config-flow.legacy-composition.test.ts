@@ -7,6 +7,7 @@ import { getCliProcessTestTimeout } from "../cli/cli-process-child.test-helpers.
 import { readConfigFileSnapshot } from "../config/config.js";
 import { writeOpenClawConfig } from "../config/test-helpers.js";
 import { runInitialConfigWriteHealth } from "../flows/doctor-health-contribution-runners.config.js";
+import { recordDeferredPluginMigrations } from "../infra/deferred-plugin-migrations.js";
 import { readConfigMachineState } from "../state/config-machine-state.js";
 import { closeOpenClawStateDatabaseForTest } from "../state/openclaw-state-db.js";
 import { withEnvAsync } from "../test-utils/env.js";
@@ -52,6 +53,70 @@ describe("Doctor legacy config composition", () => {
       expect(JSON.parse(first)).not.toHaveProperty("tts.prefsPath");
       expect((await repairConfig(configPath)).shouldWriteConfig).toBe(false);
       expect(await fs.readFile(configPath, "utf8")).toBe(first);
+    });
+  });
+
+  it("repairs unowned keys after update migrations", async () => {
+    await withDoctorConfigPreflightHome(async (home) => {
+      const configPath = await writeOpenClawConfig(home, {
+        agents: { list: [{ id: "main" }] },
+        gateway: { mode: "local" },
+        plugins: { enabled: false },
+        obsoleteUpdateSetting: true,
+      } as never);
+      const original = await fs.readFile(configPath, "utf8");
+      await withEnvAsync(
+        {
+          OPENCLAW_UPDATE_IN_PROGRESS: "1",
+          OPENCLAW_UPDATE_PARENT_SUPPORTS_DOCTOR_CONFIG_WRITE: "1",
+        },
+        async () => {
+          await repairConfig(configPath);
+          const saved = await readConfigFileSnapshot();
+          expect(saved.valid, JSON.stringify(saved.issues)).toBe(true);
+          expect(saved.sourceConfig).not.toHaveProperty("obsoleteUpdateSetting");
+          expect(await fs.readFile(`${configPath}.bak`, "utf8")).toBe(original);
+          const repaired = await fs.readFile(configPath, "utf8");
+          expect((await repairConfig(configPath)).shouldWriteConfig).toBe(false);
+          expect(await fs.readFile(configPath, "utf8")).toBe(repaired);
+        },
+      );
+    });
+  });
+
+  it("keeps deferred plugin input while repairing an unowned update key", async () => {
+    await withDoctorConfigPreflightHome(async (home) => {
+      const retainedInput = { source: "synthetic-plugin-data" };
+      const configPath = await writeOpenClawConfig(home, {
+        gateway: { mode: "local" },
+        plugins: { enabled: false },
+        retainedInput,
+        obsoleteUpdateSetting: true,
+      } as never);
+      await recordDeferredPluginMigrations({
+        env: process.env,
+        pending: [
+          {
+            pluginId: "pending-owner",
+            reason: "Plugin repair is deferred.",
+            command: "openclaw doctor --fix",
+            configPaths: [["retainedInput"]],
+            validationExcludedPaths: [["retainedInput"]],
+          },
+        ],
+      });
+      await withEnvAsync(
+        {
+          OPENCLAW_UPDATE_IN_PROGRESS: "1",
+          OPENCLAW_UPDATE_PARENT_SUPPORTS_DOCTOR_CONFIG_WRITE: "1",
+        },
+        async () => {
+          await repairConfig(configPath);
+          const saved = JSON.parse(await fs.readFile(configPath, "utf8"));
+          expect(saved.retainedInput).toEqual(retainedInput);
+          expect(saved).not.toHaveProperty("obsoleteUpdateSetting");
+        },
+      );
     });
   });
 

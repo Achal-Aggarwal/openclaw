@@ -9,6 +9,7 @@ import { resolveAgentWorkspaceDir } from "../agents/agent-scope.js";
 import { formatCliCommand } from "../cli/command-format.js";
 import { withProgress } from "../cli/progress.js";
 import { configIncludeOwnsAgentRoster } from "../config/agent-roster-provenance.js";
+import { getDeferredPluginMigrationConfigFacts } from "../config/deferred-plugin-migration-config.js";
 import { readRecentConfigAuditRecords } from "../config/io.audit.js";
 import { hashConfigRaw } from "../config/io.read-helpers.js";
 import { retainLegacyDefaultAgentId } from "../config/legacy.default-agent-owner.js";
@@ -606,6 +607,9 @@ export async function loadAndMaybeMigrateDoctorConfig(params: {
     state,
     shouldRepair,
     doctorFixCommand,
+    preservedPaths: getDeferredPluginMigrationConfigFacts(snapshot.sourceConfig)?.flatMap(
+      (pending) => (pending.configPaths ?? []).concat(pending.validationExcludedPaths ?? []),
+    ),
   });
   state = unknownStep.state;
   if (unknownStep.removed.length > 0 || unknownStep.repairs.length > 0) {

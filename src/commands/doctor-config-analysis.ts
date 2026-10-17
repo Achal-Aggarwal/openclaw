@@ -170,11 +170,6 @@ export function resolveConfigPathTarget(root: unknown, pathLocal: Array<string |
   return current;
 }
 
-function isUpdateInProgress(): boolean {
-  const value = process.env.OPENCLAW_UPDATE_IN_PROGRESS;
-  return value === "1" || value === "true";
-}
-
 const STRIP_PROTECTED_KEYS: Record<string, Set<string>> = {
   plugins: new Set(["installs"]),
 };
@@ -182,17 +177,15 @@ const STRIP_PROTECTED_KEYS: Record<string, Set<string>> = {
 /**
  * Removes unknown config keys reported by schema validation, except protected migration keys.
  *
- * Doctor skips this while an update is in progress so partially written upgrade state is not
- * stripped before its migration can finish.
+ * Runs after migrations; retained plugin inputs must survive until their owner can finish.
  */
-export function stripUnknownConfigKeys(config: OpenClawConfig): {
+export function stripUnknownConfigKeys(
+  config: OpenClawConfig,
+  preservedPaths: readonly (readonly string[])[] = [],
+): {
   config: OpenClawConfig;
   removed: string[];
 } {
-  if (isUpdateInProgress()) {
-    return { config, removed: [] };
-  }
-
   const parsed = OpenClawSchema.safeParse(config);
   if (parsed.success) {
     return { config, removed: [] };
@@ -223,6 +216,14 @@ export function stripUnknownConfigKeys(config: OpenClawConfig): {
         continue;
       }
       if (protectedSet?.has(key)) {
+        continue;
+      }
+      const keyPath = [...issuePath, key].map(String);
+      if (
+        preservedPaths.some((retained) =>
+          retained.slice(0, keyPath.length).every((part, index) => keyPath[index] === part),
+        )
+      ) {
         continue;
       }
       delete target[key];

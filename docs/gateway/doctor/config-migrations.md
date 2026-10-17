@@ -9,6 +9,10 @@ read_when:
 Checks 0-2 cover config normalization and the legacy config key migrations,
 plus how doctor publishes shared-state schema during an update.
 
+Doctor applies known migrations before removing unrecognized config keys, including
+during updates. Repairs use the normal config backup and write flow. Inputs retained
+for a deferred plugin migration remain untouched until their owner can migrate them.
+
 ## Channel ownership during an update
 
 When Doctor migrates a legacy `agents.list` roster without a `default: true` marker
