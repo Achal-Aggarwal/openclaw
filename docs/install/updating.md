@@ -48,6 +48,13 @@ fail. This requires the installed updater to contain the repair. A failed swap
 before any installation or service mutation records the previous Gateway
 observation without restart verification, including with `--no-restart`.
 
+Before replacing a Git checkout's build or an installed package, the updater
+retains its running runtime. Late module imports and background workers keep
+using that generation through finalization, rollback, and CLI cleanup, even when
+the new build has different chunk filenames. The new Gateway starts from the
+activated build.
+
+
 During update finalization, disposable plugin source copies and private SQLite
 inspection snapshots use the candidate helper's absolute `TMPDIR` (including
 when an older installed updater starts that helper). Normal Gateway cache
