@@ -554,11 +554,7 @@ function createCronPromptExecutor(
                   authProfileId,
                   cliSessionId: cliSessionBinding?.sessionId,
                   cliSessionBinding: guardedCliSessionBinding,
-                  cliSessionBindingFacts: {
-                    extraSystemPromptStatic: params.deliverySystemPrompt,
-                    sourceReplyDeliveryMode,
-                    requireExplicitMessageTarget: sourceDelivery.messageTool.requireExplicitTarget,
-                  },
+                  cliSessionBindingFacts: params.cliSessionBindingFacts,
                   toolsAllow: resolveCliRuntimeToolsAllow(
                     params.agentPayload?.toolsAllow,
                     params.agentPayload?.toolsAllowIsDefault,

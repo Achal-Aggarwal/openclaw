@@ -95,6 +95,10 @@ plugin code registered with `api.registerCliBackend(...)`.
 4. Parses output (JSON or plain text) and returns the final text.
 5. Persists session ids per backend so follow-ups reuse the same CLI session.
 
+Direct agent calls, child-completion updates, and cron wakes targeting an existing
+chat share the same session reply policy. Announce wakes still require an explicit
+message target for that turn; isolated cron runs keep their own delivery policy.
+
 ## Timeouts and long-running work
 
 CLI backends have two independent limits:
