@@ -27,7 +27,7 @@ import {
   readAgentDatabaseLeaseProvenance,
   agentDatabaseLeaseProcessDeathRefusal,
 } from "./openclaw-agent-db-lease-provenance.js";
-import type { OpenClawAgentDatabaseValidation } from "./openclaw-agent-db-validation-cache.js";
+import type { PreparedOpenClawAgentDatabaseWorkerLease } from "./openclaw-agent-db-lease.types.js";
 import {
   readOpenClawAgentIntegrityVerification,
   markOpenClawAgentIntegrityClean,
@@ -470,13 +470,7 @@ export function prepareOpenClawAgentDatabaseWorkerLease(
   params: { agentId: string; path: string; env?: NodeJS.ProcessEnv },
   sharedDatabase: OpenClawStateDatabase,
   leaseId: string,
-): {
-  receipt: OpenClawAgentDatabaseWorkerLeaseReceipt;
-  provenance: string | null;
-  validation?: OpenClawAgentDatabaseValidation;
-  deferUnverifiedIntegrity?: boolean;
-  claim(onVerification?: OpenClawAgentIntegrityVerificationReceiver): string;
-} {
+): PreparedOpenClawAgentDatabaseWorkerLease {
   const database = {
     db: sharedDatabase.db,
     path: sharedDatabase.path,
