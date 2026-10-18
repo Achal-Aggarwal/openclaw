@@ -22,12 +22,13 @@ function syncAndHash(pathname: string) {
 export function repairDoctorSqliteIndexCorruption(
   database: DatabaseSync,
   pathname: string,
-  options: { label: string; assertCurrent: () => void },
+  options: { label: string; assertCurrent: () => void; ftsSchemas?: readonly string[] },
 ): string[] {
   let backupPath: string | undefined;
   let indexes: string[];
   try {
     indexes = repairSqliteIndexCorruption(database, pathname, {
+      ftsSchemas: options.ftsSchemas,
       assertCurrent: options.assertCurrent,
       backup: () => {
         options.assertCurrent();

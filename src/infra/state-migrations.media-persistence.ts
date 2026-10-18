@@ -41,6 +41,7 @@ import {
   withAgentDatabaseMaintenanceLease,
   type OpenClawAgentDatabase,
 } from "../state/openclaw-agent-db.js";
+import { OPENCLAW_AGENT_FTS_SCHEMAS } from "../state/openclaw-agent-fts-schema.js";
 import { withLegacySessionParticipantsSchema } from "../state/openclaw-agent-participants-migration.js";
 import { OPENCLAW_AGENT_SCHEMA_SQL } from "../state/openclaw-agent-schema.js";
 import { withLegacyAgentStorageSchema } from "../state/openclaw-agent-storage-schema.js";
@@ -210,6 +211,7 @@ async function migrateAgentDatabase(params: {
       // Admission already checks the whole file. Only a proven integrity failure
       // needs Doctor's preserving repair scan under an immediate transaction.
       indexChanges = repairDoctorSqliteIndexCorruption(database, params.pathname, {
+        ftsSchemas: OPENCLAW_AGENT_FTS_SCHEMAS,
         label: `agent ${params.agentId}`,
         assertCurrent: () => {
           assertAgentDatabaseMaintenanceAuthority();

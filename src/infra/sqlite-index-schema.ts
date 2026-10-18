@@ -18,7 +18,11 @@ import {
   getCanonicalSqliteTableNames,
   type CanonicalSqliteNamedIndexContract,
 } from "./sqlite-schema-contract.js";
-import { quoteSqliteIdentifier } from "./sqlite-schema-sql.js";
+import {
+  findSqlClosingParenthesis,
+  normalizeSchemaSql,
+  quoteSqliteIdentifier,
+} from "./sqlite-schema-sql.js";
 import { runSqliteImmediateTransactionSync } from "./sqlite-transaction.js";
 
 const SQLITE_IDENTIFIER_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/u;
@@ -176,16 +180,21 @@ export function repairCanonicalSqliteIndexes(
 export function repairSqliteIndexCorruption(
   database: DatabaseSync,
   pathname: string,
-  options: { backup: () => void; assertCurrent: () => void },
+  options: { backup: () => void; assertCurrent: () => void; ftsSchemas?: readonly string[] },
 ): string[] {
   let repaired: string[] = [];
   return runSqliteImmediateTransactionSync(
     database,
     () => {
       const names = new Set<string>();
-      // Stream every finding: SQLite's default 100-row limit can hide later damage.
-      for (const row of database.prepare("PRAGMA integrity_check(2147483647)").iterate()) {
-        const finding = row.integrity_check;
+      // Inspect every finding: SQLite's default 100-row limit can hide later damage.
+      const findings = readSqliteIntegrityFindings(database);
+      const ftsTables = classifySqliteFtsIntegrityFindings(
+        database,
+        findings,
+        options.ftsSchemas ?? [],
+      );
+      for (const finding of ftsTables ? [] : findings) {
         if (finding === "ok") {
           continue;
         }
@@ -201,7 +210,7 @@ export function repairSqliteIndexCorruption(
         }
         names.add(name);
       }
-      if (names.size === 0) {
+      if (names.size === 0 && !ftsTables) {
         return [];
       }
 
@@ -227,9 +236,14 @@ export function repairSqliteIndexCorruption(
       }
 
       options.backup();
-      repaired = [...names].toSorted();
+      repaired = ftsTables ?? [...names].toSorted();
       for (const name of repaired) {
-        database.exec(`REINDEX main.${quoteSqliteIdentifier(name)}`);
+        const identifier = quoteSqliteIdentifier(name);
+        database.exec(
+          ftsTables
+            ? `INSERT INTO main.${identifier}(${identifier}) VALUES('rebuild')`
+            : `REINDEX main.${identifier}`,
+        );
       }
       // Foreign-key checks use parent indexes, so corrupt keys can look like
       // missing parent rows until REINDEX. Real violations still roll back repair.
@@ -247,6 +261,61 @@ export function repairSqliteIndexCorruption(
       },
     },
   );
+}
+
+/** Maintenance must see every finding before deciding that only derived indexes need repair. */
+export function readSqliteIntegrityFindings(database: DatabaseSync): unknown[] {
+  return database
+    .prepare("PRAGMA integrity_check(2147483647)")
+    .all()
+    .map((row) => row.integrity_check);
+}
+
+/** Only exact, owned FTS definitions may treat their inverted index as derived data. */
+export function classifySqliteFtsIntegrityFindings(
+  database: DatabaseSync,
+  findings: readonly unknown[],
+  schemas: readonly string[],
+): string[] | undefined {
+  const names = new Set<string>();
+  for (const finding of findings) {
+    if (finding === "ok") {
+      continue;
+    }
+    const match =
+      typeof finding === "string"
+        ? /^malformed inverted index for FTS5 table main\.([A-Za-z_][A-Za-z0-9_]*)$/u.exec(finding)
+        : null;
+    if (!match?.[1]) {
+      return undefined;
+    }
+    names.add(match[1]);
+  }
+  if (names.size === 0) {
+    return undefined;
+  }
+  const definitions = new Map<string, Set<string | null>>();
+  for (const schema of schemas) {
+    for (const match of schema.matchAll(
+      /CREATE VIRTUAL TABLE (?:IF NOT EXISTS )?([A-Za-z_][A-Za-z0-9_]*) USING fts5\s*\(/gu,
+    )) {
+      const name = match[1]!;
+      const end = findSqlClosingParenthesis(schema, match.index + match[0].length - 1);
+      const variants = definitions.get(name) ?? new Set<string | null>();
+      variants.add(normalizeSchemaSql(schema.slice(match.index, end + 1)));
+      definitions.set(name, variants);
+    }
+  }
+  const tableSql = database.prepare(
+    "SELECT sql FROM main.sqlite_schema WHERE type = 'table' AND name = ?",
+  );
+  for (const name of names) {
+    const sql = tableSql.get(name)?.sql;
+    if (typeof sql !== "string" || !definitions.get(name)?.has(normalizeSchemaSql(sql))) {
+      return undefined;
+    }
+  }
+  return [...names].toSorted();
 }
 
 function assertNoUnexpectedUniqueIndexes(
