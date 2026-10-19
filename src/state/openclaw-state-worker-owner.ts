@@ -37,6 +37,7 @@ import type {
   OpenClawStateWorkerOperationOptions as OperationOptions,
 } from "./openclaw-state-worker-contract.js";
 import { createStateWorkerMemoryPressureSubscription } from "./openclaw-state-worker-memory-pressure.js";
+import * as nativeLoss from "./openclaw-state-worker-native-loss.js";
 import {
   assertOpenClawStateWorkerActorPath,
   assertOpenClawStateWorkerSchemaContext,
@@ -211,7 +212,7 @@ function createSharedStateWorkerOwner() {
     }
     throw error;
   };
-  const retainOperation = (store: Store) => {
+  const retainOperation = (store: Store, onNativeLost?: () => void) => {
     const entry = [...stores].find((candidate) => candidate.store === store);
     if (!entry) {
       throw new Error("Shared-state worker operation lost its actor owner");
@@ -219,12 +220,14 @@ function createSharedStateWorkerOwner() {
     clearIdleRetirement(entry);
     entry.activeOperations += 1;
     activeEntries.add(entry);
+    const releaseNativeLost = nativeLoss.retainListener(entry, onNativeLost);
     let released = false;
     return () => {
       if (released) {
         return undefined;
       }
       released = true;
+      releaseNativeLost?.();
       entry.activeOperations -= 1;
       if (entry.activeOperations === 0) {
         activeEntries.delete(entry);
@@ -600,6 +603,7 @@ function createSharedStateWorkerOwner() {
         const databaseAdmission = captureOpenClawStateDatabaseReadAdmission(admission.databasePath);
         assertAdmission();
         const openingGuard = captureOpenClawStateWorkerOpeningGuard(context, assertCurrent, signal);
+        const nativeLostListeners = new Set<() => void>();
         const open = () =>
           openingGuard.run(() =>
             openSharedStateSqliteWorkerStore<StoreOperations>(
@@ -617,6 +621,8 @@ function createSharedStateWorkerOwner() {
                 retainCleanup: (cleanup) => {
                   admitted.cleanup = cleanup;
                 },
+                // Bind only the listener set so the broker does not retain the opening caller.
+                onNativeLost: nativeLoss.createNotifier(nativeLostListeners),
               },
             ),
           );
@@ -626,6 +632,7 @@ function createSharedStateWorkerOwner() {
           databaseAdmission,
           openingAdmission: openingGuard.admission,
           existingOnly,
+          nativeLostListeners,
           activeOperations: 0,
           // Maintenance may already be draining an accepted callback; its native
           // opening must retain that callback's live admission through settlement.
