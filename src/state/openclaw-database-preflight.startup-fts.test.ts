@@ -1,3 +1,4 @@
+import { execFile } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -22,6 +23,7 @@ import { closeStateDatabaseForTest } from "../test-utils/database-cleanup.js";
 import { readAgentDatabaseAdmissionRefusal } from "./agent-database-admission.js";
 import { withAgentDatabaseStartupAdmission } from "./agent-database-startup.js";
 import {
+  readActiveOpenClawAgentDatabaseLeasesReadOnly,
   claimOpenClawAgentDatabaseLease,
   releaseOpenClawAgentDatabaseLease,
 } from "./openclaw-agent-db-lease.js";
@@ -242,3 +244,187 @@ it.each(["mixed", "backup", "rebuild", "writer"] as const)(
     }
   },
 );
+
+/** Pause after the backup copy, inside the genuine native repair and shared write fence. */
+function pauseNativeRepair(fixture: Awaited<ReturnType<typeof createFixture>>) {
+  const directory = path.dirname(fixture.pathname);
+  const entered = path.join(directory, "native-repair-entered.json");
+  const release = path.join(directory, "native-repair-release");
+  const preload = path.join(directory, "native-repair-pause.cjs");
+  fs.writeFileSync(
+    preload,
+    [
+      "const fs = require('node:fs');",
+      "const { threadId } = require('node:worker_threads');",
+      "const copy = fs.copyFileSync;",
+      "fs.copyFileSync = function(src, dst, ...args) {",
+      "const result = copy.call(this, src, dst, ...args);",
+      "if (String(dst).includes('openclaw-index-recovery-')) {",
+      "fs.writeFileSync(" + JSON.stringify(entered) + ", JSON.stringify({ threadId, dst }));",
+      "const deadline = Date.now() + 45000;",
+      "while (!fs.existsSync(" + JSON.stringify(release) + ")) {",
+      "if (Date.now() > deadline) throw new Error('native repair pause was not released');",
+      "Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10);",
+      "} } return result; };",
+    ].join("\n"),
+  );
+  for (const [key, value] of Object.entries(sqliteWorkerPreloadEnv(preload))) {
+    vi.stubEnv(key, value);
+  }
+  return {
+    async entered() {
+      await vi.waitFor(() => expect(fs.existsSync(entered)).toBe(true), { timeout: 15000 });
+      const evidence = JSON.parse(fs.readFileSync(entered, "utf8")) as {
+        threadId: number;
+        dst: string;
+      };
+      expect(process.versions.bun).toBeUndefined();
+      expect(evidence.threadId).toBeGreaterThan(0);
+      expect(fs.existsSync(evidence.dst)).toBe(true);
+      const owners = readActiveOpenClawAgentDatabaseLeasesReadOnly({ env: fixture.env });
+      expect(owners.filter((owner) => owner.path === fixture.pathname)).toHaveLength(1);
+      console.info("NATIVE FTS repair window", {
+        threadId: evidence.threadId,
+        liveLeaseCount: owners.length,
+      });
+      return evidence;
+    },
+    release() {
+      fs.writeFileSync(release, "release");
+    },
+  };
+}
+
+it("NATIVE refuses source replacement after repair admission without mutating or publishing the replacement", async () => {
+  const fixture = await createFixture();
+  const replacement = fixture.pathname + ".replacement";
+  {
+    using db = openRawDatabase(replacement);
+    db.exec(
+      "CREATE TABLE replacement_sentinel(value TEXT); INSERT INTO replacement_sentinel VALUES ('untouched')",
+    );
+  }
+  const expectedBytes = fs.readFileSync(replacement);
+  const pause = pauseNativeRepair(fixture);
+  const starting = fixture.start();
+  try {
+    await pause.entered();
+    // Move the open image and its sidecars before installing a distinct physical file.
+    for (const suffix of ["", "-wal", "-shm"]) {
+      const source = fixture.pathname + suffix;
+      if (fs.existsSync(source)) {
+        fs.renameSync(source, fixture.pathname + ".original" + suffix);
+      }
+    }
+    fs.renameSync(replacement, fixture.pathname);
+  } finally {
+    pause.release();
+    await starting;
+  }
+  expect(fs.readFileSync(fixture.pathname)).toEqual(expectedBytes);
+  using replacementDb = openRawDatabase(fixture.pathname, { readOnly: true });
+  expect(replacementDb.prepare("SELECT value FROM replacement_sentinel").all()).toEqual([
+    { value: "untouched" },
+  ]);
+  expect(replacementDb.prepare("PRAGMA integrity_check").all()).toEqual([
+    { integrity_check: "ok" },
+  ]);
+  const refusal = readAgentDatabaseAdmissionRefusal("main", { env: fixture.env });
+  expect(refusal?.code).toBe("agent-database-inspection-failed");
+  expect(refusal?.reason).toContain("integrity_check");
+  expect(refusal?.reason).toContain("Startup FTS repair failed");
+  expect(refusal?.reason).toContain("SQLite transaction admission was refused");
+  expect(readStartupMigrationWarning() ?? "").not.toContain("Rebuilt stale SQLite FTS indexes");
+  await flushLogger();
+  expect(fs.readFileSync(fixture.logPath, "utf8")).not.toContain(
+    "Rebuilt stale SQLite FTS indexes",
+  );
+});
+
+it("NATIVE hardlink aliases cannot acquire write or maintenance authority during repair; controls remain usable", async () => {
+  const fixture = await createFixture();
+  const alias = fixture.pathname + ".alias";
+  fs.linkSync(fixture.pathname, alias);
+  expect(fs.statSync(alias).ino).toBe(fs.statSync(fixture.pathname).ino);
+  // A distinct native process cannot borrow this process's actor or open transaction.
+  const before = await runNativeLeaseCompetitor(fixture, alias, "write");
+  expect(before).toEqual({ acquired: true });
+  const pause = pauseNativeRepair(fixture);
+  const starting = fixture.start();
+  try {
+    await pause.entered();
+    for (const mode of ["write", "maintenance"] as const) {
+      const blocked = await runNativeLeaseCompetitor(fixture, alias, mode);
+      console.info("NATIVE FTS competing lease", { mode, ...blocked });
+      expect(blocked.acquired).toBe(false);
+      expect(blocked.error).toMatch(/busy|locked|lease|owner/i);
+    }
+  } finally {
+    pause.release();
+    await starting;
+  }
+  expect(readAgentDatabaseAdmissionRefusal("main", { env: fixture.env })).toBeUndefined();
+  expect(readStartupMigrationWarning()).toContain("Rebuilt stale SQLite FTS indexes");
+  using db = openRawDatabase(alias, { readOnly: true });
+  expect(db.prepare("PRAGMA integrity_check").all()).toEqual([{ integrity_check: "ok" }]);
+  expect(db.prepare("SELECT rowid, * FROM session_transcript_fts").all()).toEqual(fixture.rows);
+  // Startup admission retains an idle native writer until the normal lifecycle drain.
+  await closeOpenClawAgentDatabasesAsync();
+  closeOpenClawAgentDatabasesForTest();
+  expect(await runNativeLeaseCompetitor(fixture, alias, "write")).toEqual({ acquired: true });
+  expect(await runNativeLeaseCompetitor(fixture, alias, "maintenance")).toEqual({ acquired: true });
+});
+
+async function runNativeLeaseCompetitor(
+  fixture: Awaited<ReturnType<typeof createFixture>>,
+  alias: string,
+  mode: "write" | "maintenance",
+): Promise<{ acquired: boolean; error?: string }> {
+  const script = path.join(path.dirname(fixture.pathname), "native-lease-competitor.mjs");
+  const result = script + "." + mode + ".json";
+  fs.writeFileSync(
+    script,
+    [
+      "import fs from 'node:fs';",
+      "import { claimOpenClawAgentDatabaseLease, releaseOpenClawAgentDatabaseLease, AGENT_DATABASE_MAINTENANCE_LEASE, assertNoOpenClawAgentDatabaseLeases } from " +
+        JSON.stringify(new URL("./openclaw-agent-db-lease.ts", import.meta.url).href) +
+        ";",
+      "import { runWithOpenClawStateBusyTimeout } from " +
+        JSON.stringify(new URL("./openclaw-state-db.ts", import.meta.url).href) +
+        ";",
+      "import { withOpenClawStateLease } from " +
+        JSON.stringify(new URL("./openclaw-state-lease.ts", import.meta.url).href) +
+        ";",
+      "const env = process.env; let acquired = false; let error;",
+      "try {",
+      "if (process.argv[2] === 'write') {",
+      "const lease = runWithOpenClawStateBusyTimeout(() => claimOpenClawAgentDatabaseLease({agentId:'alias',path:process.argv[3],env}), {env}, 25);",
+      "acquired = true; releaseOpenClawAgentDatabaseLease(lease,{env});",
+      "} else {",
+      "await withOpenClawStateLease({...AGENT_DATABASE_MAINTENANCE_LEASE, database:{scope:'shared',schemaPolicy:'existing',options:{env}},waitMs:0,leaseMs:60000,heartbeat:'worker'}, async owner => {assertNoOpenClawAgentDatabaseLeases(owner,{env}); acquired=true;});",
+      "}",
+      "} catch (cause) { error = String(cause); }",
+      "fs.writeFileSync(process.argv[4], JSON.stringify({acquired,...(error ? {error} : {})})); process.exit(0);",
+    ].join("\n"),
+  );
+  await new Promise<void>((resolve, reject) => {
+    execFile(
+      process.execPath,
+      [
+        "--import",
+        new URL("../../scripts/tsx.mjs", import.meta.url).pathname,
+        script,
+        mode,
+        alias,
+        result,
+      ],
+      {
+        env: { ...process.env, ...fixture.env },
+        timeout: 15000,
+      },
+      (error) =>
+        error ? reject(new Error("Native lease competitor failed", { cause: error })) : resolve(),
+    );
+  });
+  return JSON.parse(fs.readFileSync(result, "utf8")) as { acquired: boolean; error?: string };
+}
