@@ -154,9 +154,14 @@ describe("native completion settlement", () => {
         parent.bindTurn("parent-turn");
         await notifyChildStarted(client);
         await parent.unregister();
+        expect(releasePin).not.toHaveBeenCalled();
         completion = client.notify(completedChild());
         await entered.promise;
-        expect(releasePin).not.toHaveBeenCalled();
+        // Terminal work releases execution protection while its result still owns delivery.
+        expect(releasePin).toHaveBeenCalledOnce();
+        expect(runtime.deliverAgentHarnessCompletion).toHaveBeenCalledExactlyOnceWith(
+          expect.objectContaining({ result }),
+        );
         const canAdmit =
           runtime.deliverAgentHarnessCompletion.mock.calls[0]?.[0].isSourceSessionAdmissionAllowed;
         expect(canAdmit?.()).toBe(true);
@@ -172,20 +177,26 @@ describe("native completion settlement", () => {
               result,
             }),
           );
-          // A receipt cannot release custody still owned by the accepted delivery.
-          expect(releasePin).not.toHaveBeenCalled();
+          // A receipt cannot revoke admission while its accepted handoff is in flight.
+          expect(canAdmit?.()).toBe(true);
+          expect(releasePin).toHaveBeenCalledOnce();
         }
         delivery.resolve({ delivered: false, path: "none" });
         await completion;
         await retirement;
         expect(runtime.deliverAgentHarnessCompletion).toHaveBeenCalledOnce();
         if (change === "retired-turn-receipt") {
-          expect(releasePin).not.toHaveBeenCalled();
+          expect(releasePin).toHaveBeenCalledOnce();
+          expect(canAdmit?.()).toBe(true);
           expect(vi.getTimerCount()).toBe(1);
           await observer?.unregister();
           await vi.advanceTimersByTimeAsync(10);
           expect(runtime.deliverAgentHarnessCompletion).toHaveBeenCalledTimes(2);
+          expect(runtime.deliverAgentHarnessCompletion).toHaveBeenLastCalledWith(
+            expect.objectContaining({ result }),
+          );
         }
+        expect(canAdmit?.()).toBe(false);
         expect(releasePin).toHaveBeenCalledOnce();
         expect(vi.getTimerCount()).toBe(0);
       } finally {
