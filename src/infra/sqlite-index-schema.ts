@@ -184,7 +184,12 @@ export function repairCanonicalSqliteIndexes(
 export function repairSqliteIndexCorruption(
   database: DatabaseSync,
   pathname: string,
-  options: { backup: () => void; assertCurrent: () => void; ftsSchemas?: readonly string[] },
+  options: {
+    backup: () => void;
+    assertCurrent: () => void;
+    ftsSchemas?: readonly string[];
+    ftsOnly?: boolean;
+  },
 ): string[] {
   let repaired: string[] = [];
   return runSqliteImmediateTransactionSync(
@@ -198,6 +203,9 @@ export function repairSqliteIndexCorruption(
         findings,
         options.ftsSchemas ?? [],
       );
+      if (options.ftsOnly && !ftsTables) {
+        throw new Error("Startup repair requires only canonical FTS integrity findings");
+      }
       for (const finding of ftsTables ? [] : findings) {
         if (finding === "ok") {
           continue;
