@@ -693,15 +693,21 @@ describe("runtime recovery discovery", () => {
   );
 
   it.each([
-    [0, "cached OpenClaw runtime"],
-    [1, "managed Gateway service"],
-    [2, "PATH"],
-    [3, "nvm default"],
-    [4, "fnm default"],
-    [5, "Volta default"],
-    [6, "Homebrew node@26"],
-    [7, "Homebrew node@24"],
-  ] as const)("selects the first admissible runtime: %s %s", async (index, source) => {
+    [0, "cached OpenClaw runtime", undefined],
+    [1, "managed Gateway service", undefined],
+    [2, "PATH", undefined],
+    [3, "nvm default", undefined],
+    [4, "fnm default", undefined],
+    [5, "Volta default", undefined],
+    [6, "Homebrew node@26", undefined],
+    [7, "Homebrew node@24", undefined],
+    ...(hostPlatform === "win32"
+      ? []
+      : ([
+          [1, "managed Gateway service", "/"],
+          [7, "Homebrew node@24", "/"],
+        ] as const)),
+  ] as const)("selects runtime %s: %s (cwd=%s)", async (index, source, cwd) => {
     await withRecoveryHome(async (home) => {
       const candidates = await Promise.all(
         [
@@ -734,6 +740,9 @@ describe("runtime recovery discovery", () => {
           path.join(prefix, "opt", "node@24", "bin", "node"),
           expectDefined(candidates[7], "Node 24 candidate"),
         );
+      }
+      if (cwd) {
+        vi.spyOn(process, "cwd").mockReturnValue(cwd);
       }
       for (const candidate of candidates.slice(index)) {
         mocks.admissible.add(candidate);
