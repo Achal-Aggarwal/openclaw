@@ -925,6 +925,9 @@ through their normal completion path as soon as startup restores requester owner
 without waiting for the periodic registry sweep. The sweep remains a retry backstop.
 The crash-loop breaker pauses this settlement too; the same sweep retries when
 the breaker's recovery window ends.
+Because nothing resumes an interrupted child turn, the next human message to that
+child retires the turn's saved recovery claim and starts normally instead of
+waiting for a resume.
 They are not automatically relaunched.
 The parent receives the interruption outcome and owns finishing the user's task.
 For native children with completion notifications disabled, recovery sends a
