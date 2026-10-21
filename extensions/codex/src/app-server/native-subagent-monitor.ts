@@ -189,6 +189,8 @@ class Monitor {
       unregisterChild: (child) => this.unregisterChild(child),
       abandon: (state, child, assertCurrent) =>
         this.assignments.abandon(state, child, assertCurrent),
+      settleNestedCompletion: (state, child, assertCurrent) =>
+        this.assignments.settleNestedCompletion(state, child, assertCurrent),
       releaseClientRetentionIfIdle: () => this.releaseClientRetentionIfIdle(),
     });
     this.turnObservation = new CodexNativeSubagentTurnObservation({
@@ -306,6 +308,7 @@ class Monitor {
         state.assignmentStore?.assertCurrent();
       },
       isCurrent: (state) => this.isCurrentParent(state),
+      isNativeChildThread: (threadId) => this.historyRecovery.isNativeChildThread(threadId),
       readHistory: (assignment) =>
         this.historyRecovery.read(
           { ...assignment, nativeTurnId: assignment.nativeTurnId },
@@ -796,7 +799,7 @@ class Monitor {
               assertChild();
               await this.submissions.settleCancelled(state, child, assertChild);
               assertChild();
-              await this.assignments.settleCancelled(state, child, assertChild);
+              await this.assignments.acknowledge(state, child, assertChild);
               assertChild();
               this.unregisterChild(child);
             }
