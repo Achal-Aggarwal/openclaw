@@ -183,6 +183,10 @@ that registration and closes any late child. Cleanup can extend beyond the
 startup deadline. A canceled caller leaves startup running when another caller
 still owns it.
 
+Temporary capability, native-hook, and tool-catalog probes wait for their isolated
+app-server to close before returning, including after a failed or timed-out read.
+Probes using a shared connection release their lease so other work can continue.
+
 OpenClaw preserves assistant text supplied with the initial native item and
 reasoning supplied with a completed item, even when Codex sends no text deltas.
 Completed items, including empty messages, reconcile the transcript with Codex's
