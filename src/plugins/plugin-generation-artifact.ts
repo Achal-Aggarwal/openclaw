@@ -9,6 +9,7 @@ import { createJiti } from "./jiti-factory.js";
 import {
   createPluginGenerationFileCapture,
   createPluginSourceLinkCapture,
+  linkPluginGenerationDependency,
 } from "./plugin-generation-file-capture.js";
 import { createPluginGenerationReceipt } from "./plugin-generation-receipt.js";
 import { createPluginGenerationSourceLookup } from "./plugin-generation-source-lookup.js";
@@ -201,9 +202,7 @@ export function capturePluginGenerationArtifact(
           : capturedBoundary;
       const link = path.join(lookupDirectory, "node_modules", name);
       packages.get(dependency.root)!.links.add(link);
-      if (!fs.existsSync(link)) {
-        fs.mkdirSync(path.dirname(link), { recursive: true, mode: 0o700 });
-        fs.symlinkSync(path.relative(path.dirname(link), captured), link, "junction");
+      if (linkPluginGenerationDependency(link, captured)) {
         additions.add(link);
       }
     };
