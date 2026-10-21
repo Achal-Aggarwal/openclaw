@@ -566,6 +566,11 @@ Claude CLI backends scale this cap with the resolved Claude context window inste
 
 ## Troubleshooting
 
+If JSONL output exceeds the parser's turn, line-size, or line-count limit, OpenClaw
+stops the local CLI turn and reports the output-limit error. Further CLI work is
+interrupted because OpenClaw can no longer observe its results. An established
+Claude session binding is kept so the next turn can resume it.
+
 When a local Claude Code subprocess fails, its run error includes a bounded,
 redacted stderr diagnostic when available. Check the run error or `openclaw logs`
 for the underlying launch, permission, or runtime failure. Successful turns do not
