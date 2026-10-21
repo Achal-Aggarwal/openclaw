@@ -21,6 +21,11 @@ type CompletionDeliveryDependencies = {
   retiredParents: Pick<WeakSet<ParentState>, "has">;
   unregisterChild: (child: ChildState) => void;
   abandon: (state: ParentState, child: ChildState, assertCurrent: () => void) => Promise<void>;
+  settleNestedCompletion: (
+    state: ParentState,
+    child: ChildState,
+    assertCurrent: () => void,
+  ) => Promise<boolean>;
   releaseClientRetentionIfIdle: () => void;
 };
 
@@ -66,6 +71,22 @@ export class CodexNativeSubagentCompletionDelivery {
     childState.deliveringCompletion = true;
     let deferredToForeground = false;
     try {
+      if (
+        await this.dependencies.settleNestedCompletion(state, childState, () => {
+          if (
+            !this.isCurrent(state, childState) ||
+            (childState.completionCustody && !childState.completionCustody.isCurrent())
+          ) {
+            throw new Error("Native completion acknowledgement is no longer current.");
+          }
+        })
+      ) {
+        this.dependencies.unregisterChild(childState);
+        return;
+      }
+      if (!this.isCurrent(state, childState)) {
+        return;
+      }
       if (!this.prepareDelivery(state, childState)) {
         return;
       }
