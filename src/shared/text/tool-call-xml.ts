@@ -489,27 +489,32 @@ export function toolCallXmlTextFilter(options: StripToolCallXmlOptions = {}): Te
             return false;
           }
           for (let start = text.indexOf("<", scannedThrough); start !== -1;) {
-            codeRegions ??= findCodeRegions(text);
-            // Appends cannot revoke block code after its opening line is complete.
-            // Inline code can still change ownership through tables and references.
-            const protectedBlock = codeRegions.some(
-              (region) =>
-                region.block &&
-                region.start <= start &&
-                start < region.end &&
-                /[\r\n]/.test(text.slice(region.start, start)),
-            );
             const next = text.indexOf("<", start + 1);
             const candidate = text.slice(start, next === -1 ? text.length : next);
-            if (!protectedBlock && TOOL_CALL_QUICK_RE.test(candidate)) {
-              active = true;
-              return true;
-            }
-            if (!protectedBlock && next === -1 && /^<[\s/]*[\w:]*$/.test(candidate)) {
-              // An unfinished tag name can still become tool markup; rescan it on the next append.
+            if (next === -1 && /^<[\s/]*[\w:]*$/.test(candidate)) {
+              // An unfinished tag name can still become tool markup; rescan it on the next
+              // append. Deferring never activates, so it needs no Markdown ownership parse.
               scannedThrough = start;
               codeRegions = undefined;
               return false;
+            }
+            // Markdown ownership only matters for a candidate that can start a tool-call
+            // tag; ordinary HTML/JSX markup must not re-parse the whole reply per delta.
+            if (TOOL_CALL_QUICK_RE.test(candidate)) {
+              codeRegions ??= findCodeRegions(text);
+              // Appends cannot revoke block code after its opening line is complete.
+              // Inline code can still change ownership through tables and references.
+              const protectedBlock = codeRegions.some(
+                (region) =>
+                  region.block &&
+                  region.start <= start &&
+                  start < region.end &&
+                  /[\r\n]/.test(text.slice(region.start, start)),
+              );
+              if (!protectedBlock) {
+                active = true;
+                return true;
+              }
             }
             start = next;
           }
