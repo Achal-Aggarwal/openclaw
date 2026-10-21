@@ -703,4 +703,83 @@ describe("Telegram preview and presentation delivery through HTTP", () => {
       expect(JSON.stringify(calls)).not.toContain("private-provider-http-500");
     },
   );
+
+  it.each([
+    ["direct", "automatic", false],
+    ["direct", "automatic", true],
+    ["direct", "message_tool", false],
+    ["direct", "message_tool", true],
+    ["group", "automatic", false],
+    ["group", "automatic", true],
+    ["group", "message_tool", false],
+    ["group", "message_tool", true],
+  ] as const)(
+    "respects send denial for %s/%s commentary (denied=%s)",
+    async (chat, ownership, denied) => {
+      const commentary = "Checking the requested workspace.";
+      const finalText = "The requested inspection is complete.";
+      const context = http.createContext();
+      context.isGroup = chat === "group";
+      context.ctxPayload.ChatType = chat;
+      context.ctxPayload.WasMentioned = chat === "group";
+      if (chat === "group") {
+        const group = { id: -100123, type: "supergroup" as const, title: "Inspection fixture" };
+        context.chatId = group.id;
+        context.msg.chat = group;
+        context.primaryCtx.message.chat = group;
+        context.route.sessionKey = "agent:default:telegram:group:-100123";
+        Object.assign(context.ctxPayload, {
+          SessionKey: context.route.sessionKey,
+          From: "telegram:group:-100123",
+          To: "telegram:-100123",
+        });
+      }
+      await dispatchProgressTurn(
+        async (options) => {
+          await options?.onItemEvent?.({
+            kind: "preamble",
+            itemId: "preamble",
+            phase: "end",
+            progressText: commentary,
+          });
+          await emitToolStart(options, {
+            name: "exec",
+            toolCallId: "inspect-tool",
+            phase: "start",
+          });
+          if (!denied) {
+            await waitForBotApiCall((call) => String(call.fields.text).includes(commentary));
+            expect([...visibleMessages.values()].join("\n")).toContain(commentary);
+          }
+        },
+        {
+          mode: "progress",
+          toolProgress: true,
+          context,
+          telegramCfg: {
+            streaming: { mode: "progress", progress: { commentary: true, toolProgress: true } },
+          },
+          cfg: {
+            messages: { visibleReplies: ownership, groupChat: { visibleReplies: ownership } },
+            ...(denied ? { session: { sendPolicy: { default: "deny" } } } : {}),
+          },
+          finalReply: { text: finalText },
+        },
+      );
+      if (denied) {
+        expect(
+          calls.filter((call) =>
+            ["sendMessage", "editMessageText", "deleteMessage", "sendChatAction"].includes(
+              call.method,
+            ),
+          ),
+        ).toEqual([]);
+      } else {
+        expect(calls.some((call) => call.method === "deleteMessage")).toBe(true);
+      }
+      expect([...visibleMessages.values()]).toEqual(
+        !denied && ownership === "automatic" ? [finalText] : [],
+      );
+    },
+  );
 });

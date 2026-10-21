@@ -158,6 +158,9 @@ export async function prepareDispatchExecution(state: ChooseDispatchRouteReadySt
     forwardWhenSourceDeliverySuppressed?: boolean;
     requiresToolSummaryVisibility?: boolean;
   }) => {
+    if (state.sendPolicyDenied) {
+      return false;
+    }
     if (
       options?.requiresToolSummaryVisibility === true &&
       !shouldSendToolSummaries() &&
@@ -169,7 +172,6 @@ export async function prepareDispatchExecution(state: ChooseDispatchRouteReadySt
     return (
       !state.suppressAutomaticSourceDelivery ||
       (allowSuppressedSourceProgressCallbacks &&
-        !state.sendPolicyDenied &&
         options?.forwardWhenSourceDeliverySuppressed === true)
     );
   };
