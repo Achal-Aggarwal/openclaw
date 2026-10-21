@@ -184,6 +184,8 @@ class Monitor {
       unregisterChild: (child) => this.unregisterChild(child),
       abandon: (state, child, assertCurrent) =>
         this.assignments.abandon(state, child, assertCurrent),
+      settleNestedCompletion: (state, child, assertCurrent) =>
+        this.assignments.settleNestedCompletion(state, child, assertCurrent),
       releaseClientRetentionIfIdle: () => this.releaseClientRetentionIfIdle(),
     });
     this.turnObservation = new CodexNativeSubagentTurnObservation({
@@ -329,6 +331,10 @@ class Monitor {
           revision.release();
         }
       },
+      // A completed middle child may already be absent from the saved inventory.
+      isNativeChildThread: async (threadId) =>
+        this.knownChildren.has(threadId) ||
+        (await this.historyRecovery.isNativeChildThread(threadId)),
       restore: async (state, assignment, recovery, custody) => {
         const existing =
           this.childStates.get(assignment.runId) ??

@@ -66,6 +66,12 @@ export class CodexNativeSubagentHistoryRecovery {
     );
   }
 
+  async isNativeChildThread(threadId: string): Promise<boolean> {
+    // A completed middle child may already be absent from the saved inventory.
+    const response = await this.requestThreadRead(threadId, false);
+    return response.thread.id === threadId && Boolean(readThreadParentThreadId(response.thread));
+  }
+
   async read(
     assignment: NativeSubagentAssignment,
     options: {
