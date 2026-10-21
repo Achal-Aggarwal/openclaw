@@ -1,5 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { mergeAcceptedSessionSpawnsForRun } from "../accepted-session-spawn.js";
+import {
+  mergeAcceptedSessionSpawnsForRun,
+  retireAcceptedSessionSpawnCompletionForRun,
+  type AcceptedSessionSpawn,
+} from "../accepted-session-spawn.js";
 import { prepareSystemAgentRunAdmission } from "../admitted-run-context.js";
 import { settleFailedRequesterRun, settleRequesterRun } from "../requester-run-settlement.js";
 import type { EmbeddedAgentRunResult } from "./types.js";
@@ -12,7 +16,7 @@ vi.mock("../subagents/registry/subagent-registry.js", () => ({
 
 const assertCurrent = vi.fn();
 const requester = { sessionKey: "agent:main:main", agentId: "main", runId: "parent" };
-const acceptedSessionSpawns = [
+const acceptedSessionSpawns: [AcceptedSessionSpawn] = [
   { runId: "child", childSessionKey: "agent:main:subagent:child", expectsCompletionMessage: true },
 ];
 
@@ -76,6 +80,80 @@ describe("logical requester settlement", () => {
       admission.close();
     }
   });
+
+  it("keeps confirmed cancellations retired when a stale harness receipt is settled", async () => {
+    const admission = prepareSystemAgentRunAdmission({}, requester.runId, "main", "cancel-test");
+    try {
+      await admission.admit("embedded");
+      mergeAcceptedSessionSpawnsForRun(admission.operationalRunInstance, acceptedSessionSpawns);
+      const cancelled = acceptedSessionSpawns[0];
+      const replacement = {
+        runId: "replacement",
+        childSessionKey: "agent:main:subagent:replacement",
+        expectsCompletionMessage: true,
+      };
+      retireAcceptedSessionSpawnCompletionForRun(admission.operationalRunInstance, cancelled);
+      const result: EmbeddedAgentRunResult = {
+        acceptedSessionSpawns: [cancelled, replacement],
+        meta: { durationMs: 1, yielded: true },
+      };
+
+      settleRequesterRun({ ...requester, preparedRunAdmission: admission }, result, assertCurrent);
+
+      expect(registry.settle).toHaveBeenCalledExactlyOnceWith({
+        requesterSessionKey: requester.sessionKey,
+        requesterAgentId: requester.agentId,
+        requesterTurnRunId: requester.runId,
+        requesterYielded: true,
+        acceptedSessionSpawns: [{ ...cancelled, expectsCompletionMessage: false }, replacement],
+      });
+      expect(result.requesterContinuationSettled).toBe(true);
+      expect(cancelled.expectsCompletionMessage).toBe(true);
+    } finally {
+      admission.close();
+    }
+  });
+
+  it.each(["another run instance", "another child session", "unknown run"] as const)(
+    "preserves the required completion when cancellation names %s",
+    async (target) => {
+      const admission = prepareSystemAgentRunAdmission({}, requester.runId, "main", "cancel-test");
+      const other = prepareSystemAgentRunAdmission({}, requester.runId, "main", "other");
+      try {
+        await admission.admit("embedded");
+        mergeAcceptedSessionSpawnsForRun(admission.operationalRunInstance, acceptedSessionSpawns);
+        retireAcceptedSessionSpawnCompletionForRun(
+          target === "another run instance"
+            ? other.operationalRunInstance
+            : admission.operationalRunInstance,
+          {
+            ...acceptedSessionSpawns[0],
+            ...(target === "another child session"
+              ? { childSessionKey: "agent:main:subagent:other" }
+              : {}),
+            ...(target === "unknown run" ? { runId: "unknown" } : {}),
+          },
+        );
+
+        settleRequesterRun(
+          { ...requester, preparedRunAdmission: admission },
+          makeResult({ yielded: true }),
+          assertCurrent,
+        );
+
+        expect(registry.settle).toHaveBeenCalledExactlyOnceWith({
+          requesterSessionKey: requester.sessionKey,
+          requesterAgentId: requester.agentId,
+          requesterTurnRunId: requester.runId,
+          requesterYielded: true,
+          acceptedSessionSpawns,
+        });
+      } finally {
+        admission.close();
+        other.close();
+      }
+    },
+  );
 
   it("surfaces failed persistence without acknowledging a successor", () => {
     registry.settle.mockImplementation(() => {

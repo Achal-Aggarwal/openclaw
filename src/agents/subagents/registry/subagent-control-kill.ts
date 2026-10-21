@@ -1,9 +1,12 @@
 /** Authorized tree and admin subagent kill orchestration. */
 import { resolveSubagentLabel } from "../../../auto-reply/reply/subagents-utils.js";
 import type { OpenClawConfig } from "../../../config/types.openclaw.js";
+import { getActiveAgentRunDelegatedAuthority } from "../../../infra/agent-run-registry.js";
 import { formatErrorMessage } from "../../../infra/errors.js";
 import { hasSqliteWorkerOutcomeUnknown } from "../../../infra/sqlite-worker-contract.js";
+import { retireAcceptedSessionSpawnCompletionForRun } from "../../accepted-session-spawn.js";
 import { resolveSubagentRequesterAgentId } from "../../subagent-requester-owner.js";
+import { getGatewayToolCallerIdentity } from "../../tools/gateway-caller-context.js";
 import {
   killSubagentRun,
   resolveSubagentKillTargetState,
@@ -418,6 +421,26 @@ export async function killSubagentRunAdmin(
       }
       const targetState = ownsOutcome ? resolveSubagentKillTargetState(tree.entry) : undefined;
       const { errors } = collectKillErrors([tree], tree);
+      const caller = getGatewayToolCallerIdentity();
+      const instance = caller?.operationalRunInstance;
+      if (
+        errors.length === 0 &&
+        targetState?.state === "terminal" &&
+        targetState.task.status === "cancelled" &&
+        caller &&
+        instance &&
+        instance.runId === tree.entry.requesterTurnRunId &&
+        caller.sessionKey === tree.entry.requesterSessionKey &&
+        caller.agentId === resolveSubagentRequesterAgentId(params.cfg, tree.entry) &&
+        getActiveAgentRunDelegatedAuthority(instance)?.operationalRunInstance === instance
+      ) {
+        // Reconcile only the final acknowledged cancellation, after native cleanup
+        // and outcome ownership checks, before its registry witness is released.
+        retireAcceptedSessionSpawnCompletionForRun(instance, {
+          runId: tree.entry.taskRunId ?? tree.entry.runId,
+          childSessionKey: tree.entry.childSessionKey,
+        });
+      }
       return publish({
         ...result,
         ...(targetState ? { targetState } : {}),
