@@ -369,7 +369,18 @@ describe("doctor state integrity oauth dir checks", () => {
     expect(stateIntegrityText()).not.toContain("CRITICAL: OAuth dir missing");
   });
 
-  it("prompts for oauth dir when a channel dmPolicy is pairing", async () => {
+  function expectAdvisoryOAuthFinding(cfg: OpenClawConfig): void {
+    const findings = detectStateIntegrityHealthIssues(cfg).map(stateIntegrityIssueToHealthFinding);
+    expect(findings).toContainEqual(
+      expect.objectContaining({
+        message: "OAuth dir is missing.",
+        severity: "warning",
+      }),
+    );
+    expect(findings.some((finding) => finding.severity === "error")).toBe(false);
+  }
+
+  it("warns without blocking readiness when oauth dir is missing for a pairing dmPolicy", async () => {
     const cfg: OpenClawConfig = {
       channels: {
         telegram: {
@@ -377,9 +388,11 @@ describe("doctor state integrity oauth dir checks", () => {
         },
       },
     };
+    expectAdvisoryOAuthFinding(cfg);
     const confirmRuntimeRepair = await runStateIntegrity(cfg);
     expect(hasRepairPromptMessage(confirmRuntimeRepair, "Create OAuth dir at")).toBe(true);
-    expect(stateIntegrityText()).toContain("CRITICAL: OAuth dir missing");
+    expect(stateIntegrityText()).toContain("OAuth dir missing");
+    expect(stateIntegrityText()).not.toContain("CRITICAL: OAuth dir missing");
   });
 
   it("does not require the oauth dir for a pairing channel with no registered plugin", async () => {
@@ -396,12 +409,14 @@ describe("doctor state integrity oauth dir checks", () => {
     expect(stateIntegrityText()).not.toContain("CRITICAL: OAuth dir missing");
   });
 
-  it("prompts for oauth dir when OPENCLAW_OAUTH_DIR is explicitly configured", async () => {
+  it("warns without blocking readiness when OPENCLAW_OAUTH_DIR is explicitly configured", async () => {
     process.env.OPENCLAW_OAUTH_DIR = path.join(tempHome, ".oauth");
     const cfg: OpenClawConfig = {};
+    expectAdvisoryOAuthFinding(cfg);
     const confirmRuntimeRepair = await runStateIntegrity(cfg);
     expect(hasRepairPromptMessage(confirmRuntimeRepair, "Create OAuth dir at")).toBe(true);
-    expect(stateIntegrityText()).toContain("CRITICAL: OAuth dir missing");
+    expect(stateIntegrityText()).toContain("OAuth dir missing");
+    expect(stateIntegrityText()).not.toContain("CRITICAL: OAuth dir missing");
   });
 
   it.each([
