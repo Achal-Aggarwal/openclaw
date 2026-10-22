@@ -704,4 +704,66 @@ describe("stable read-only snapshot copies", () => {
     expect(descriptors.size).toBe(0);
     expect(fs.readdirSync(fixture.sourceRoot)).toEqual(["source.sqlite"]);
   });
+
+  it("does not recopy a stable WAL family when a reader creates its wal-index", () => {
+    const fixture = createFixture(Buffer.alloc(0));
+    const sqlite = requireNodeSqlite();
+    const writer = new sqlite.DatabaseSync(fixture.sourcePath);
+    let family: Buffer[];
+    try {
+      writer.exec(`
+        PRAGMA journal_mode = WAL;
+        PRAGMA wal_autocheckpoint = 0;
+        CREATE TABLE probe (value TEXT);
+        INSERT INTO probe VALUES ('retained in WAL');
+      `);
+      family = ["", "-wal"].map((suffix) => fs.readFileSync(fixture.sourcePath + suffix));
+    } finally {
+      writer.close();
+    }
+    // Retain the WAL without a live connection or its wal-index.
+    for (const [index, suffix] of ["", "-wal"].entries()) {
+      fs.writeFileSync(fixture.sourcePath + suffix, family[index]!);
+    }
+    fs.rmSync(`${fixture.sourcePath}-shm`, { force: true });
+    const open = fs.openSync.bind(fs);
+    let mainOpens = 0;
+    vi.spyOn(fs, "openSync").mockImplementation((pathname, flags, mode) => {
+      if (path.resolve(String(pathname)) === fixture.sourcePath) {
+        mainOpens += 1;
+      }
+      return open(pathname, flags, mode);
+    });
+    const prepareAndRead = () => {
+      const prepared = prepareSqliteReadOnlyLocationSyncInProcess(
+        fixture.sourcePath,
+        fixture.stagingRoot,
+      );
+      try {
+        const snapshot = new sqlite.DatabaseSync(prepared.location, { readOnly: true });
+        try {
+          expect(snapshot.prepare("SELECT value FROM probe").all()).toEqual([
+            { value: "retained in WAL" },
+          ]);
+        } finally {
+          snapshot.close();
+        }
+      } finally {
+        expect(prepared.cleanup()).toBe(true);
+      }
+    };
+    prepareAndRead();
+    const stableOpens = mainOpens;
+    mainOpens = 0;
+    // A concurrent reader creates the transient wal-index mid-copy.
+    const injected = afterFirstCopy(() => {
+      fs.writeFileSync(`${fixture.sourcePath}-shm`, Buffer.alloc(32 * 1024));
+    });
+    prepareAndRead();
+    expect(injected()).toBe(true);
+    expect(mainOpens).toBe(stableOpens);
+    expect(["", "-wal"].map((suffix) => fs.readFileSync(fixture.sourcePath + suffix))).toEqual(
+      family,
+    );
+  });
 });
