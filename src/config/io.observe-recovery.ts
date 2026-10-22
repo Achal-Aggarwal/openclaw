@@ -548,6 +548,20 @@ export async function promoteConfigSnapshotToLastKnownGoodCore(params: {
     stat,
     observedAt: now,
   });
+  const entry = readConfigHealthEntry(healthSnapshot.state, snapshot.path);
+  const suspiciousReasons = resolveConfigObserveSuspiciousReasons({
+    bytes: current.bytes,
+    hasMeta: current.hasMeta,
+    gatewayMode: current.gatewayMode,
+    parsed: snapshot.parsed,
+    lastKnownGood: entry.lastKnownGood,
+  });
+  if (suspiciousReasons.length > 0) {
+    params.logger?.warn(
+      `Config last-known-good promotion skipped: ${snapshot.path} (${suspiciousReasons.join(", ")})`,
+    );
+    return false;
+  }
   const lastGoodPath = `${snapshot.path}.last-good`;
   if (!health.isCurrent()) {
     return false;
