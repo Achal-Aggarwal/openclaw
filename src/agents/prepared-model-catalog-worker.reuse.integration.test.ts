@@ -286,7 +286,7 @@ module.exports = { id: ${JSON.stringify(provider)}, register(api) {
         .slice(before)
         .map((entry) => entry.provider)
         .toSorted(),
-    ).toEqual(index === 0 ? [PROVIDER_ID, ...providerIds].toSorted() : []);
+    ).toEqual(index === 0 ? providerIds.toSorted() : []);
     const expanded = registrations();
     const footprint = readCatalogCaptureFootprint(captureRoot);
     // Retired capture files disappear even if native ESM payloads remain cached.
@@ -296,12 +296,16 @@ module.exports = { id: ${JSON.stringify(provider)}, register(api) {
     expect(readCatalogCaptureFootprint(captureRoot)).toEqual(footprint);
   }
   const retained = JSON.parse(fs.readFileSync(path.join(fixture.root, "retention.json"), "utf8"));
-  console.log("Retired catalog registries", JSON.stringify(retained));
-  expect(retained.controlCollected).toBe(true);
-  // The auth-only base is replaced once for all known owners; both native exports stay rooted.
-  expect(retained.captured).toBe(2);
-  expect(retained.nativeExports).toBe(retained.captured);
-  expect(retained.registries).toBe(1);
+  const retainedShape = {
+    controlCollected: true,
+    captured: 1,
+    currentExportAlive: true,
+    registries: 1,
+  };
+  expect(retained).toMatchObject(retainedShape);
+  // Scope growth keeps the auth-only base registration and its native export.
+  expect(retained.nativeExports).toBeGreaterThanOrEqual(1);
+  expect(retained.nativeExports).toBeLessThanOrEqual(retained.captured);
   const warmedRegistrations = registrations();
   const warmedFootprint = readCatalogCaptureFootprint(captureRoot);
   expect(warmedFootprint.bytes).toBeGreaterThan(0);
@@ -362,7 +366,7 @@ module.exports = { id: ${JSON.stringify(provider)}, register(api) {
   for (const sample of heap) {
     // Engines may collect the retired ESM payload; the current capture must remain usable.
     expect(sample.payloads).toBeGreaterThanOrEqual(1);
-    expect(sample.payloads).toBeLessThanOrEqual(2);
+    expect(sample.payloads).toBe(1);
     expect(sample.currentPayload).toEqual({
       filename: currentFilename,
       row: 99_999,
