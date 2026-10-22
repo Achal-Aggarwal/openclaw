@@ -206,11 +206,13 @@ export async function runDoctorSessionSqlite(
               verifyMissingIndex,
               deferredPluginIds: deferredPluginSessionStoreIds({ target, pending: pendingPlugins }),
             });
-        report.issues.push(
-          ...settlements
-            .filter((item) => item.target.storePath === target.storePath)
-            .flatMap((item) => item.issues),
-        );
+        for (const item of settlements) {
+          if (item.target.storePath === target.storePath) {
+            for (const issue of item.issues) {
+              report.issues.push(issue);
+            }
+          }
+        }
         return report;
       },
     });
@@ -259,11 +261,13 @@ export async function runDoctorSessionSqlite(
     );
   }
   for (const report of reports) {
-    report.issues.push(
-      ...settlements
-        .filter((item) => item.target.storePath === report.storePath)
-        .flatMap((item) => item.issues),
-    );
+    for (const item of settlements) {
+      if (item.target.storePath === report.storePath) {
+        for (const issue of item.issues) {
+          report.issues.push(issue);
+        }
+      }
+    }
   }
   if (activeRun && coverage) {
     for (const owner of archiveTargets) {
@@ -583,11 +587,11 @@ export async function settleRetainedDoctorSessionSources(
       owner.report.issues.some((issue) => !isRetainedSourceIssue(issue)),
     );
     for (const [index, owner] of owners.entries()) {
-      owner.report.issues.push(
-        ...plan.owners[index]!.owner.report.issues.filter(
-          (issue) => issue.code === "plugin_migration_source_retained",
-        ),
-      );
+      for (const issue of plan.owners[index]!.owner.report.issues) {
+        if (issue.code === "plugin_migration_source_retained") {
+          owner.report.issues.push(issue);
+        }
+      }
       if (failedOwners.length === 0 || failedOwners.includes(owner)) {
         const ownIssue = owner.report.issues.find(
           (issue) =>

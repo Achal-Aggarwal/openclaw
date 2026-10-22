@@ -52,7 +52,9 @@ export function readSessionSqliteMigrationWarnings(env = process.env): string[] 
         continue;
       }
       seen.add(key);
-      warnings.push(...formatSessionSqliteMigrationWarnings([target], env));
+      for (const warning of formatSessionSqliteMigrationWarnings([target], env)) {
+        warnings.push(warning);
+      }
     }
   }
   return warnings;

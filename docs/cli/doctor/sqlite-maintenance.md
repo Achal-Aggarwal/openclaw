@@ -69,6 +69,8 @@ compatible backup or upgrade OpenClaw for a newer schema.
 Canonical session-key repair follows complete transcript-owner alias chains, including
 long chains in large databases. It preserves the terminal owner's session key and
 retained transcript history; shortening history is not required to bound the repair's stack.
+Archived registry discovery and recovery diagnostics also process complete
+inventories without expanding them into function arguments.
 
 Runtime session rows and transcripts live in SQLite, by default at
 `~/.openclaw/agents/<agentId>/agent/openclaw-agent.sqlite`. Gateway startup uses

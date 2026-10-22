@@ -61,9 +61,15 @@ export async function restoreSessionSqliteMigrationRuns(params: {
       manifestRestoreReport,
       restorePlan,
     );
-    restoreReport.conflicts.push(...manifestRestoreReport.conflicts);
-    restoreReport.restoredFiles.push(...manifestRestoreReport.restoredFiles);
-    restoreReport.skippedFiles.push(...manifestRestoreReport.skippedFiles);
+    for (const conflict of manifestRestoreReport.conflicts) {
+      restoreReport.conflicts.push(conflict);
+    }
+    for (const file of manifestRestoreReport.restoredFiles) {
+      restoreReport.restoredFiles.push(file);
+    }
+    for (const file of manifestRestoreReport.skippedFiles) {
+      restoreReport.skippedFiles.push(file);
+    }
     writeSessionSqliteMigrationManifest({ manifest, manifestPath });
   }
   return restoreReport;

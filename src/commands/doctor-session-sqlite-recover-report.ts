@@ -139,12 +139,12 @@ export async function recoverDoctorSessionSqliteTargets(params: {
   const reportTarget =
     targetReports[0] ?? createSyntheticRecoverTargetReport(params.env, failedRun.manifestPath);
   reportTarget.restore = restore;
-  reportTarget.issues.push(
-    ...restore.conflicts.map((conflict) => ({
+  for (const conflict of restore.conflicts) {
+    reportTarget.issues.push({
       code: "restore_conflict",
       message: `${conflict.sourcePath}: ${conflict.reason}`,
-    })),
-  );
+    });
+  }
   const report = summarizeRecoverReport(targetReports.length > 0 ? targetReports : [reportTarget]);
   if (report.totals.issues === 0) {
     report.migrationRun = {
