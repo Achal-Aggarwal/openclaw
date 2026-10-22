@@ -320,3 +320,109 @@ it.each([
     }
   },
 );
+
+const lastJsonCall = () => vi.mocked(defaultRuntime.writeJson).mock.lastCall;
+function preflightOutcome(
+  preflight: MockInstance<typeof runtimePlan.resolvePackageRuntimePreflight>,
+) {
+  const result = expectDefined(preflight.mock.results.at(-1), "runtime refusal");
+  if (result.type !== "return") {
+    throw new Error("Runtime preflight did not return its outcome");
+  }
+  return result.value;
+}
+
+it.each([
+  ["extended-stable", "2026.8.33", "--channel extended-stable", null],
+  ["beta", "2026.9.4-beta.1", "--tag 2026.9.4-beta.1", null],
+  ["dev", "2026.9.4-dev.1", "--tag 2026.9.4-dev.1", null],
+  ["stable", "2026.8.33", "--channel extended-stable", "extended-stable"],
+  ["extended-stable", "2026.9.4-beta.1", "--channel beta --tag 2026.9.4-beta.1", "beta"],
+] as const)(
+  "replays runtime recovery for saved %s (%s, %s, requested=%s) through the target resolver",
+  async (channel, version, selector, requestedChannel) => {
+    vi.stubEnv("OPENCLAW_PROFILE", undefined);
+    const configPath = expectDefined(process.env.OPENCLAW_CONFIG_PATH, "isolated config path");
+    fsSync.mkdirSync(path.dirname(configPath), { recursive: true });
+    const config = JSON.stringify({ update: { channel } });
+    fsSync.writeFileSync(configPath, config);
+    fixture.managedServiceNodeRunner = "/home/operator/.nvm/versions/node/v22.18.0/bin/node";
+    const captureRuntime = activationPaths.capturePackageActivationRuntime;
+    vi.spyOn(activationPaths, "capturePackageActivationRuntime").mockImplementation(
+      (kind, executable) =>
+        executable === fixture.managedServiceNodeRunner
+          ? { kind, path: executable, identity: "synthetic-service-node" }
+          : captureRuntime(kind, executable),
+    );
+    const prepare = expectDefined(
+      vi.mocked(commandRun.prepareUpdateCommand).getMockImplementation(),
+      "fixture preparation",
+    );
+    vi.mocked(commandRun.prepareUpdateCommand).mockImplementation(async (options) => ({
+      ...(await prepare(options)),
+      requestedChannel: normalizeUpdateChannel(options.channel),
+    }));
+    vi.mocked(packageMetadata.fetchNpmPackageTargetStatus).mockImplementation(async () => ({
+      ...targetMetadata,
+      version,
+      nodeEngine: ">=24.16.0",
+    }));
+    vi.mocked(updateCheck.resolveNpmChannelTag).mockResolvedValue({ tag: channel, version });
+    vi.mocked(shared.resolveTargetVersion).mockResolvedValue({ version });
+    const runtime = vi.spyOn(runtimePaths, "resolveNodeRuntimeInfo");
+    runtime.mockResolvedValue(unsupportedServiceRuntimeFixture);
+    const preflight = vi.spyOn(runtimePlan, "resolvePackageRuntimePreflight");
+
+    const options = {
+      admission: "installed" as const,
+      channel: requestedChannel ?? undefined,
+      json: true,
+      yes: true,
+      restart: false,
+      ...(channel === "dev" ? { tag: version } : {}),
+    };
+    await updateCommand({ ...options, dryRun: true });
+
+    const runtimeRefusal = await preflightOutcome(preflight);
+    expect(runtimeRefusal.ok).toBe(false);
+    expect(lastJsonCall()).toMatchObject([
+      {
+        storedChannel: channel,
+        targetVersion: version,
+        failures: [expect.objectContaining({ reason: "preflight-node-runtime-incompatible" })],
+      },
+    ]);
+    await expect(updateCommand(options)).rejects.toBeInstanceOf(Error);
+    const mutableRefusal = await preflightOutcome(preflight);
+    expect(mutableRefusal.recoverySteps).toEqual(runtimeRefusal.recoverySteps);
+    const continuation = expectDefined(
+      runtimeRefusal.recoverySteps?.find((step) => step.kind === "continue-update"),
+      "retained-launcher continuation",
+    );
+    if (!("command" in continuation)) {
+      throw new Error("Runtime recovery did not provide a continuation command");
+    }
+    const command = continuation.command;
+    const launcher = `node ${quote(path.join(fixture.root, "openclaw.mjs"))} `;
+    expect(command.slice(0, launcher.length)).toBe(launcher);
+    runtime.mockResolvedValue(runtimeFixture("26.1.0", "3.53.0"));
+    const program = new Command();
+    registerUpdateCli(program);
+
+    const replayArgs = command.slice(launcher.length).split(" ");
+    await program.parseAsync([...replayArgs, "--dry-run", "--json", "--yes", "--no-restart"], {
+      from: "user",
+    });
+
+    expect(lastJsonCall()).toMatchObject([
+      {
+        effectiveChannel: requestedChannel ?? channel,
+        targetVersion: version,
+      },
+    ]);
+    expect(lastJsonCall()?.[0]).not.toHaveProperty("failures");
+    expect(command).toBe(`${launcher}update ${selector}`);
+    expect(packageUpdate.stagePackageInstallUpdate).not.toHaveBeenCalled();
+    expect(fsSync.readFileSync(configPath, "utf8")).toBe(config);
+  },
+);
