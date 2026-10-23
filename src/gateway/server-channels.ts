@@ -568,7 +568,10 @@ export function createChannelManager(opts: ChannelManagerOptions): ChannelManage
               startOutcomes.set(id, { status: "skipped", reason: "manual-stop" });
               return;
             }
-            if (!timedOutRecovery || !recoveryStartRequested.has(rKey)) {
+            if (
+              !timedOutRecovery ||
+              (!recoveryStartRequested.has(rKey) && optsValue.manual !== true)
+            ) {
               if (timedOutRecovery) {
                 recoveryStartRequested.add(rKey);
                 setRuntime(channelId, id, { restartPending: true });
@@ -1283,8 +1286,8 @@ export function createChannelManager(opts: ChannelManagerOptions): ChannelManage
               });
             } else {
               setStoppedRuntime(channelId, id, stoppedPatch);
-              recoveryStopTimedOut.add(rKey);
             }
+            recoveryStopTimedOut.add(rKey);
             return outcome;
           }
           clearRecoveryState(rKey);
