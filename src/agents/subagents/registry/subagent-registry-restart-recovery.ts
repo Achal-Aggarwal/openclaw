@@ -18,6 +18,8 @@ import {
   subagentRuns,
 } from "./subagent-registry-memory.js";
 import { assertSubagentRegistryWriteSourceCurrent } from "./subagent-registry-persistence.js";
+import { appendDeniedSubagentRecoveryNotice } from "./subagent-registry-recovery-notice.js";
+import { getUnrestorableSubagentCompletionSourceReason } from "./subagent-registry-requester-source.js";
 import {
   isRestartRecoveryLifecycleCurrent,
   ownsSubagentSessionExecution,
@@ -281,15 +283,17 @@ export async function recoverInterruptedSubagentRow(
       }
       return Boolean(
         physicalStorePath &&
-        findRequesterSettleWakeRecoveryBatch({
-          runId,
-          requesterSessionKey: childSessionKey,
-          requesterAgentId: sessionAgentId,
-          sessionId,
-          lifecycleRevision,
-          storePath: physicalStorePath,
-          gatewayRuntime: params.gatewayRuntime,
-        }),
+        findRequesterSettleWakeRecoveryBatch(
+          {
+            runId,
+            requesterSessionKey: childSessionKey,
+            requesterAgentId: sessionAgentId,
+            sessionId,
+            lifecycleRevision,
+            storePath: physicalStorePath,
+            gatewayRuntime: params.gatewayRuntime,
+          },
+        ),
       );
     };
     if (!replayTerminal && hasPendingRequesterSettleWake()) {
@@ -406,6 +410,20 @@ export async function recoverInterruptedSubagentRow(
       }
       return true;
     };
+    await appendDeniedSubagentRecoveryNotice({
+      runId,
+      reason: getUnrestorableSubagentCompletionSourceReason(entry),
+      agentId: sessionAgentId,
+      sessionKey: childSessionKey,
+      storePath,
+      entry: sessionEntry,
+      suppressSessionEffects,
+      assertCurrent: () => {
+        if (!isRecoveryHostCurrent()) {
+          throw new Error("Subagent recovery notice owner changed");
+        }
+      },
+    });
     return {
       status: "terminal",
       recoveryCurrent: {

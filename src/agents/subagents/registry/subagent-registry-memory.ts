@@ -217,6 +217,14 @@ class SubagentRunMap extends Map<string, SubagentRunRecord> {
   private readonly operatorCompletionEntries = new WeakSet<object>();
   private readonly retiredCompletionEntries = new WeakSet<object>();
 
+  requireCompletionAuthority(entry: SubagentRunRecord): void {
+    this.operatorCompletionEntries.add(getSubagentRunRuntimeKey(entry));
+  }
+
+  hasCompletionAuthority(entry: SubagentRunRecord): boolean {
+    return this.completionAuthorities.has(getSubagentRunRuntimeKey(entry));
+  }
+
   retireCompletionAuthority(observed: SubagentRunRecord): void {
     const entry = this.currentValue(observed);
     this.retiredCompletionEntries.add(getSubagentRunRuntimeKey(entry));
@@ -299,7 +307,11 @@ class SubagentRunMap extends Map<string, SubagentRunRecord> {
     ) {
       return run();
     }
-    if (this.operatorCompletionEntries.has(getSubagentRunRuntimeKey(entry)) && !custody) {
+    if (
+      (entry.completionAuthorityRequired ||
+        this.operatorCompletionEntries.has(getSubagentRunRuntimeKey(entry))) &&
+      !custody
+    ) {
       throw new Error("Subagent completion authority is no longer active");
     }
     return custody ? custody.authority.run(run) : run();
@@ -326,11 +338,24 @@ class SubagentRunMap extends Map<string, SubagentRunRecord> {
     for (const entry of batch) {
       const source = this.completionAuthorities.get(getSubagentRunRuntimeKey(entry))?.authority
         .operatorAuthority;
-      if (this.operatorCompletionEntries.has(getSubagentRunRuntimeKey(entry)) && !source) {
+      if (
+        (entry.completionAuthorityRequired ||
+          this.operatorCompletionEntries.has(getSubagentRunRuntimeKey(entry))) &&
+        !source
+      ) {
         throw new Error("Subagent completion authority is no longer active");
       }
       source?.assertCurrent();
-      if (source?.source !== first?.source || !isDeepStrictEqual(source?.scopes, first?.scopes)) {
+      if (
+        (source?.source !== first?.source &&
+          !(
+            entry.operatorRecoverySource &&
+            resultEntry.operatorRecoverySource &&
+            isDeepStrictEqual(entry.operatorRecoverySource, resultEntry.operatorRecoverySource) &&
+            isDeepStrictEqual(source?.recoverySnapshot, first?.recoverySnapshot)
+          )) ||
+        !isDeepStrictEqual(source?.scopes, first?.scopes)
+      ) {
         throw new Error("Subagent completion batch has incompatible operator authority");
       }
     }
