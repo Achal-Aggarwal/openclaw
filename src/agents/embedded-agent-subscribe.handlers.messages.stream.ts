@@ -16,7 +16,8 @@ import {
   readAssistantTextBlocksForPhase,
 } from "../shared/chat-message-content.js";
 import { toolCallXmlTextFilter } from "../shared/text/assistant-visible-text.js";
-import { trimTextPreservingCode } from "../shared/text/text-projection.js";
+import { downgradedToolCallTextFilter } from "../shared/text/downgraded-tool-call-text.js";
+import { createTextProjection, trimTextPreservingCode } from "../shared/text/text-projection.js";
 import {
   findDirectiveCodePrefix,
   type StreamDirectiveCodePrefix,
@@ -302,6 +303,7 @@ export function resolveStreamingReply(params: {
   parsedStreamDirectives: ReplyDirectiveParseResult | null;
   previousAudioDirectiveCount: number;
   rawDirectiveSource?: string;
+  rawProjectionText?: string;
   directiveCodePrefix?: StreamDirectiveCodePrefix;
 }): {
   text: string;
@@ -401,10 +403,12 @@ export function resolveStreamingReply(params: {
     const source =
       params.rawDirectiveSource === undefined
         ? params.next
-        : toolCallXmlTextFilter(
-            { stripFunctionCallsXmlPayloads: true },
-            params.evtType !== "text_end",
-          ).transform(stripDowngradedToolCallText(params.rawDirectiveSource));
+        : params.evtType !== "text_end" && params.rawProjectionText !== undefined
+          ? params.rawProjectionText
+          : toolCallXmlTextFilter(
+              { stripFunctionCallsXmlPayloads: true },
+              params.evtType !== "text_end",
+            ).transform(stripDowngradedToolCallText(params.rawDirectiveSource));
     const parsed = parseReplyDirectives(
       params.evtType === "text_end" ? source : splitTrailingDirective(source).text,
       {
@@ -453,5 +457,22 @@ export function resolveStreamingReply(params: {
     replyDirectives,
     audioDirectiveCount,
     directiveCodePrefix,
+  };
+}
+
+/** Retain raw pre-trim XML ownership independently of visible directive trimming. */
+export function createStreamingReplyResolver() {
+  const rawProjection = createTextProjection([
+    downgradedToolCallTextFilter(),
+    toolCallXmlTextFilter({ stripFunctionCallsXmlPayloads: true }, true),
+  ]);
+  return (params: Parameters<typeof resolveStreamingReply>[0] & { rawDirectiveDelta?: string }) => {
+    const rawProjectionText =
+      params.rawDirectiveSource === undefined
+        ? undefined
+        : params.rawDirectiveDelta === undefined
+          ? rawProjection.replace(params.rawDirectiveSource).text
+          : rawProjection.append(params.rawDirectiveDelta, params.rawDirectiveSource).text;
+    return resolveStreamingReply({ ...params, rawProjectionText });
   };
 }
