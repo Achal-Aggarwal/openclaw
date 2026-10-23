@@ -18,6 +18,11 @@ import {
   subscribeSubagentRunChanges,
 } from "./subagent-registry-publication.js";
 import type { SubagentRunReadRecord } from "./subagent-registry-read.types.js";
+import {
+  needsSubagentActivation,
+  subagentSweepAt,
+  SubagentRunWorkIndex,
+} from "./subagent-registry-work-index.js";
 import type { SubagentRunRecord } from "./subagent-registry.types.js";
 import {
   getSubagentRunRuntimeKey,
@@ -204,6 +209,7 @@ type CompletionCustody = {
 
 class SubagentRunMap extends Map<string, SubagentRunRecord> {
   readLookup = new SubagentSessionReadLookup();
+  readonly workIndex = new SubagentRunWorkIndex();
   private readonly retirementScopes = new Set<SubagentRetirementScope>();
   private readonly registrationScopes = new Set<{
     childSessionKey: string;
@@ -594,10 +600,12 @@ class SubagentRunMap extends Map<string, SubagentRunRecord> {
     for (const index of runIndexes) {
       index.update(runId, entry, "add");
     }
+    this.workIndex.set(runId, entry);
     return this;
   }
 
   override delete(runId: string): boolean {
+    this.workIndex.delete(runId);
     this.readLookup.set(runId, undefined);
     const prev = this.get(runId);
     if (prev) {
@@ -624,6 +632,7 @@ class SubagentRunMap extends Map<string, SubagentRunRecord> {
     this.retirementScopes.clear();
     super.clear();
     this.readLookup = new SubagentSessionReadLookup();
+    this.workIndex.clear();
     for (const index of runIndexes) {
       index.clear();
     }
@@ -632,6 +641,24 @@ class SubagentRunMap extends Map<string, SubagentRunRecord> {
 }
 
 export const subagentRuns = new SubagentRunMap();
+
+/** Publication owns membership; time only promotes due retained cleanup. */
+export function getSubagentSweepRuns(
+  runs: ReadonlyMap<string, SubagentRunRecord>,
+  now: number,
+): Iterable<SubagentRunRecord> {
+  return runs instanceof SubagentRunMap
+    ? runs.workIndex.sweepCandidates(now)
+    : [...runs.values()].filter((entry) => subagentSweepAt(entry) <= now);
+}
+
+export function getSubagentActivationRuns(
+  runs: ReadonlyMap<string, SubagentRunRecord>,
+): Iterable<SubagentRunRecord> {
+  return runs instanceof SubagentRunMap
+    ? runs.workIndex.activationRuns.values()
+    : [...runs.values()].filter(needsSubagentActivation);
+}
 
 // Immutable row publications refresh keyed membership; full replacements invalidate it.
 subscribeSubagentRunChanges("projection", ({ runIds: ids }) => {
