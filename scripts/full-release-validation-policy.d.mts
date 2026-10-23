@@ -11,6 +11,7 @@ export function buildReleaseValidationManifest(input: {
   plan: ReleaseRecord;
   drain?: ReleaseRecord;
   context: ReleaseRecord;
+  reusedManifest?: ReleaseRecord;
 }): ReleaseRecord;
 export function assertReleasePublicationKnownBudget(
   plan: ReleaseRecord,

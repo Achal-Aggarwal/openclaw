@@ -2308,6 +2308,89 @@ printf '%s\\n' '{"id":101,"event":"workflow_dispatch","path":".github/workflows/
       `console.log(JSON.stringify({
   children: ${JSON.stringify(reusedEvidenceChildren())},
   manifest: ${JSON.stringify(revalidatedManifest)},
+  root: {artifact: {digest: "sha256:${"f".repeat(64)}", id: "900", name: "full-release-validation-99-1", runAttempt: 1, sizeInBytes: 4096}},
+  releaseProfile: "stable",
+  rerunGroup: "ci"
+}));\n`,
+    );
+    const result = runCollector("decision", {
+      FAIL_FAST: "false",
+      FULL_RELEASE_EXECUTION_PLAN_PATH: executionPlanPath,
+      FULL_RELEASE_STATE_PATH: output,
+      OPENCLAW_RELEASE_CI_SUMMARY_VALIDATOR: validator,
+      PATH: `${root}:${process.env.PATH}`,
+    });
+    expect(result.status, result.stderr).not.toBe(2);
+    const decision = JSON.parse(readFileSync(output, "utf8"));
+    expect(result.status, JSON.stringify(decision.blockers)).toBe(blocker ? 1 : 0);
+    expect(decision.state).toBe(blocker ? "blocked_complete" : "passed");
+    if (blocker) {
+      expect(decision.blockers).toContainEqual(expect.objectContaining({ kind: blocker }));
+    } else {
+      expect(decision.blockers).toEqual([]);
+    }
+  });
+
+  it.each([
+    { name: "unchanged evidence artifact", mutation: "none", blocker: "" },
+    { name: "changed evidence artifact", mutation: "digest", blocker: "provenance_mismatch" },
+  ])("revalidates compact $name at the Decision boundary", ({ mutation, blocker }) => {
+    const root = tempDirs.make("frv-compact-reuse-decision-");
+    const output = join(root, "decision.json");
+    const executionPlanPath = join(root, "plan.json");
+    const gh = join(root, "gh");
+    const validator = join(root, "validator.mjs");
+    const sourceManifest = { ...evidenceManifest(), validationInputs: {} };
+    const sourceArtifact = {
+      digest: `sha256:${"f".repeat(64)}`,
+      id: "900",
+      name: "full-release-validation-99-1",
+      runAttempt: 1,
+      sizeInBytes: 4096,
+    };
+    const revalidatedArtifact = structuredClone(sourceArtifact);
+    if (mutation === "digest") {
+      revalidatedArtifact.digest = `sha256:${"e".repeat(64)}`;
+    }
+    const sealedPlan = executionPlan(
+      {
+        rerunGroup: "ci",
+        releaseProfile: "stable",
+        children: { normalCi: { result: "success", runAttempt: 1, runId: "101" } },
+      },
+      {
+        evidenceReuse: {
+          changedPaths: [],
+          evidenceSha: TARGET_SHA,
+          policy: "exact-target-full-validation-v1",
+          requested: true,
+          rootRunId: "99",
+          runUrl: "https://example.invalid/runs/99",
+          selectedRunId: "99",
+          sourceArtifact,
+        },
+      },
+    );
+    writeFileSync(executionPlanPath, JSON.stringify(sealedPlan));
+    writeFileSync(
+      gh,
+      `#!/bin/sh
+case "$*" in
+  *"/attempts/1/jobs?"*)
+    printf '%s\\n' '{"name":"test","status":"completed","conclusion":"success","started_at":"2026-08-21T00:00:00Z","completed_at":"2026-08-21T00:01:00Z","html_url":"https://example.invalid/jobs/1"}'
+    exit 0
+    ;;
+esac
+printf '%s\\n' '{"id":101,"event":"workflow_dispatch","path":".github/workflows/ci.yml@refs/heads/release-ci/tooling","display_title":"CI full-release-validation-77-1-ci","head_branch":"release-ci/tooling","head_sha":"${SHA}","run_attempt":1,"status":"completed","conclusion":"success","created_at":"2026-08-21T00:00:00Z","updated_at":"2026-08-21T00:01:00Z","html_url":"https://example.invalid/runs/101","actor":{"login":"github-actions[bot]"},"triggering_actor":{"login":"github-actions[bot]"},"repository":{"full_name":"openclaw/openclaw"}}'
+`,
+    );
+    chmodSync(gh, 0o755);
+    writeFileSync(
+      validator,
+      `console.log(JSON.stringify({
+  children: ${JSON.stringify(reusedEvidenceChildren())},
+  manifest: ${JSON.stringify(sourceManifest)},
+  root: {artifact: ${JSON.stringify(revalidatedArtifact)}},
   releaseProfile: "stable",
   rerunGroup: "ci"
 }));\n`,

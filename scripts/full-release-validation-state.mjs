@@ -505,6 +505,7 @@ async function validateReuse(executionPlan, signal) {
     if (
       evidence.releaseProfile !== process.env.RELEASE_PROFILE ||
       evidence.rerunGroup !== process.env.RERUN_GROUP ||
+      !evidence.root?.artifact ||
       !evidence.manifest ||
       typeof evidence.manifest !== "object" ||
       Array.isArray(evidence.manifest)
@@ -512,6 +513,20 @@ async function validateReuse(executionPlan, signal) {
       throw new Error("reused release evidence no longer matches the requested validation");
     }
     validateReleaseTelegramWaiverBinding(executionPlan, evidence.manifest.validationInputs);
+    if (
+      evidenceReuse.sourceArtifact &&
+      JSON.stringify(sortJsonValueKeys(evidence.root.artifact)) !==
+        JSON.stringify(sortJsonValueKeys(evidenceReuse.sourceArtifact))
+    ) {
+      throw new Error("reused release evidence artifact differs from the immutable plan");
+    }
+    if (
+      evidenceReuse.sourceManifest &&
+      JSON.stringify(sortJsonValueKeys(evidence.manifest)) !==
+        JSON.stringify(sortJsonValueKeys(evidenceReuse.sourceManifest))
+    ) {
+      throw new Error("reused release evidence manifest differs from the immutable plan");
+    }
     validateReleaseCoveragePolicyBinding(executionPlan, evidence.manifest.validationInputs);
     const source = validatePublicationSourceBinding(evidence.manifest, {
       sourceAdmissionContract: executionPlan.sourceAdmissionContract,
@@ -526,6 +541,7 @@ async function validateReuse(executionPlan, signal) {
       blockers: [],
       children: hydrateReusedPlan(plan, evidence),
       errors: [],
+      sourceArtifact: evidence.root?.artifact,
       sourceManifest: sortJsonValueKeys(evidence.manifest),
     };
   } catch (error) {
@@ -699,6 +715,7 @@ function publicationKnownBudget(record, evidenceReuse) {
     ...record,
     ...inputs,
     evidenceReuse,
+    pendingEvidenceReuse: evidenceReuse?.requested === true,
     attemptEvidenceVersion: 3,
     children: built.children,
     gates: built.gates,
@@ -909,10 +926,19 @@ async function publicationMode(mode) {
 async function writeManifestMode() {
   const plan = readArtifact(process.env.RELEASE_EXECUTION_PLAN_PATH, "execution plan");
   const drain = readArtifact(process.env.DIAGNOSTIC_DRAIN_PATH, "diagnostic drain");
+  let reusedManifest = plan.evidenceReuse.sourceManifest;
+  if (plan.evidenceReuse.requested && !reusedManifest) {
+    const reuse = await validateReuse(plan);
+    if (reuse.blockers.length > 0 || reuse.errors.length > 0 || !reuse.sourceManifest) {
+      throw new Error("release validation manifest could not revalidate reusable evidence");
+    }
+    reusedManifest = reuse.sourceManifest;
+  }
   const manifest = buildReleaseValidationManifest({
     plan,
     drain,
     context: manifestContextFromEnvironment(plan.sourceAdmission),
+    reusedManifest,
   });
   if (manifest.sourceAdmission?.validationPurpose === "publish" && manifest.rerunGroup === "all") {
     const outputDir = mkdtempSync(
@@ -955,7 +981,7 @@ function candidateRequestFromEnvironment() {
   );
 }
 
-function evidenceReuseFromInputs(planInputs, sourceManifest = {}) {
+function evidenceReuseFromInputs(planInputs, sourceArtifact = null) {
   return {
     changedPaths: changedPathsValue(planInputs.evidenceChangedPaths),
     evidenceSha: stringValue(planInputs.evidenceSha),
@@ -964,7 +990,7 @@ function evidenceReuseFromInputs(planInputs, sourceManifest = {}) {
     rootRunId: stringValue(planInputs.evidenceRootRunId),
     runUrl: stringValue(planInputs.evidenceRunUrl),
     selectedRunId: stringValue(planInputs.evidenceRunId),
-    sourceManifest,
+    sourceArtifact,
   };
 }
 
@@ -1102,6 +1128,7 @@ async function planMode() {
     children: hydrateReusedPlan(built.children, { childReuse: planInputs.childReuse ?? {} }),
     childReuse: planInputs.childReuse,
     evidenceReuse: evidenceReuseFromInputs(planInputs),
+    pendingEvidenceReuse: true,
     expected: { ...expected, candidateRequest, parentRunAttempt: currentAttempt },
     gates: built.gates,
     releaseProfile: expected.releaseProfile,
@@ -1151,7 +1178,7 @@ async function planMode() {
     blockers: reuse.blockers,
     children: reuse.children,
     errors: reuse.errors,
-    evidenceReuse: evidenceReuseFromInputs(planInputs, reuse.sourceManifest),
+    evidenceReuse: evidenceReuseFromInputs(planInputs, reuse.sourceArtifact),
   });
   writeExecutionPlan(outputPath, plan);
   finished = true;
@@ -1275,8 +1302,9 @@ async function collectMode(mode) {
       };
     }
     if (
-      JSON.stringify(sortJsonValueKeys(decisionReuse.sourceManifest)) !==
-      JSON.stringify(sortJsonValueKeys(executionPlan.evidenceReuse.sourceManifest))
+      executionPlan.evidenceReuse.sourceArtifact &&
+      JSON.stringify(sortJsonValueKeys(decisionReuse.sourceArtifact)) !==
+        JSON.stringify(sortJsonValueKeys(executionPlan.evidenceReuse.sourceArtifact))
     ) {
       decisionReuse = {
         ...decisionReuse,
@@ -1285,7 +1313,7 @@ async function collectMode(mode) {
           {
             child: "<evidence>",
             kind: "provenance_mismatch",
-            message: "revalidated evidence source manifest differs from the immutable plan",
+            message: "revalidated evidence artifact differs from the immutable plan",
             runId: executionPlan.evidenceReuse.rootRunId,
             url: executionPlan.evidenceReuse.runUrl,
           },

@@ -984,6 +984,10 @@ function normalizedEvidenceReuse(evidenceReuse) {
   if (!evidenceReuse || evidenceReuse.requested !== true) {
     return { requested: false };
   }
+  const sourceArtifact = normalizedEvidenceReuseArtifact(
+    evidenceReuse.sourceArtifact,
+    evidenceReuse.rootRunId,
+  );
   return {
     changedPaths: Array.isArray(evidenceReuse.changedPaths)
       ? evidenceReuse.changedPaths
@@ -996,16 +1000,41 @@ function normalizedEvidenceReuse(evidenceReuse) {
     rootRunId: boundedString(evidenceReuse.rootRunId, MAX_LABEL_LENGTH),
     runUrl: boundedString(evidenceReuse.runUrl, MAX_URL_LENGTH),
     selectedRunId: boundedString(evidenceReuse.selectedRunId, MAX_LABEL_LENGTH),
-    sourceManifest:
-      evidenceReuse.sourceManifest &&
-      typeof evidenceReuse.sourceManifest === "object" &&
-      !Array.isArray(evidenceReuse.sourceManifest)
-        ? structuredClone(evidenceReuse.sourceManifest)
-        : null,
+    sourceArtifact,
+    ...(!sourceArtifact &&
+    evidenceReuse.sourceManifest &&
+    typeof evidenceReuse.sourceManifest === "object" &&
+    !Array.isArray(evidenceReuse.sourceManifest)
+      ? { sourceManifest: structuredClone(evidenceReuse.sourceManifest) }
+      : {}),
   };
 }
 
-function validEvidenceReuseIdentity(evidenceReuse) {
+function normalizedEvidenceReuseArtifact(value, rootRunId) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+  const runAttempt = positiveInteger(value.runAttempt);
+  const id = boundedString(value.id, MAX_LABEL_LENGTH);
+  const name = boundedString(value.name, MAX_LABEL_LENGTH);
+  const digest = boundedString(value.digest, MAX_LABEL_LENGTH);
+  const sizeInBytes = Number(value.sizeInBytes);
+  const canonicalName = `full-release-validation-${rootRunId}-${runAttempt}`;
+  const legacyName = `full-release-validation-${rootRunId}`;
+  if (
+    !/^[1-9][0-9]*$/u.test(id) ||
+    !/^sha256:[a-f0-9]{64}$/u.test(digest) ||
+    runAttempt === undefined ||
+    (name !== canonicalName && !(runAttempt === 1 && name === legacyName)) ||
+    !Number.isSafeInteger(sizeInBytes) ||
+    sizeInBytes < 1
+  ) {
+    return null;
+  }
+  return { digest, id, name, runAttempt, sizeInBytes };
+}
+
+function validEvidenceReuseIdentity(evidenceReuse, targetVersion, allowPendingArtifact = false) {
   if (!evidenceReuse.requested) {
     return true;
   }
@@ -1016,16 +1045,14 @@ function validEvidenceReuseIdentity(evidenceReuse) {
       evidenceReuse.changedPaths.length === 1 &&
       evidenceReuse.changedPaths[0] === "CHANGELOG.md") ||
     (evidenceReuse.policy === SPLIT_CHANGELOG_EVIDENCE_REUSE_POLICY &&
-      isSplitChangelogEvidenceDelta(
-        evidenceReuse.changedPaths,
-        evidenceReuse.sourceManifest?.candidateBinding?.package?.version ??
-          evidenceReuse.sourceManifest?.validationInputs?.targetVersion,
-      ));
+      isSplitChangelogEvidenceDelta(evidenceReuse.changedPaths, targetVersion));
   return (
     /^[a-f0-9]{40}$/u.test(evidenceReuse.evidenceSha) &&
     /^[1-9][0-9]*$/u.test(evidenceReuse.rootRunId) &&
     /^[1-9][0-9]*$/u.test(evidenceReuse.selectedRunId) &&
-    evidenceReuse.sourceManifest !== null &&
+    (evidenceReuse.sourceArtifact !== null ||
+      evidenceReuse.sourceManifest ||
+      allowPendingArtifact) &&
     validChangedPaths
   );
 }
@@ -1183,6 +1210,7 @@ export function buildReleaseExecutionPlanArtifact({
   sourceAdmission,
   publicationAdmissionContract,
   publicationAdmission,
+  pendingEvidenceReuse = false,
   qualificationCoverage,
   qualificationInputs,
   targetVersion,
@@ -1203,7 +1231,19 @@ export function buildReleaseExecutionPlanArtifact({
     throw new Error("release execution plan attempt evidence version is invalid");
   }
   const normalizedReuse = normalizedEvidenceReuse(evidenceReuse);
-  if (!validEvidenceReuseIdentity(normalizedReuse)) {
+  const normalizedBlockers = normalizeIssues(blockers, "release_blocker");
+  const normalizedErrors = normalizeIssues(errors, "orchestration_error");
+  const normalizedTargetVersion = boundedString(
+    targetVersion ?? candidate?.package?.version ?? sourceAdmission?.projection?.version,
+    MAX_LABEL_LENGTH,
+  );
+  if (
+    !validEvidenceReuseIdentity(
+      normalizedReuse,
+      normalizedTargetVersion,
+      pendingEvidenceReuse || normalizedBlockers.length > 0 || normalizedErrors.length > 0,
+    )
+  ) {
     throw new Error("release execution plan evidence reuse binding is invalid");
   }
   const frozenCoverage =
@@ -1259,14 +1299,15 @@ export function buildReleaseExecutionPlanArtifact({
     workflowRef: boundedString(expected.workflowRef, MAX_LABEL_LENGTH),
     workflowSha: boundedString(expected.workflowSha, MAX_LABEL_LENGTH),
     targetSha: boundedString(expected.targetSha, MAX_LABEL_LENGTH),
+    targetVersion: normalizedTargetVersion,
     trustedWorkflow: normalizedTrustedWorkflow(trustedWorkflow),
     releaseProfile: boundedString(releaseProfile, MAX_LABEL_LENGTH),
     rerunGroup: boundedString(rerunGroup, MAX_LABEL_LENGTH),
     evidenceReuse: normalizedReuse,
     gates: gates.map(normalizedGate),
     children: normalizedChildren,
-    blockers: normalizeIssues(blockers, "release_blocker"),
-    errors: normalizeIssues(errors, "orchestration_error"),
+    blockers: normalizedBlockers,
+    errors: normalizedErrors,
   };
   validatePlanSourceAdmission(basePlan, expected);
   validatePlanPublicationAdmission(basePlan, expected);
@@ -1448,7 +1489,13 @@ export function validateReleaseExecutionPlanArtifact(payload, expected = {}) {
     throw new Error("release execution plan artifact binding is invalid");
   }
   const evidenceReuse = normalizedEvidenceReuse(payload.evidenceReuse);
-  if (!validEvidenceReuseIdentity(evidenceReuse)) {
+  if (
+    !validEvidenceReuseIdentity(
+      evidenceReuse,
+      payload.targetVersion,
+      (payload.blockers?.length ?? 0) > 0 || (payload.errors?.length ?? 0) > 0,
+    )
+  ) {
     throw new Error("release execution plan evidence reuse binding is invalid");
   }
   const trustedWorkflow = normalizedTrustedWorkflow(payload.trustedWorkflow);
