@@ -36,6 +36,36 @@ function captureReaderLogs() {
 }
 
 describe("package verification bounds", () => {
+  it("continues with a warning when the baseline presence stat exceeds its deadline", async () => {
+    await withTestDir({ prefix: "openclaw-baseline-stat-deadline-" }, async (base) => {
+      const { params, packageRoot, launcher } = await createPackageSwapFixture(base);
+      const lstat = fs.lstat.bind(fs);
+      let now = performance.now();
+      vi.spyOn(performance, "now").mockImplementation(() => now);
+      let delayed = false;
+      vi.spyOn(fs, "lstat").mockImplementation(async (...args) => {
+        const stat = await lstat(...args);
+        if (!delayed && String(args[0]) === packageRoot) {
+          delayed = true;
+          // Expire the presence check itself, before any tree walk starts.
+          now += 1_001;
+        }
+        return stat;
+      });
+      const beforeActivate = vi.fn();
+      const result = await swapStagedPackageInstall({
+        ...params,
+        timeoutMs: 1_000,
+        beforeActivate,
+      });
+      expect(delayed).toBe(true);
+      expect(result.status, result.step.stderrTail ?? "").toBe("committed");
+      expect(beforeActivate).toHaveBeenCalledOnce();
+      expect(result.step.advisory?.message).toContain("baseline package fingerprint incomplete");
+      await expect(fs.readFile(launcher, "utf8")).resolves.toBe("candidate launcher\n");
+    });
+  });
+
   it("keeps a fresh reader usable after a wall-clock jump forward", async () => {
     await withTestDir({ prefix: "openclaw-integrity-clock-forward-" }, async (base) => {
       const reader = createPackageIntegrityReader(1_000);
@@ -371,21 +401,16 @@ describe("package verification bounds", () => {
     });
   });
 
-  it.each(["package", "launcher", "launcher directory"] as const)(
+  it.each(["launcher", "launcher directory"] as const)(
     "bounds the initial %s observation",
     async (entry) => {
       await withTestDir({ prefix: "openclaw-rollback-presence-bound-" }, async (base) => {
-        const { params, packageRoot, launcher } = await createPackageSwapFixture(base);
+        const { params, launcher } = await createPackageSwapFixture(base);
         const lstat = fs.lstat.bind(fs);
         const readdir = fs.readdir.bind(fs);
         const opendir = fs.opendir.bind(fs);
         const blocked = createDeferredCore();
-        const target =
-          entry === "package"
-            ? packageRoot
-            : entry === "launcher"
-              ? launcher
-              : params.stage.layout.binDir;
+        const target = entry === "launcher" ? launcher : params.stage.layout.binDir;
         let entered = false;
         const block = async (file: unknown) => {
           if (!entered && String(file) === target) {
