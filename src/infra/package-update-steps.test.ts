@@ -4,6 +4,7 @@ import fs, { type FileHandle } from "node:fs/promises";
 import path from "node:path";
 import { root as fsSafeRoot, type Root } from "@openclaw/fs-safe/root";
 import { describe, expect, it, vi } from "vitest";
+import { writePackageDistInventory } from "../../scripts/lib/package-dist-inventory.ts";
 import { withTestDir } from "../test-helpers/temp-dir.js";
 import { runGlobalPackageUpdateSteps } from "./package-update-steps.js";
 import {
@@ -12,6 +13,7 @@ import {
   writePackageRoot,
 } from "./package-update-steps.test-support.js";
 import { resolveNpmGlobalPrefixLayoutFromPrefix } from "./update-npm-prefix.js";
+import { updateRunStepsFromResultStep, updateRunWarningMessages } from "./update-run-step.js";
 
 type PackageUpdateStepResult = Awaited<
   ReturnType<typeof runGlobalPackageUpdateSteps>
@@ -644,6 +646,77 @@ describe("runGlobalPackageUpdateSteps", () => {
           unlinkSpy.mockRestore();
           renameSpy.mockRestore();
         }
+      });
+    },
+  );
+
+  it.runIf(process.platform !== "win32").each([
+    { name: "original 0644", mode: 0o644, changed: false, warning: false },
+    { name: "extra execute bits", mode: 0o755, changed: false, warning: true },
+    { name: "restored 0644", mode: 0o644, changed: false, warning: false },
+    { name: "changed bytes", mode: 0o644, changed: true, warning: false },
+    { name: "world-writable 0777", mode: 0o777, rejected: true },
+    { name: "group-writable executable 0775", mode: 0o775, rejected: true },
+    { name: "setuid 4755", mode: 0o4755, rejected: true },
+    { name: "missing executable bits", inventoryMode: 0o755, mode: 0o644, rejected: true },
+    { name: "owner-only 0600", mode: 0o600 },
+    { name: "non-executable 0664", mode: 0o664 },
+  ])(
+    "verifies staged npm content with $name",
+    async ({ name: caseName, mode, inventoryMode, changed, warning, rejected }) => {
+      await withTestDir({ prefix: "openclaw-package-update-modes-" }, async (base) => {
+        const globalRoot = path.join(base, "prefix", "lib", "node_modules");
+        const packageRoot = path.join(globalRoot, "openclaw");
+        await writePackageRoot(packageRoot, "1.0.0");
+        const result = await runGlobalPackageUpdateSteps({
+          installTarget: createNpmTarget(globalRoot),
+          installSpec: "openclaw@2.0.0",
+          packageName: "openclaw",
+          packageRoot,
+          runCommand: createRootRunner(globalRoot),
+          runStep: async ({ name, argv, cwd }) => {
+            const stagePrefix = argv[argv.indexOf("--prefix") + 1];
+            if (!stagePrefix) {
+              throw new Error("missing staged prefix");
+            }
+            const layout = resolveNpmGlobalPrefixLayoutFromPrefix(stagePrefix);
+            const stagedRoot = path.join(layout.globalRoot, "openclaw");
+            await writePackageRoot(stagedRoot, "2.0.0");
+            const entry = path.join(stagedRoot, "dist/index.js");
+            await fs.chmod(entry, inventoryMode ?? 0o644);
+            await writePackageDistInventory(stagedRoot);
+            if (caseName === "restored 0644") {
+              await fs.chmod(entry, 0o755);
+            }
+            await fs.chmod(entry, mode);
+            if (changed) {
+              await fs.writeFile(entry, "export const altered = true;\n");
+            }
+            return {
+              name,
+              command: argv.join(" "),
+              cwd: cwd ?? process.cwd(),
+              durationMs: 1,
+              exitCode: 0,
+            };
+          },
+          timeoutMs: 1000,
+        });
+
+        const failsVerification = changed || rejected;
+        expect(result.failedStep?.name ?? null).toBe(failsVerification ? "package-verify" : null);
+        expect(result.afterVersion).toBe(failsVerification ? "1.0.0" : "2.0.0");
+        await expect(
+          fs.readFile(path.join(packageRoot, "package.json"), "utf8"),
+        ).resolves.toContain(failsVerification ? '"version":"1.0.0"' : '"version":"2.0.0"');
+        const warnings = updateRunWarningMessages(
+          result.steps.flatMap(updateRunStepsFromResultStep),
+        );
+        expect(warnings).toEqual(
+          warning
+            ? [expect.stringContaining("1 packaged dist file(s) have extra execute bits")]
+            : [],
+        );
       });
     },
   );

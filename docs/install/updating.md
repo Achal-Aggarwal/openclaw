@@ -414,6 +414,15 @@ failed install or update, or `openclaw doctor --fix` for a load problem. Invalid
 configuration or state, ownership errors, and failed core startup or readiness
 checks still prevent completion.
 
+Package verification checks file hashes, sizes, and required executability. When
+a non-executable dist file gains execute bits, verification continues with one
+warning listing the affected file count, provided it has no group/world write or
+setuid/setgid/sticky bits. Other permission differences retain their existing
+behavior, including owner-only recovery modes. File permissions are left
+unchanged. Missing required executability, changed content, and unsafe file types
+still fail verification. The installed updater must contain this fix; a newer
+candidate cannot change an older updater's package verification.
+
 ### Package-publication recovery
 
 Supported POSIX npm updates print an external-Node recovery command before
