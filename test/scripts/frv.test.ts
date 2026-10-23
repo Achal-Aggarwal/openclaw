@@ -385,7 +385,11 @@ describe("FRV continuation preflight", () => {
       html_url: `https://github.com/${REPOSITORY}/actions/runs/81`,
     };
     const logs = {
-      dispatch: `TARGET_SHA: ${TARGET_SHA}\nDispatched full-release-artifacts.yml: https://github.com/${REPOSITORY}/actions/runs/81 (attempt 1)`,
+      dispatch: [
+        `TARGET_SHA: ${TARGET_SHA}`,
+        `Dispatched full-release-artifacts.yml: https://github.com/${REPOSITORY}/actions/runs/81 (attempt 1)`,
+        ...(stage === "npm" ? ["Artifact preparation npm identity: job 901 (attempt 1)"] : []),
+      ].join("\n"),
     };
     const client = {
       ...methods,
@@ -510,6 +514,42 @@ describe("FRV continuation preflight", () => {
       expect(fixture.client.rerunParent).not.toHaveBeenCalled();
     },
   );
+
+  it("refuses to rerun a failed npm producer after its preparation supplied candidate bytes", async () => {
+    const fixture = artifactFixture();
+    fixture.producer.conclusion = "failure";
+    fixture.client.getAttemptJobs = async () => [
+      { ...job("renamed preparation job"), id: 901, run_attempt: 1, conclusion: "failure" },
+    ];
+    const consumedPlan = {
+      ...fixture.plan,
+      candidate: { producer: { runId: "606" } },
+    };
+
+    await expect(continueFailed(consumedPlan, "77", fixture.client)).rejects.toThrow(
+      "already supplied the sealed candidate evidence",
+    );
+    expect(fixture.client.rerunFailed).not.toHaveBeenCalled();
+    expect(fixture.client.rerunParent).not.toHaveBeenCalled();
+  });
+
+  it("fails closed when the recorded npm preparation identity is absent", async () => {
+    const fixture = artifactFixture();
+    fixture.producer.conclusion = "failure";
+    fixture.client.getAttemptJobs = async () => [
+      { ...job("different preparation job"), id: 902, run_attempt: 1 },
+    ];
+    const consumedPlan = {
+      ...fixture.plan,
+      candidate: { producer: { runId: "606" } },
+    };
+
+    await expect(continueFailed(consumedPlan, "77", fixture.client)).rejects.toThrow(
+      "artifact:npm producer 81 preparation identity is missing or ambiguous",
+    );
+    expect(fixture.client.rerunFailed).not.toHaveBeenCalled();
+    expect(fixture.client.rerunParent).not.toHaveBeenCalled();
+  });
 
   it.each(["before-verify", "after-verify", "after-seal"])(
     "does not accept changed npm producer evidence %s",

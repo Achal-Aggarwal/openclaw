@@ -396,7 +396,7 @@ function exactParentJob(parentJobs, child, sourceParentAttempt) {
 
 async function inspectArtifactProducers(producers, client, options) {
   return Promise.all(
-    producers.map(async ({ request, runId, runAttempt }) => {
+    producers.map(async ({ request, runId, runAttempt, preparation }) => {
       const run = validateArtifactProducerRun(
         request,
         await client.getRun(runId, options),
@@ -417,6 +417,7 @@ async function inspectArtifactProducers(producers, client, options) {
         conclusion: String(run.conclusion ?? ""),
         status: active ? "active" : passed ? "passed" : "failed",
         passed,
+        preparation,
         url: run.html_url,
       };
     }),
@@ -439,6 +440,41 @@ function continuationStatus(children) {
     missing: children.filter((child) => child.status === "missing"),
     passed: children.filter((child) => child.status === "passed"),
   };
+}
+
+async function assertFailedArtifactProducersAreReusable(plan, status, client, operationDeadline) {
+  if (!plan.candidate) {
+    return;
+  }
+  const consumed = [];
+  for (const child of status.failed.filter((entry) => entry.key === "artifact:npm")) {
+    if (!child.preparation) {
+      continue;
+    }
+    const jobs = await client.getAttemptJobs(child.runId, child.effectiveRunAttempt, {
+      operationDeadline,
+    });
+    const preparation = jobs.filter(
+      (job) =>
+        String(job.id) === child.preparation.jobId &&
+        Number(job.run_attempt) === child.preparation.runAttempt,
+    );
+    if (preparation.length !== 1) {
+      throw new Error(
+        `artifact:npm producer ${child.runId} preparation identity is missing or ambiguous; refusing a rerun that could replace consumed candidate bytes`,
+      );
+    }
+    if (preparation[0].status === "completed" && preparation[0].conclusion === "success") {
+      continue;
+    }
+    consumed.push(child);
+  }
+  if (consumed.length === 0) {
+    return;
+  }
+  throw new Error(
+    `${consumed.map((child) => `${child.key} producer ${child.runId}`).join(", ")} already supplied the sealed candidate evidence; rerunning cannot preserve those consumed immutable bytes. Dispatch a fresh all-group FRV with reuse_evidence=true to authenticate reuse instead.`,
+  );
 }
 
 async function recheckArtifactProducers(
@@ -495,6 +531,14 @@ async function npmRecoveryProducers(plan, parentJobs, client, repository, workfl
   ) {
     throw new Error("Original npm dispatch identity is unavailable or ambiguous");
   }
+  const preparationIdentities = [
+    ...log.matchAll(
+      /(?:^|\n)(?:\d{4}-\d\d-\d\dT\S+ )?Artifact preparation npm identity: job ([1-9][0-9]*) \(attempt ([1-9][0-9]*)\)\r?(?=\n|$)/gu,
+    ),
+  ];
+  if (preparationIdentities.length !== 1) {
+    throw new Error("Original npm preparation identity is unavailable or ambiguous");
+  }
   return [
     {
       request: {
@@ -506,6 +550,10 @@ async function npmRecoveryProducers(plan, parentJobs, client, repository, workfl
       },
       runId: dispatches[0][2],
       runAttempt: dispatches[0][3],
+      preparation: {
+        jobId: preparationIdentities[0][1],
+        runAttempt: Number(preparationIdentities[0][2]),
+      },
     },
   ];
 }
@@ -1549,6 +1597,7 @@ export async function continueFailed(plan, rootRunId, reader, options = {}) {
       runKeys.set(producer.runId, `artifact:${producer.request.stage}`);
     }
     status = await inspectRecovery(plan, artifactProducers, client, { operationDeadline });
+    await assertFailedArtifactProducersAreReusable(plan, status, client, operationDeadline);
     for (const child of status.children) {
       const expectedAttempt = ownedAttempts.get(child.runId);
       if (expectedAttempt !== undefined) {
