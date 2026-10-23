@@ -378,6 +378,15 @@ absent. On Windows, a dangling link declared in its owner's
 activation; missing required dependencies and other filesystem errors still
 fail. This requires the installed updater to contain the repair.
 
+Package verification checks file hashes, sizes, and required executability. When
+a non-executable dist file gains execute bits, verification continues with one
+warning listing the affected file count, provided it has no group/world write or
+setuid/setgid/sticky bits. Other permission differences retain their existing
+behavior, including owner-only recovery modes. File permissions are left
+unchanged. Missing required executability, changed content, and unsafe file types
+still fail verification. The installed updater must contain this fix; a newer
+candidate cannot change an older updater's package verification.
+
 If a pnpm-owned install fails with `IO error: not a terminal`, the installed
 updater may be triggering an interactive pnpm build-approval prompt while
 capturing its output. A newer candidate cannot repair that first update.
