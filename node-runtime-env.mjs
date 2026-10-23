@@ -1,5 +1,13 @@
 import path from "node:path";
 
+export function nodeRuntimePathEntries(value) {
+  const windows = process.platform === "win32";
+  return (value ?? "")
+    .split(windows ? ";" : ":")
+    .map((entry) => (windows ? entry.replace(/^"(.*)"$/, "$1") : entry))
+    .filter(Boolean);
+}
+
 /** Keep lifecycle children on the explicitly selected runtime without changing npm config. */
 export function withNodeRuntimePath(env, nodePath, platform = process.platform) {
   const paths = platform === "win32" ? path.win32 : path.posix;
