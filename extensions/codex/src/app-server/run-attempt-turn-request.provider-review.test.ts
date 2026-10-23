@@ -1,9 +1,16 @@
 import type { AgentHarnessAttemptParamsV2 } from "openclaw/plugin-sdk/agent-harness-runtime";
 import { formatErrorMessage } from "openclaw/plugin-sdk/error-runtime";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  CODEX_INFERENCE_GENERATION_KEY,
+  createCodexInferenceContext,
+} from "./inference-context.js";
 import type { CodexTurn, CodexUserInput } from "./protocol.js";
 import { prepareCodexAttemptTurnRequest } from "./run-attempt-turn-request.js";
 
+const inference = vi.hoisted(() => ({
+  route: undefined as { context: ReturnType<typeof createCodexInferenceContext> } | undefined,
+}));
 const cleanup = vi.hoisted(() => ({ interrupt: vi.fn(), retire: vi.fn() }));
 const references = vi.hoisted(() => ({
   delivered: false,
@@ -34,7 +41,7 @@ vi.mock("./client.js", () => ({
   isCodexAppServerIndeterminateRequestCancellationError: () => false,
 }));
 vi.mock("./explicit-skill-input.js", () => ({ resolveCodexExplicitSkillInputs: async () => [] }));
-vi.mock("./inference-routing.js", () => ({ getCodexInferenceThread: () => undefined }));
+vi.mock("./inference-routing.js", () => ({ getCodexInferenceThread: () => inference.route }));
 vi.mock("./protocol-validators.js", () => ({
   assertCodexTurnStartResponse: (response: unknown) => response,
 }));
@@ -58,6 +65,7 @@ vi.mock("./trajectory.js", () => ({ recordCodexTrajectoryContext: vi.fn() }));
 vi.mock("./user-prompt-message.js", () => ({ buildCodexUserPromptMessage: vi.fn() }));
 
 beforeEach(() => {
+  inference.route = undefined;
   references.delivered = false;
   references.accepted.mockClear();
   cleanup.interrupt.mockReset().mockResolvedValue(true);
@@ -122,6 +130,7 @@ async function prepare(
   acknowledgment?: Acknowledgment,
   native = createNativeThread(),
   usesSupervisionConnection = true,
+  onResources?: (resources: Parameters<typeof prepareCodexAttemptTurnRequest>[0]) => void,
 ) {
   const request = vi.fn(
     async (
@@ -195,6 +204,7 @@ async function prepare(
     },
   } as unknown as Parameters<typeof prepareCodexAttemptTurnRequest>[0];
   const turnRuntime = { state: {} } as Parameters<typeof prepareCodexAttemptTurnRequest>[1];
+  onResources?.(resources);
   const prepared = await prepareCodexAttemptTurnRequest(
     resources,
     turnRuntime,
@@ -405,3 +415,70 @@ describe("native acknowledged turn requests", () => {
     },
   );
 });
+
+it.each(["release", "abort"])(
+  "waits for root capacity before preparing a native turn: %s",
+  async (outcome) => {
+    const context = createCodexInferenceContext(() => {});
+    inference.route = { context };
+    const roots = await Promise.all(
+      Array.from({ length: 64 }, (_, index) =>
+        context.register({
+          threadId: `saturated-${index}`,
+          text: "",
+          signal: new AbortController().signal,
+          assertCurrent() {},
+          retainPrefix: false,
+        }),
+      ),
+    );
+    const controller = new AbortController();
+    let settled = false;
+    const attempt = await prepare(undefined, createNativeThread(), true, (resources) => {
+      const connection = resources.prompt.context.runtime.connection;
+      connection.runAbortController = controller;
+      connection.assertLegacyCurrent = () => {};
+      connection.params.hostCapabilities = {
+        assertActive() {},
+      } as typeof connection.params.hostCapabilities;
+    });
+    const pending = attempt.prepared.startCodexTurn();
+    void pending.then(
+      () => {
+        settled = true;
+      },
+      () => {
+        settled = true;
+      },
+    );
+    try {
+      for (let index = 0; index < 5; index++) {
+        await Promise.resolve();
+      }
+      expect(settled).toBe(false);
+      expect(attempt.request).not.toHaveBeenCalled();
+      if (outcome === "abort") {
+        controller.abort(new Error("cancel waiting turn"));
+        await expect(pending).rejects.toThrow("cancel waiting turn");
+      } else {
+        roots[0]!.release();
+        await pending;
+        expect(attempt.request).toHaveBeenCalledWith(
+          "turn/start",
+          expect.objectContaining({
+            responsesapiClientMetadata: expect.objectContaining({
+              [CODEX_INFERENCE_GENERATION_KEY]: expect.any(String),
+            }),
+          }),
+          expect.anything(),
+        );
+        attempt.resources.state.releaseInferenceContext?.();
+      }
+    } finally {
+      controller.abort();
+      roots.forEach((root) => root.release());
+      context.close();
+      await Promise.allSettled([pending]);
+    }
+  },
+);
