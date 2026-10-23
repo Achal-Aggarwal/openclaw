@@ -529,31 +529,51 @@ class Monitor {
       owner.requesterSessionId === params.sessionId &&
       owner.requesterLifecycleRevision === params.lifecycleRevision &&
       params.acceptsRequest(owner.requestCustody);
-    const preparingOwners = new Map<ParentState, ParentOwner>();
+    const selectedOwners = new Map<ParentState, ParentOwner>();
+    const stableOwners = new Set<ParentOwner>();
     for (const state of this.parentStates.values()) {
-      if (state.preparing && !state.agentId && !state.historyOwner) {
-        const owner = [...(state.pendingRegistrations ?? [])].find(matchesOwner);
-        if (owner) {
-          preparingOwners.set(state, owner);
-        }
+      // Parent state can outlive the run that created its history locator. A
+      // currently admitted owner is the authoritative generation in that case.
+      const owner = [...state.owners.values()].find(matchesOwner);
+      if (owner) {
+        selectedOwners.set(state, owner);
+        stableOwners.add(owner);
+        continue;
+      }
+      const pendingOwner = [...(state.pendingRegistrations ?? [])].find(matchesOwner);
+      if (pendingOwner) {
+        selectedOwners.set(state, pendingOwner);
       }
     }
+    for (const child of this.childStates.values()) {
+      const owner = child.modelExecution?.owner ?? child.directOwner;
+      const state = this.parentStates.get(child.parentThreadId);
+      if (state && owner && matchesOwner(owner) && params.acceptsRequest(child.requestCustody)) {
+        selectedOwners.set(state, owner);
+        stableOwners.add(owner);
+      }
+    }
+    const hasSelectedOwner = (state: ParentState) => {
+      const owner = selectedOwners.get(state);
+      return Boolean(
+        owner &&
+        matchesOwner(owner) &&
+        (stableOwners.has(owner) ||
+          state.pendingRegistrations?.has(owner) ||
+          owner.descendantsCancelled),
+      );
+    };
     const matches = (state: ParentState) => {
       if (state.agentId || state.historyOwner) {
         return (
-          state.agentId === params.agentId &&
-          state.requesterSessionKey === params.sessionKey &&
-          state.historyOwner?.sessionId === params.sessionId &&
-          state.historyOwner?.lifecycleRevision === params.lifecycleRevision
+          (state.agentId === params.agentId &&
+            state.requesterSessionKey === params.sessionKey &&
+            state.historyOwner?.sessionId === params.sessionId &&
+            state.historyOwner?.lifecycleRevision === params.lifecycleRevision) ||
+          hasSelectedOwner(state)
         );
       }
-      const owner = preparingOwners.get(state);
-      return Boolean(
-        state.preparing &&
-        owner &&
-        matchesOwner(owner) &&
-        (state.pendingRegistrations?.has(owner) || owner.descendantsCancelled),
-      );
+      return state.preparing === true && hasSelectedOwner(state);
     };
     if (!matches(parent)) {
       throw new Error("Codex descendant cancellation requester generation changed");
@@ -606,10 +626,26 @@ class Monitor {
             ),
           ),
         );
+        // A reused Codex parent keeps its original persistence locator. Prefer the
+        // live execution owner for later generations, and retain that proof through
+        // interruption because terminal handling releases the owner before settle.
+        const selectedOwnerChildren = new Set<ChildState>();
+        const matchesGeneration = (child: ChildState) => {
+          const owner = child.modelExecution?.owner ?? child.directOwner;
+          const matched =
+            (child.historyOwner?.sessionId === params.sessionId &&
+              child.historyOwner?.lifecycleRevision === params.lifecycleRevision) ||
+            Boolean(owner && matchesOwner(owner));
+          if (owner && matched && matchesOwner(owner)) {
+            selectedOwnerChildren.add(child);
+          }
+          return matched;
+        };
+        const matchesChild = (child: ChildState) =>
+          matchesGeneration(child) || selectedOwnerChildren.has(child);
         const selected = [...this.childStates.values()].filter(
           (child) =>
-            child.historyOwner?.sessionId === params.sessionId &&
-            child.historyOwner?.lifecycleRevision === params.lifecycleRevision &&
+            matchesGeneration(child) &&
             states.some((state) => state.parentThreadId === child.parentThreadId) &&
             params.acceptsRequest(child.requestCustody),
         );
@@ -682,8 +718,7 @@ class Monitor {
                 child.requesterTurnRunId !== requesterTurnRunId ||
                 child.requestCustody !== requestCustody ||
                 !params.acceptsRequest(requestCustody) ||
-                child.historyOwner?.sessionId !== params.sessionId ||
-                child.historyOwner?.lifecycleRevision !== params.lifecycleRevision ||
+                !matchesChild(child) ||
                 (child.completionCustody && !child.completionCustody.isCurrent())
               ) {
                 throw new Error("Codex descendant assignment changed before cancellation");
@@ -764,8 +799,7 @@ class Monitor {
             if (
               child.requesterTurnRunId !== requesterTurnRunId ||
               child.requestCustody !== requestCustody ||
-              child.historyOwner?.sessionId !== params.sessionId ||
-              child.historyOwner?.lifecycleRevision !== params.lifecycleRevision
+              !matchesChild(child)
             ) {
               throw new Error("Codex descendant requester changed during settlement");
             }
