@@ -81,7 +81,102 @@ async function seedSession(params: {
   return tempRoot;
 }
 
+function captureSessionAfterPendingResults(tempRoot: string, sessionKey: string, waitMs: number) {
+  return captureRuntimeParityCell({
+    runtime: "codex",
+    gateway: { tempRoot },
+    scenarioResult: { status: "pass", details: `RUNTIME_PARITY_SESSION_KEY=${sessionKey}` },
+    wallClockMs: 10,
+    pendingToolResultWaitMs: waitMs,
+  });
+}
+
 describe("runtime parity session selection", () => {
+  it("waits for a Codex async completion result before capturing parity", async () => {
+    const sessionId = "async-image-completion";
+    const sessionKey = "agent:qa:async-image-completion";
+    const tool = { toolCallId: "image-call-2", name: "image_generate" };
+    const tempRoot = await seedSession({
+      sessionId,
+      sessionKey,
+      messages: [
+        { role: "user", content: "Generate the follow-up image." },
+        {
+          role: "assistant",
+          content: [
+            {
+              type: "toolCall",
+              id: tool.toolCallId,
+              name: tool.name,
+              arguments: { prompt: "follow-up" },
+            },
+          ],
+        },
+      ],
+      trajectoryEvents: [
+        { type: "tool.call", data: { ...tool, arguments: { prompt: "follow-up" } } },
+      ],
+    });
+    const capture = captureSessionAfterPendingResults(tempRoot, sessionKey, 500);
+    await new Promise((resolve) => {
+      setTimeout(resolve, 50);
+    });
+    await seedSession({
+      tempRoot,
+      sessionId,
+      sessionKey,
+      messages: [
+        {
+          role: "toolResult",
+          toolCallId: tool.toolCallId,
+          toolName: tool.name,
+          content: [{ type: "text", text: "MEDIA:/tmp/follow-up.png" }],
+        },
+      ],
+      trajectoryEvents: [
+        {
+          type: "tool.result",
+          data: {
+            ...tool,
+            status: "completed",
+            success: true,
+            result: { path: "/tmp/follow-up.png" },
+          },
+        },
+      ],
+    });
+
+    const cell = await capture;
+
+    expect(cell.toolCalls).toEqual([expect.objectContaining({ tool: "image_generate" })]);
+    expect(cell.toolCalls[0]).not.toHaveProperty("errorClass");
+  });
+
+  it("keeps a permanently missing Codex result red after the settle bound", async () => {
+    const sessionKey = "agent:qa:missing-result";
+    const tempRoot = await seedSession({
+      sessionId: "missing-result",
+      sessionKey,
+      messages: [{ role: "user", content: "Run the missing tool result fixture." }],
+      trajectoryEvents: [
+        {
+          type: "tool.call",
+          data: {
+            toolCallId: "missing-call",
+            name: "image_generate",
+            arguments: { prompt: "missing" },
+          },
+        },
+      ],
+    });
+
+    const cell = await captureSessionAfterPendingResults(tempRoot, sessionKey, 50);
+
+    expect(cell.toolCalls).toEqual([
+      expect.objectContaining({ tool: "image_generate", errorClass: "tool-result-missing" }),
+    ]);
+  });
+
   it("keeps fixture-owned tool sessions when Codex attaches parent metadata", async () => {
     const now = Date.now();
     const rootSessionKey = "agent:qa:unrelated-root";
