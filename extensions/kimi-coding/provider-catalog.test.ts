@@ -75,12 +75,13 @@ describe("kimi provider catalog", () => {
 
   it("covers every K3 catalog row with the K3 thinking policy", () => {
     // The manifest owns the rows and `provider-policy-api` owns the thinking
-    // profile, so a new K3 variant must land in both or lose its levels.
+    // profile, so a new K3 variant must land in both or lose its levels. The policy also
+    // covers K3.1 rows that come from configured or hosted catalogs.
     const thinkingRows = buildKimiCodingProvider()
       .models.filter((model) => model.thinkingLevelMap)
       .map((model) => model.id);
 
-    expect(thinkingRows).toEqual([...KIMI_K3_MODEL_IDS]);
+    expect(KIMI_K3_MODEL_IDS).toEqual(expect.arrayContaining(thinkingRows));
   });
 
   it.each([

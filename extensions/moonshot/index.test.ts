@@ -158,23 +158,47 @@ describe("moonshot provider plugin", () => {
     },
   );
 
-  it("exposes Kimi K3 as an always-max-thinking modern model", async () => {
-    const { provider, payload } = await captureThinkingConfig("kimi-k3");
-    expect(payload).toEqual({
-      config: { thinkingConfig: { thinkingBudget: -1 } },
-      reasoning_effort: "max",
-    });
-    expect(
-      provider.resolveThinkingProfile?.({
+  it.each(["kimi-k3", "kimi-k3.1-pro", "kimi-k3.1-pro-highspeed"])(
+    "enables native video for %s on the native route",
+    async (id) => {
+      const provider = await registerSingleProviderPlugin(plugin);
+      const model = {
+        id,
         provider: "moonshot",
-        modelId: "kimi-k3",
-        reasoning: true,
-      } as never),
-    ).toEqual({
-      levels: [{ id: "max", label: "max" }],
-      defaultLevel: "max",
-      preserveWhenCatalogReasoningFalse: true,
-    });
-    expect(provider.isModernModelRef?.({ provider: "moonshot", modelId: "kimi-k3" })).toBe(true);
-  });
+        api: "openai-completions",
+        baseUrl: MOONSHOT_BASE_URL,
+        input: ["text", "image"],
+      } as unknown as Model;
+      const normalized = provider.normalizeResolvedModel?.({
+        provider: model.provider,
+        modelId: model.id,
+        model,
+      } as never);
+
+      expect((normalized ?? model).input).toEqual(["text", "image", "video"]);
+    },
+  );
+
+  it.each(["kimi-k3", "kimi-k3.1-pro", "kimi-k3.1-pro-highspeed"])(
+    "exposes %s as an always-max-thinking modern model",
+    async (modelId) => {
+      const { provider, payload } = await captureThinkingConfig(modelId);
+      expect(payload).toEqual({
+        config: { thinkingConfig: { thinkingBudget: -1 } },
+        reasoning_effort: "max",
+      });
+      expect(
+        provider.resolveThinkingProfile?.({
+          provider: "moonshot",
+          modelId,
+          reasoning: true,
+        } as never),
+      ).toEqual({
+        levels: [{ id: "max", label: "max" }],
+        defaultLevel: "max",
+        preserveWhenCatalogReasoningFalse: true,
+      });
+      expect(provider.isModernModelRef?.({ provider: "moonshot", modelId })).toBe(true);
+    },
+  );
 });

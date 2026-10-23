@@ -183,6 +183,11 @@ describe("buildOpenAICompletionsParams sanitizes reasoning replay fields", () =>
       assertSanitizedFields: true,
     },
     {
+      label: "preserves Kimi K3.1 Pro reasoning_content replay with stale reasoning metadata",
+      model: { ...staleKimiK27Model, id: "kimi-k3.1-pro", name: "Kimi K3.1 Pro" },
+      assertSanitizedFields: true,
+    },
+    {
       label: "preserves reasoning_content replay for suffixed reasoning model ids",
       model: { ...customMiMoProxyModel, id: "xiaomi/mimo-v2.5-pro:cloud", reasoning: false },
       assertSanitizedFields: false,

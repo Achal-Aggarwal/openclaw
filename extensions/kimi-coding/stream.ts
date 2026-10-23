@@ -10,7 +10,11 @@ import {
   isRecord,
   normalizeOptionalLowercaseString,
 } from "openclaw/plugin-sdk/string-coerce-runtime";
-import { isKimiK3ModelId } from "./provider-policy-api.js";
+import {
+  isKimiCodeEnabledOnlyModelId,
+  isKimiK3ModelId,
+  KIMI_K3_THINKING_EFFORTS,
+} from "./provider-policy-api.js";
 
 const TOOL_CALLS_SECTION_BEGIN = "<|tool_calls_section_begin|>";
 const TOOL_CALLS_SECTION_END = "<|tool_calls_section_end|>";
@@ -26,7 +30,6 @@ type KimiToolCallBlock = {
 };
 
 type KimiThinkingType = "enabled" | "disabled";
-type KimiK3ThinkingEffort = "low" | "high" | "max";
 type KimiThinkingConfig = {
   type: KimiThinkingType;
   budget_tokens?: number;
@@ -44,15 +47,6 @@ const KIMI_ANTHROPIC_THINKING_BUDGETS: Record<Exclude<KimiThinkingLevel, "off">,
 };
 const KIMI_ANTHROPIC_VISIBLE_OUTPUT_RESERVE_TOKENS = 1024;
 const KIMI_ANTHROPIC_MIN_OUTPUT_TOKENS = 16000;
-const KIMI_K3_THINKING_EFFORTS: Record<Exclude<KimiThinkingLevel, "off">, KimiK3ThinkingEffort> = {
-  minimal: "low",
-  low: "low",
-  medium: "high",
-  high: "high",
-  adaptive: "high",
-  xhigh: "max",
-  max: "max",
-};
 
 function normalizeKimiThinkingBudgetTokens(value: unknown): number | undefined {
   if (typeof value !== "number" || !Number.isFinite(value)) {
@@ -281,7 +275,11 @@ export function wrapKimiProviderStream(ctx: ProviderWrapStreamFnContext): Stream
   return createKimiToolCallMarkupWrapper((model, context, options) => {
     const anthropic = (ctx.sourceApi ?? model.api) === "anthropic-messages";
     const k3 = anthropic && isKimiK3ModelId(model.id);
-    const thinkingLevel = options?.reasoning ?? ctx.thinkingLevel ?? (k3 ? "high" : undefined);
+    const requestedLevel = options?.reasoning ?? ctx.thinkingLevel ?? (k3 ? "high" : undefined);
+    const thinkingLevel =
+      k3 && isKimiCodeEnabledOnlyModelId(model.id) && (!requestedLevel || requestedLevel === "off")
+        ? "high"
+        : requestedLevel;
     const thinkingConfig = resolveKimiThinkingConfig(configured, thinkingLevel);
     const enabledLevel =
       thinkingLevel && thinkingLevel !== "off" ? thinkingLevel : k3 ? "high" : "low";
