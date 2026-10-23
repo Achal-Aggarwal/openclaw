@@ -41,10 +41,14 @@ describe("logs cli", () => {
     ["--utc", "--local-time"],
   ])("rejects conflicting timestamp flags before RPC: %s %s", async (...flags) => {
     callGatewayFromCli.mockResolvedValueOnce({ file: "/tmp/openclaw.log", lines: [] });
-    await expect(runLogsCli(["logs", ...flags])).rejects.toThrow(
-      "Pass only one of --local-time or --utc.",
-    );
-    expect(callGatewayFromCli).not.toHaveBeenCalled();
+    try {
+      await expect(runLogsCli(["logs", ...flags])).rejects.toThrow(
+        "Pass only one of --local-time or --utc.",
+      );
+      expect(callGatewayFromCli).not.toHaveBeenCalled();
+    } finally {
+      callGatewayFromCli.mockReset();
+    }
   });
   it("writes output directly to stdout/stderr", async () => {
     callGatewayFromCli.mockResolvedValueOnce({
