@@ -386,6 +386,7 @@ export function retirePluginCacheInstance(
 export function retirePluginCache(
   cache: PluginCache,
   beforeRetire?: () => void,
+  options?: { waitForSettlement?: boolean },
 ): Promise<PluginHostCleanupResult> {
   const retained = getPluginCacheRetainers(cache);
   if (retained.retirement) {
@@ -406,7 +407,7 @@ export function retirePluginCache(
     void track(() => {
       admitted = true;
       retained.beginRetirement = undefined;
-      return beginPluginCacheRetirement(cache, beforeRetire);
+      return beginPluginCacheRetirement(cache, beforeRetire, options);
     }).then(completion.resolve, (error: unknown) => {
       if (admitted) {
         completion.reject(error);
@@ -433,6 +434,7 @@ export function retirePluginCache(
 function beginPluginCacheRetirement(
   cache: PluginCache,
   beforeRetire?: () => void,
+  options?: { waitForSettlement?: boolean },
 ): Promise<PluginHostCleanupResult> {
   if (cache.retirement) {
     return cache.retirement;
@@ -450,7 +452,10 @@ function beginPluginCacheRetirement(
     // Registry teardown owns host hooks before instance disposal; then join remaining cleanup.
     const [registry] = await Promise.allSettled([registries]);
     const outcomes = await Promise.allSettled(
-      [...resources].map(async (resource) => ({ resource, result: await resource.dispose() })),
+      [...resources].map(async (resource) => ({
+        resource,
+        result: await resource.dispose(undefined, options),
+      })),
     );
     const nativeAdmissions = cache.sourceAdmissions;
     if (nativeAdmissions) {
