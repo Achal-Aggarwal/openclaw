@@ -32,7 +32,7 @@ notifications include an `Inspect` link into the Control UI. Command and script
 completion announcements open the automation run; isolated agent announcements
 open the run's session.
 
-With `announce`, the chat that receives the result owns it. The result is added to the conversation after the channel confirms delivery, using the content actually sent after channel transforms and hooks. OpenClaw writes one assistant message into that chat's transcript so the next reply can use it as context. The result records its job and run; retries do not duplicate it, and OpenClaw waits for active turns before committing it. Destination creation and remembered-route updates happen only after confirmed delivery; newly created destinations inherit the source session's required sandbox policy.
+With `announce`, the chat that receives the result owns it. The result is added to the conversation after the channel confirms delivery, using the content actually sent after channel transforms and hooks. OpenClaw writes one assistant message into that chat's transcript so the next reply can use it as context. The result records its job and run; retries do not duplicate it, and the append can commit while a destination turn remains active. The transcript writer preserves ordering and rechecks the destination generation; destructive lifecycle mutations still serialize with the commit. Destination creation and remembered-route updates happen only after confirmed delivery; newly created destinations inherit the source session's required sandbox policy.
 
 - Delivery to the creating chat writes the result there.
 - Delivery to a different chat or topic writes the result **only in the destination**, not in the creating chat.
