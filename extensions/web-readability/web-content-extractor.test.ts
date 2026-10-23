@@ -39,6 +39,21 @@ async function extractArticle(html: string, extractMode: "text" | "markdown" = "
 }
 
 describe("web readability extractor", () => {
+  it.each(["markdown", "text"] as const)(
+    "excludes zero-scale text in %s articles",
+    async (mode) => {
+      const html = SAMPLE_HTML.replace(
+        "<article>",
+        '<article><p style="transform:scale(0, 0)">Secret flat marker</p><p style="transform:scale3d(0, 0, 0)">Secret depth marker</p><p style="transform:scale3d(1, 1, 0)">Visible depth marker</p>',
+      );
+      const extracted = await extractArticle(html, mode);
+      expect(extracted.text).toContain("Main content starts here");
+      expect(extracted.text).toContain("Visible depth marker");
+      expect(extracted.text).not.toContain("Secret flat marker");
+      expect(extracted.text).not.toContain("Secret depth marker");
+    },
+  );
+
   it("extracts readable markdown", async () => {
     const extracted = await extractArticle(SAMPLE_HTML, "markdown");
     expect(extracted.text).toContain("Main content starts here");
