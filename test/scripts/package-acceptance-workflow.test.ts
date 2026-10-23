@@ -16089,10 +16089,10 @@ wait_for_run plugin-clawhub-new.yml 123 "${expectedSha}" || status=$?
     ).toEqual(["preflight"]);
     expect(
       jobNeeds(workflowJob(INSTALL_SMOKE_REUSABLE_WORKFLOW, "installer_smoke_update_image")),
-    ).toEqual(["preflight"]);
+    ).toEqual(["preflight", "installer_smoke_candidate_payload"]);
     expect(
       jobNeeds(workflowJob(INSTALL_SMOKE_REUSABLE_WORKFLOW, "installer_smoke_nonroot_image")),
-    ).toEqual(["preflight"]);
+    ).toEqual(["preflight", "installer_smoke_candidate_payload"]);
     expect(
       jobNeeds(workflowJob(INSTALL_SMOKE_REUSABLE_WORKFLOW, "installer_smoke_update")),
     ).toEqual(["preflight", "installer_smoke_candidate_payload", "installer_smoke_update_image"]);
