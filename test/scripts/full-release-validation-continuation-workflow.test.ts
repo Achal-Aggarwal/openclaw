@@ -20,7 +20,12 @@ const source = readFileSync(".github/workflows/full-release-validation.yml", "ut
 type Workflow = {
   jobs: Record<
     string,
-    { if?: string; steps: Array<Record<string, unknown>>; "timeout-minutes"?: number }
+    {
+      if?: string;
+      needs?: string[];
+      steps: Array<Record<string, unknown>>;
+      "timeout-minutes"?: number;
+    }
   >;
   on: { workflow_dispatch: { inputs: Record<string, unknown> } };
 };

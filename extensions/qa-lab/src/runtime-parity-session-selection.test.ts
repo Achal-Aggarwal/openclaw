@@ -99,6 +99,7 @@ describe("runtime parity session selection", () => {
     const tempRoot = await seedSession({
       sessionId,
       sessionKey,
+      updatedAt: Date.now(),
       messages: [
         { role: "user", content: "Generate the follow-up image." },
         {
@@ -125,6 +126,7 @@ describe("runtime parity session selection", () => {
       tempRoot,
       sessionId,
       sessionKey,
+      updatedAt: Date.now(),
       messages: [
         {
           role: "toolResult",
@@ -157,6 +159,7 @@ describe("runtime parity session selection", () => {
     const tempRoot = await seedSession({
       sessionId: "missing-result",
       sessionKey,
+      updatedAt: Date.now(),
       messages: [{ role: "user", content: "Run the missing tool result fixture." }],
       trajectoryEvents: [
         {
