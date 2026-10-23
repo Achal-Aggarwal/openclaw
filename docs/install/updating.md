@@ -372,6 +372,12 @@ same version with `pnpm add -g --force openclaw@<installed-version>` using the
 same account and global directories to recreate the launcher. Back up first
 and follow the [manual package-manager procedure](/install/updating/update-methods#alternative-manual-npm-pnpm-or-bun).
 
+Native pnpm package swaps preserve platform-filtered optional dependencies as
+absent. On Windows, a dangling link declared in its owner's
+`optionalDependencies` is removed from the staged copy instead of failing
+activation; missing required dependencies and other filesystem errors still
+fail. This requires the installed updater to contain the repair.
+
 If a pnpm-owned install fails with `IO error: not a terminal`, the installed
 updater may be triggering an interactive pnpm build-approval prompt while
 capturing its output. A newer candidate cannot repair that first update.
