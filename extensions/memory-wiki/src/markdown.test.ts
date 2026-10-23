@@ -258,3 +258,27 @@ it("decodes Markdown URL paths without changing literal wiki links or malformed 
     "syntheses/100%.md",
   ]);
 });
+
+it("keeps inline link filtering while parsing CommonMark destinations", () => {
+  const markdown = [
+    "[[Wiki target|Alias]]",
+    '[Plan](../syntheses/plan(v2).md?view=full#details "Project plan")',
+    "[Escaped](../syntheses/plan\\(v3\\).md)",
+    "![Image](../assets/diagram.png)",
+    "[External](https://example.com/page.md)",
+    "[Anchor](#details)",
+    "`[Inline code](inline.md)`",
+    "```markdown\n[Fenced code](fenced.md)\n```",
+    "<!-- openclaw:wiki:related:start -->",
+    "[Generated](generated.md)",
+    "<!-- openclaw:wiki:related:end -->",
+    "[Reference][ref]\n\n[ref]: reference.md",
+  ].join("\n\n");
+
+  expect(scanWikiLinkTargets(markdown, "entities/test.md")).toEqual([
+    "Wiki target",
+    "syntheses/plan(v2).md",
+    "syntheses/plan(v3).md",
+    "assets/diagram.png",
+  ]);
+});
