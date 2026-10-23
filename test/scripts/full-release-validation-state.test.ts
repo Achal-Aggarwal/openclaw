@@ -2121,6 +2121,13 @@ try {
     const output = join(root, "full-release-execution-plan.json");
     const validator = join(root, "release-evidence-validator.mjs");
     const validatorArgs = join(root, "validator-args.json");
+    const sourceArtifact = {
+      digest: `sha256:${"f".repeat(64)}`,
+      id: "900",
+      name: "full-release-validation-99-1",
+      runAttempt: 1,
+      sizeInBytes: 4096,
+    };
     writeFileSync(
       validator,
       `import { writeFileSync } from "node:fs";
@@ -2137,6 +2144,7 @@ for (const [flag, wanted] of Object.entries(expected)) {
 console.log(JSON.stringify({
   children: JSON.parse(process.env.FRV_REUSED_CHILDREN),
   manifest: JSON.parse(process.env.FRV_EVIDENCE_MANIFEST),
+  root: {artifact: ${JSON.stringify(sourceArtifact)}},
   releaseProfile: process.env.RELEASE_PROFILE,
   rerunGroup: process.env.RERUN_GROUP,
 }));
@@ -2231,7 +2239,7 @@ console.log(JSON.stringify({
         rootRunId: "99",
         runUrl: "https://example.invalid/runs/99",
         selectedRunId: "99",
-        sourceManifest,
+        sourceArtifact,
       },
       trustedWorkflow: reuse.trustedWorkflow,
     });
@@ -2244,7 +2252,7 @@ console.log(JSON.stringify({
       name: "changed source manifest",
       waived: false,
       mutation: "sha",
-      blocker: "provenance_mismatch",
+      blocker: "reused_evidence_invalid",
     },
     {
       name: "missing source waiver",

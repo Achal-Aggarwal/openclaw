@@ -1107,6 +1107,7 @@ function releaseExecutionPlanShape(payload) {
         : []),
       ...(Object.hasOwn(payload, "telegramWaiver") ? ["targetVersion", "telegramWaiver"] : []),
       ...(Object.hasOwn(payload, "coveragePolicy") ? ["targetVersion", "coveragePolicy"] : []),
+      ...(payload.evidenceReuse?.requested === true ? ["targetVersion"] : []),
       ...(Object.hasOwn(payload, "sourceAdmissionContract")
         ? ["sourceAdmissionContract", "sourceAdmission"]
         : []),
@@ -1150,11 +1151,18 @@ function executionPlanDigestPayload(plan) {
   const coverage = Object.hasOwn(plan, "coveragePolicy")
     ? { targetVersion: plan.targetVersion, coveragePolicy: plan.coveragePolicy }
     : {};
+  const reuseTarget =
+    plan.evidenceReuse?.requested === true &&
+    !Object.hasOwn(plan, "telegramWaiver") &&
+    !Object.hasOwn(plan, "coveragePolicy")
+      ? { targetVersion: plan.targetVersion }
+      : {};
   const attemptAware = Object.hasOwn(plan, "attemptEvidenceVersion");
   return {
     ...source,
     ...publication,
     ...waiver,
+    ...reuseTarget,
     ...(attemptAware
       ? {
           ...coverage,
@@ -1299,7 +1307,7 @@ export function buildReleaseExecutionPlanArtifact({
     workflowRef: boundedString(expected.workflowRef, MAX_LABEL_LENGTH),
     workflowSha: boundedString(expected.workflowSha, MAX_LABEL_LENGTH),
     targetSha: boundedString(expected.targetSha, MAX_LABEL_LENGTH),
-    targetVersion: normalizedTargetVersion,
+    ...(normalizedReuse.requested ? { targetVersion: normalizedTargetVersion } : {}),
     trustedWorkflow: normalizedTrustedWorkflow(trustedWorkflow),
     releaseProfile: boundedString(releaseProfile, MAX_LABEL_LENGTH),
     rerunGroup: boundedString(rerunGroup, MAX_LABEL_LENGTH),
