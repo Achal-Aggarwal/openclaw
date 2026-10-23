@@ -24,8 +24,9 @@ export function executeOperatorApprovalCommand(
   command: SqliteWorkerCommand<OperatorApprovalWorkerOperations>,
   databaseOptions: OpenClawStateDatabaseOptions,
 ): OperatorApprovalWorkerOperations[keyof OperatorApprovalWorkerOperations]["output"] {
+  // Take the first host grant before BEGIN IMMEDIATE so a busy host cannot hold the writer.
+  requestSqliteWorkerOperationAdmission({ stage: "transaction", facts: undefined });
   return runOpenClawStateWriteTransaction((database) => {
-    requestSqliteWorkerOperationAdmission({ stage: "transaction", facts: undefined });
     const options = { ...databaseOptions, database };
     const result = executeOperatorApprovalOperation(command.type, command.input, options);
     if (
