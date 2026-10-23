@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import { resolveIdentityPathViaExistingAncestorSync } from "../../infra/boundary-path.js";
 import { isMissingPathError } from "../../infra/errors.js";
 import { walkDirectorySync } from "../../infra/fs-safe.js";
 import { isPathInside } from "../../infra/path-guards.js";
@@ -424,7 +425,7 @@ export function discoverSkillCandidates(params: {
   const rootDir = path.resolve(params.dir);
   let rootRealPath: string;
   try {
-    rootRealPath = fs.realpathSync(rootDir);
+    rootRealPath = fs.realpathSync(resolveIdentityPathViaExistingAncestorSync(rootDir));
   } catch (error) {
     if (!isMissingPathError(error)) {
       params.onDiagnostic?.({ kind: "read", path: rootDir, message: String(error) });
