@@ -395,11 +395,14 @@ describe("sessions_send child coordination", () => {
   );
 
   it.each([
-    { acknowledgment: "acknowledged", watch: undefined },
-    { acknowledgment: "ACK lost", watch: true },
+    { acknowledgment: "acknowledged", watch: undefined, timeoutSeconds: 0, observation: "timeout" },
+    { acknowledgment: "acknowledged", watch: undefined, timeoutSeconds: 1, observation: "timeout" },
+    { acknowledgment: "acknowledged", watch: undefined, timeoutSeconds: 1, observation: "yielded" },
+    { acknowledgment: "acknowledged", watch: undefined, timeoutSeconds: 1, observation: "pending" },
+    { acknowledgment: "ACK lost", watch: true, timeoutSeconds: 0, observation: "timeout" },
   ] as const)(
     "delivers a queued child follow-up after its original wake was consumed ($acknowledgment, watch=$watch)",
-    async ({ acknowledgment, watch }) => {
+    async ({ acknowledgment, watch, timeoutSeconds, observation }) => {
       const requesterSessionKey = "agent:main:dashboard:requester";
       const childSessionKey = "agent:main:dashboard:existing-child";
       const requesterTurnRunId = "followup-requester-turn";
@@ -426,6 +429,7 @@ describe("sessions_send child coordination", () => {
         requesterTurnRunId: undefined,
         requesterSettleWake: undefined,
       });
+      let inlineObserved = false;
       let finishChild = () => {};
       const childPending = new Promise<void>((resolve) => {
         finishChild = resolve;
@@ -441,6 +445,12 @@ describe("sessions_send child coordination", () => {
           return receipt;
         }
         if (request.method === "agent.wait" && request.params?.runId === runId) {
+          if (!inlineObserved && request.params?.timeoutMs === 1000) {
+            inlineObserved = true;
+            return observation === "yielded"
+              ? { status: "ok", yielded: true }
+              : { status: observation };
+          }
           await childPending;
           return {
             runId,
@@ -474,7 +484,7 @@ describe("sessions_send child coordination", () => {
           sessionKey: childSessionKey,
           mode: "followup",
           ...(watch === undefined ? {} : { watch }),
-          timeoutSeconds: 0,
+          timeoutSeconds,
           message: "Return the follow-up result",
         });
         expect(result.details).toMatchObject({
@@ -554,6 +564,72 @@ describe("sessions_send child coordination", () => {
         await resetSubagentRegistryForTests();
         announceTesting.setDepsForTest();
       }
+    },
+  );
+
+  it.each(["ok", "error", "timeout"] as const)(
+    "consumes an inline native child result without a later parent notice (%s)",
+    async (status) => {
+      const requesterSessionKey = "agent:main:dashboard:inline-parent";
+      const childSessionKey = "agent:main:dashboard:inline-child";
+      const requesterTurnRunId = "inline-parent-turn";
+      const runId = "inline-followup";
+      await writeEntry(requesterSessionKey, { sessionId: "inline-parent", updatedAt: 1 });
+      await writeEntry(childSessionKey, {
+        sessionId: "inline-child",
+        updatedAt: 1,
+        spawnedBy: requesterSessionKey,
+        spawnDepth: 1,
+      });
+      await resetSubagentRegistryForTests();
+      callGatewayMock.mockImplementation(async (request: GatewayCall) => {
+        calls.push(request);
+        if (request.method === "agent") {
+          return { runId, status: "accepted", targetDisposition: "queued" };
+        }
+        if (request.method === "agent.wait") {
+          return {
+            runId,
+            status,
+            startedAt: 1,
+            endedAt: Date.now(),
+            ...(status === "ok"
+              ? { terminalReply: { disposition: "visible", text: "Inline result" } }
+              : { error: "Child failed" }),
+          };
+        }
+        return {};
+      });
+      const result = await createSessionsSendTool({
+        agentSessionKey: requesterSessionKey,
+        requesterTurnRunId,
+        config,
+        callGateway: callGatewayMock,
+      }).execute("inline", {
+        sessionKey: childSessionKey,
+        mode: "followup",
+        timeoutSeconds: 1,
+        message: "Continue",
+      });
+      expect(result.details).toMatchObject({ status });
+      expect(getSubagentRunByRunId(runId)).toMatchObject({
+        expectsCompletionMessage: false,
+        completion: { required: false },
+        delivery: { status: "delivered" },
+      });
+      await settleRequesterAfterSessionSpawns({
+        requesterSessionKey,
+        requesterAgentId: "main",
+        requesterTurnRunId,
+        requesterYielded: false,
+        acceptedSessionSpawns: [{ runId, childSessionKey, expectsCompletionMessage: false }],
+      });
+      await settleSessionWork();
+      expect(
+        calls.filter(
+          (call) => call.method === "agent" && call.params?.sessionKey === requesterSessionKey,
+        ),
+      ).toHaveLength(0);
     },
   );
 

@@ -8,6 +8,7 @@ import {
   getGatewayContextResolver,
 } from "../../../plugins/runtime/gateway-request-scope.js";
 import { resolveActiveEmbeddedRunOwnerByRunId } from "../../embedded-agent-runner/runs.js";
+import { retireRequesterFollowupAuthority } from "../requester-cron-authority.js";
 import { resolveSubagentChildAuthority } from "./subagent-child-owner-match.js";
 import type { SubagentKillSession } from "./subagent-control-session.js";
 import { getCurrentSubagentRunOwner, subagentRuns } from "./subagent-registry-memory.js";
@@ -99,6 +100,7 @@ export function captureSubagentExecution(params: {
 /** Retire execution authority while its raw owner still supplies cleanup observation. */
 export function retireSubagentGatewayBinding(observed: SubagentRunRecord): void {
   const entry = getCurrentSubagentRunOwner(subagentRuns, observed) ?? observed;
+  retireRequesterFollowupAuthority(entry);
   const key = getSubagentRunRuntimeKey(entry);
   const resolver = getGatewayContextResolver(entry);
   try {
