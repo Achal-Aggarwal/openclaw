@@ -65,11 +65,12 @@ const DEFAULT_POLL_MS = 30_000;
 const DEFAULT_TIMEOUT_MS = 12 * 60 * 60_000;
 const DEFAULT_RECONCILE_TIMEOUT_MS = 60_000;
 const DEFAULT_WATCH_POLL_MS = 60_000;
+const DEFAULT_PLAN_SEAL_WAIT_MS = 15 * 60_000;
 const DEFAULT_CHILD_MAX_ATTEMPTS = 2;
 const PLAN_ARTIFACT_PROPAGATION_MS = 2 * 60_000;
 const PLAN_FILENAME = "full-release-execution-plan.json";
 const USAGE =
-  "usage: pnpm frv <status|watch|continue|rerun|verify> --run <id> [--failed | --job <child>:<name> | --child <key|run-id> [--max-attempts <n>]] | pnpm frv prioritize --restore <record>";
+  "usage: pnpm frv <status|watch|continue|rerun|verify> --run <id> [--failed [--wait-for-seal] | --job <child>:<name> | --child <key|run-id> [--max-attempts <n>]] | pnpm frv prioritize --restore <record>";
 
 function requiredValue(value, label) {
   const normalized = String(value ?? "").trim();
@@ -155,6 +156,8 @@ function parseArgs(argv) {
       options.once = true;
     } else if (argument === "--failed") {
       options.failedOnly = true;
+    } else if (argument === "--wait-for-seal") {
+      options.waitForSeal = true;
     } else if (argument === "--restore") {
       options.restore = requiredValue(argv[++index], "--restore");
     } else if (argument === "--json") {
@@ -186,6 +189,9 @@ function parseArgs(argv) {
   }
   if (command !== "continue" && options.failedOnly) {
     throw new Error("--failed is valid only with continue");
+  }
+  if (command !== "continue" && options.waitForSeal) {
+    throw new Error("--wait-for-seal is valid only with continue --failed");
   }
   if (!["continue", "prioritize", "rerun"].includes(command) && options.dryRun) {
     throw new Error("--dry-run is valid only with continue, rerun, or prioritize");
@@ -2038,20 +2044,36 @@ export async function loadPlanForCommand(
   client,
   loadExecutionPlan = downloadExecutionPlan,
 ) {
-  try {
-    return { plan: await loadPlan(options, loadExecutionPlan) };
-  } catch (error) {
-    if (!(error instanceof MissingFrvPlanError)) {
-      throw error;
+  const waitDeadline = options.waitForSeal
+    ? (options.operationDeadline ??
+      Date.now() + configuredTimeout("OPENCLAW_FRV_PLAN_SEAL_WAIT_MS", DEFAULT_PLAN_SEAL_WAIT_MS))
+    : undefined;
+  while (true) {
+    try {
+      return { plan: await loadPlan(options, loadExecutionPlan) };
+    } catch (error) {
+      if (!(error instanceof MissingFrvPlanError)) {
+        throw error;
+      }
+      const pending = await inspectUnsealedPlan(options, client);
+      if (options.command === "status") {
+        return { pending };
+      }
+      if (!options.waitForSeal) {
+        throw new Error(
+          `run ${options.runId} plan is ${pending.planAvailability.state}; ${options.command} is unavailable until the immutable plan is sealed; next: ${pending.nextCommand}`,
+          { cause: error },
+        );
+      }
+      const remaining = waitDeadline - Date.now();
+      if (remaining < 1) {
+        throw new Error(
+          `run ${options.runId} plan is ${pending.planAvailability.state}; timed out waiting for the immutable plan seal`,
+          { cause: error },
+        );
+      }
+      await sleep(Math.min(configuredTimeout("OPENCLAW_FRV_POLL_MS", DEFAULT_POLL_MS), remaining));
     }
-    const pending = await inspectUnsealedPlan(options, client);
-    if (options.command === "status") {
-      return { pending };
-    }
-    throw new Error(
-      `run ${options.runId} plan is ${pending.planAvailability.state}; ${options.command} is unavailable until the immutable plan is sealed; next: ${pending.nextCommand}`,
-      { cause: error },
-    );
   }
 }
 
