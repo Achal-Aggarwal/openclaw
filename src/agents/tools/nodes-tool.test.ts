@@ -1006,6 +1006,30 @@ describe("createNodesTool screen_record duration guardrails", () => {
     },
   );
 
+  it.each([
+    {
+      invokeCommand: "browser.proxy",
+      invokeParamsJson:
+        '{"method":"POST","path":"/act","body":{"kind":"click","ref":"e3","targetId":"T1"}}',
+    },
+    { invokeCommand: "browser.proxy.upload.v1", invokeParamsJson: "{}" },
+  ])(
+    "blocks raw $invokeCommand so browser control uses the dedicated browser tool",
+    async ({ invokeCommand, invokeParamsJson }) => {
+      const tool = createNodesTool();
+
+      await expect(
+        tool.execute("call-1", {
+          action: "invoke",
+          node: "pixel",
+          invokeCommand,
+          invokeParamsJson,
+        }),
+      ).rejects.toThrow("use the dedicated browser tool");
+      expect(gatewayMocks.callGatewayTool).not.toHaveBeenCalled();
+    },
+  );
+
   it("redirects file-transfer invoke commands to the dedicated file-transfer tool", async () => {
     const tool = createNodesTool({ allowMediaInvokeCommands: true });
 
