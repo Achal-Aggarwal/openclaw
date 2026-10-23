@@ -439,7 +439,6 @@ else console.log(JSON.stringify({id:202,workflow_id:88,head_branch:'main',event:
       expect.arrayContaining([
         "prepare_npm_package",
         "qualify_npm_package",
-        "prepare_plugin_npm",
         "prepare_docker_release",
       ]),
     );

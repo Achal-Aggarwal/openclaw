@@ -1975,7 +1975,6 @@ jobs:
         evidence_reuse,
         prepare_npm_package,
         qualify_npm_package,
-        prepare_plugin_npm,
         prepare_docker_release,
         candidate_acquisition,
         normal_ci,
@@ -2102,8 +2101,6 @@ jobs:
           CANDIDATE_REQUEST_JSON: ${{ needs.resolve_target.outputs.candidate_request_json }}
           NPM_PREPARATION_RESULT: ${{ needs.prepare_npm_package.result }}
           NPM_QUALIFICATION_RESULT: ${{ needs.qualify_npm_package.result }}
-          PLUGIN_NPM_REQUIRED: ${{ needs.resolve_target.outputs.plugin_npm_preflight_required }}
-          PLUGIN_NPM_PREPARATION_RESULT: ${{ needs.prepare_plugin_npm.result }}
           DOCKER_PREPARATION_RESULT: ${{ needs.prepare_docker_release.result }}
           FULL_RELEASE_RESTORE_PLAN: ${{ github.run_attempt != 1 }}
           FULL_RELEASE_EXECUTION_PLAN_PATH: ${{ github.workspace }}/full-release-execution-plan/full-release-execution-plan.json
