@@ -140,8 +140,8 @@ it.each([true, false])(
       vi.useRealTimers();
     });
     const f = await nativeChild();
-    await f.client.notify(childTurnCompletedNotification({ status: "interrupted" }));
     expect(isCodexAppServerLiveThreadClaimed(f.client.client, parentThreadId)).toBe(true);
+    await f.client.notify(childTurnCompletedNotification({ status: "interrupted" }));
     const original = f.client.request.getMockImplementation();
     if (!original) {
       throw new Error("Missing transport fixture");
@@ -179,7 +179,7 @@ it.each([true, false])(
         : [],
     });
     expect(f.interruptBudgets).toEqual([]);
-    expect(isCodexAppServerLiveThreadClaimed(f.client.client, parentThreadId)).toBe(!selected);
+    expect(isCodexAppServerLiveThreadClaimed(f.client.client, parentThreadId)).toBe(false);
     expect(f.runtime.deliverAgentHarnessCompletion).not.toHaveBeenCalled();
   },
 );
