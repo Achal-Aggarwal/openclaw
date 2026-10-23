@@ -245,3 +245,16 @@ describe("scanWikiPageSummary linkTargets", () => {
     expect(links).toEqual(["RealPage"]);
   });
 });
+
+it("decodes Markdown URL paths without changing literal wiki links or malformed escapes", () => {
+  const markdown = renderWikiMarkdown({
+    frontmatter: { pageType: "source", id: "source.links", title: "Links" },
+    body: "[Notes](../syntheses/plan%20notes.md)\n[Cafe](../syntheses/caf%C3%A9.md#menu)\n[Malformed](../syntheses/100%.md)\n[[literal%20name]]\n`[Code](hidden%20target.md)`",
+  });
+  expect(scanWikiLinkTargets(markdown, "sources/links.md")).toEqual([
+    "literal%20name",
+    "syntheses/plan notes.md",
+    "syntheses/café.md",
+    "syntheses/100%.md",
+  ]);
+});

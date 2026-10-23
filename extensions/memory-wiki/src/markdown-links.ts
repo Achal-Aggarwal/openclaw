@@ -15,6 +15,14 @@ function normalizeMarkdownLinkTarget(sourceRelativePath: string, target: string)
   return path.posix.normalize(path.posix.join(path.posix.dirname(sourceRelativePath), target));
 }
 
+function decodeMarkdownLinkPath(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
 type MarkdownAstNode = {
   type?: string;
   position?: {
@@ -80,7 +88,9 @@ export function extractWikiLinks(markdown: string, sourceRelativePath: string): 
     if (!rawTarget || rawTarget.startsWith("#") || /^[a-z]+:/i.test(rawTarget)) {
       continue;
     }
-    const target = rawTarget.split("#")[0]?.split("?")[0]?.replace(/\\/g, "/").trim();
+    const target = decodeMarkdownLinkPath(rawTarget.split("#")[0]?.split("?")[0] ?? "")
+      .replace(/\\/g, "/")
+      .trim();
     if (target) {
       links.push(normalizeMarkdownLinkTarget(sourceRelativePath, target));
     }

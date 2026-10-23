@@ -607,3 +607,29 @@ describe("lintMemoryWikiVault", () => {
     },
   );
 });
+
+it("resolves percent-encoded Markdown destinations for lint and backlinks", async () => {
+  const { config, rootDir } = await createVault();
+  await fs.mkdir(path.join(rootDir, "entities"), { recursive: true });
+  await fs.mkdir(path.join(rootDir, "sources"), { recursive: true });
+  await fs.writeFile(
+    path.join(rootDir, "entities", "plan notes.md"),
+    renderWikiMarkdown({
+      frontmatter: { pageType: "entity", id: "entity.plan-notes", title: "Plan notes" },
+      body: "# Plan notes",
+    }),
+  );
+  await fs.writeFile(
+    path.join(rootDir, "sources", "links.md"),
+    renderWikiMarkdown({
+      frontmatter: { pageType: "source", id: "source.links", title: "Links" },
+      body: "# Links\n\n[Notes](../entities/plan%20notes.md)",
+    }),
+  );
+  const result = await lintMemoryWikiVault(config);
+  expect(result.issues.filter((issue) => issue.code === "broken-wikilink")).toEqual([]);
+  const raw = await fs.readFile(path.join(rootDir, "entities", "plan notes.md"), "utf8");
+  const related = raw.split(WIKI_RELATED_START_MARKER)[1]?.split(WIKI_RELATED_END_MARKER)[0];
+  expect(related).toContain("Referenced By");
+  expect(related).toContain("Links");
+});
