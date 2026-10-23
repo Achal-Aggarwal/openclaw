@@ -65,6 +65,7 @@ import {
 import { isMcpToolAllowed, normalizeMcpToolFilter } from "./mcp-tool-filter.js";
 import { normalizeMcpToolCatalog, type McpToolCatalogMetadata } from "./mcp-tool-metadata.js";
 import { resolveMcpTransport } from "./mcp-transport.js";
+import { recordModelFallbackStop } from "./model-fallback-stop.js";
 import { recordAgentCleanupFailure } from "./run-cleanup-timeout.js";
 
 type BundleMcpSession = {
@@ -1045,7 +1046,9 @@ function createServerMcpRuntime(
       await Promise.allSettled(pendingDisposals);
       if (cleanupFailed) {
         recordAgentCleanupFailure();
-        throw new Error("MCP runtime cleanup could not confirm closure");
+        const error = new Error("MCP runtime cleanup could not confirm closure");
+        recordModelFallbackStop(error);
+        throw error;
       }
     },
     dispose() {

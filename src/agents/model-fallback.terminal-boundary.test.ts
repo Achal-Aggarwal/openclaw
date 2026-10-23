@@ -1,5 +1,6 @@
 import { assert, beforeEach, describe, expect, it, vi } from "vitest";
 import { SqliteTranscriptMutationConflictError } from "../config/sessions/session-mutation-conflict-error.js";
+import { SessionTranscriptReadFenceError } from "../config/sessions/session-transcript-read-fence-error.js";
 import { SessionWorkStartChangedError } from "../config/sessions/work-start-error.js";
 import { SqliteWorkerError } from "../infra/sqlite-worker-contract.js";
 import { GatewayDrainingError } from "../process/gateway-work-admission.js";
@@ -104,6 +105,13 @@ it("does not consult provider policy or rotate models for a transcript conflict"
 });
 
 it.each([
+  [
+    "transcript admission identity change",
+    () =>
+      new SessionTranscriptReadFenceError(
+        "Current-turn transcript admission identity changed: fixture",
+      ),
+  ],
   [
     "session reader invalidation",
     () =>
