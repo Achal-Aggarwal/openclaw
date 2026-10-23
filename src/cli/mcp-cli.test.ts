@@ -46,6 +46,58 @@ describe("mcp cli", () => {
     await cleanupMcpCliTestState();
   });
 
+  it.each(["node", " node "])("preserves literal stdio paths from add flags: %j", async (name) => {
+    await withMcpHome(async (home, workspaceDir) => {
+      const command = path.join(workspaceDir, name);
+      const cwd = path.join(workspaceDir, name + "-workspace ");
+      await runMcpCommand([
+        "mcp",
+        "add",
+        "literal",
+        "--command",
+        command,
+        "--arg",
+        "server.mjs",
+        "--cwd",
+        cwd,
+        "--no-probe",
+      ]);
+      const file = path.join(home, ".openclaw", "openclaw.json");
+      const saved = JSON.parse(await fs.readFile(file, "utf8"));
+      expect(saved.mcp.servers.literal).toEqual({ command, args: ["server.mjs"], cwd });
+      mockLog.mockClear();
+      await runMcpCommand(["mcp", "show", "literal", "--json"]);
+      expect(JSON.parse(lastLogLine())).toEqual({ command, args: ["server.mjs"], cwd });
+    });
+  });
+
+  it.skipIf(process.platform === "win32")(
+    "probes a literal executable and cwd with trailing spaces",
+    async () => {
+      await withMcpHome(async (home, workspaceDir) => {
+        const command = path.join(workspaceDir, "node ");
+        const cwd = path.join(workspaceDir, "workspace ");
+        await fs.symlink(process.execPath, command);
+        await fs.mkdir(cwd);
+        await writeProbeMcpServer(path.join(cwd, "server.mjs"));
+        await runMcpCommand([
+          "mcp",
+          "add",
+          "literal-probe",
+          "--command",
+          command,
+          "--arg",
+          "server.mjs",
+          "--cwd",
+          cwd,
+        ]);
+        const file = path.join(home, ".openclaw", "openclaw.json");
+        const saved = JSON.parse(await fs.readFile(file, "utf8"));
+        expect(saved.mcp.servers["literal-probe"]).toEqual({ command, args: ["server.mjs"], cwd });
+      });
+    },
+  );
+
   it("adds a configured MCP server from flags without replacing operator knobs", async () => {
     await withMcpHome(async () => {
       await runMcpCommand([
