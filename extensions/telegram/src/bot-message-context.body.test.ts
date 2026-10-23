@@ -755,3 +755,20 @@ describe("Telegram admitted model input", () => {
     );
   });
 });
+
+it("uses the mixed-case account mention policy for inbound text", async () => {
+  const cfg = config();
+  cfg.messages = { groupChat: { mentionPatterns: ["account"] } };
+  cfg.channels!.telegram!.mentionPatterns = { mode: "deny" };
+  cfg.channels!.telegram!.accounts = {
+    Work: {
+      botToken: "123:work",
+      mentionPatterns: { mode: "allow", allowIn: ["-10042001"] },
+    },
+  };
+  const bot = await createBot(false, true, cfg, true, "work");
+
+  await receive(bot, textMessage("account policy"));
+
+  expect(harness.replySpy.mock.calls[0]?.[0].BodyForAgent).toBe("account policy");
+});
