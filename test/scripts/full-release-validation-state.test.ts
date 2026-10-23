@@ -12,6 +12,7 @@ import {
   isReleaseGhArtifactMissingError,
   MAX_RELEASE_ARTIFACT_BYTES,
   releaseExecutionPlanSha256,
+  releasePlanGateFailures,
   terminalPolicyPass,
   validateReleaseChildDispatchBinding,
   validateReleaseCoveragePolicyBinding,
@@ -727,6 +728,40 @@ describe("full release execution plan", () => {
       required: false,
       result: "skipped",
     });
+  });
+
+  it("retains every required artifact qualification result as a parent gate", () => {
+    const result = plan({
+      candidateRequired: false,
+      childPhaseVersion: 3,
+      npmPreparationResult: "success",
+      npmQualificationResult: "failure",
+      pluginNpmPreflightRequired: true,
+      pluginNpmPreparationResult: "timed_out",
+      dockerPreparationResult: "cancelled",
+    });
+
+    expect(result.gates).toEqual(
+      expect.arrayContaining([
+        { name: "Prepare release npm artifacts", required: true, result: "success" },
+        { name: "Qualify release npm artifacts", required: true, result: "failure" },
+        { name: "Prepare exact plugin npm artifacts", required: true, result: "timed_out" },
+        { name: "Prepare release Docker artifacts", required: true, result: "cancelled" },
+      ]),
+    );
+    expect(releasePlanGateFailures(result.gates)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ job: "Qualify release npm artifacts", conclusion: "failure" }),
+        expect.objectContaining({
+          job: "Prepare exact plugin npm artifacts",
+          conclusion: "timed_out",
+        }),
+        expect.objectContaining({
+          job: "Prepare release Docker artifacts",
+          conclusion: "cancelled",
+        }),
+      ]),
+    );
   });
 
   it("requires live-e2e candidate preparation only without a suite filter", () => {

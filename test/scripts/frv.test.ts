@@ -2030,6 +2030,41 @@ describe("FRV child rerun", () => {
 });
 
 describe("FRV watch", () => {
+  it("labels every failed artifact qualification job as a blocker", async () => {
+    const statePath = path.join(tempDirs.make("frv-producer-blockers-"), "state.json");
+    const messages: string[] = [];
+    const client = {
+      repository: REPOSITORY,
+      getRun: async (runId: string) =>
+        runId === "77" ? rootRun(1, "failure") : runFor(child("normalCi", "808"), 1, "failure"),
+      getParentJobs: async () => [
+        { ...job("Prepare release npm artifacts"), id: 5, run_attempt: 1 },
+      ],
+      getJobLog: async () =>
+        [
+          `TARGET_SHA: ${TARGET_SHA}`,
+          `Dispatched full-release-artifacts.yml: https://github.com/${REPOSITORY}/actions/runs/808 (attempt 1)`,
+          "Artifact preparation npm identity: job 901 (attempt 1)",
+        ].join("\n"),
+      getAttemptJobs: async () => [
+        job("Prepare npm artifacts / Check npm dependencies", "failure"),
+        job("Prepare npm artifacts / Check npm package contents", "timed_out"),
+      ],
+    };
+
+    await expect(
+      watchRelease("77", client, {
+        statePath,
+        once: true,
+        emit: (event) => messages.push(event.message),
+      }),
+    ).resolves.toMatchObject({ complete: true });
+    expect(messages.filter((message) => message.includes("blocker"))).toEqual([
+      expect.stringContaining("Check npm dependencies"),
+      expect.stringContaining("Check npm package contents"),
+    ]);
+  });
+
   it("resolves children from dispatch logs and reports each transition once across restarts", async () => {
     const statePath = path.join(tempDirs.make("frv-watch-"), "state.json");
     const ci = child("normalCi", "101");
