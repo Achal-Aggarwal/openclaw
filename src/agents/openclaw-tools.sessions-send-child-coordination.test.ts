@@ -108,6 +108,7 @@ import { clearActiveEmbeddedRun, setActiveEmbeddedRun } from "./embedded-agent-r
 import { createEmbeddedRunHandle } from "./embedded-agent-runner/runs.test-support.js";
 import { createRequesterYieldCallback } from "./openclaw-tools.requester-yield.js";
 import {
+  endChildRun,
   registerSessionsSendRequesterRetirementTests,
   type GatewayCall,
 } from "./openclaw-tools.sessions-send-requester-retirement.test-support.js";
@@ -117,6 +118,7 @@ import { subscribeSubagentRunChanges } from "./subagents/registry/subagent-regis
 import { observeRootWork } from "./subagents/registry/subagent-registry.browser-cleanup.test-support.js";
 import {
   addSubagentRunForTests,
+  countPendingDescendantRuns,
   getSubagentRunByRunId,
   resetSubagentRegistryForTests,
   settleRequesterAfterSessionSpawns,
@@ -574,6 +576,7 @@ describe("sessions_send child coordination", () => {
       const childSessionKey = "agent:main:dashboard:inline-child";
       const requesterTurnRunId = "inline-parent-turn";
       const runId = "inline-followup";
+      const terminalReply = { disposition: "visible" as const, text: "Inline result" };
       await writeEntry(requesterSessionKey, { sessionId: "inline-parent", updatedAt: 1 });
       await writeEntry(childSessionKey, {
         sessionId: "inline-child",
@@ -588,14 +591,17 @@ describe("sessions_send child coordination", () => {
           return { runId, status: "accepted", targetDisposition: "queued" };
         }
         if (request.method === "agent.wait") {
+          if (status === "ok") {
+            await endChildRun(runId, childSessionKey, terminalReply);
+            // The live inline claim owns cleanup until its guarded acknowledgement.
+            expect(getSubagentRunByRunId(runId)?.cleanupCompletedAt).toBeUndefined();
+          }
           return {
             runId,
             status,
             startedAt: 1,
             endedAt: Date.now(),
-            ...(status === "ok"
-              ? { terminalReply: { disposition: "visible", text: "Inline result" } }
-              : { error: "Child failed" }),
+            ...(status === "ok" ? { terminalReply } : { error: "Child failed" }),
           };
         }
         return {};
@@ -623,6 +629,20 @@ describe("sessions_send child coordination", () => {
         requesterTurnRunId,
         requesterYielded: false,
         acceptedSessionSpawns: [{ runId, childSessionKey, expectsCompletionMessage: false }],
+      });
+      if (status !== "ok") {
+        // A later lifecycle terminal still owns its normal cleanup after acknowledgement.
+        await endChildRun(runId, childSessionKey, terminalReply);
+      }
+      await settleSessionWork();
+      expect(getSubagentRunByRunId(runId)?.cleanupCompletedAt).toEqual(expect.any(Number));
+      expect(await countPendingDescendantRuns(requesterSessionKey, () => {})).toBe(0);
+      // Replaying the lifecycle cannot revive the consumed notice.
+      emitAgentEvent({
+        runId,
+        sessionKey: childSessionKey,
+        stream: "lifecycle",
+        data: { phase: "end", endedAt: Date.now() },
       });
       await settleSessionWork();
       expect(
