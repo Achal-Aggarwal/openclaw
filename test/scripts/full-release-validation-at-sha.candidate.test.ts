@@ -88,6 +88,7 @@ describe("candidate-owned full release dispatch entry point", () => {
     const f = createDispatchFixture({ candidateOwned: true, advanceMainBeforeAdmission: 4 });
     const result = f.run();
     expectDispatchFailure(result, "Admission tooling ref moved before dispatch");
+    expect(f.record().admission.workflowShaPolicy).toBe("pinned");
     expect(dispatches(f)).toEqual([]);
   });
 
@@ -110,6 +111,7 @@ describe("candidate-owned full release dispatch entry point", () => {
     expect(retained.request.workflowSha).toBe(f.targetSha);
     expect(retained.request.targetSha).toBe(f.targetSha);
     expect(retained.admission.workflowSha).toBe(f.workflowSha);
+    expect(retained.admission.workflowShaPolicy).toBe("pinned");
     expect(envelope.trustedWorkflow).toEqual({
       ref: sent.ref,
       fullRef: "refs/heads/" + sent.ref,
