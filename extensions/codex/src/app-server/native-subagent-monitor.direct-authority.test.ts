@@ -1,4 +1,9 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, onTestFinished, vi } from "vitest";
+import {
+  ensureCodexAppServerClientRuntime,
+  protectCodexAppServerLiveThread,
+  retainCodexAppServerLiveThread,
+} from "./client-runtime.js";
 import {
   type CodexThreadReadResponse,
   directSpawnItem,
@@ -16,9 +21,103 @@ import {
   createNativeModelSourceFixture as modelSource,
   requireNativeModelSourceCapture as requireCapture,
 } from "./native-subagent-monitor.test-support.js";
-import type { CodexServerNotification } from "./protocol.js";
+import type { CodexServerNotification, JsonObject } from "./protocol.js";
+import { createCodexThreadLifecycleTimingTracker } from "./thread-lifecycle-timing.js";
+import { releaseCodexBoundLiveThread } from "./thread-lifecycle-warm.js";
+
+function itemNotification(item: JsonObject, turnId = "parent-turn"): CodexServerNotification {
+  return { method: "item/completed", params: { threadId: "parent-thread", turnId, item } };
+}
+
+function interactionNotification(id: string, turnId = "parent-turn") {
+  return itemNotification(
+    {
+      type: "subAgentActivity",
+      id,
+      kind: "interacted",
+      agentThreadId: "child-thread",
+      agentPath: "/root/child-thread",
+    },
+    turnId,
+  );
+}
 
 describe("CodexNativeSubagentMonitor", () => {
+  it.each(["completed", "interrupted"] as const)(
+    "protects resumed inference before turn/started until it is %s",
+    async (status) => {
+      const client = createClient();
+      ensureCodexAppServerClientRuntime(client.client, {
+        agentDir: "/tmp/codex-resumed-inference-retention",
+      });
+      const monitor = new CodexNativeSubagentMonitor(client.client, createRuntime(), {
+        retainParentThread: (threadId) => protectCodexAppServerLiveThread(client.client, threadId),
+      });
+      onTestFinished(async () => {
+        await monitor.retireParent("parent-thread");
+        await monitor.dispose();
+        client.close();
+      });
+      const releaseForResume = () =>
+        releaseCodexBoundLiveThread({
+          client: client.client,
+          threadId: "parent-thread",
+          lifecycleTiming: createCodexThreadLifecycleTimingTracker(),
+        });
+      await retainCodexAppServerLiveThread(client.client, "parent-thread");
+      const first = await monitor.registerParent({
+        parentThreadId: "parent-thread",
+        modelSource: modelSource(["model-a"]),
+      });
+      first.bindTurn("parent-a");
+      await notifyChildStarted(client);
+      await client.notify(
+        itemNotification(directSpawnItem("v2", "parent-thread", "child-thread"), "parent-a"),
+      );
+      await client.notify(turnStartedNotification("child-a"));
+      await client.notify(
+        childTurnCompletedNotification({ turnId: "child-a", status: "interrupted" }),
+      );
+      await first.unregister();
+      await expect(releaseForResume()).resolves.toBe(true);
+
+      await retainCodexAppServerLiveThread(client.client, "parent-thread");
+      const second = await monitor.registerParent({
+        parentThreadId: "parent-thread",
+        modelSource: modelSource(["model-b"]),
+      });
+      second.bindTurn("parent-b");
+      await client.notify(interactionNotification("accepted-resume", "parent-b"));
+      const resumed = requireCapture(
+        await monitor.captureModelSource({
+          threadId: "child-thread",
+          turnId: "child-b",
+          parentThreadId: "parent-thread",
+          parentTurnId: "parent-b",
+          rootTurnId: "parent-b",
+        }),
+      );
+      onTestFinished(() => resumed.release());
+      await second.unregister();
+      await expect(releaseForResume()).rejects.toThrow("claimed by active work; stop it first");
+      if (status === "interrupted") {
+        resumed.cancel();
+        expect(() => resumed.assertCurrent()).toThrow("execution was cancelled");
+      }
+      await client.notify(
+        childTurnCompletedNotification({
+          turnId: "child-b",
+          status,
+          items:
+            status === "completed"
+              ? [{ id: "resumed-result", type: "agentMessage", text: "Resumed result" }]
+              : [],
+        }),
+      );
+      await expect(releaseForResume()).resolves.toBe(true);
+    },
+  );
+
   it("keeps A during an accepted B follow-up and gives the new child turn only B's ceiling", async () => {
     const client = createClient();
     const monitor = new CodexNativeSubagentMonitor(client.client, createRuntime(), {
