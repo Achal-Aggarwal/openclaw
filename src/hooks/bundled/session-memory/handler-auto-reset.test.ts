@@ -21,6 +21,65 @@ describe("session-memory automatic reset", () => {
     await flushSessionMemoryWritesForTest();
   });
 
+  it("retains every overlapping capture with its own content", async () => {
+    const storePath = path.join(tempDir, "sessions.json");
+    const cfg = {
+      agents: { defaults: { workspace: tempDir, userTimezone: "UTC" } },
+      session: { store: storePath },
+    } satisfies OpenClawConfig;
+    const sessions = Array.from({ length: 6 }, (_, index) => ({
+      sessionId: `concurrent-${index}`,
+      sessionKey: `agent:main:concurrent-${index}`,
+      marker: `capture-${index}-only`,
+      senderIsOwner: index % 2 === 0,
+    }));
+    for (const session of sessions) {
+      await replaceTranscriptEvents({ agentId: "main", storePath, ...session }, [
+        {
+          type: "message",
+          id: `${session.sessionId}-user`,
+          parentId: null,
+          message: {
+            role: "user",
+            content: session.marker,
+            __openclaw: { senderIsOwner: session.senderIsOwner },
+          },
+        },
+      ]);
+    }
+
+    await Promise.all(
+      sessions.map(async (session) => {
+        const event = createInternalHookEvent("session", "auto-reset", session.sessionKey, {
+          cfg,
+          agentId: "main",
+          workspaceDir: tempDir,
+          storePath,
+          sessionEntry: { sessionId: session.sessionId },
+          reason: "idle",
+        });
+        event.timestamp = new Date("2026-10-21T20:30:00.000Z");
+        await handler(event);
+      }),
+    );
+
+    const memoryDir = path.join(tempDir, "memory");
+    const files = await fs.readdir(memoryDir);
+    expect(files).toHaveLength(sessions.length);
+    const artifacts = await Promise.all(
+      files.map(async (filename) => ({
+        content: await fs.readFile(path.join(memoryDir, filename), "utf8"),
+      })),
+    );
+    for (const session of sessions) {
+      const matches = artifacts.filter(({ content }) => content.includes(session.marker));
+      expect(matches).toHaveLength(1);
+      expect(expectDefined(matches[0], "capture must be retained exactly once").content).toContain(
+        session.sessionId,
+      );
+    }
+  });
+
   it.each(["daily", "idle"] as const)(
     "creates memory from the ended session on %s reset",
     async (reason) => {
