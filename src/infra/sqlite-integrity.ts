@@ -9,6 +9,10 @@ import {
   sameSqliteFileGeneration,
   type SqliteFileGeneration,
 } from "./sqlite-file-generation.js";
+import { captureSqliteSchemaFacts } from "./sqlite-schema-admission.js";
+import { findSqlClosingParenthesis, normalizeSchemaSql } from "./sqlite-schema-sql.js";
+
+export type SqliteIntegrityCheckOptions = { allFindings?: boolean; ftsSchemas?: readonly string[] };
 
 type SqliteIntegrityChecks = {
   integrityCheck: "ok";
@@ -206,16 +210,80 @@ export function isTerminalSqliteIntegrityError(error: Error): boolean {
 export function assertSqliteIntegrity(
   database: DatabaseSync,
   databaseLabel: string,
-  options: SqliteCheckPragma | { allFindings?: boolean } = "integrity_check",
+  options: SqliteCheckPragma | SqliteIntegrityCheckOptions = "integrity_check",
 ): SqliteIntegrityChecks {
   const check = typeof options === "string" ? options : "integrity_check";
-  const integrityCheck = runSqliteCheck(database, databaseLabel, check, undefined,
-    typeof options === "object" && options.allFindings);
+  const settings = typeof options === "object" ? options : {};
+  let staleFts = false;
+  try {
+    runSqliteCheck(
+      database,
+      databaseLabel,
+      check,
+      undefined,
+      settings.allFindings || settings.ftsSchemas !== undefined,
+    );
+  } catch (error) {
+    if (
+      !settings.ftsSchemas ||
+      !(error instanceof SqliteIntegrityError) ||
+      !error.findings ||
+      !classifySqliteFtsIntegrityFindings(database, error.findings, settings.ftsSchemas)
+    ) {
+      throw error;
+    }
+    staleFts = true;
+  }
   runSqliteForeignKeyCheck(database, databaseLabel);
-  if (check === "integrity_check") {
+  if (check === "integrity_check" && !staleFts) {
     recordSqliteDatabaseIntegrity(database);
   }
-  return { integrityCheck };
+  return { integrityCheck: "ok" };
+}
+
+/** Only exact, owned FTS definitions may treat their inverted index as derived data. */
+export function classifySqliteFtsIntegrityFindings(
+  database: DatabaseSync,
+  findings: readonly unknown[],
+  schemas: readonly string[],
+): string[] | undefined {
+  const names = new Set<string>();
+  for (const finding of findings) {
+    if (finding === "ok") {
+      continue;
+    }
+    const match =
+      typeof finding === "string"
+        ? /^malformed inverted index for FTS5 table main\.([A-Za-z_][A-Za-z0-9_]*)$/u.exec(finding)
+        : null;
+    if (!match?.[1]) {
+      return undefined;
+    }
+    names.add(match[1]);
+  }
+  if (names.size === 0) {
+    return undefined;
+  }
+  const definitions = new Map<string, Set<string | null>>();
+  for (const schema of schemas) {
+    for (const match of schema.matchAll(
+      /CREATE VIRTUAL TABLE (?:IF NOT EXISTS )?([A-Za-z_][A-Za-z0-9_]*) USING fts5\s*\(/gu,
+    )) {
+      const name = match[1]!;
+      const end = findSqlClosingParenthesis(schema, match.index + match[0].length - 1);
+      const variants = definitions.get(name) ?? new Set<string | null>();
+      variants.add(normalizeSchemaSql(schema.slice(match.index, end + 1)));
+      definitions.set(name, variants);
+    }
+  }
+  const tables = captureSqliteSchemaFacts(database).tableSql;
+  for (const name of names) {
+    const sql = tables.get(name);
+    if (typeof sql !== "string" || !definitions.get(name)?.has(normalizeSchemaSql(sql))) {
+      return undefined;
+    }
+  }
+  return [...names].toSorted();
 }
 
 /** Reconfirm an advisory failure against the database currently at a closed path. */

@@ -26,9 +26,7 @@ import {
   runSqliteWorkerStoreOperation,
 } from "../infra/sqlite-worker-store.js";
 import { recordWorkerMessage } from "../infra/worker-message-metrics.js";
-import {
-  AgentDatabaseExecutionAdmissionClosedError,
-} from "./agent-database-admission-error.js";
+import { AgentDatabaseExecutionAdmissionClosedError } from "./agent-database-admission-error.js";
 import {
   captureAgentDatabasePreparationJournal,
   recordAgentDatabaseStartupFtsRepair,

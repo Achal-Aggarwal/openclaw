@@ -67,3 +67,56 @@ describe("createBackupArchive SQLite header probe failure", () => {
     },
   );
 });
+
+it("does not follow symlinks or probe non-files and tolerates vanished files", async () => {
+  await withOpenClawTestState({ layout: "state-only", scenario: "minimal" }, async (state) => {
+    const target = state.path("header.db");
+    const link = state.path("header-link.db");
+    const directory = state.path("directory.db");
+    const missing = state.path("missing.db");
+    await fs.writeFile(target, "SQLite format 3\0");
+    await fs.symlink(target, link);
+    await fs.mkdir(directory);
+    expect(probeSqliteDatabaseHeaders([target, link, directory, missing])).toEqual(
+      new Map([
+        [target, true],
+        [link, false],
+        [directory, false],
+        [missing, false],
+      ]),
+    );
+  });
+});
+
+it.each(["invalid-json", "[]", '["yes"]', "{}"])(
+  "fails closed for invalid worker reply %s",
+  (stdout) => {
+    vi.spyOn(childProcess, "spawnSync").mockReturnValue({
+      pid: 1,
+      output: [],
+      status: 0,
+      signal: null,
+      stdout,
+      stderr: "",
+    });
+    expect(() => probeSqliteDatabaseHeaders(["candidate.db"])).toThrow(
+      "Could not determine whether backup files are SQLite databases",
+    );
+  },
+);
+
+it("bounds worker time/output and fails closed on timeout", () => {
+  const spawn = vi.spyOn(childProcess, "spawnSync").mockReturnValue({
+    pid: 1,
+    output: [],
+    status: null,
+    signal: "SIGTERM",
+    stdout: "",
+    stderr: "",
+    error: Object.assign(new Error("timed out"), { code: "ETIMEDOUT" }),
+  });
+  expect(() => probeSqliteDatabaseHeaders(["candidate.db"])).toThrow(
+    "Could not determine whether backup files are SQLite databases",
+  );
+  expect(spawn.mock.calls[0]?.[2]).toMatchObject({ timeout: 10_000, maxBuffer: 64 * 1024 * 1024 });
+});

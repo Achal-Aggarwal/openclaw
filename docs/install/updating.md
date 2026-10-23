@@ -1288,3 +1288,5 @@ for when the setting takes effect.
 - [Install overview](/install): all installation methods.
 - [Doctor](/gateway/doctor): health checks after updates.
 - [Migrating](/install/migrating): major version migration guides.
+
+Candidate rehearsal snapshots and update database backups tolerate only stale, exactly owned agent FTS indexes after a SQLite tokenizer change. They preserve the source; candidate startup rebuilds the derived indexes before admission. Unknown or mixed integrity damage remains fatal. The first update uses the candidate snapshot worker; activation backups require the installed updater to include this repair.

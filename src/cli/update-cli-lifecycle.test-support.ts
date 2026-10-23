@@ -250,7 +250,11 @@ export function registerUpdateCliLifecycle(fixture: UpdateCliLifecycleFixture): 
     vi.spyOn(sqliteHeaderProbe, "probeSqliteDatabaseHeaders").mockImplementation((...args) => {
       const platform = process.platform;
       Object.defineProperty(process, "platform", { value: sqliteHostPlatform, configurable: true });
-      try { return probeSqliteHeaders(...args); } finally { Object.defineProperty(process, "platform", { value: platform, configurable: true }); }
+      try {
+        return probeSqliteHeaders(...args);
+      } finally {
+        Object.defineProperty(process, "platform", { value: platform, configurable: true });
+      }
     });
     vi.spyOn(nodeSqlite, "resolveExistingSqliteFileUri").mockImplementation((file) =>
       existingHostUri(file, sqliteHostPlatform),

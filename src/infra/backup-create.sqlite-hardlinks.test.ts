@@ -102,8 +102,17 @@ async function withHardlinkedDatabase(
   );
 }
 
-function hardlinkCase<Args extends unknown[]>(run: (fixture: HardlinkedDatabase, ...args: Args) => Promise<void>, opaque = false, ownerName = "alpha.sqlite") {
-  return (...args: Args) => withHardlinkedDatabase(ownerName, (fixture) => run(fixture, ...args), opaque ? "opaque" : "declared");
+function hardlinkCase<Args extends unknown[]>(
+  run: (fixture: HardlinkedDatabase, ...args: Args) => Promise<void>,
+  opaque = false,
+  ownerName = "alpha.sqlite",
+) {
+  return (...args: Args) =>
+    withHardlinkedDatabase(
+      ownerName,
+      (fixture) => run(fixture, ...args),
+      opaque ? "opaque" : "declared",
+    );
 }
 
 function createArchive(state: OpenClawTestState) {

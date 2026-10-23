@@ -33,7 +33,11 @@ function tokenizerClause(tokenizer: TextFragment["tokenizer"]): string {
 
 export function getSqliteMemorySearchFtsSchemas(): string[] {
   return (["body-fts", "path-fts"] as const).flatMap((kind) => {
-    const fragment: TextFragment = { kind, tableName: kind === "body-fts" ? "memory_index_chunks_fts" : "memory_index_paths_fts", tokenizer: "unicode61" };
+    const fragment: TextFragment = {
+      kind,
+      tableName: kind === "body-fts" ? "memory_index_chunks_fts" : "memory_index_paths_fts",
+      tokenizer: "unicode61",
+    };
     return [
       buildTextSchema(fragment, ""),
       buildTextSchema(fragment, ", tokenize='unicode61'"),
@@ -42,4 +46,3 @@ export function getSqliteMemorySearchFtsSchemas(): string[] {
     ];
   });
 }
-

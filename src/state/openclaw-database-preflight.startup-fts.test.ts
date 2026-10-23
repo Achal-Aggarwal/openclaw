@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { afterEach, expect, it, vi } from "vitest";
 import { useAutoCleanupTempDirTracker } from "../../test/helpers/temp-dir.js";
 import {
@@ -7,6 +8,7 @@ import {
   setRuntimeConfigSnapshot,
 } from "../config/runtime-snapshot.js";
 import { loadSessionEntry, replaceSessionEntry } from "../config/sessions/session-accessor.js";
+import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { activateGatewayAgentDatabaseStartup } from "../gateway/server-agent-database-startup.js";
 import { retireSqliteDatabaseAdmissionForPath } from "../infra/sqlite-database-admission.js";
 import {
@@ -19,7 +21,6 @@ import { flushLogger, resetLogger, setLoggerOverride } from "../logging/logger.j
 import { closeStateDatabaseForTest } from "../test-utils/database-cleanup.js";
 import { readAgentDatabaseAdmissionRefusal } from "./agent-database-admission.js";
 import { withAgentDatabaseStartupAdmission } from "./agent-database-startup.js";
-import { databaseFixture, openRawDatabase } from "./database-preflight-fixtures.test-support.js";
 import {
   claimOpenClawAgentDatabaseLease,
   releaseOpenClawAgentDatabaseLease,
@@ -27,9 +28,15 @@ import {
 import {
   closeOpenClawAgentDatabasesAsync,
   closeOpenClawAgentDatabasesForTest,
+  resolveOpenClawAgentSqlitePath,
 } from "./openclaw-agent-db.js";
+import { assertOpenClawDatabasesReady } from "./openclaw-database-preflight.js";
 
 const roots = useAutoCleanupTempDirTracker(afterEach);
+
+function openRawDatabase(pathname: string, options: { readOnly?: boolean } = {}) {
+  return new DatabaseSync(pathname, options);
+}
 
 afterEach(async () => {
   await closeOpenClawAgentDatabasesAsync();
@@ -45,8 +52,17 @@ afterEach(async () => {
 
 async function createFixture(failure?: "mixed" | "backup" | "rebuild" | "writer") {
   const stateDir = fs.realpathSync.native(roots.make("startup-fts-"));
-  const fixture = databaseFixture(stateDir, process.env);
-  const { env } = fixture;
+  const env = {
+    ...process.env,
+    OPENCLAW_STATE_DIR: stateDir,
+    OPENCLAW_CONFIG_PATH: path.join(stateDir, "openclaw.json"),
+  };
+  const fixture = {
+    env,
+    agentPath: () => resolveOpenClawAgentSqlitePath({ agentId: "main", env }),
+    ready: (config: OpenClawConfig) =>
+      assertOpenClawDatabasesReady({ env, operation: "gateway-startup", config }),
+  };
   const config = {
     session: { maintenance: { mode: "warn" as const } },
     agents: { ownership: "explicit" as const, entries: { main: {} } },

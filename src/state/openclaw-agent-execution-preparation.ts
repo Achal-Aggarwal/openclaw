@@ -1,7 +1,5 @@
 import { isRecord } from "@openclaw/normalization-core/record-coerce";
-import {
-  takeSqliteWorkerOperationAdmissionAttachment,
-} from "../infra/sqlite-worker-operation-admission.js";
+import { takeSqliteWorkerOperationAdmissionAttachment } from "../infra/sqlite-worker-operation-admission.js";
 import type { AgentDeletionWorkerGuard } from "./agent-deletion-worker-contract.js";
 
 export function readAgentDatabaseRequestPreparation(): {
@@ -22,4 +20,3 @@ export function readAgentDatabaseRequestPreparation(): {
     deletion: attachment.deletion as AgentDeletionWorkerGuard | undefined,
   };
 }
-

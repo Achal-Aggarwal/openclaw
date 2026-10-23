@@ -31,31 +31,56 @@ describe.skipIf(process.platform === "win32")("backup SQLite discovery performan
   it.skipIf(process.getuid?.() === 0)(
     "skips unreadable excluded siblings of a protected config",
     async () => {
-      await withOpenClawTestState({ layout: "state-only", scenario: "minimal", prefix: "openclaw-backup-excluded-sibling-" }, async (state) => {
-        const configPath = state.statePath("tmp", "openclaw.json");
-        const excludedPath = state.statePath("tmp", "cache.bin");
-        await fs.mkdir(path.dirname(configPath), { recursive: true });
-        await fs.copyFile(state.configPath, configPath);
-        await fs.writeFile(excludedPath, "excluded cache");
-        await fs.chmod(excludedPath, 0);
-        vi.stubEnv("OPENCLAW_CONFIG_PATH", configPath);
-        try {
-          await expect(fs.readFile(excludedPath)).rejects.toMatchObject({ code: "EACCES" });
-          const spawn = vi.spyOn(childProcess, "spawnSync");
-        const archive = await createBackupArchive({
-            output: state.path("backup.tar.gz"),
-            includeWorkspace: false,
-          });
-          const headerProbes = spawn.mock.calls.filter(([, args]) => Array.isArray(args) && args.some((arg) => arg.includes("sqlite-header-probe.worker")));
-        expect(headerProbes.length).toBeGreaterThan(0);
-        expect(headerProbes.length).toBeLessThanOrEqual(2);
-        const entries = await listArchiveEntries(archive.archivePath);
-          expect(entries.some((entry) => entry.endsWith("/tmp/openclaw.json"))).toBe(true);
-          expect(entries.some((entry) => entry.endsWith("/tmp/cache.bin"))).toBe(false);
-        } finally {
-          await fs.chmod(excludedPath, 0o600);
-        }
-      });
+      await withOpenClawTestState(
+        { layout: "state-only", scenario: "minimal", prefix: "openclaw-backup-excluded-sibling-" },
+        async (state) => {
+          const configPath = state.statePath("tmp", "openclaw.json");
+          const excludedPath = state.statePath("tmp", "cache.bin");
+          await fs.mkdir(path.dirname(configPath), { recursive: true });
+          await fs.copyFile(state.configPath, configPath);
+          await fs.writeFile(excludedPath, "excluded cache");
+          await fs.chmod(excludedPath, 0);
+          const packagePath = state.statePath(
+            "extensions",
+            "demo",
+            "node_modules",
+            "dependency",
+            "unreadable.db",
+          );
+          await fs.mkdir(path.dirname(packagePath), { recursive: true });
+          await fs.writeFile(
+            state.statePath("extensions", "demo", "openclaw.plugin.json"),
+            JSON.stringify({ id: "demo" }),
+          );
+          await fs.writeFile(packagePath, "package content must never be probed");
+          await fs.chmod(packagePath, 0);
+          vi.stubEnv("OPENCLAW_CONFIG_PATH", configPath);
+          try {
+            await expect(fs.readFile(excludedPath)).rejects.toMatchObject({ code: "EACCES" });
+            const spawn = vi.spyOn(childProcess, "spawnSync");
+            const archive = await createBackupArchive({
+              output: state.path("backup.tar.gz"),
+              includeWorkspace: false,
+            });
+            const headerProbes = spawn.mock.calls.filter(
+              ([, args]) =>
+                Array.isArray(args) &&
+                args.some((arg) => arg.includes("sqlite-header-probe.worker")),
+            );
+            expect(headerProbes.length).toBeGreaterThan(0);
+            expect(headerProbes.length).toBeLessThanOrEqual(2);
+            const entries = await listArchiveEntries(archive.archivePath);
+            expect(entries.some((entry) => entry.endsWith("/tmp/openclaw.json"))).toBe(true);
+            expect(entries.some((entry) => entry.endsWith("/tmp/cache.bin"))).toBe(false);
+            expect(entries.some((entry) => entry.includes("/node_modules/dependency/"))).toBe(
+              false,
+            );
+          } finally {
+            await fs.chmod(excludedPath, 0o600);
+            await fs.chmod(packagePath, 0o600);
+          }
+        },
+      );
     },
   );
 
@@ -163,7 +188,10 @@ describe.skipIf(process.platform === "win32")("backup SQLite discovery performan
           output: state.path("backup.tar.gz"),
           includeWorkspace: false,
         });
-        const headerProbes = spawn.mock.calls.filter(([, args]) => Array.isArray(args) && args.some((arg) => arg.includes("sqlite-header-probe.worker")));
+        const headerProbes = spawn.mock.calls.filter(
+          ([, args]) =>
+            Array.isArray(args) && args.some((arg) => arg.includes("sqlite-header-probe.worker")),
+        );
         expect(headerProbes.length).toBeGreaterThan(0);
         expect(headerProbes.length).toBeLessThanOrEqual(2);
         const entries = await listArchiveEntries(archive.archivePath);
