@@ -12,7 +12,7 @@ import {
   shouldWaitForRecovery,
   verifyUpdateFailureRecovery,
 } from "./update-command-failure-recovery.js";
-import type { FinishUpdateParams } from "./update-command-finish-types.js";
+import type { FinishUpdateOptions, FinishUpdateParams } from "./update-command-finish-types.js";
 import { parkForegroundUpdateForActivation } from "./update-command-handoff.js";
 import { appendPluginUpdateWarnings } from "./update-command-plugins-internals.js";
 import { runPostActivationInspections } from "./update-command-post-activation-inspections.js";
@@ -64,14 +64,6 @@ import {
   deferUpdateCommandTerminalResult,
   recordUpdatePackageCompletion,
 } from "./update-command-terminal.js";
-
-type FinishUpdateOptions = {
-  candidateRuntime?: boolean;
-  /** Set by the candidate after it adopts restart and terminal reporting. */
-  adoptedFinalization?: true;
-  onGatewayStartAttempted?: () => void;
-  beforeFinalization?: () => Promise<void>;
-};
 
 export async function finishUpdate(
   params: FinishUpdateParams,
@@ -370,6 +362,10 @@ async function finishSettledUpdate(
         opts: params.opts,
         env: currentServiceStop()?.serviceEnv ?? params.ownedManagedUpdateEnv,
         timeoutMs: params.updateStepTimeoutMs,
+        mutationStarted: params.mutationStarted,
+        preManagedServiceStop: currentServiceStop(),
+        gatewayStartAttempted,
+        definitionRecovery,
         serviceStopped: !rolledBack && currentServiceStop()?.stopped,
         serviceUpdateVerdict: gatewayStartAttempted
           ? undefined

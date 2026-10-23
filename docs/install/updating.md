@@ -35,6 +35,14 @@ backup.
 
 **Updates always work** (`openclaw update` finishes best effort everywhere). Changes to update, Doctor, service lifecycle, migrations, plugin loading: state their update behavior. Installed updater runs first, can't be patched; candidate fixes key on markers shipped drivers set; existing operator state = input. Recoverable hiccups → recorded warnings; back up before mutating, let rollback restore it; refuse only for named data risk with previous Gateway kept running. Timeouts and budgets: generous, derived from measured state, sized for slow hardware. Proof: published-driver × candidate cell.
 
+Native pnpm package swaps preserve platform-filtered optional dependencies as
+absent. On Windows, a dangling link declared in its owner's
+`optionalDependencies` is removed from the staged copy instead of failing
+activation; missing required dependencies and other filesystem errors still
+fail. This requires the installed updater to contain the repair. A failed swap
+before any installation or service mutation records the previous Gateway
+observation without restart verification, including with `--no-restart`.
+
 During update finalization, disposable plugin source copies and private SQLite
 inspection snapshots use the candidate helper's absolute `TMPDIR` (including
 when an older installed updater starts that helper). Normal Gateway cache
