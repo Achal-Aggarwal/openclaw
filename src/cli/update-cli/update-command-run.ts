@@ -16,8 +16,8 @@ import {
 } from "../../infra/gateway-supervision.js";
 import { resolveOpenClawPackageRootSync } from "../../infra/openclaw-root.js";
 import { settlePendingPackageActivation } from "../../infra/package-update-activation.js";
-import { normalizeUpdateChannel } from "../../infra/update-channels.js";
 import { resolveUpdateInstallKind } from "../../infra/update-check.js";
+import { normalizeUpdateChannel } from "../../infra/update-channels.js";
 import {
   readControlPlaneUpdateSentinelMeta,
   UPDATE_RUN_ID_ENV,
