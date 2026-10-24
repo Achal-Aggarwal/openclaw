@@ -16,6 +16,7 @@ export function buildReleaseValidationManifest(input: {
 export function assertReleasePublicationKnownBudget(
   plan: ReleaseRecord,
   context: ReleaseRecord,
+  reusedManifest?: ReleaseRecord,
 ): void;
 export function normalizeReleaseCoveragePolicy(
   input: ReleaseRecord,
