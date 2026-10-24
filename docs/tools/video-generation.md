@@ -221,6 +221,11 @@ dimensions). Providers that do not declare it surface the value via
 <ParamField path="model" type="string">Provider/model override (e.g. `runway/gen4.5`).</ParamField>
 <ParamField path="filename" type="string">Output filename hint.</ParamField>
 <ParamField path="timeoutMs" type="number">Optional provider operation timeout in milliseconds. When omitted, OpenClaw uses `agents.defaults.mediaModels.video.timeoutMs` if configured, otherwise the plugin-authored provider default when one exists.</ParamField>
+
+Default generated-video downloads block private-network URLs, including redirects.
+This covers BytePlus, Runway, Together, Novita, Z.AI, and Kie AI. These downloads
+honor the Gateway host's proxy environment and never forward task credentials.
+
 <ParamField path="providerOptions" type="object">
   Provider-specific options as a JSON object (e.g. `{"seed": 42, "draft": true}`).
   Providers that declare a typed schema validate the keys and types; unknown
