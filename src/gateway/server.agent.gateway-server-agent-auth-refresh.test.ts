@@ -2,7 +2,14 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { WebSocket } from "ws";
 import { createDeferred } from "../../test/helpers/promise.js";
 import { resolveAgentDir } from "../agents/agent-scope.js";
-import { setRuntimeAuthProfileStoreSnapshot } from "../agents/auth-profiles/runtime-snapshots.js";
+import {
+  runtimeAuthProfileRowsCache,
+  setRuntimeAuthProfileStoreSnapshot,
+} from "../agents/auth-profiles/runtime-snapshots.js";
+import {
+  resolveAuthProfileDatabasePath,
+  writePersistedAuthProfileStoreRaw,
+} from "../agents/auth-profiles/sqlite.js";
 import {
   getPreparedModelRuntimeBorrowedSnapshot,
   getPreparedModelRuntimePluginGeneration,
@@ -11,6 +18,8 @@ import {
   loadPublishedGatewayReplyDispatchRuntime,
   registerPreparedModelRuntimePublicationListener,
 } from "../agents/prepared-model-runtime.js";
+import { readOnlyWorkerScope } from "../infra/sqlite-readonly-worker-context.js";
+import { createSqliteReadOnlyWorkerScope } from "../infra/sqlite-readonly-worker.js";
 import {
   getActiveGatewayRootWorkCount,
   getActiveGatewayRootWorkHolders,
@@ -493,6 +502,64 @@ describe("gateway agent auth refresh dispatch", () => {
       });
     } finally {
       clearSecretsRuntimeSnapshot();
+    }
+  });
+
+  test("keeps queued auth publication off the emitter's closed startup reader scope", async () => {
+    const affectedAgentId = "auth-startup";
+    const runId = "idem-agent-auth-startup";
+    const before = await prepareAuthDispatchAgents(affectedAgentId);
+    // A persisted store makes publication read the real SQLite catalog.
+    writePersistedAuthProfileStoreRaw({ version: 1, profiles: {} }, before.agentDir);
+    await prepareGatewayReplyRuntimeForTest({ force: true });
+    const modelsConfig = await import("../agents/models-config.js");
+    const ensureOpenClawModelsJson = modelsConfig.ensureOpenClawModelsJson;
+    const publicationReaders: unknown[] = [];
+    const ensureSpy = vi
+      .spyOn(modelsConfig, "ensureOpenClawModelsJson")
+      .mockImplementation(async (config, agentDir, options) => {
+        if (agentDir === before.agentDir) {
+          publicationReaders.push(readOnlyWorkerScope.getStore());
+        }
+        return await ensureOpenClawModelsJson(config, agentDir, options);
+      });
+    const settled = createDeferred<{ phase: string; error?: unknown }>();
+    const unregister = registerPreparedModelRuntimePublicationListener((event) => {
+      if (event.phase === "published" || event.phase === "failed") {
+        settled.resolve(event);
+      }
+    });
+    const readers = createSqliteReadOnlyWorkerScope();
+    try {
+      readers.run(() =>
+        setRuntimeAuthProfileStoreSnapshot(
+          {
+            version: 1,
+            profiles: {
+              "anthropic:default": {
+                type: "api_key",
+                provider: "anthropic",
+                key: "synthetic-startup-key",
+              },
+            },
+          },
+          before.agentDir,
+        ),
+      );
+      // Recovery can leave no resident rows; publication must also work on a cold read.
+      runtimeAuthProfileRowsCache.clear(resolveAuthProfileDatabasePath(before.agentDir));
+      // Startup closes its temporary readers before the queued publication runs.
+      await readers.close();
+      expect(await settled.promise).toMatchObject({ phase: "published" });
+      expect(publicationReaders.length).toBeGreaterThan(0);
+      expect(publicationReaders.every((scope) => scope === undefined)).toBe(true);
+      const run = sendAgentRpc(gatewaySuite.ws, { agentId: affectedAgentId, runId });
+      await expect(run.final).resolves.toMatchObject({ ok: true, payload: { status: "ok" } });
+      expect(agentCommandCallsFor(runId)).toHaveLength(1);
+    } finally {
+      unregister();
+      ensureSpy.mockRestore();
+      await readers.close();
     }
   });
 });
