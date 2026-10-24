@@ -196,7 +196,7 @@ it("keeps an astral event description whole at the catalog cap", async () => {
   const prefix = "a".repeat(4095);
   mocks.request.mockImplementation(async (input) =>
     input.method === "server/discover"
-      ? discovery
+      ? { supportedVersions: ["2026-07-28"], capabilities: { events: {} } }
       : { events: [{ ...event, description: `${prefix}\u{1F600}tail` }] },
   );
   await f.run();
