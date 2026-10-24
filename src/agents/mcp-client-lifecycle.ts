@@ -1,6 +1,7 @@
 import type { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPError } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
+import { logWarn } from "../logger.js";
 import { settlesWithin } from "../shared/settle-within.js";
 import { isMcpRequestTimeoutError } from "./mcp-error.js";
 import {
@@ -138,7 +139,14 @@ export async function disposeMcpClient(
   try {
     const graceful = (async () => {
       if (session.transportType === "streamable-http") {
-        await ignoreCloseFailure(() => session.transport.terminateSession?.());
+        // Remote DELETE is best effort; local close still owns replacement safety.
+        try {
+          await session.transport.terminateSession?.();
+        } catch {
+          logWarn(
+            "bundle-mcp: remote session termination was not confirmed; continuing local cleanup",
+          );
+        }
       }
       await ignoreCloseFailure(() => session.transport.close());
       await ignoreCloseFailure(() => session.client.close());
