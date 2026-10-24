@@ -7,13 +7,14 @@ import {
   closeOpenClawAgentDatabasesForTest,
   formatSqliteSessionFileMarker,
 } from "openclaw/plugin-sdk/sqlite-runtime-testing";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { captureRuntimeParityCell } from "./runtime-parity.js";
 import { createTempDirHarness } from "./temp-dir.test-helper.js";
 
 const tempDirs = createTempDirHarness();
 
 afterEach(async () => {
+  vi.useRealTimers();
   // Fixtures point a state dir at these temp workspaces, so the shared and per-agent
   // SQLite handles stay cached and Windows fails the removal with EBUSY. The agent close
   // releases its leases through shared state and reopens it, so the store is released second.
@@ -81,18 +82,26 @@ async function seedSession(params: {
   return tempRoot;
 }
 
-function captureSessionAfterPendingResults(tempRoot: string, sessionKey: string, waitMs: number) {
+function captureSessionAfterPendingResults(
+  tempRoot: string,
+  sessionKey: string,
+  waitMs: number,
+  poll?: () => Promise<void>,
+) {
   return captureRuntimeParityCell({
     runtime: "codex",
     gateway: { tempRoot },
     scenarioResult: { status: "pass", details: `RUNTIME_PARITY_SESSION_KEY=${sessionKey}` },
     wallClockMs: 10,
     pendingToolResultWaitMs: waitMs,
+    pendingToolResultPoll: poll,
   });
 }
 
 describe("runtime parity session selection", () => {
   it("waits for a Codex async completion result before capturing parity", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-23T20:00:00.000Z"));
     const sessionId = "async-image-completion";
     const sessionKey = "agent:qa:async-image-completion";
     const tool = { toolCallId: "image-call-2", name: "image_generate" };
@@ -118,10 +127,13 @@ describe("runtime parity session selection", () => {
         { type: "tool.call", data: { ...tool, arguments: { prompt: "follow-up" } } },
       ],
     });
-    const capture = captureSessionAfterPendingResults(tempRoot, sessionKey, 500);
-    await new Promise((resolve) => {
-      setTimeout(resolve, 50);
+    const pollStarted = Promise.withResolvers<void>();
+    const releasePoll = Promise.withResolvers<void>();
+    const capture = captureSessionAfterPendingResults(tempRoot, sessionKey, 500, async () => {
+      pollStarted.resolve();
+      await releasePoll.promise;
     });
+    await pollStarted.promise;
     await seedSession({
       tempRoot,
       sessionId,
@@ -147,6 +159,7 @@ describe("runtime parity session selection", () => {
         },
       ],
     });
+    releasePoll.resolve();
 
     const cell = await capture;
 
@@ -155,6 +168,8 @@ describe("runtime parity session selection", () => {
   });
 
   it("keeps a permanently missing Codex result red after the settle bound", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-23T20:00:00.000Z"));
     const sessionKey = "agent:qa:missing-result";
     const tempRoot = await seedSession({
       sessionId: "missing-result",
@@ -173,8 +188,14 @@ describe("runtime parity session selection", () => {
       ],
     });
 
-    const cell = await captureSessionAfterPendingResults(tempRoot, sessionKey, 50);
+    let polls = 0;
+    const capture = captureSessionAfterPendingResults(tempRoot, sessionKey, 50, async () => {
+      polls += 1;
+      vi.setSystemTime(Date.now() + 25);
+    });
+    const cell = await capture;
 
+    expect(polls).toBe(2);
     expect(cell.toolCalls).toEqual([
       expect.objectContaining({ tool: "image_generate", errorClass: "tool-result-missing" }),
     ]);

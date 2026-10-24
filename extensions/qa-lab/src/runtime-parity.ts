@@ -167,6 +167,7 @@ type RuntimeParityCaptureParams = {
   bootstrapWallClockMs?: number;
   agentId?: string;
   mockBaseUrl?: string;
+  pendingToolResultPoll?: () => Promise<void>;
   pendingToolResultWaitMs?: number;
 };
 
@@ -1304,14 +1305,16 @@ async function loadSettledRuntimeParityCaptureSources(params: {
   gateway: QaGatewayLike;
   agentId: string;
   preferredSessionKeys: readonly string[];
+  poll?: () => Promise<void>;
   waitMs: number;
 }) {
   const deadline = Date.now() + Math.max(0, params.waitMs);
   let sources = await loadRuntimeParityCaptureSources(params);
   while (captureSourcesHavePendingToolResults(sources) && Date.now() < deadline) {
-    await new Promise((resolve) => {
-      setTimeout(resolve, PENDING_TOOL_RESULT_POLL_MS);
-    });
+    await (params.poll?.() ??
+      new Promise((resolve) => {
+        setTimeout(resolve, PENDING_TOOL_RESULT_POLL_MS);
+      }));
     sources = await loadRuntimeParityCaptureSources(params);
   }
   return sources;
@@ -1380,6 +1383,7 @@ export async function captureRuntimeParityCell(
   const { sessions, transcriptBytes } = await loadSettledRuntimeParityCaptureSources({
     gateway: params.gateway,
     agentId,
+    poll: params.pendingToolResultPoll,
     preferredSessionKeys,
     waitMs:
       params.runtime === "codex" && params.scenarioResult.status === "pass"
