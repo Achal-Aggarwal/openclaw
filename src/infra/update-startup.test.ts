@@ -1731,6 +1731,7 @@ describe("update-startup", () => {
     detectRespawnSupervisorMock.mockReturnValue("launchd");
     startManagedServiceUpdateHandoffMock.mockResolvedValueOnce({
       status: "joined",
+      message: "Update blocked by another update lease.",
       pid: 12345,
       command: "openclaw update --yes --channel beta",
       logPath: "/tmp/openclaw-handoff.log",
@@ -1749,6 +1750,7 @@ describe("update-startup", () => {
         trigger: "campaign",
         status: "skipped",
         reason: "managed-service-handoff-already-running",
+        origin: expect.objectContaining({ nextAction: "Update blocked by another update lease." }),
         finishedAtMs: expect.any(Number),
       }),
     ]);
