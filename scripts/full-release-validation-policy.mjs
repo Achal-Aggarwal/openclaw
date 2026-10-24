@@ -73,7 +73,7 @@ const EXACT_TARGET_EVIDENCE_REUSE_POLICY = "exact-target-full-validation-v1";
 const CHANGELOG_ONLY_EVIDENCE_REUSE_POLICY = "changelog-only-release-v1";
 export const SPLIT_CHANGELOG_EVIDENCE_REUSE_POLICY = "split-changelog-release-v1";
 
-export function assertReleasePublicationKnownBudget(plan, context) {
+export function assertReleasePublicationKnownBudget(plan, context, reusedManifest) {
   serializeReleaseArtifact(plan);
   // Only these future fields have finite bounds in the existing plan normalizers.
   // Complete future jobs/attempts and candidate receipts are not covered here.
@@ -111,7 +111,7 @@ export function assertReleasePublicationKnownBudget(plan, context) {
     errors: Array.from({ length: MAX_REPORTED_ISSUES }, () => issue),
   };
   serializeReleaseArtifact(reserved);
-  buildReleaseValidationManifest({ plan: reserved, context });
+  buildReleaseValidationManifest({ plan: reserved, context, reusedManifest });
 }
 
 // A split-layout receipt is bound to one selected release, never the directory.
@@ -988,6 +988,7 @@ function normalizedEvidenceReuse(evidenceReuse) {
     evidenceReuse.sourceArtifact,
     evidenceReuse.rootRunId,
   );
+  const sourceWorkflow = normalizedEvidenceReuseWorkflow(evidenceReuse.sourceWorkflow);
   return {
     changedPaths: Array.isArray(evidenceReuse.changedPaths)
       ? evidenceReuse.changedPaths
@@ -1000,7 +1001,8 @@ function normalizedEvidenceReuse(evidenceReuse) {
     rootRunId: boundedString(evidenceReuse.rootRunId, MAX_LABEL_LENGTH),
     runUrl: boundedString(evidenceReuse.runUrl, MAX_URL_LENGTH),
     selectedRunId: boundedString(evidenceReuse.selectedRunId, MAX_LABEL_LENGTH),
-    sourceArtifact,
+    ...(sourceArtifact || Object.hasOwn(evidenceReuse, "sourceArtifact") ? { sourceArtifact } : {}),
+    ...(sourceWorkflow ? { sourceWorkflow } : {}),
     ...(!sourceArtifact &&
     evidenceReuse.sourceManifest &&
     typeof evidenceReuse.sourceManifest === "object" &&
@@ -1008,6 +1010,15 @@ function normalizedEvidenceReuse(evidenceReuse) {
       ? { sourceManifest: structuredClone(evidenceReuse.sourceManifest) }
       : {}),
   };
+}
+
+function normalizedEvidenceReuseWorkflow(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+  const ref = boundedString(value.ref, MAX_LABEL_LENGTH);
+  const sha = boundedString(value.sha, MAX_LABEL_LENGTH);
+  return ref && /^[a-f0-9]{40}$/u.test(sha) ? { ref, sha } : null;
 }
 
 function normalizedEvidenceReuseArtifact(value, rootRunId) {
@@ -1050,9 +1061,10 @@ function validEvidenceReuseIdentity(evidenceReuse, targetVersion, allowPendingAr
     /^[a-f0-9]{40}$/u.test(evidenceReuse.evidenceSha) &&
     /^[1-9][0-9]*$/u.test(evidenceReuse.rootRunId) &&
     /^[1-9][0-9]*$/u.test(evidenceReuse.selectedRunId) &&
-    (evidenceReuse.sourceArtifact !== null ||
+    (evidenceReuse.sourceArtifact != null ||
       evidenceReuse.sourceManifest ||
       allowPendingArtifact) &&
+    (evidenceReuse.sourceArtifact == null || evidenceReuse.sourceWorkflow) &&
     validChangedPaths
   );
 }
@@ -1500,7 +1512,9 @@ export function validateReleaseExecutionPlanArtifact(payload, expected = {}) {
   if (
     !validEvidenceReuseIdentity(
       evidenceReuse,
-      payload.targetVersion,
+      payload.targetVersion ??
+        evidenceReuse.sourceManifest?.candidateBinding?.package?.version ??
+        evidenceReuse.sourceManifest?.validationInputs?.targetVersion,
       (payload.blockers?.length ?? 0) > 0 || (payload.errors?.length ?? 0) > 0,
     )
   ) {
@@ -1914,6 +1928,9 @@ function validateExecutionPlanChildBindings(children, payload, expectedCoverage)
     const reusedRoot = payload.evidenceReuse?.requested
       ? payload.evidenceReuse.sourceManifest
       : undefined;
+    const reusedProducer = payload.evidenceReuse?.requested
+      ? (payload.evidenceReuse.sourceWorkflow ?? reusedRoot)
+      : undefined;
     if (
       reusedRoot?.qualificationCoverage &&
       !isDeepStrictEqual(reusedRoot.qualificationCoverage, coverage)
@@ -1924,13 +1941,13 @@ function validateExecutionPlanChildBindings(children, payload, expectedCoverage)
       const child = children.find((entry) => entry.key === spec.key);
       // Reuse retains the original producer; strict chain validation separately
       // authenticates that root and proves the complete changelog-only delta.
-      const producer = child.source === "reused" && reusedRoot?.workflowSha ? reusedRoot : payload;
+      const producer = child.source === "reused" && reusedProducer ? reusedProducer : payload;
       if (
         !child.required ||
         !child.selected ||
         child.dispatchName !== spec.dispatchName ||
         child.workflow !== spec.workflow ||
-        child.workflowSha !== producer.workflowSha ||
+        child.workflowSha !== (producer.sha ?? producer.workflowSha) ||
         (child.source === "fresh" && child.workflowRef !== producer.workflowRef) ||
         (child.source === "fresh" &&
           child.displayTitle !==
