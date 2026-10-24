@@ -1,3 +1,4 @@
+import { routeLogsToStderr } from "../logging/console.js";
 import { collectErrorGraphCandidates, formatErrorMessageWithCode } from "./errors.js";
 import { createUpdateStateInspectionReporter } from "./update-candidate-state.diagnostics.js";
 import {
@@ -69,6 +70,8 @@ async function snapshotCandidateState(): Promise<unknown> {
   }
 }
 
+// Stdout carries only the JSON result; raised console levels must not prefix it.
+routeLogsToStderr();
 void snapshotCandidateState()
   .then((value) => process.stdout.write(JSON.stringify(value)))
   .catch((error: unknown) => {
