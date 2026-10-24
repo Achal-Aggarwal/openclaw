@@ -1,3 +1,5 @@
+import { z } from "zod";
+import { parseUpdateStateInspectionWorker, runUpdateStateInspectionWorker } from "./update-candidate-state.inspection.js";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { setTimeout as realSetTimeout } from "node:timers";
@@ -66,6 +68,63 @@ async function fixtureEventBeforeSettlement(
   });
   await Promise.race([receipt, settled]);
 }
+
+it("keeps one-shot state worker stdout parseable with SQLite debug logging enabled", async ({
+  signal,
+}) => {
+  const root = await fs.realpath(tempDirs.make("state-worker-json-"));
+  const stateDir = path.join(root, "source");
+  const database = path.join(stateDir, "state", "openclaw.sqlite");
+  await fs.mkdir(path.dirname(database), { recursive: true });
+  {
+    using db = openNodeSqliteDatabase(database);
+    db.exec(
+      "CREATE TABLE payload(value TEXT); INSERT INTO payload VALUES('fixture'); PRAGMA user_version=7",
+    );
+  }
+  const worker = {
+    nodeRunner: process.execPath,
+    sourceEnv: {
+      HOME: root,
+      USERPROFILE: root,
+      OPENCLAW_HOME: root,
+      OPENCLAW_STATE_DIR: stateDir,
+      OPENCLAW_LOG_LEVEL: "debug",
+    },
+    stagingRoot: root,
+    databases: [{ path: database, sizeBytes: (await fs.stat(database, { bigint: true })).size }],
+    signal,
+  };
+  const inspectionPlan = parseUpdateStateInspectionWorker(
+    await runUpdateStateInspectionWorker({
+      ...worker,
+      input: { mode: "discover", stateDir, config: {}, stagingRoot: root },
+    }),
+    z.object({ databases: z.array(z.unknown()) }).passthrough(),
+  );
+  const backupRoot = path.join(root, "backup");
+  await fs.mkdir(`${backupRoot}.databases`);
+  const result = await runUpdateStateInspectionWorker({
+    ...worker,
+    input: {
+      mode: "database-backup",
+      stateDir,
+      config: {},
+      stagingRoot: root,
+      backupRoot,
+      inspectionPlan,
+    },
+  });
+
+  expect(parseUpdateStateInspectionWorker(result, z.object({ databases: z.array(z.object({ path: z.string(), userVersion: z.number() }).passthrough()), warnings: z.array(z.unknown()) }).passthrough())).toMatchObject({
+    databases: [expect.objectContaining({ path: database, userVersion: 7 })],
+    warnings: [],
+  });
+  expect(result.stderr).toMatch(
+    /\[state\/sqlite\] SQLite read-only snapshot for .*budget \d+ seconds/,
+  );
+});
+
 
 it.for([undefined, 600_000])(
   "honors the %s ms allowance during metadata inventory",
