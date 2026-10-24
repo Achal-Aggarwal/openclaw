@@ -29,10 +29,6 @@ export function mergeStreamingText(
   return `${previous}${next}`;
 }
 
-type MockCalls = {
-  mock: { calls: unknown[][] };
-};
-
 function asArray(value: unknown): unknown[] {
   return Array.isArray(value) ? value : [];
 }
@@ -62,22 +58,30 @@ export function expectFirstSentCardUsesFillWidthOnly(sendCardMock: {
   expect(sentCard?.config?.enable_forward).toBeUndefined();
 }
 
-export function expectSentCardHasP2pAction(sendCardMock: MockCalls) {
-  const hasP2pAction = sendCardMock.mock.calls.some(([arg]) => {
-    const card = readFeishuObjectRecord(readFeishuObjectRecord(arg)?.card);
-    const body = readFeishuObjectRecord(card?.body);
-    return asArray(body?.elements).some((element) => {
-      const elementRecord = readFeishuObjectRecord(element);
-      if (elementRecord?.tag !== "action") {
-        return false;
-      }
-      return asArray(elementRecord.actions).some((action) => {
-        const actionRecord = readFeishuObjectRecord(action);
-        const value = readFeishuObjectRecord(actionRecord?.value);
-        const command = readFeishuObjectRecord(value?.c);
-        return command?.t === "p2p";
-      });
-    });
+export function expectFeishuCardButtonRow(card: unknown): Record<string, unknown>[] {
+  const record = readFeishuObjectRecord(card);
+  expect(record?.schema).toBe("2.0");
+  const elements = asArray(readFeishuObjectRecord(record?.body)?.elements);
+  expect(elements.some((element) => readFeishuObjectRecord(element)?.tag === "action")).toBe(false);
+  const row = readFeishuObjectRecord(
+    elements.find((element) => readFeishuObjectRecord(element)?.tag === "column_set"),
+  );
+  expect(row).toMatchObject({
+    tag: "column_set",
+    flex_mode: "none",
+    horizontal_spacing: "default",
   });
-  expect(hasP2pAction).toBe(true);
+  const columns = asArray(row?.columns);
+  expect(columns.length).toBeGreaterThan(0);
+  return columns.map((column) => {
+    const columnRecord = readFeishuObjectRecord(column);
+    expect(columnRecord).toMatchObject({ tag: "column", width: "auto", vertical_align: "center" });
+    const buttons = asArray(columnRecord?.elements);
+    expect(buttons).toHaveLength(1);
+    const button = readFeishuObjectRecord(buttons[0]);
+    if (!button || button.tag !== "button") {
+      throw new Error("Expected a button in each V2 column");
+    }
+    return button;
+  });
 }
