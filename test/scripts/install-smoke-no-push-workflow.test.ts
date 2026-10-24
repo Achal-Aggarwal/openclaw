@@ -920,9 +920,17 @@ describe("install smoke no-push root image transport", () => {
       expect(verify.env).toMatchObject({
         MANIFEST_SHA256: "${{ needs.installer_smoke_candidate_payload.outputs.manifest_sha256 }}",
         PACKAGE_VERSION: "${{ needs.installer_smoke_candidate_payload.outputs.package_version }}",
+        PRODUCER_RUN_ATTEMPT:
+          "${{ needs.installer_smoke_candidate_payload.outputs.artifact_run_attempt }}",
+        PRODUCER_RUN_ID:
+          "${{ needs.installer_smoke_candidate_payload.outputs.artifact_run_id }}",
         SOURCE_ARCHIVE_SHA256:
           "${{ needs.installer_smoke_candidate_payload.outputs.source_archive_sha256 }}",
       });
+      expect(verify.run).toContain('--run-id "$PRODUCER_RUN_ID"');
+      expect(verify.run).toContain('--run-attempt "$PRODUCER_RUN_ATTEMPT"');
+      expect(verify.run).not.toContain('--run-id "$GITHUB_RUN_ID"');
+      expect(verify.run).not.toContain('--run-attempt "$GITHUB_RUN_ATTEMPT"');
       expect(verify.run).toContain("--manifest-sha256");
       expect(verify.run).toContain("--source-archive-sha256");
     }
