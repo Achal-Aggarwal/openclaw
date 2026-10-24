@@ -213,14 +213,27 @@ describe("prepared session fork provider boundary", () => {
     async function completeParent() {
       const caller = { turn: "completed" };
       const parentContext = structuredClone(context);
+      const thinkingBudgets = { high: 4096 };
+      const hostedTools = new Set(["web_search"]);
       const onPayload = (payload: unknown) => {
         expect(callers.getStore()).toBe(caller);
         return payload;
       };
-      references.push(new WeakRef(caller), new WeakRef(parentContext), new WeakRef(onPayload));
+      references.push(
+        new WeakRef(caller),
+        new WeakRef(parentContext),
+        new WeakRef(onPayload),
+        new WeakRef(thinkingBudgets),
+        new WeakRef(hostedTools),
+      );
       const parent = wrapStreamFnWithSessionFork(transport(payloads, []), identity);
       await callers.run(caller, async () => {
-        await (await parent(model, parentContext, { onPayload })).result();
+        const options = {
+          onPayload,
+          thinkingBudgets,
+          openclawCodeModeAllowedHostedToolTypes: hostedTools,
+        };
+        await (await parent(model, parentContext, options)).result();
       });
     }
 
@@ -827,23 +840,26 @@ describe("prepared session fork provider boundary", () => {
     expect(payloads).toHaveLength(1);
   });
 
-  it("retires optional replay if a published message cannot be retained", async () => {
-    const payloads: Record<string, unknown>[] = [];
-    const parent = wrapStreamFnWithSessionFork(transport(payloads, []), identity);
-    await (await parent(model, context, {})).result();
-    expect(() =>
-      recordEmbeddedSessionForkMessage(identity.sessionId, identity.runId, {
-        role: "toolResult",
-        toolCallId: "lookup",
-        toolName: "lookup",
-        content: [],
-        isError: false,
-        timestamp: 2,
-        details: { callback: () => {} },
-      }),
-    ).not.toThrow();
-    await expect(fork()).rejects.toThrow("requires a parent turn");
-  });
+  it.each([{ callback: () => {} }, { bytes: new Uint8Array(new SharedArrayBuffer(16)) }])(
+    "retires optional replay if a published message cannot be retained: %j",
+    async (details) => {
+      const payloads: Record<string, unknown>[] = [];
+      const parent = wrapStreamFnWithSessionFork(transport(payloads, []), identity);
+      await (await parent(model, context, {})).result();
+      expect(() =>
+        recordEmbeddedSessionForkMessage(identity.sessionId, identity.runId, {
+          role: "toolResult",
+          toolCallId: "lookup",
+          toolName: "lookup",
+          content: [],
+          isError: false,
+          timestamp: 2,
+          details,
+        }),
+      ).not.toThrow();
+      await expect(fork()).rejects.toThrow("requires a parent turn");
+    },
+  );
 
   it("isolates replayed wire data without re-entering the parent's one-shot payload hook", async () => {
     const { parent, physicalFetch } = guardedTransport();
