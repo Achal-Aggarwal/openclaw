@@ -447,6 +447,12 @@ else console.log(JSON.stringify({id:202,workflow_id:88,head_branch:'main',event:
         "prepare_docker_release",
       ]),
     );
+    expect(step("release_execution_plan", "Seal immutable release execution plan").env).toMatchObject(
+      {
+        PLUGIN_NPM_REQUIRED: "${{ needs.resolve_target.outputs.plugin_npm_preflight_required }}",
+        PLUGIN_NPM_PREPARATION_RESULT: "${{ needs.prepare_plugin_npm.result }}",
+      },
+    );
     for (const jobName of ["release_decision", "diagnostic_drain"]) {
       expect(workflow.jobs[jobName]?.needs).toEqual(
         expect.arrayContaining([
