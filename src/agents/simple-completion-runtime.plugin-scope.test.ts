@@ -335,6 +335,9 @@ module.exports = {
           ...createColdPluginHermeticEnv(tempRoot, { bundledPluginsDir: tempRoots.makeTempDir() }),
           OPENCLAW_DISABLE_BUNDLED_PLUGINS: "1",
           OPENCLAW_STATE_DIR: path.join(tempRoot, "state"),
+          // Keep only this fixture endpoint off ambient outbound proxies.
+          NO_PROXY: "127.0.0.1:" + address.port,
+          no_proxy: "127.0.0.1:" + address.port,
         };
         await withEnvAsync(env, async () => {
           const input = {
@@ -553,6 +556,9 @@ module.exports = {
         ...createColdPluginHermeticEnv(tempRoot, { bundledPluginsDir: tempRoots.makeTempDir() }),
         OPENCLAW_DISABLE_BUNDLED_PLUGINS: "1",
         OPENCLAW_STATE_DIR: path.join(tempRoot, "state"),
+        // Keep only this fixture endpoint off ambient outbound proxies.
+        NO_PROXY: "127.0.0.1:" + address.port,
+        no_proxy: "127.0.0.1:" + address.port,
       };
       await withEnvAsync(env, async () => {
         const prepared = await acquireSimpleCompletionModelForAgent({
