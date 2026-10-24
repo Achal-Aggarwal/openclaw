@@ -378,12 +378,7 @@ async function main(): Promise<void> {
         const renderPath = path.join(temporaryRoot, `${commit}.json`);
         const renderStartedAt = performance.now();
         console.error(`[plugin-sdk-api-diff] ${commit} render started`);
-        await renderRevision(
-          worktree,
-          renderPath,
-          abortController.signal,
-          commit !== headCommit,
-        );
+        await renderRevision(worktree, renderPath, abortController.signal, commit !== headCommit);
         console.error(
           `[plugin-sdk-api-diff] ${commit} render completed in ${Math.round(performance.now() - renderStartedAt)}ms`,
         );
