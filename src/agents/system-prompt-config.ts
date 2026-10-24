@@ -7,6 +7,7 @@
 import { normalizeOptionalLowercaseString } from "@openclaw/normalization-core/string-coerce";
 import { shouldHandleTextCommands } from "../auto-reply/commands-text-routing.js";
 import { resolveNativeCommandsEnabled } from "../config/commands.js";
+import { isRestartEnabled } from "../config/commands.flags.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import type { PreparedTtsPreferences } from "../tts/tts-preferences.js";
 import { buildTtsSystemPromptHint } from "../tts/tts-settings.js";
@@ -63,6 +64,7 @@ export function buildConfiguredAgentSystemPrompt(params: ConfiguredAgentSystemPr
         globalSetting: config.commands?.native,
         config,
       }),
+    restartCommandsEnabled: isRestartEnabled(config),
     ownerDisplay: "raw",
     ownerDisplaySecret: undefined,
     subagentDelegationMode: resolveMainSessionDelegationMode({
