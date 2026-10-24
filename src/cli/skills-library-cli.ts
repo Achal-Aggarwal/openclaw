@@ -5,7 +5,7 @@ import type {
   SkillsLibraryReadResult,
   SkillsLibraryReceipt,
 } from "../../packages/gateway-protocol/src/index.js";
-import { sanitizeTerminalText } from "../../packages/terminal-core/src/safe-text.js";
+import { sanitizeTerminalText as sanitizeTerminalMetadata } from "../../packages/terminal-core/src/safe-text.js";
 import { defaultRuntime } from "../runtime.js";
 import { runCommandWithRuntime } from "./cli-utils.js";
 import { inheritOptionFromParent } from "./command-options.js";
@@ -28,6 +28,14 @@ type LibraryOptions = GatewayRpcOpts & {
   deleteFile?: string[];
   session?: string;
 };
+
+// Bidi embedding/isolate controls can visually reorder trusted metadata labels.
+function sanitizeTerminalText(value: string): string {
+  return sanitizeTerminalMetadata(value).replace(
+    /[\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/gu,
+    "",
+  );
+}
 
 function rpcOptions(command: Command): GatewayRpcOpts {
   const opts = command.opts<GatewayRpcOpts>();
@@ -169,7 +177,8 @@ export function registerSkillsLibraryCli(skills: Command): void {
             ]),
             "Retained revisions:",
             ...result.revisions.map(
-              (revision) => `${sanitizeTerminalText(revision.revision)}  ${new Date(revision.createdAt).toISOString()}`,
+              (revision) =>
+                `${sanitizeTerminalText(revision.revision)}  ${new Date(revision.createdAt).toISOString()}`,
             ),
             "",
           ].join("\n"),

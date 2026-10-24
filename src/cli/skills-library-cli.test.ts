@@ -100,7 +100,7 @@ afterEach(async () => {
 
 describe("skills library CLI", () => {
   it("sanitizes remote-controlled fields in human list output but keeps raw values in JSON", async () => {
-    const nameInjection = "\u001b]52;c;QQ==\u0007red\u001b[2J\r\nforged\tname";
+    const nameInjection = "\u202e\u2066\u001b]52;c;QQ==\u0007red\u001b[2J\r\nforged\tname";
     const slugInjection = "a\u001b]52;c;QQ==\u0007b\r\nforged\tentry";
     const ownerInjection = "b\u001b[2Jc";
     const injection = {
@@ -123,6 +123,7 @@ describe("skills library CLI", () => {
     const listOut = mocks.writeStdout.mock.calls[0]?.[0] ?? "";
     expect(listOut.replaceAll("\n", "")).not.toMatch(/\p{Cc}/u);
     expect(listOut).not.toContain("\u001b]52;c;QQ==");
+    expect(listOut).not.toMatch(/[\u202a-\u202e\u2066-\u2069]/u);
     expect(listOut).toContain("ab\\r\\nforged\\tentry");
     expect(listOut).toContain("owner=bc");
     mocks.call.mockClear();
