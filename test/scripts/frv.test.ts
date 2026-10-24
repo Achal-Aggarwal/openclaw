@@ -481,7 +481,7 @@ describe("FRV continuation preflight", () => {
       ],
       getJobLog: async (id: number) => (id === 90 ? logs.dispatch : methods.getJobLog(id)),
       getRun: vi.fn(async (id: string) => (id === "81" ? producer : methods.getRun(id))),
-      getAttemptJobs: async () => [job("test")],
+      getAttemptJobs: async (_runId: string, _attempt: number) => [job("test")],
       rerunFailed: vi.fn(),
       rerunParent: vi.fn(),
     };
