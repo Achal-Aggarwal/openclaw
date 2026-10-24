@@ -52,6 +52,9 @@ describe("provider overflow messages", () => {
     "Input validation error: `inputs` must have less than 32768 tokens. Given: 40000",
     "Trying to keep the first 15857 tokens when context the overflows. However, the model is loaded with context length of only 4096 tokens, which is not enough. Try to load the model with a larger context length, or provide a shorter input.",
     "400 <400> InternalError.Algo.InvalidParameter: Range of input length should be [1, 202745]",
+    "400 The decoder prompt (length 40000) is longer than the maximum model length of 32768. Make sure that `max_model_len` is no smaller than the number of text tokens.",
+    "400 The decoder prompt (length 32768) plus the number of requested output tokens (at least 1) is longer than the maximum model length of 32768.",
+    "400 The engine prompt length 40000 exceeds the max_model_len 32768. Please reduce prompt.",
   ])("detects %s", (text) => {
     expect(isContextOverflow(errorMessage(text), 262_144)).toBe(true);
   });
@@ -99,5 +102,11 @@ describe("usage-based overflow", () => {
     // tokens are prompt tokens too, and providers that report them separately keep
     // them out of `input`. Omitting the bucket silently under-counts the context.
     expect(isContextOverflow(successfulMessage(), 1_150_000)).toBe(true);
+  });
+});
+
+describe("vLLM output-only negative control", () => {
+  it("does not compact an output-only max_tokens validation error", () => {
+    expect(isContextOverflow(errorMessage("400 max_tokens must be at least 1, got -5."))).toBe(false);
   });
 });
