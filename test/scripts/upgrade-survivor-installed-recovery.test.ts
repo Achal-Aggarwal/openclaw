@@ -400,6 +400,71 @@ function fixture(cut: string) {
   return { root, anchor, helper, journal, evidence, directory, before, run };
 }
 
+function observerEvents(stderr: string, directory: string) {
+  const prefix = "[installed-recovery/observer] ";
+  let previousElapsed = 0;
+  return stderr
+    .split("\n")
+    .filter((line) => line.startsWith(prefix))
+    .map((line) => {
+      expect(Buffer.byteLength(line)).toBeLessThan(256);
+      expect(line).not.toContain(directory);
+      const event = JSON.parse(line.slice(prefix.length));
+      expect(Object.keys(event)).toEqual([
+        "event",
+        "pid",
+        "ppid",
+        "node",
+        "platform",
+        "arch",
+        "elapsedMs",
+      ]);
+      expect(event.pid).toBeGreaterThan(0);
+      expect(event.ppid).toBeGreaterThan(0);
+      expect(event.node).toMatch(/^v\d+\.\d+\.\d+$/u);
+      expect(event.platform).toBe(process.platform);
+      expect(event.arch).toBe(process.arch);
+      expect(event.elapsedMs).toBeGreaterThanOrEqual(previousElapsed);
+      expect(event.elapsedMs).toBeLessThan(10_000);
+      previousElapsed = event.elapsedMs;
+      return event.event;
+    });
+}
+
+it.each(["unmatched", "rename-rejected", "journal-rejected"])(
+  "records only reached displacement boundaries: %s",
+  (failure) => {
+    const f = fixture("displaced");
+    if (failure === "rename-rejected") {
+      fs.renameSync(f.root, `${f.root}.unselected`);
+    } else if (failure === "journal-rejected") {
+      const db = new DatabaseSync(f.journal);
+      try {
+        db.exec("UPDATE package_activation SET phase='prepared'");
+      } finally {
+        db.close();
+      }
+    }
+    const body =
+      failure === "unmatched"
+        ? `await fs.rename(root, ${JSON.stringify(path.join(f.anchor, "unrelated"))});`
+        : failure === "rename-rejected"
+          ? `for (let attempt = 0; attempt < 8; attempt++) {
+              try { await fs.rename(root, ${JSON.stringify(path.join(f.anchor, "previous"))}); }
+              catch (error) { if (error.code !== 'ENOENT') throw error; }
+            }`
+          : `await fs.rename(root, ${JSON.stringify(path.join(f.anchor, "previous"))});`;
+    const result = f.run(body);
+    expect(result.status).toBe(failure === "journal-rejected" ? 1 : 0);
+    expect(observerEvents(result.stderr, f.directory)).toEqual([
+      "hooks-armed",
+      ...(failure === "unmatched" ? [] : ["matching-rename-entered"]),
+      ...(failure === "journal-rejected" ? ["rename-returned"] : []),
+    ]);
+    expect(fs.existsSync(f.evidence)).toBe(false);
+  },
+);
+
 it("preserves every native Node SQLite column across strict JSON snapshots", () => {
   const f = fixture("displaced");
   const observations = pathToFileURL(
@@ -452,6 +517,12 @@ it.skipIf(process.platform === "win32").each(["displaced", ...retirementCuts])(
     };
     const result = f.run(effects[cut]!);
     expect(result.signal, result.stderr).toBe("SIGKILL");
+    expect(observerEvents(result.stderr, f.directory)).toEqual([
+      "hooks-armed",
+      ...(cut === "displaced"
+        ? ["matching-rename-entered", "rename-returned", "journal-assertions-validated"]
+        : []),
+    ]);
     const observed = readJson(f.evidence);
     expect(observed.row).toEqual(f.before);
     expect(readActivation(f.journal)).toEqual(f.before);

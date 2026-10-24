@@ -17,6 +17,28 @@ if (specPath) {
   }
   assert.equal(helper, path.join(`${anchor}.control`, "recovery.mjs"));
   assert.equal(journal, path.join(`${anchor}.control`, "operation.sqlite"));
+  const started = process.hrtime.bigint();
+  const reported = new Set();
+  // Synchronous, once-per-boundary scalars survive the deliberate SIGKILL and
+  // distinguish an unarmed observer from a rename or journal check not reached.
+  const report = (event) => {
+    if (reported.has(event)) {
+      return;
+    }
+    reported.add(event);
+    fs.writeSync(
+      2,
+      `[installed-recovery/observer] ${JSON.stringify({
+        event,
+        pid: process.pid,
+        ppid: process.ppid,
+        node: process.version,
+        platform: process.platform,
+        arch: process.arch,
+        elapsedMs: Number((process.hrtime.bigint() - started) / 1_000_000n),
+      })}\n`,
+    );
+  };
   const original = { rename: fsp.rename, unlink: fsp.unlink, rmdir: fsp.rmdir, open: fsp.open };
   const checkpoint = (effect, synced = false) => {
     if (fs.existsSync(evidence)) {
@@ -31,6 +53,7 @@ if (specPath) {
       assert.equal(intent.kind, "displace");
       assert.equal(fs.existsSync(root), false);
       assert(fs.existsSync(path.join(anchor, "previous")));
+      report("journal-assertions-validated");
     }
     fs.writeFileSync(evidence, JSON.stringify({ cut, pid: process.pid, effect, synced, row }), {
       flag: "wx",
@@ -39,8 +62,14 @@ if (specPath) {
     process.kill(process.pid, "SIGKILL");
   };
   fsp.rename = async (source, destination) => {
+    const matches =
+      cut === "displaced" && source === root && destination === path.join(anchor, "previous");
+    if (matches) {
+      report("matching-rename-entered");
+    }
     const result = await original.rename(source, destination);
-    if (cut === "displaced" && source === root && destination === path.join(anchor, "previous")) {
+    if (matches) {
+      report("rename-returned");
       checkpoint(destination);
     }
     return result;
@@ -95,4 +124,5 @@ if (specPath) {
     return handle;
   };
   syncBuiltinESMExports();
+  report("hooks-armed");
 }
