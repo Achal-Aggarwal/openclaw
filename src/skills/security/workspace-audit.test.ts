@@ -46,7 +46,9 @@ describe("security audit workspace skill path escape findings", () => {
     await fs.symlink(outsideDir, path.join(skillsRoot, "leak"), linkType);
     await fs.symlink(skillsRoot, path.join(skillsRoot, "cycle"), linkType);
 
-    const findings = await collectWorkspaceSkillSymlinkEscapeFindings({ cfg: { agents: { defaults: { workspace: workspaceDir } } } });
+    const findings = await collectWorkspaceSkillSymlinkEscapeFindings({
+      cfg: { agents: { defaults: { workspace: workspaceDir } } },
+    });
     const finding = requireFinding(findings, "skills.workspace.symlink_escape");
     expect(finding.severity).toBe("warn");
     expect(finding.detail).toContain(outsideSkillPath);
@@ -62,7 +64,11 @@ describe("security audit workspace skill path escape findings", () => {
       path.join(workspaceDir, "skills"),
       isWindows ? "junction" : "dir",
     );
-    expect(await collectWorkspaceSkillSymlinkEscapeFindings({ cfg: { agents: { defaults: { workspace: workspaceDir } } } })).toEqual([]);
+    expect(
+      await collectWorkspaceSkillSymlinkEscapeFindings({
+        cfg: { agents: { defaults: { workspace: workspaceDir } } },
+      }),
+    ).toEqual([]);
   });
 
   it("evaluates workspace skill path escape findings", async () => {
