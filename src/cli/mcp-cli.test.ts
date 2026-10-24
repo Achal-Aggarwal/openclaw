@@ -5,6 +5,7 @@ import { createDeferred } from "../../test/helpers/promise.js";
 import { setConfiguredMcpServer } from "../agents/mcp-config-mutation.js";
 import { resolveMcpTransportConfig } from "../agents/mcp-transport-config.js";
 import { withTempHome } from "../config/home-env.test-harness.js";
+import { REDACTED_SENTINEL } from "../config/redact-snapshot.js";
 import { registerMcpCliDoctorPathTests } from "./mcp-cli.doctor-path.test-support.js";
 import {
   cleanupMcpCliTestState,
@@ -155,7 +156,7 @@ describe("mcp cli", () => {
   );
 
   it("adds a configured MCP server from flags without replacing operator knobs", async () => {
-    await withMcpHome(async () => {
+    await withMcpHome(async (home) => {
       await runMcpCommand([
         "mcp",
         "add",
@@ -187,7 +188,7 @@ describe("mcp cli", () => {
       expect(JSON.parse(lastLogLine())).toEqual({
         url: "https://mcp.example.com/mcp",
         transport: "streamable-http",
-        headers: { Authorization: "Bearer token" },
+        headers: { Authorization: REDACTED_SENTINEL },
         auth: "oauth",
         oauth: { scope: "docs.read" },
         toolFilter: { include: ["search", "read_*"] },
@@ -196,6 +197,10 @@ describe("mcp cli", () => {
         supportsParallelToolCalls: true,
         codex: { defaultToolsApprovalMode: "approve" },
       });
+      const saved = JSON.parse(
+        await fs.readFile(path.join(home, ".openclaw", "openclaw.json"), "utf8"),
+      );
+      expect(saved.mcp.servers.docs.headers).toEqual({ Authorization: "Bearer token" });
     });
   });
 

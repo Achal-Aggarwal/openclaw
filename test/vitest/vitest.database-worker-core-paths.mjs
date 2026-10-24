@@ -648,6 +648,7 @@ export const databaseWorkerCoreTestFiles = [
   "src/cli/mcp-cli.login-loopback.test.ts",
   "src/cli/mcp-cli.oauth.test.ts",
   "src/cli/mcp-cli.path-case.windows.test.ts",
+  "src/cli/mcp-cli.inspection.test.ts",
   "src/cli/mcp-cli.test.ts",
   "src/cli/plugins-cli.list.test.ts",
   "src/cli/plugins-cli.policy.test.ts",
