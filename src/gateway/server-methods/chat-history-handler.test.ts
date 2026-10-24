@@ -907,15 +907,23 @@ it("chat.history reports the session agent's own verboseDefault", () =>
       const scope = { agentId, sessionKey: `agent:${agentId}:main`, sessionId: `${agentId}-main` };
       await upsertSessionEntryCore(scope, { sessionId: scope.sessionId, updatedAt: 1 });
       let result: unknown;
-      await expectDefined(chatHistoryHandlers["chat.history"], "history handler")({
-        params: { agentId, sessionKey: scope.sessionKey }, context, client,
+      await expectDefined(
+        chatHistoryHandlers["chat.history"],
+        "history handler",
+      )({
+        params: { agentId, sessionKey: scope.sessionKey },
+        context,
+        client,
         req: { type: "req", id: "verbose-default", method: "chat.history" },
         isWebchatConnect: () => false,
-        respond: (ok, payload, error) => { expect(error).toBeUndefined(); expect(ok).toBe(true); result = payload; },
+        respond: (ok, payload, error) => {
+          expect(error).toBeUndefined();
+          expect(ok).toBe(true);
+          result = payload;
+        },
       });
       const payload = expectDefined(asOptionalRecord(result), "history response");
       expect(payload.verboseLevel).toBe(expected);
       expect(payload.sessionInfo).toMatchObject({ verboseLevel: expected });
     }
   }));
-
