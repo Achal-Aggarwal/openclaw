@@ -194,7 +194,7 @@ export function effectiveReleasePlanGates(gates, env = process.env) {
     if (!envName || !env[envName]) {
       return gate;
     }
-    const result = String(env[envName]);
+    const result = env[envName];
     if (!EFFECTIVE_PARENT_GATE_RESULTS.has(result)) {
       throw new Error(`Invalid effective release gate result: ${gate.name}`);
     }
