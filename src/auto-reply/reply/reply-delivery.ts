@@ -7,6 +7,7 @@ import {
   getReplyPayloadMetadata,
   isReplyPayloadTerminalContent,
   setReplyPayloadMetadata,
+  shouldKeepPayloadDuringSilentTurn,
 } from "../reply-payload.js";
 import { isSilentReplyPayloadText, isSilentReplyText, SILENT_REPLY_TOKEN } from "../tokens.js";
 import type { BlockReplyContext, ReplyPayload, ReplyThreadingPolicy } from "../types.js";
@@ -148,6 +149,7 @@ export function createBlockReplyDeliveryHandler(params: {
   typingSignals: TypingSignaler;
   reasoningPayloadsEnabled?: boolean;
   commentaryPayloadsEnabled?: boolean;
+  silentExpected?: boolean;
   blockStreamingEnabled: boolean;
   blockReplyPipeline: BlockReplyPipeline | null;
   directBlockDeliveries: DirectBlockDelivery[];
@@ -159,6 +161,7 @@ export function createBlockReplyDeliveryHandler(params: {
     // Suppressed display lanes must not enter delivery bookkeeping: callers use
     // that evidence to decide whether an otherwise empty turn needs a fallback.
     if (
+      (params.silentExpected && !shouldKeepPayloadDuringSilentTurn(payload)) ||
       (payload.isReasoning === true && params.reasoningPayloadsEnabled !== true) ||
       (payload.isCommentary === true && params.commentaryPayloadsEnabled !== true)
     ) {

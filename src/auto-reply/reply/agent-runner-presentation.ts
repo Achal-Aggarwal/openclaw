@@ -4,6 +4,7 @@ import { renderUserFacingText } from "../../agents/embedded-agent-helpers/user-f
 import { logVerbose } from "../../globals.js";
 import { createStructuredOutboundPayloadPlan } from "../../infra/outbound/payloads.js";
 import { stripHeartbeatToken } from "../heartbeat.js";
+import { shouldKeepPayloadDuringSilentTurn } from "../reply-payload.js";
 import {
   HEARTBEAT_TOKEN,
   isSilentReplyPayloadText,
@@ -29,7 +30,7 @@ export function createAgentTurnPresentation(params: {
   const classifyStreamingPartial = (payload: ReplyPayload): { text?: string; skip: boolean } => {
     let text = payload.text;
     const reply = resolveSendableOutboundReplyParts(payload, { text: "" });
-    if (params.turn.followupRun.run.silentExpected) {
+    if (params.turn.followupRun.run.silentExpected && !shouldKeepPayloadDuringSilentTurn(payload)) {
       return { skip: true };
     }
     if (!params.turn.isHeartbeat && text?.includes("HEARTBEAT_OK")) {
@@ -142,6 +143,7 @@ export function createAgentTurnPresentation(params: {
           typingSignals: params.turn.typingSignals,
           reasoningPayloadsEnabled: params.turn.opts?.reasoningPayloadsEnabled,
           commentaryPayloadsEnabled: params.turn.opts?.commentaryPayloadsEnabled,
+          silentExpected: params.turn.followupRun.run.silentExpected,
           blockStreamingEnabled: params.turn.blockStreamingEnabled,
           blockReplyPipeline,
           directBlockDeliveries: params.directBlockDeliveries,
