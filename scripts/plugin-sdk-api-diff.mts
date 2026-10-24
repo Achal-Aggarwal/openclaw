@@ -4,7 +4,7 @@ import { existsSync } from "node:fs";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import {
   createPluginSdkApiDiff,
   diffPluginSdkApi,
@@ -40,6 +40,9 @@ type Args = {
 
 const GIT_MAX_BUFFER = 64 * 1024 * 1024;
 const SCRIPT_PATH = fileURLToPath(import.meta.url);
+const REVISION_COMPILER_LOADER_PATH = fileURLToPath(
+  new URL("./plugin-sdk-api-revision-compiler-loader.mjs", import.meta.url),
+);
 const TSX_IMPORT_PATH = import.meta.resolve("tsx");
 
 function usage(): never {
@@ -164,6 +167,7 @@ async function runAbortableChild(params: {
   args: string[];
   command: string;
   cwd: string;
+  env?: NodeJS.ProcessEnv;
   failureMessage: string;
   signal: AbortSignal;
 }): Promise<void> {
@@ -173,6 +177,7 @@ async function runAbortableChild(params: {
   await new Promise<void>((resolve, reject) => {
     const child = spawn(params.command, params.args, {
       cwd: params.cwd,
+      env: params.env,
       signal: params.signal,
       stdio: ["ignore", "pipe", "pipe"],
     });
@@ -216,21 +221,27 @@ async function renderRevision(
   revisionRoot: string,
   outputPath: string,
   signal: AbortSignal,
+  useRevisionCompiler: boolean,
 ): Promise<void> {
-  const revisionRenderer = path.join(revisionRoot, "scripts/plugin-sdk-api-diff.mts");
   await runAbortableChild({
     command: process.execPath,
     args: [
       "--max-old-space-size=6144",
+      ...(useRevisionCompiler
+        ? ["--import", pathToFileURL(REVISION_COMPILER_LOADER_PATH).href]
+        : []),
       "--import",
       TSX_IMPORT_PATH,
-      existsSync(revisionRenderer) ? revisionRenderer : SCRIPT_PATH,
+      SCRIPT_PATH,
       "--render-root",
       revisionRoot,
       "--output",
       outputPath,
     ],
     cwd: revisionRoot,
+    env: useRevisionCompiler
+      ? { ...process.env, OPENCLAW_PLUGIN_SDK_TYPESCRIPT_ROOT: revisionRoot }
+      : process.env,
     failureMessage: "Plugin SDK API render failed",
     signal,
   });
@@ -365,7 +376,12 @@ async function main(): Promise<void> {
         const renderPath = path.join(temporaryRoot, `${commit}.json`);
         const renderStartedAt = performance.now();
         console.error(`[plugin-sdk-api-diff] ${commit} render started`);
-        await renderRevision(worktree, renderPath, abortController.signal);
+        await renderRevision(
+          worktree,
+          renderPath,
+          abortController.signal,
+          commit !== headCommit,
+        );
         console.error(
           `[plugin-sdk-api-diff] ${commit} render completed in ${Math.round(performance.now() - renderStartedAt)}ms`,
         );
