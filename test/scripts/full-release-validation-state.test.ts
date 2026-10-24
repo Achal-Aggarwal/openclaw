@@ -327,6 +327,7 @@ describe("full release execution plan", () => {
   it("preserves legacy embedded-manifest reuse bytes across repeated validation", () => {
     const candidate = candidateBinding();
     const version = candidate.package.version;
+    const sectionVersion = version.replace(/-beta\.[1-9][0-9]*$/u, "");
     const retained = executionPlan(
       { childPhaseVersion: 3, rerunGroup: "ci", targetVersion: version },
       {
@@ -334,7 +335,10 @@ describe("full release execution plan", () => {
         candidateRequest: canonicalCandidateRequest(),
         candidate,
         evidenceReuse: {
-          changedPaths: [`CHANGELOG/${version}.md`, `CHANGELOG/records/${version}.md`],
+          changedPaths: [
+            `CHANGELOG/${sectionVersion}.md`,
+            `CHANGELOG/records/${sectionVersion}.md`,
+          ],
           evidenceSha: TARGET_SHA,
           policy: "split-changelog-release-v1",
           requested: true,

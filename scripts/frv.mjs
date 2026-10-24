@@ -2734,7 +2734,7 @@ function failedJobEvent(owner, job, attempt) {
   const runner = job.runner_name ? ` / ${job.runner_name}` : "";
   const blocker = owner.startsWith("artifact:") ? " blocker:" : "";
   return [
-    `job:${job.id}`,
+    `job:${job.id}:${job.name}`,
     `${owner}${blocker} job "${job.name}" ${job.conclusion} (attempt ${job.run_attempt ?? attempt}; runner ${labels}${runner})`,
     job.html_url,
   ];

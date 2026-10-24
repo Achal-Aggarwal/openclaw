@@ -304,6 +304,48 @@ async function resolveProducer(request, env) {
   });
 }
 
+function artifactAttemptJobs(request, runId, attempt, run) {
+  validateArtifactProducerRun(
+    request,
+    run ?? api(request.repository, `actions/runs/${runId}/attempts/${attempt}`),
+    runId,
+    attempt,
+    { allowFailure: true },
+  );
+  const jobs = [];
+  for (let page = 1; page <= 10; page += 1) {
+    const response = api(
+      request.repository,
+      `actions/runs/${runId}/attempts/${attempt}/jobs?per_page=100&page=${page}`,
+    );
+    requireValue(
+      Array.isArray(response.jobs) &&
+        Number.isSafeInteger(response.total_count) &&
+        response.total_count >= 0 &&
+        response.total_count <= 1000,
+      "Artifact producer job inventory is incomplete.",
+    );
+    jobs.push(...response.jobs);
+    if (jobs.length === response.total_count) {
+      break;
+    }
+    requireValue(
+      response.jobs.length === 100 && page < 10 && jobs.length < response.total_count,
+      "Artifact producer job inventory is incomplete.",
+    );
+  }
+  requireValue(
+    jobs.every(
+      (job) =>
+        String(job.run_id) === String(runId) &&
+        String(job.run_attempt) === String(attempt) &&
+        job.head_sha === request.toolingSha,
+    ),
+    "Artifact producer job identity changed.",
+  );
+  return jobs;
+}
+
 // GitHub reruns carry successful jobs forward. The prepared descriptor artifact
 // is the durable producer identity; display names are presentation only.
 function effectiveNpmPreparationAttempt(request, runId, runAttempt) {
