@@ -332,21 +332,24 @@ async function ghJson(repository, path, options, fresh) {
   return JSON.parse(await readGhApi(repository, path, [], options, fresh));
 }
 
-async function downloadExecutionPlan(repository, runId) {
+async function downloadExecutionPlan(repository, runId, options = {}) {
   const directory = mkdtempSync(join(tmpdir(), "openclaw-frv-plan-"));
   try {
     try {
-      await execGhRead([
-        "run",
-        "download",
-        runId,
-        "--repo",
-        repository,
-        "--name",
-        `full-release-execution-plan-${runId}`,
-        "--dir",
-        directory,
-      ]);
+      await execGhRead(
+        [
+          "run",
+          "download",
+          runId,
+          "--repo",
+          repository,
+          "--name",
+          `full-release-execution-plan-${runId}`,
+          "--dir",
+          directory,
+        ],
+        options,
+      );
     } catch (error) {
       if (isReleaseGhArtifactMissingError(error)) {
         return undefined;
@@ -1940,7 +1943,9 @@ export async function continueFailed(plan, rootRunId, reader, options = {}) {
 export class MissingFrvPlanError extends Error {}
 
 export async function loadPlan(options, loadExecutionPlan = downloadExecutionPlan) {
-  const payload = await loadExecutionPlan(options.repository, options.runId);
+  const payload = await loadExecutionPlan(options.repository, options.runId, {
+    operationDeadline: options.operationDeadline,
+  });
   if (!payload) {
     throw new MissingFrvPlanError("run has no authenticated immutable FRV plan");
   }
@@ -1981,7 +1986,7 @@ function unsealedParentIdentity(run, options) {
 
 /** Project only authenticated lifecycle facts while the immutable plan is not yet available. */
 export async function inspectUnsealedPlan(options, client) {
-  const operationDeadline = createOperationDeadline();
+  const operationDeadline = options.operationDeadline ?? createOperationDeadline();
   const parent = await client.getRun(options.runId, { operationDeadline });
   const before = unsealedParentIdentity(parent, options);
   const jobs = await client.getAttemptJobs(options.runId, before.runAttempt, {
@@ -2068,14 +2073,38 @@ export async function loadPlanForCommand(
     ? (options.operationDeadline ??
       Date.now() + configuredTimeout("OPENCLAW_FRV_PLAN_SEAL_WAIT_MS", DEFAULT_PLAN_SEAL_WAIT_MS))
     : undefined;
+  let pending;
+  const throwSealWaitTimeout = (cause) => {
+    const state = pending?.planAvailability.state;
+    throw new Error(
+      `run ${options.runId}${state ? ` plan is ${state};` : ""} timed out waiting for the immutable plan seal`,
+      { cause },
+    );
+  };
   while (true) {
+    if (waitDeadline !== undefined && Date.now() >= waitDeadline) {
+      throwSealWaitTimeout();
+    }
     try {
-      return { plan: await loadPlan(options, loadExecutionPlan) };
+      const plan = await loadPlan(
+        { ...options, operationDeadline: waitDeadline ?? options.operationDeadline },
+        loadExecutionPlan,
+      );
+      if (waitDeadline !== undefined && Date.now() >= waitDeadline) {
+        throwSealWaitTimeout();
+      }
+      return { plan };
     } catch (error) {
+      if (waitDeadline !== undefined && Date.now() >= waitDeadline) {
+        throwSealWaitTimeout(error);
+      }
       if (!(error instanceof MissingFrvPlanError)) {
         throw error;
       }
-      const pending = await inspectUnsealedPlan(options, client);
+      pending = await inspectUnsealedPlan(
+        { ...options, operationDeadline: waitDeadline ?? options.operationDeadline },
+        client,
+      );
       if (options.command === "status") {
         return { pending };
       }
