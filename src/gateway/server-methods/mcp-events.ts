@@ -1,3 +1,4 @@
+import { truncateUtf16Safe } from "@openclaw/normalization-core/utf16-slice";
 import { isDeepStrictEqual } from "node:util";
 import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import { ErrorCodes, errorShape } from "../../../packages/gateway-protocol/src/index.js";
@@ -41,7 +42,7 @@ function projectCatalog(value: unknown) {
     return {
       name: event.name,
       ...(typeof event.description === "string"
-        ? { description: event.description.slice(0, 4096) }
+        ? { description: truncateUtf16Safe(event.description, 4096) }
         : {}),
       delivery: event.delivery,
       inputSchema: event.inputSchema,
