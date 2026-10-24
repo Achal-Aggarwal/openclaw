@@ -36,6 +36,7 @@ import {
   isRequesterSettleWakeForRun,
   sameRequesterSettleRunIdentity,
 } from "./subagent-requester-settle-identity.js";
+import { isRestoredRequesterWakeRunnable } from "./subagent-restored-wake-readiness.js";
 import { isSameSubagentRunOwner, latestSubagentRun } from "./subagent-run-generation.js";
 import { resolveCompletionFromSessionEntry } from "./subagent-session-reconciliation.js";
 
@@ -54,6 +55,7 @@ function findRequesterSettleWakeRecoveryBatch(
   params: RequesterSettleWakeRecoveryTarget,
   requireGatewayCurrent = true,
   allowPending = false,
+  requireRunnable = true,
 ): SubagentRunRecord[] | undefined {
   const children = new Map(
     [...getSubagentRunsForRequesterSession(params.requesterSessionKey)].map((child) => [
@@ -76,11 +78,11 @@ function findRequesterSettleWakeRecoveryBatch(
     ) {
       continue;
     }
-    const batch = (
+    const batchRunIds =
       child.pauseReason === "sessions_yield" && wake.pauseNotice
         ? [child.runId]
-        : (wake.batchRunIds ?? [])
-    ).flatMap((id) => {
+        : (wake.batchRunIds ?? []);
+    const batch = batchRunIds.flatMap((id) => {
       const member = children.get(id);
       return member?.requesterSettleWake !== undefined &&
         member.requesterSettleWake.rearmGeneration === wake.rearmGeneration
@@ -89,8 +91,15 @@ function findRequesterSettleWakeRecoveryBatch(
     });
     if (
       batch.length > 0 &&
+      new Set(batchRunIds).size === batchRunIds.length &&
       batch.every(
         (member) =>
+          (!requireRunnable ||
+            isRestoredRequesterWakeRunnable(
+              member,
+              subagentRuns.values(),
+              Boolean(wake.pauseNotice),
+            )) &&
           isRequesterCompletionCohortCurrent(
             member,
             (key, matches, agentId) =>
@@ -293,6 +302,9 @@ export async function recoverInterruptedSubagentRow(
             storePath: physicalStorePath,
             gatewayRuntime: params.gatewayRuntime,
           },
+          true,
+          false,
+          false,
         ),
       );
     };
