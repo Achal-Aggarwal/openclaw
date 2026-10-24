@@ -1037,7 +1037,9 @@ export function createChannelManager(opts: ChannelManagerOptions): ChannelManage
               const restart =
                 restarts.get(rKey) ?? new RetrySupervisor(RESTART_POLICY, MAX_RESTARTS);
               restarts.set(rKey, restart);
-              const retry = restart.next(abort.signal);
+              // Backoff belongs to the Gateway, not the exited account's lifetime.
+              // Intentional stops cancel the supervisor below.
+              const retry = restart.next(opts.scheduler.signal);
               if (!retry) {
                 setRuntime(channelId, id, {
                   restartPending: false,
@@ -1056,7 +1058,7 @@ export function createChannelManager(opts: ChannelManagerOptions): ChannelManage
               pendingAutoRestarts.add(rKey);
               try {
                 await sleepWithAbort(retry.delayMs, retry.signal);
-                if (manuallyStopped.has(rKey) || opts.isClosing?.()) {
+                if (retry.signal.aborted || manuallyStopped.has(rKey) || opts.isClosing?.()) {
                   return;
                 }
                 releaseTask();
@@ -1064,9 +1066,21 @@ export function createChannelManager(opts: ChannelManagerOptions): ChannelManage
                   preserveRestartAttempts: true,
                   preserveManualStop: true,
                 });
-              } catch {
-                // abort or startup failure — next crash will retry
+              } catch (error) {
+                if (!retry.signal.aborted) {
+                  const lastError = formatErrorMessage(error);
+                  log.error?.(`[${id}] auto-restart failed: ${lastError}`);
+                  if (isCurrentTask() && !store.stops.has(id)) {
+                    setRuntime(channelId, id, { lastError });
+                  }
+                }
               } finally {
+                if (isCurrentTask() && !store.stops.has(id)) {
+                  setStoppedRuntime(channelId, id, {
+                    restartPending: false,
+                    reconnectAttempts: restart.attempts,
+                  });
+                }
                 pendingAutoRestarts.delete(rKey);
               }
             })
@@ -1183,6 +1197,7 @@ export function createChannelManager(opts: ChannelManagerOptions): ChannelManage
         if (manual) {
           manuallyStopped.add(rKey);
         }
+        restarts.get(rKey)?.cancel();
 
         const runStopAttempt = async (
           previousOutcome: ChannelAccountStopOutcome,

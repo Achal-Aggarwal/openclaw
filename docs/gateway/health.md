@@ -91,6 +91,8 @@ The Gateway exposes three unauthenticated `GET`/`HEAD` probe pairs:
 
 A broken Telegram or other channel account can also make `/readyz` return `503` while `/startupz` remains started. Neither probe replaces the other: startup completion alone does not certify agent or channel availability.
 
+Unexpected channel exits use automatic restart backoff. Intentional stops cancel a pending retry; failed restart waits leave a stopped account with `restartPending: false` and the failure recorded in `lastError`.
+
 Remote unauthenticated startup responses contain only `ok` and `status`. Local-direct and authenticated callers also receive `version`, `uptimeMs`, and `pendingReason` while startup is pending. Readiness details follow the same local-or-authenticated gate because they can name failing subsystems.
 
 Proxies listed in `gateway.trustedProxies` can request aggregate readiness and

@@ -1517,21 +1517,108 @@ describe("server-channels auto restart", () => {
     expect(startAccount).not.toHaveBeenCalled();
   });
 
-  it("does not auto-restart after manual stop during backoff", async () => {
-    const startAccount = vi.fn(async () => {});
-    installTestRegistry(
-      createTestPlugin({
-        startAccount,
-      }),
+  it.each(["manual stop", "recovery stop"] as const)(
+    "settles restart backoff after %s",
+    async (cause) => {
+      const startAccount = vi.fn(async () => {});
+      installTestRegistry(createTestPlugin({ startAccount }));
+      const manager = createManager();
+
+      await manager.startChannels();
+      await waitForMicrotaskCondition(
+        () => manager.isAutoRestartScheduled("discord", DEFAULT_ACCOUNT_ID),
+        "expected provider exit to schedule restart backoff",
+      );
+      expect(
+        manager.getRuntimeSnapshot().channelAccounts.discord?.[DEFAULT_ACCOUNT_ID]?.restartPending,
+      ).toBe(true);
+      await manager.stopChannel("discord", DEFAULT_ACCOUNT_ID, {
+        manual: cause === "manual stop",
+      });
+
+      await vi.advanceTimersByTimeAsync(200);
+      expect(startAccount).toHaveBeenCalledTimes(1);
+      expect(
+        manager.getRuntimeSnapshot().channelAccounts.discord?.[DEFAULT_ACCOUNT_ID],
+      ).toMatchObject({
+        running: false,
+        restartPending: false,
+      });
+      expect(manager.isAutoRestartScheduled("discord", DEFAULT_ACCOUNT_ID)).toBe(false);
+    },
+  );
+
+  it("keeps restart backoff when the exited run's abort signal fires", async () => {
+    // 9.x has no account-lifetime module to spy on, so capture the run's controller
+    // by matching the signal handed to startAccount.
+    const controllers: AbortController[] = [];
+    const OriginalAbortController = globalThis.AbortController;
+    vi.stubGlobal(
+      "AbortController",
+      class extends OriginalAbortController {
+        constructor() {
+          super();
+          controllers.push(this);
+        }
+      },
     );
+    const runSignals: AbortSignal[] = [];
+    const startAccount = vi.fn(async (context: ChannelGatewayContext<TestAccount>) => {
+      runSignals.push(context.abortSignal);
+      if (runSignals.length === 1) {
+        return;
+      }
+      context.setStatus(channelReadyPatch({ accountId: context.accountId }));
+      await waitForAbort(context.abortSignal);
+    });
+    try {
+      installTestRegistry(createTestPlugin({ startAccount }));
+      const manager = createManager();
+
+      await manager.startChannels();
+      await waitForMicrotaskCondition(
+        () => manager.isAutoRestartScheduled("discord", DEFAULT_ACCOUNT_ID),
+        "expected provider exit to schedule restart backoff",
+      );
+      const exitedRun = controllers.find((controller) => controller.signal === runSignals[0]);
+      if (!exitedRun) {
+        throw new Error("expected the exited account's abort controller");
+      }
+      exitedRun.abort();
+
+      await vi.advanceTimersByTimeAsync(200);
+      expect(startAccount).toHaveBeenCalledTimes(2);
+      expect(
+        manager.getRuntimeSnapshot().channelAccounts.discord?.[DEFAULT_ACCOUNT_ID],
+      ).toMatchObject({
+        running: true,
+        restartPending: false,
+      });
+      expect(manager.isAutoRestartScheduled("discord", DEFAULT_ACCOUNT_ID)).toBe(false);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("records a rejected restart wait and clears pending state", async () => {
+    const startAccount = vi.fn(async () => {});
+    installTestRegistry(createTestPlugin({ startAccount }));
     const manager = createManager();
+    hoisted.sleepWithAbort.mockRejectedValueOnce(new Error("restart wait failed"));
 
     await manager.startChannels();
-    vi.runAllTicks();
-    await manager.stopChannel("discord", DEFAULT_ACCOUNT_ID);
-
     await vi.advanceTimersByTimeAsync(200);
+
     expect(startAccount).toHaveBeenCalledTimes(1);
+    expect(
+      manager.getRuntimeSnapshot().channelAccounts.discord?.[DEFAULT_ACCOUNT_ID],
+    ).toMatchObject({
+      running: false,
+      lifecycle: "stopped",
+      restartPending: false,
+      lastError: "restart wait failed",
+    });
+    expect(manager.isAutoRestartScheduled("discord", DEFAULT_ACCOUNT_ID)).toBe(false);
   });
 
   it("restarts only running accounts after a host thaw when diagnostics fail", async () => {
