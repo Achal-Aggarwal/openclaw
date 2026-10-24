@@ -192,8 +192,8 @@ describe("parallel web search provider", () => {
     const result = await paidTool({
       parallel: { apiKey: "par-secret", baseUrl },
     }).execute({ search_queries: ["invalid credential-bearing endpoint"] });
-    expect(result.message).not.toContain("fixture-url-password");
-    expect(result.message).not.toContain("fixture-query-token");
+    expect(JSON.stringify(result)).not.toContain("fixture-url-password");
+    expect(JSON.stringify(result)).not.toContain("fixture-query-token");
     expect(result).toMatchObject({
       error: "invalid_base_url",
       message: expect.stringContaining("plugins.entries.parallel.config.webSearch.baseUrl"),

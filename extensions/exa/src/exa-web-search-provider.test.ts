@@ -247,23 +247,23 @@ describe("exa web search provider", () => {
     });
   });
 
-it.each([
-  "ftp://fixture-user:fixture-url-password@proxy.example/exa?api_key=fixture-query-token",
-  "fixture-user:fixture-url-password@proxy.example:invalid/exa?api_key=fixture-query-token",
-  "custom://fixture-user:fixture-url-password@proxy.example/exa?api_key=fixture-query-token",
-])("redacts credentials from rejected custom endpoint %s", async (baseUrl) => {
-  const fetchMock = vi.spyOn(globalThis, "fetch");
-  const result = await requireExaTool({ apiKey: "test-exa-key", baseUrl }).execute({
-    query: "invalid credential-bearing endpoint",
+  it.each([
+    "ftp://fixture-user:fixture-url-password@proxy.example/exa?api_key=fixture-query-token",
+    "fixture-user:fixture-url-password@proxy.example:invalid/exa?api_key=fixture-query-token",
+    "custom://fixture-user:fixture-url-password@proxy.example/exa?api_key=fixture-query-token",
+  ])("redacts credentials from rejected custom endpoint %s", async (baseUrl) => {
+    const fetchMock = vi.spyOn(globalThis, "fetch");
+    const result = await requireExaTool({ apiKey: "test-exa-key", baseUrl }).execute({
+      query: "invalid credential-bearing endpoint",
+    });
+    expect(JSON.stringify(result)).not.toContain("fixture-url-password");
+    expect(JSON.stringify(result)).not.toContain("fixture-query-token");
+    expect(result).toMatchObject({
+      error: "invalid_base_url",
+      message: expect.stringContaining("plugins.entries.exa.config.webSearch.baseUrl"),
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
   });
-  expect(result.message).not.toContain("fixture-url-password");
-  expect(result.message).not.toContain("fixture-query-token");
-  expect(result).toMatchObject({
-    error: "invalid_base_url",
-    message: expect.stringContaining("plugins.entries.exa.config.webSearch.baseUrl"),
-  });
-  expect(fetchMock).not.toHaveBeenCalled();
-});
 
   it.each([0, 1])("honors the current cache TTL %s", async (cacheTtlMinutes) => {
     const now = Date.now();
