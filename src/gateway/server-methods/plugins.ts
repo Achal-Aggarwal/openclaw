@@ -1,3 +1,4 @@
+import { truncateUtf16Safe } from "@openclaw/normalization-core/utf16-slice";
 import {
   ErrorCodes,
   errorShape,
@@ -142,7 +143,7 @@ export const pluginsHandlers: GatewayRequestHandlers = {
                     : record?.status === "disabled"
                       ? "disabled"
                       : "unloaded",
-                ...(error ? { error: error.slice(0, 2000) } : {}),
+                ...(error ? { error: truncateUtf16Safe(error, 2000) } : {}),
               },
             });
           }),
