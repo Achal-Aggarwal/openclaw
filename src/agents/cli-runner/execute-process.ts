@@ -89,6 +89,14 @@ export async function executeCliProcess(params: {
   // buildCliArgs emits this option only for an actual checkpointed resume.
   const resumeAtArg =
     params.useResume && runParams.cliSessionResumeAt ? params.backend.resumeAtArg : undefined;
+  const resumeCheckpointId = params.useResume ? runParams.cliSessionResumeAt : undefined;
+  const createOutputFailoverError = (output: CliOutput): FailoverError | undefined =>
+    // The CLI can report a rejected resume checkpoint as a structured result
+    // error instead of a process exit failure; classify it before the generic
+    // provider-reason mapping so recovery sees the invalidated session.
+    (output.errorText
+      ? resolveCliResumeAtError(output.errorText, { resumeCheckpointId }, failoverContext)
+      : undefined) ?? createCliOutputFailoverError({ output, ...outputErrorContext });
   const hasJsonlOutput = params.outputMode === "jsonl";
 
   const streamingParser = hasJsonlOutput
@@ -282,7 +290,7 @@ export async function executeCliProcess(params: {
         if (runParams.abortSignal?.aborted || params.events.hasObservedCliActivity()) {
           throw error;
         }
-        throw resolveCliResumeAtError(error, resumeAtArg, failoverContext) ?? error;
+        throw resolveCliResumeAtError(error, { resumeAtArg }, failoverContext) ?? error;
       });
     } else {
       const supervisor = params.deps.getProcessSupervisor();
@@ -438,10 +446,7 @@ export async function executeCliProcess(params: {
   // A completed terminal record is authoritative even if the CLI hangs
   // afterward. Reclassifying it as a timeout could replay completed tools.
   if (parsedStructuredOutput?.terminalFailure) {
-    const terminalError = createCliOutputFailoverError({
-      output: parsedStructuredOutput,
-      ...outputErrorContext,
-    });
+    const terminalError = createOutputFailoverError(parsedStructuredOutput);
     if (terminalError) {
       throw terminalError;
     }
@@ -531,6 +536,9 @@ export async function executeCliProcess(params: {
       fallbackMessage: "CLI failed.",
       retryEmptyFailure,
       resumeAtArg: retryEmptyFailure ? resumeAtArg : undefined,
+      // The checkpoint guard names the exact uuid this run sent, so it stays
+      // safe after observed CLI activity (a rejection result record counts).
+      resumeCheckpointId,
     });
   }
 
@@ -568,10 +576,7 @@ export async function executeCliProcess(params: {
       outputMode: params.outputMode,
       fallbackSessionId: params.resolvedSessionId,
     });
-  const parsedError = createCliOutputFailoverError({
-    output: parsed,
-    ...outputErrorContext,
-  });
+  const parsedError = createOutputFailoverError(parsed);
   if (parsedError) {
     throw parsedError;
   }

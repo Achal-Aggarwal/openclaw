@@ -8,6 +8,13 @@ import {
   resolveFailoverStatus,
 } from "../failover-error.js";
 
+type CliResumeAttempt = {
+  // Option name the backend was invoked with, e.g. --resume-session-at.
+  resumeAtArg?: string;
+  // Checkpoint value that option carried, when the attempt targeted one.
+  resumeCheckpointId?: string;
+};
+
 type CliExitFailoverErrorParams = {
   context: Pick<FailoverError, "provider" | "model" | "sessionId" | "lane">;
   // Spawn supplies stderr/stdout windows; live stdout is already structured, so it supplies stderr.
@@ -17,6 +24,7 @@ type CliExitFailoverErrorParams = {
   emptyReason?: FailoverError["reason"];
   retryEmptyFailure: boolean;
   resumeAtArg?: string;
+  resumeCheckpointId?: string;
 };
 
 export function createCliFailoverError(
@@ -35,17 +43,26 @@ export function createCliFailoverError(
 
 export function resolveCliResumeAtError(
   error: unknown,
-  resumeAtArg: string | undefined,
+  resumeAt: CliResumeAttempt | undefined,
   context: CliExitFailoverErrorParams["context"],
 ): FailoverError | undefined {
-  if (!resumeAtArg || isFailoverError(error) || isAbortError(error)) {
+  if (isFailoverError(error) || isAbortError(error)) {
     return undefined;
   }
   const message = formatErrorMessage(error).toLowerCase();
-  if (
-    !message.includes(resumeAtArg.toLowerCase()) ||
-    !/\b(?:unknown|unexpected|unrecognized)\b|\bnot\s+recognized\b/.test(message)
-  ) {
+  // Older CLIs reject the resume option itself as unknown; Claude Code rejects
+  // a checkpoint its transcript compacted away by naming the checkpoint uuid.
+  const rejectedOption = Boolean(
+    resumeAt?.resumeAtArg &&
+    message.includes(resumeAt.resumeAtArg.toLowerCase()) &&
+    /\b(?:unknown|unexpected|unrecognized)\b|\bnot\s+recognized\b/.test(message),
+  );
+  const rejectedCheckpoint = Boolean(
+    resumeAt?.resumeCheckpointId &&
+    message.includes(resumeAt.resumeCheckpointId.toLowerCase()) &&
+    /\bno\s+message\s+found\s+with\s+message\.uuid\b/.test(message),
+  );
+  if (!rejectedOption && !rejectedCheckpoint) {
     return undefined;
   }
   // A rejected local option is already a recovery fact; provider policy must
@@ -64,7 +81,7 @@ export function createCliExitFailoverError(params: CliExitFailoverErrorParams): 
     candidates.map((candidate) => extractCliErrorMessage(candidate)).find(Boolean) ?? null;
   const resumeAtError = resolveCliResumeAtError(
     structuredError || candidates[0] || params.fallbackMessage,
-    params.resumeAtArg,
+    { resumeAtArg: params.resumeAtArg, resumeCheckpointId: params.resumeCheckpointId },
     params.context,
   );
   if (resumeAtError) {
