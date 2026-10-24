@@ -284,6 +284,8 @@ export function buildAgentSystemPrompt(params: {
   workspaceDir: string;
   runtimeCwd?: string;
   reasoningLevel?: ReasoningLevel;
+  /** Session/config-derived availability of /reasoning and /status guidance. */
+  reasoningCommandsEnabled?: boolean;
   extraSystemPrompt?: string;
   ownerNumbers?: string[];
   ownerDisplay?: OwnerIdDisplay;
@@ -956,7 +958,7 @@ export function buildAgentSystemPrompt(params: {
     "## Runtime",
     runtimeInfo?.gitCoauthorPrompt,
     modelIdentityLine,
-    `Reasoning=${reasoningLevel}; hidden unless on/stream. Toggle /reasoning; /status shows when enabled.`,
+    `Reasoning=${reasoningLevel}; hidden unless on/stream.${params.reasoningCommandsEnabled === false ? "" : " Toggle /reasoning; /status shows when enabled."}`,
     // Only Runtime facts may move behind tools. Close the region before callers
     // append hook instructions or permission notices that must retain their role.
     SYSTEM_PROMPT_RELOCATABLE_BOUNDARY,

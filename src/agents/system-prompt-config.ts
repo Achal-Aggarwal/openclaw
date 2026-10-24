@@ -4,6 +4,9 @@
  * This module gathers agent/config knobs before rendering the canonical system
  * prompt so callers do not duplicate owner, TTS, alias, memory, or FS policy.
  */
+import { normalizeOptionalLowercaseString } from "@openclaw/normalization-core/string-coerce";
+import { shouldHandleTextCommands } from "../auto-reply/commands-text-routing.js";
+import { resolveNativeCommandsEnabled } from "../config/commands.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import type { PreparedTtsPreferences } from "../tts/tts-preferences.js";
 import { buildTtsSystemPromptHint } from "../tts/tts-settings.js";
@@ -47,10 +50,19 @@ export function buildConfiguredAgentSystemPrompt(params: ConfiguredAgentSystemPr
   if (!config) {
     return buildAgentSystemPrompt(renderParams);
   }
+  const channel = normalizeOptionalLowercaseString(renderParams.runtimeInfo?.channel) ?? "";
   const includeFullSections =
     renderParams.promptMode !== "minimal" && renderParams.promptMode !== "none";
   return buildAgentSystemPrompt({
     ...renderParams,
+    reasoningCommandsEnabled:
+      shouldHandleTextCommands({ cfg: config, surface: channel }) ||
+      resolveNativeCommandsEnabled({
+        providerId: channel,
+        providerSetting: config.channels?.[channel]?.commands?.native,
+        globalSetting: config.commands?.native,
+        config,
+      }),
     ownerDisplay: "raw",
     ownerDisplaySecret: undefined,
     subagentDelegationMode: resolveMainSessionDelegationMode({
