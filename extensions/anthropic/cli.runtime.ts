@@ -405,7 +405,7 @@ async function acceptMessage(session: ClaudeCliSession, message: Record<string, 
     return;
   }
   if (message.type === "system" && message.subtype === "task_started") {
-    if (message.owned_by_subagent === true) {
+    if (message.owned_by_subagent === true || typeof message.parent_task_id === "string") {
       if (typeof message.task_id === "string" && message.task_id) {
         turn.subagentTaskIds.add(message.task_id);
       }
@@ -425,6 +425,10 @@ async function acceptMessage(session: ClaudeCliSession, message: Record<string, 
   if (message.type === "system" && message.subtype === "background_tasks_changed") {
     for (const task of Array.isArray(message.tasks) ? message.tasks : []) {
       if (!isRecord(task) || typeof task.task_id !== "string" || !task.task_id) {
+        continue;
+      }
+      if (task.owned_by_subagent === true || typeof task.parent_task_id === "string") {
+        turn.subagentTaskIds.add(task.task_id);
         continue;
       }
       if (
