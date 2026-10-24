@@ -321,7 +321,7 @@ together after that batch is verified. Enumeration advances through the complete
 archive key, including empty historical session IDs. A failed batch reports its archive session
 and generation and stops; rerunning Doctor resumes after the committed cursor.
 Blobs already committed before a file or cursor failure remain retained and pending
-publication. SIGINT and SIGTERM cancel further inspection and repair batches through Doctor's existing
+publication. SIGINT, SIGTERM, and SIGHUP cancel further inspection and repair batches through Doctor's existing
 maintenance owner, which settles open work and attempts to restore the managed
 Gateway it stopped. Doctor reports restoration failures and the next recovery
 action. Updates use the same migration and keep their existing backup and rollback
