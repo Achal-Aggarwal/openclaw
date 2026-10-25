@@ -78,8 +78,6 @@ export function controlUiStableChunkName(id: string): string | undefined {
 
   switch (controlUiBootManifestKey(id)) {
     case "ui/src/lib/chat/composer-draft-write.runtime.ts":
-    case "ui/src/pages/chat/outbox-payloads.runtime.ts":
-    case "ui/src/lib/chat/outbox-payload-store.runtime.ts":
       // Both routes prefetch this file; distinct module initializers still wait for use.
       return "composer-invocation-menus";
     case "ui/src/lib/chat/composer-draft-recovery.runtime.ts":
@@ -93,6 +91,8 @@ export function controlUiStableChunkName(id: string): string | undefined {
       // Share styles without making Outputs import the Details renderer.
       return "chat-details-styles";
     case "ui/src/components/session-git-diff.tsx":
+    case "ui/src/pages/chat/outbox-payloads.runtime.ts":
+    case "ui/src/lib/chat/outbox-payload-store.runtime.ts":
     case "ui/src/lib/sessions/usage.ts":
     case "src/shared/weak-owner-map.ts":
     case "src/shared/assistant-display-content.ts":

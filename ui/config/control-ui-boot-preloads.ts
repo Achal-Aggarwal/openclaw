@@ -5,9 +5,8 @@ import { controlUiBootEntryRoute, controlUiBootManifestKey } from "./control-ui-
 // These common interactions download beside the route, but evaluate only on use.
 // Include the nested option entries too: opening a menu must not start a second RTT.
 const sharedInteractionEntries = new Set([
-  // First edit and attachment send download in parallel, without running their engines.
+  // First edit downloads in parallel, without running the writer.
   "ui/src/lib/chat/composer-draft-write.runtime.ts",
-  "ui/src/pages/chat/outbox-payloads.runtime.ts",
   "ui/src/pages/chat/components/chat-composer-slash-menu.tsx",
   "ui/src/pages/chat/components/chat-composer-slash-menu-options.tsx",
   "ui/src/pages/chat/components/chat-composer-skill-menu.tsx",
@@ -19,6 +18,8 @@ const sharedInteractionEntries = new Set([
   "ui/src/components/app-sidebar-online.tsx",
 ]);
 const chatInteractionEntries = new Set([
+  // Chat prepares attachment sends; New Session loads its uncommon attachment path on demand.
+  "ui/src/pages/chat/outbox-payloads.runtime.ts",
   "ui/src/pages/chat/components/chat-context-breakdown.tsx",
   "ui/src/components/markdown-live.ts",
   // Cached environment facts reveal without another network round trip.

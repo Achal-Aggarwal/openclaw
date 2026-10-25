@@ -211,7 +211,9 @@ it("prioritizes signing and route dependencies over unevaluated interaction hint
   const entries = {
     online: modulePath("../components/app-sidebar-online.tsx"),
     draftWrite: modulePath("../lib/chat/composer-draft-write.runtime.ts"),
+    composerMenu: modulePath("../pages/chat/components/chat-composer-slash-menu.tsx"),
     outboxPayload: modulePath("../pages/chat/outbox-payloads.runtime.ts"),
+    deferredSupport: modulePath("../components/session-git-diff.tsx"),
     catalog: modulePath("../components/mcp-app-catalog-view.tsx"),
     resources: modulePath("../components/mcp-app-resources-view.tsx"),
     context: modulePath("../components/solid/mcp-app-context-strip-view.tsx"),
@@ -297,9 +299,12 @@ it("prioritizes signing and route dependencies over unevaluated interaction hint
   const commonChunks = [
     entries.online,
     entries.draftWrite,
-    entries.outboxPayload,
+    entries.composerMenu,
     commonDependency,
   ].map((id) => chunkFor(id).fileName);
+  const payloadChunk = chunkFor(entries.outboxPayload).fileName;
+  expect(payloadChunk).toBe(chunkFor(entries.deferredSupport).fileName);
+  expect(chunkFor(entries.draftWrite).fileName).toBe(chunkFor(entries.composerMenu).fileName);
   const signerChunk = chunkFor(entries.signer).fileName;
   const chatChunk = chunkFor(entries.chat).fileName;
   const placementChunks = [entries.placement, placementDependency].map(
@@ -308,7 +313,7 @@ it("prioritizes signing and route dependencies over unevaluated interaction hint
   const html = await fs.readFile(local("dist/index.html"), "utf8");
   const chatPreloads = routePreloads(html, "chat");
   expect(chatPreloads.toSorted()).toEqual(
-    [...new Set([signerChunk, chatChunk, ...commonChunks])].toSorted(),
+    [...new Set([signerChunk, chatChunk, payloadChunk, ...commonChunks])].toSorted(),
   );
   expect(routePreloads(html, "new").toSorted()).toEqual(
     [...new Set([signerChunk, ...commonChunks, ...placementChunks])].toSorted(),
@@ -344,6 +349,17 @@ it("prioritizes signing and route dependencies over unevaluated interaction hint
   expect(fixture.events).toEqual([]);
   expect((await fixture.load.online!()).value).toBe("common");
   expect(fixture.events).toEqual(["common", "online"]);
+  expect((await fixture.load.draftWrite!()).value).toBe("common");
+  expect(fixture.events).toEqual(["common", "online", "draftWrite"]);
+  expect((await fixture.load.outboxPayload!()).value).toBe("common");
+  expect(fixture.events).toEqual(["common", "online", "draftWrite", "outboxPayload"]);
   expect((await fixture.load.placement!()).value).toBe("placement");
-  expect(fixture.events).toEqual(["common", "online", "placement-dependency", "placement"]);
+  expect(fixture.events).toEqual([
+    "common",
+    "online",
+    "draftWrite",
+    "outboxPayload",
+    "placement-dependency",
+    "placement",
+  ]);
 });
