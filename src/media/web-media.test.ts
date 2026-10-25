@@ -160,6 +160,23 @@ afterAll(async () => {
 });
 
 describe("loadWebMedia", () => {
+  it("preserves unknown image extensions", async () => {
+    const result = await media.loadWebMedia("https://example.test/portrait.mystery", {
+      fetchImpl: vi.fn(
+        async () =>
+          new Response("unknown image bytes", {
+            headers: { "content-type": "image/x-private-format" },
+          }),
+      ),
+      ssrfPolicy: { allowedHostnames: ["example.test"] },
+      optimizeImages: false,
+    });
+    expect([result.kind, result.contentType, result.fileName]).toEqual([
+      "image",
+      "image/x-private-format",
+      "portrait.mystery",
+    ]);
+  });
   it.each([true, false])(
     "reconciles sniffed image names with optimizeImages=%s while preserving raw metadata",
     async (optimizeImages) => {
@@ -303,7 +320,7 @@ describe("loadWebMedia", () => {
     );
   });
 
-  it("preserves oriented JPEG bytes with a stale HEIF filename and model limits", async () => {
+  it("preserves oriented JPEG bytes and corrects a stale HEIF filename with model limits", async () => {
     const jpeg = await resizeToJpeg({
       buffer: createSolidPngBuffer(32, 16, { r: 12, g: 34, b: 56 }),
       maxSide: 32,
