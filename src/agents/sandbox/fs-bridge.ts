@@ -1,7 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
 import { promisify } from "node:util";
-import { GUEST_FILESYSTEM_CREATE_EXISTS_EXIT_CODE } from "@openclaw/fs-safe/guest";
 import { normalizeOptionalLowercaseString } from "@openclaw/normalization-core/string-coerce";
 import { readFileDescriptorBounded } from "../../infra/boundary-file-read.js";
 import { parseDirectoryEntries, type DirectoryEntry } from "../../infra/directory-entries.js";
@@ -14,6 +13,7 @@ import { SANDBOX_FILE_IDENTITY } from "./file-mutation-identity.js";
 import {
   buildPinnedMutationPlan,
   PINNED_MUTATION_ACTION_LABELS,
+  resolveSandboxCreateResult,
   type SandboxFsCommandPlan,
 } from "./fs-bridge-mutation-helper.js";
 import { SandboxFsPathGuard, type PinnedSandboxEntry } from "./fs-bridge-path-safety.js";
@@ -168,15 +168,7 @@ class SandboxFsBridgeImpl implements SandboxFsBridge {
     params: Parameters<NonNullable<SandboxFsBridge["createFileExclusive"]>>[0],
   ): Promise<"created" | "exists"> {
     const { result, containerPath } = await this.writeFileContents(params, "create");
-    if (result.code === GUEST_FILESYSTEM_CREATE_EXISTS_EXIT_CODE) {
-      return "exists";
-    }
-    if (result.code !== 0) {
-      throw new Error(
-        `sandbox create failed for ${containerPath}: ${result.stderr.toString("utf8").trim()}`,
-      );
-    }
-    return "created";
+    return resolveSandboxCreateResult(result, `sandbox create failed for ${containerPath}`);
   }
 
   private async writeFileContents(
