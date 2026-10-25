@@ -1,5 +1,43 @@
 # Team-scale Control UI cold-load benchmark
 
+## Cold routes and dependency leaks
+
+`bench-control-ui-route-leaks.ts` visits selected routes in fresh browser contexts,
+with the HTTP cache disabled and service workers blocked. It serves immutable
+production bundles through the Gateway HTTP handler and uses synthetic Gateway
+responses. Coverage runs record requested chunks, source-map modules, import
+initiators, and V8 executed versus unexecuted bytes, including preloaded modules
+that were never evaluated. Requested source bytes and completed/evaluated bytes
+are separate: a preload still transferring at readiness is not a completed load.
+
+```sh
+NODE_DISABLE_COMPILE_CACHE=1 node --import ./scripts/tsx.mjs scripts/bench-control-ui-route-leaks.ts \
+  --bundle-dir /absolute/base/control-ui --compare-bundle-dir /absolute/head/control-ui \
+  --mode coverage --profiles local --output /absolute/proof/routes
+```
+
+Use `--routes sessions,cron,usage` to narrow the inventory. Timing runs are
+separate from coverage instrumentation: `--mode timing --pairs 20 --profiles
+local,remote` interleaves base, a second base control, and head. The remote profile
+adds 100 ms HTTP latency at 10 Mbps; synthetic WebSocket responses have no RTT.
+Reports retain readiness, thread-clock script/task CPU, host load, and each failed
+or unsupported scenario. Usable route readiness requires a loaded route and a
+visible usable control; sharing additionally opens its menu. Compare medians and
+p95 against the A/A control before attributing timing changes on a loaded host.
+
+Use `--routes agents,cron --interactions agents-files,cron-history,cron-transcript`
+for the corresponding follow-through probes. Their automation-to-ready wall and
+CPU intervals are separate from cold readiness; they are not INP measurements.
+Coverage mode also records which requested modules actually evaluated during
+each action. Transcript probing opts into a synthetic completed run and messages.
+Every matching Agents/Cron variant receives at least 2,000 ms of post-ready
+think time, including builds without passive preloads. When the built navigation
+descriptor provides `agents-next` or `cron-next`, the probe also waits for those
+byte preloads. It records the actual warmup wall time and CPU for every variant;
+preload completion may extend the window. Coverage mode records V8 evaluation
+and rejects a panel that evaluates before its action. Cold readiness and
+coverage remain bounded before this optional warmup.
+
 ## Media load, remount, and disposal
 
 `bench-control-ui-media.ts` compares **already-built** base and head bundles with
@@ -86,6 +124,33 @@ remain synthetic, so this measures the production HTTP and renderer paths,
 not Gateway RPC or provider latency. The default Vite preview server does not
 activate Gateway route preload hints or serve the shipped compression sidecars;
 retain that mode for renderer diagnostics rather than network-readiness claims.
+
+Add `--critical-path-intent-ms 150` to hover and focus the destination for a
+150 ms dwell before activation. Settings uses its real identity-menu item in
+this mode; without the option it retains the keyboard-shortcut entry point.
+`elapsedMs` remains activation-to-ready. `intentElapsedMs` includes hover/focus,
+the dwell, and activation-to-ready, while `intentDwellMs` records the actual
+pre-activation interval. The `critical-path:<route>:intent` mark and interval
+RPC/resource records retain work started during intent, including requests that
+finish before activation; `carryInRpcCount` counts requests begun before
+activation. CPU collection also starts before intent. Each destination still
+starts from a separately settled chat boot, so this measures first route visits,
+not direct cold route loads or retained return visits.
+
+For code-splitting evidence, add `--coverage` to capture executed and unused raw
+source bytes. `javaScriptResources` separately counts completed JavaScript
+fetches from Resource Timing: decoded body bytes, encoded body bytes, and transfer
+bytes including headers. Its `outsideCoverage` subset includes fetch-only
+preloads, so V8 coverage alone must not be reported as all downloaded code.
+Module preloads can parse/compile without evaluation, and dormant function bodies
+can be compiled lazily; unused source bytes are not a CPU estimate.
+
+Use a separate traced run (omit `--untraced`) for `trace.compilation`: coarse V8
+module parse/compile spans are unioned per renderer thread; this is not an
+exhaustive compiler profile. Main-thread and all-renderer
+thread CPU are reported separately from wall duration. CPU is unavailable when
+the trace lacks complete thread-clock intervals. Never mix traced readiness
+timings into the untraced comparison.
 
 This opt-in benchmark builds the production Control UI into a fresh artifact directory,
 warms a signed-in synthetic dashboard visit, and measures three reloads. It never
@@ -331,6 +396,20 @@ metrics on a loaded host. Selector instrumentation adds substantial overhead;
 use separate untraced interleaved runs for timing comparisons. Empty Chromium
 selector snapshots represent no matching work and are omitted from the ranking.
 
+For per-row resource counts, the warm runner accepts `--resource-counts` and
+`--steps sidebar-resources-scroll-resize,sidebar-resources-idle-visible,sidebar-resources-idle-hidden`.
+These scenarios use 1,000 long session labels, 400-message transcripts, and native
+clocks. The result records created/active observers, observed targets, callbacks,
+intervals, media queries, and global listeners before and after each action.
+Run timing comparisons separately without instrumentation, with
+`--thread-cpu-time --pairs 20 --compare-bundle-dir <other-build>` and an A/A
+control on a loaded host. Hidden idle requires `--headed`: the runner minimizes
+its own Chromium window and verifies native document visibility. Hidden samples
+use a fresh runner-owned profile and Playwright's `noDefaults` connection so its
+normal focus emulation cannot override native visibility. The profile and process
+are removed after each sample. A browser that
+remains visible produces an explicit skip, never a simulated hidden result.
+
 Each invocation keeps its exact Git head and dirty-tree inventory, raw Chrome trace,
 CPU profile, settled screenshot, and JSON summary in a fresh timestamped directory.
 It measures renderer-main-thread task interval union, long tasks, layouts with
@@ -399,10 +478,14 @@ with the same `--fixture-now-ms` and a future `--live-start-at-ms`, `--runs 1`, 
 distinct `--port` / `--sandbox-port` values. The start barrier supports either
 `--streaming-reply` or `--live-events` and fails if setup misses the requested time.
 
-Use `--streaming-burst-size 5` to enqueue five snapshots every 166.7 ms
+Use `--streaming-rate 150 --streaming-burst-size 5` to enqueue five snapshots every 33.3 ms (fast-provider bursts). The default rate remains 30 snapshots/s; `--streaming-burst-size 5` alone enqueues five snapshots every 166.7 ms
 while retaining the average 30 deltas/s. The mock transport still applies
 `--frame-gap-ms`; set it to zero to remove intentional spacing, and inspect
 delivery timestamps before treating a group as one-frame delivery.
+`--filmstrip-only --streaming-reply` retains the stream's screenshot frames in
+`run-N.streaming.filmstrip/`. Traced/filmstrip runs also check plain-paragraph
+suffix visibility on the next rendering frame (`streaming.textVisibility`);
+keep these instrumented captures separate from timing comparisons.
 Streaming reports count synchronous
 stream assignments, frame publications, pane render calls/time, forced rail
 observations, and row ResizeObserver deliveries. These are separate boundaries:
@@ -453,3 +536,13 @@ node --import ./scripts/tsx.mjs scripts/bench-control-ui-rich-boot.ts \
 
 Omit network latency for localhost; a positive latency also applies 10 Mbps
 throughput. These results cover browser rendering, not provider latency.
+
+The rich-boot report also records Resource Timing phases, negotiated protocol,
+compression/cache response headers, and the Gateway's actual request inventory.
+Use those phases to distinguish connection queueing from response transfer.
+Add `--service-worker` to install the production worker, leave the warm document,
+stop the worker, and clear HTTP, asset, and browser-state caches before each
+measured navigation. Worker fetches receive the same network profile as page
+fetches. The report includes preload state and worker requests; each sample must
+issue exactly one document request. This mode measures a stopped worker with
+cold assets, rather than an already-open tab or an offline-cache hit.
