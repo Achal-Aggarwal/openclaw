@@ -119,10 +119,11 @@ function readCodeModePayloadToolIdentities(payload: unknown): string[] {
   });
 }
 
-export function filterCodeModePayloadTools(
+function filterPayloadTools(
   payload: unknown,
   visibleToolNames: ReadonlySet<string>,
-  allowedHostedToolTypes?: ReadonlySet<string>,
+  allowedHostedToolTypes: ReadonlySet<string> | undefined,
+  allowGrouped: boolean,
   observer?: (observation: CodeModeToolSurfaceObservation) => void,
 ): void {
   if (!isRecord(payload)) {
@@ -142,7 +143,7 @@ export function filterCodeModePayloadTools(
     if (identity) {
       return [tool];
     }
-    if (identity === false) {
+    if (!allowGrouped || identity === false) {
       return [];
     }
     if (!isRecord(tool)) {
@@ -175,6 +176,15 @@ export function filterCodeModePayloadTools(
   }
 }
 
+export function filterCodeModePayloadTools(
+  payload: unknown,
+  visibleToolNames: ReadonlySet<string>,
+  allowedHostedToolTypes?: ReadonlySet<string>,
+  observer?: (observation: CodeModeToolSurfaceObservation) => void,
+): void {
+  filterPayloadTools(payload, visibleToolNames, allowedHostedToolTypes, true, observer);
+}
+
 export function resolveCodeModeResponsesVisibleToolNames(
   context: Pick<Context, "tools">,
 ): ReadonlySet<string> {
@@ -191,23 +201,7 @@ export function enforceCodeModeResponsesToolSurface(
   allowedHostedToolTypes?: ReadonlySet<string>,
   observer?: (observation: CodeModeToolSurfaceObservation) => void,
 ): void {
-  if (!isRecord(payload)) {
-    return;
-  }
-  const tools = readToolPayloadField(payload, "tools");
-  if (!Array.isArray(tools)) {
-    return;
-  }
-  const beforeToolIdentities = observer ? readCodeModePayloadToolIdentities(payload) : undefined;
-  payload.tools = tools.filter((tool) =>
-    Boolean(readCodeModePayloadToolIdentity(tool, visibleToolNames, allowedHostedToolTypes)),
-  );
-  if (beforeToolIdentities) {
-    observer?.({
-      beforeToolIdentities,
-      afterToolIdentities: readCodeModePayloadToolIdentities(payload),
-    });
-  }
+  filterPayloadTools(payload, visibleToolNames, allowedHostedToolTypes, false, observer);
 }
 
 export function assertCodeModeResponsesToolSurface(
