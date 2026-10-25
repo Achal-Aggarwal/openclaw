@@ -75,6 +75,7 @@ import {
   type SessionChildLink,
   resolveSessionChildOwners,
   resolveSessionChildController,
+  shouldPropagateSessionChildActivity,
 } from "./session-utils-core.js";
 import {
   resolveGatewaySessionDisplayName,
@@ -687,14 +688,13 @@ export function presentSessionRow(
   row.estimatedCostUsd =
     source.estimatedCostUsd ??
     asNonNegativeFiniteNumber(source.lightweight ? undefined : usage?.estimatedCostUsd);
-  const children = source.childLinks?.flatMap(({ key, parsedKey, entry: childEntry }) => {
+  const children = source.childLinks?.flatMap((child) => {
+    const { key, entry: childEntry } = child;
     if (options.excludedChildKeys?.has(key)) {
       return [];
     }
     const childActive = projectGatewaySessionRunState({
-      key,
-      entry: childEntry,
-      parsedKey,
+      ...child,
       now,
       rowContext: {
         subagentRuns,
@@ -704,9 +704,7 @@ export function presentSessionRow(
     }).fields.hasActiveSubagentRun;
     if (
       !resolveSessionChildOwners({
-        key,
-        entry: childEntry,
-        parsedKey,
+        ...child,
         now,
         subagentRuns,
         hasActiveRun: childActive,
@@ -714,7 +712,7 @@ export function presentSessionRow(
     ) {
       return [];
     }
-    if (childActive) {
+    if (childActive && shouldPropagateSessionChildActivity(key, childEntry, row.key)) {
       row.hasActiveSubagentRun = true;
     }
     return [key];

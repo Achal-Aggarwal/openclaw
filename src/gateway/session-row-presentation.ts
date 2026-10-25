@@ -45,7 +45,11 @@ import {
 } from "./session-sharing-policy.js";
 import { prepareProjectedSessionSharing } from "./session-sharing.js";
 import { sessionTitleRequests } from "./session-title-state.js";
-import { matchesSessionArchiveFilter, resolveSessionChildOwners } from "./session-utils-core.js";
+import {
+  matchesSessionArchiveFilter,
+  resolveSessionChildOwners,
+  shouldPropagateSessionChildActivity,
+} from "./session-utils-core.js";
 import {
   applyGatewaySessionRowMode,
   projectGatewaySessionActiveRun,
@@ -494,15 +498,13 @@ export function prepareProjectedSessionPresentation(
         }
       }
       for (const child of record.materialized.source.childLinks ?? []) {
-        const { key, entry, parsedKey } = child;
+        const { key, entry } = child;
         const childActive = runState(key, child).fields.hasActiveSubagentRun;
         facts.push(
           key,
-          childActive,
+          childActive && shouldPropagateSessionChildActivity(key, entry, record.key),
           resolveSessionChildOwners({
-            key,
-            entry,
-            parsedKey,
+            ...child,
             now,
             subagentRuns,
             hasActiveRun: childActive,
