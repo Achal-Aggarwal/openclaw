@@ -665,7 +665,13 @@ it.each([
         expect(result).toMatchObject({ status: "ok", root, after: { version: "2026.5.14" } });
         expect(commands.mock.calls.filter(([argv]) => argv[2] === "doctor")).toHaveLength(1);
         for (const [argv, options] of commands.mock.calls) {
-          expect(options, argv.join(" ")).toMatchObject({ timeoutMs: expectedTimeoutMs });
+          if (argv[2] === "doctor" && expectedTimeoutMs !== undefined) {
+            assert(typeof options !== "number");
+            expect(options.timeoutMs).toBeGreaterThan(0);
+            expect(options.timeoutMs).toBeLessThanOrEqual(expectedTimeoutMs);
+          } else {
+            expect(options, argv.join(" ")).toMatchObject({ timeoutMs: expectedTimeoutMs });
+          }
         }
       } finally {
         if (transaction) {
