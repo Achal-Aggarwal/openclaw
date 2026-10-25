@@ -46,7 +46,7 @@ describe.skipIf(process.platform === "win32")("backup SQLite discovery performan
             output: state.path("backup.tar.gz"),
             includeWorkspace: false,
           });
-          const headerProbes = spawn.mock.calls.filter(([, args]) => Array.isArray(args) && args[0] === "-e" && args[1]?.includes("SQLite format 3"));
+          const headerProbes = spawn.mock.calls.filter(([, args]) => Array.isArray(args) && args.some((arg) => arg.includes("sqlite-header-probe.worker")));
         expect(headerProbes.length).toBeGreaterThan(0);
         expect(headerProbes.length).toBeLessThanOrEqual(2);
         const entries = await listArchiveEntries(archive.archivePath);
@@ -163,7 +163,7 @@ describe.skipIf(process.platform === "win32")("backup SQLite discovery performan
           output: state.path("backup.tar.gz"),
           includeWorkspace: false,
         });
-        const headerProbes = spawn.mock.calls.filter(([, args]) => Array.isArray(args) && args[0] === "-e" && args[1]?.includes("SQLite format 3"));
+        const headerProbes = spawn.mock.calls.filter(([, args]) => Array.isArray(args) && args.some((arg) => arg.includes("sqlite-header-probe.worker")));
         expect(headerProbes.length).toBeGreaterThan(0);
         expect(headerProbes.length).toBeLessThanOrEqual(2);
         const entries = await listArchiveEntries(archive.archivePath);
