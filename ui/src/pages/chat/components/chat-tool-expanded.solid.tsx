@@ -127,6 +127,8 @@ function ToolCardModes(props: {
     props.isError || props.outcome === "skipped" ? "raw" : "diff",
   );
   const [active, setActive] = createSignal<string>(initialMode);
+  // Keep prepared syntax and reader scroll on revisits without mounting unseen tabs.
+  const [visited, setVisited] = createSignal<readonly string[]>(() => [initialMode()]);
   return (
     <div class="chat-tool-card__modes">
       <Tabs
@@ -134,6 +136,7 @@ function ToolCardModes(props: {
         active={active()}
         activation="auto"
         onSelect={(value) => {
+          setVisited((previous) => (previous.includes(value) ? previous : [...previous, value]));
           setActive(value);
         }}
         items={modes.map((mode) => ({
@@ -150,14 +153,16 @@ function ToolCardModes(props: {
             tabId={`${id()}-${mode}-tab`}
             active={active() === mode}
           >
-            {mode === "diff" ? (
-              <DiffBlock lines={props.diff} outcome={props.outcome} file={props.file} />
-            ) : (
-              <ToolDataBlock
-                label={props.isError ? t("chat.toolCards.toolError") : undefined}
-                text={props.card.outputText!}
-              />
-            )}
+            <Show when={visited().includes(mode)}>
+              {mode === "diff" ? (
+                <DiffBlock lines={props.diff} outcome={props.outcome} file={props.file} />
+              ) : (
+                <ToolDataBlock
+                  label={props.isError ? t("chat.toolCards.toolError") : undefined}
+                  text={props.card.outputText!}
+                />
+              )}
+            </Show>
           </TabPanel>
         )}
       </For>
