@@ -73,7 +73,9 @@ function createFormatRefinements(formats: McpFormats): ReadonlyMap<string, JsonS
   return refinements;
 }
 
-function formatErrors(errors: ReturnType<PreparedValidator["errors"]>): string {
+export function formatMcpJsonSchemaErrors(
+  errors: Array<{ instancePath?: string; message?: string }>,
+): string {
   return (
     errors
       .map((error) => {
@@ -114,7 +116,7 @@ export function createInterpretedMcpJsonSchemaValidator(formats: McpFormats): js
         return {
           valid: false,
           data: undefined,
-          errorMessage: formatErrors(validator.errors(input)),
+          errorMessage: formatMcpJsonSchemaErrors(validator.errors(input)),
         };
       };
     },
