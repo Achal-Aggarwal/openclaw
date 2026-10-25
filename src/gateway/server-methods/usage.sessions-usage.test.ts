@@ -1,11 +1,3 @@
-import { DEFAULT_WORKER_PENDING_BYTES } from "@openclaw/worker-runtime";
-import { resolveRuntimeWorkerUrl } from "../../infra/runtime-worker-url.js";
-import { workerTaskPoolEntrypoints } from "../../infra/worker-task-pool-runtime.test-support.js";
-import { WorkerTaskPool } from "../../infra/worker-task-pool.js";
-import type {
-  PoolFixtureInput,
-  PoolFixtureResult,
-} from "../../infra/worker-task-pool.test-support.js";
 import fs from "node:fs";
 import path from "node:path";
 import { expectDefined } from "@openclaw/normalization-core";
@@ -81,7 +73,6 @@ vi.mock("../../infra/session-cost-usage.js", async () => {
     loadSessionLogs: vi.fn(async () => []),
   };
 });
-import { loadCombinedSessionStoreForGatewayCoreAsync } from "../../config/sessions/combined-store-gateway-read.js";
 import {
   discoverAllSessions,
   loadSessionCostSummariesFromCache,
@@ -90,6 +81,7 @@ import {
   resolveUsageSessionSource,
 } from "../../infra/session-cost-usage.js";
 import { resolveGatewaySessionStoreTargetInWorker } from "../session-utils-store-worker.js";
+import { mockCombinedStore, registerUsageCapacityTest } from "./usage-capacity.test-support.js";
 import { usageHandlers } from "./usage.js";
 
 let TEST_RUNTIME_CONFIG: OpenClawConfig = {
@@ -127,32 +119,6 @@ function readResult(respond: ReturnType<typeof vi.fn>): SessionsUsageResult {
   expect(respond.mock.calls[0]?.[0]).toBe(true);
   return respond.mock.calls[0]?.[1] as SessionsUsageResult;
 }
-function mockCombinedStore(
-  store: Record<string, SessionEntry>,
-  owners: ReadonlyArray<readonly [string, string]>,
-  storePath?: string,
-) {
-  vi.mocked(loadCombinedSessionStoreForGatewayCoreAsync).mockResolvedValue({
-    durableTargets: [],
-    storePath: "(multiple)",
-    store,
-    targetsBySessionKey: new Map(
-      owners.map(([key, agentId]) => [
-        key,
-        {
-          agentId,
-          entry: store[key],
-          readSourceEntry: (sourceKey: string) => store[sourceKey],
-          resolveSourceKey: (sourceKey: string) => sourceKey,
-          storeTarget: {
-            agentId,
-            storePath: storePath ?? `/tmp/agents/${agentId}/agent/openclaw-agent.sqlite`,
-          },
-        },
-      ]),
-    ),
-  });
-}
 function mockStoredSession(
   key: string,
   entry: SessionEntry,
@@ -173,115 +139,14 @@ function mockStoredSession(
   );
 }
 
-function usageTotals(totalTokens: number, totalCost: number) { return { ...createEmptyCostUsageTotals(), totalTokens, totalCost }; }
-function freshUsageBatch(summaries: ReturnType<typeof createEmptyCostUsageTotals>[]) { return { summaries, cacheStatus: { status: "fresh" as const, cachedFiles: summaries.length, pendingFiles: 0, staleFiles: 0 } }; }
 describe("sessions.usage", () => {
-it("returns complete family usage while other reports occupy worker input capacity", async () => {
-  const families = [
-    { key: "agent:opus:capacity-first", prefix: "capacity-first", count: 2049 },
-    { key: "agent:opus:capacity-second", prefix: "capacity-second", count: 2048 },
-  ];
-  const storePath =
-    "/tmp/synthetic-usage-admission/retained-team-shaped-session-cost-usage-fixture/agents/opus/agent/openclaw-agent.sqlite";
-  const rows = families.flatMap(({ prefix, count }) =>
-    Array.from({ length: count }, (_, index) => {
-      const sessionId = `${prefix}-${index}`;
-      const sessionFile = `sqlite:opus:${sessionId}:${storePath}`;
-      return {
-        sessionId,
-        sessionFile,
-        mtime: 1000,
-        transcriptFile: {
-          kind: "sqlite" as const,
-          filePath: sessionFile,
-          sourcePath: sessionFile,
-          sessionId,
-          size: 1024,
-          mtimeMs: 1000,
-          eventCount: 4,
-          maxSeq: 4,
-          generation: "synthetic-generation",
-          cold: false,
-        },
-      };
-    }),
-  );
-  mockCombinedStore(
-    Object.fromEntries(
-      families.map(({ key, prefix, count }) => [
-        key,
-        {
-          sessionId: `${prefix}-0`,
-          updatedAt: 1000,
-          usageFamilyKey: key,
-          usageFamilySessionIds: Array.from({ length: count }, (_, index) => `${prefix}-${index}`),
-        },
-      ]),
-    ),
-    families.map(({ key }) => [key, "opus"] as const),
-  );
-  // Charge the observed background queue without allocating its payload. Two
-  // slots let a report finish while the background preparation remains admitted.
-  const pool = new WorkerTaskPool<PoolFixtureInput, PoolFixtureResult>({
-    workerUrl: resolveRuntimeWorkerUrl(workerTaskPoolEntrypoints.worker),
-    maxWorkers: 2,
-    idleTimeoutMs: 0,
+  registerUsageCapacityTest({
+    mockCombinedStore,
+    run: async () =>
+      readResult(
+        await runSessionsUsage({ ...BASE_USAGE_RANGE, agentId: "opus", groupBy: "family" }),
+      ),
   });
-  const release = createDeferred();
-  const backgroundBytes = 265_155_910;
-  const background = pool.run(
-    async () => {
-      await release.promise;
-      return { label: "background usage reports" };
-    },
-    { inputBytes: backgroundBytes },
-  );
-  const backgroundOutcome = Promise.allSettled([background]);
-  const originalDiscovery = vi.mocked(discoverAllSessions).getMockImplementation()!;
-  const originalLoad = vi.mocked(loadSessionCostSummariesFromCache).getMockImplementation()!;
-  try {
-    // Fixture sanity: the full request is larger than the remaining real budget.
-    // The admission charge below omits envelope fields, so it is conservative.
-    expect(2 * JSON.stringify({ sessions: rows }).length).toBeGreaterThan(
-      DEFAULT_WORKER_PENDING_BYTES - backgroundBytes,
-    );
-    vi.mocked(discoverAllSessions).mockResolvedValue(rows);
-    vi.mocked(loadSessionCostSummariesFromCache).mockImplementation(async ({ sessions }) => {
-      await pool.run(
-        { label: "family usage report" },
-        { inputBytes: 2 * JSON.stringify({ sessions }).length },
-      );
-      return freshUsageBatch(
-        sessions.map(({ sessionId }) =>
-          sessionId?.startsWith("capacity-first-") ? usageTotals(7, 0.125) : usageTotals(11, 0.25),
-        ),
-      );
-    });
-    const result = readResult(await runSessionsUsage({ ...BASE_USAGE_RANGE, agentId: "opus", groupBy: "family" }));
-    expect(result.totals).toMatchObject({ totalTokens: 36_871, totalCost: 768.125 });
-    expect(result.cacheStatus).toMatchObject({ status: "fresh", pendingFiles: 0, staleFiles: 0 });
-    expect(result.partial).toBeUndefined();
-    expect(result.sessions).toHaveLength(2);
-    expect(result.sessions).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          key: "agent:opus:capacity-first",
-          usage: expect.objectContaining({ totalTokens: 14_343, totalCost: 256.125 }),
-        }),
-        expect.objectContaining({
-          key: "agent:opus:capacity-second",
-          usage: expect.objectContaining({ totalTokens: 22_528, totalCost: 512 }),
-        }),
-      ]),
-    );
-  } finally {
-    vi.mocked(discoverAllSessions).mockImplementation(originalDiscovery);
-    vi.mocked(loadSessionCostSummariesFromCache).mockImplementation(originalLoad);
-    release.resolve();
-    await backgroundOutcome;
-    await pool.close();
-  }
-});
 
   beforeEach(() => {
     TEST_RUNTIME_CONFIG = { ...TEST_RUNTIME_CONFIG };
