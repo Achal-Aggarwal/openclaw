@@ -1,3 +1,4 @@
+import type { BootRoster } from "../lib/sessions/session-boot-roster.ts";
 import { sidebarBootSnapshot } from "../test-helpers/sidebar-boot-snapshot.test-support.ts";
 import type { SidebarRecentSession } from "./app-sidebar-session-types.ts";
 import {
@@ -15,7 +16,7 @@ export const sidebarSnapshot: SidebarSnapshotModel = {
 export function sidebarSnapshotWithRows(
   source: readonly SidebarRecentSession[],
   presentation?: Parameters<typeof snapshotSessions>[1],
-  roster?: SidebarSnapshotModel["roster"],
+  roster?: BootRoster | SidebarSnapshotModel["roster"],
 ): SidebarSnapshotModel {
   const rows = snapshotSessions(source, presentation, roster);
   const model = parseSidebarSnapshot({

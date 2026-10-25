@@ -53,7 +53,7 @@ export type SessionRowBadge = {
 };
 
 export function sidebarSessionBadgeFacts(
-  host: SessionListHost,
+  host: Pick<SessionListHost, "sessionPullRequests" | "sidebarAgentsMode">,
   row: SidebarRecentSession,
   initial = row.pullRequest,
 ) {

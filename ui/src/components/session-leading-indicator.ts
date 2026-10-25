@@ -9,7 +9,20 @@ import {
 } from "./app-sidebar-session-types.ts";
 import { sessionAttentionGlyph } from "./session-attention-presentation.ts";
 
-export function sidebarSessionOwner(host: SessionListHost, row: SidebarRecentSession) {
+export function sidebarSessionOwner(
+  host: Pick<
+    SessionListHost,
+    | "sessionsStatusFilter"
+    | "sessionOwnershipVisibility"
+    | "sessionData"
+    | "sessionsGrouping"
+    | "sessionDataContext"
+    | "sessionInvolvingMeFilterActive"
+    | "sessionOwnerFilterId"
+    | "sidebarAgentsMode"
+  >,
+  row: SidebarRecentSession,
+) {
   const attribution: "created" | "owned" | "archived" =
     host.sessionsStatusFilter === "archived"
       ? "archived"

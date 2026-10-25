@@ -152,7 +152,7 @@ export function resolveSessionWorkSubtitle(row: SessionWorktreeDisplayRow): stri
   return checkout ?? node;
 }
 
-type SessionDisplayRow = {
+export type SessionDisplayRow = {
   label?: string;
   displayName?: string;
   derivedTitle?: string;

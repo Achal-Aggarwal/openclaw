@@ -1,5 +1,5 @@
 import { isIncognitoSessionKey } from "../../../src/shared/incognito-session-key.js";
-import { resolveSessionDisplayName } from "../lib/session-display.ts";
+import { resolveSessionDisplayName, type SessionDisplayRow } from "../lib/session-display.ts";
 import { resolveUiSessionRowAgentId } from "../lib/sessions/session-key.ts";
 import type { SidebarVisibleSections } from "./app-sidebar-session-projection.ts";
 import type { SidebarRecentSession } from "./app-sidebar-session-types.ts";
@@ -21,7 +21,7 @@ function containsIncognito(rows: readonly SidebarRecentSession[]): boolean {
 export function snapshotSessions(
   rows: readonly SidebarRecentSession[],
   presentation?: (row: SidebarRecentSession) => Partial<SidebarSnapshotSession>,
-  roster?: SidebarSnapshotModel["roster"],
+  roster?: { result: { sessions: readonly (SessionDisplayRow & { key: string })[] } } | null,
 ): SidebarSnapshotSession[] {
   return rows
     .filter((row) => !row.incognito && !isIncognitoSessionKey(row.key))
@@ -66,7 +66,7 @@ export function snapshotSections(
   source: SidebarVisibleSections["sections"],
   collapsedSections: ReadonlySet<string>,
   presentation?: Parameters<typeof snapshotSessions>[1],
-  roster?: SidebarSnapshotModel["roster"],
+  roster?: Parameters<typeof snapshotSessions>[2],
 ) {
   const sections = source.flatMap((section) => {
     const rows = snapshotSessions(section.rows, presentation, roster);
