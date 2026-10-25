@@ -1,5 +1,5 @@
 import type { HumanMention } from "@openclaw/gateway-protocol";
-import type { MarkdownJsonParser } from "./markdown-json.ts";
+import type { MarkdownJsonParser } from "./markdown-json.types.ts";
 
 export type MarkdownHumanMentionToken = { marker: string; profileId: string; label: string };
 

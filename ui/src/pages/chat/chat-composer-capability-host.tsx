@@ -2,7 +2,12 @@ import { asNullableRecord as asRecord } from "@openclaw/normalization-core/recor
 import { createMemo, lazy, onSettled, Show } from "solid-js";
 import { createChangeListeners } from "../../../../src/shared/listeners.js";
 import type { GatewayBrowserClient } from "../../api/gateway.ts";
-import type { ConfigSnapshot, GatewaySessionRow, ToolsEffectiveResult } from "../../api/types.ts";
+import type {
+  ConfigSnapshot,
+  GatewaySessionRow,
+  SessionsListResult,
+  ToolsEffectiveResult,
+} from "../../api/types.ts";
 import type { ApplicationContext } from "../../app/context.ts";
 import { readGatewayOperatorAccess } from "../../app/operator-access.ts";
 import type { McpServerForm } from "../../components/mcp-server-form.ts";
@@ -28,10 +33,9 @@ import {
 import type { SessionToolOverrides } from "../../lib/sessions/patch.ts";
 import { areUiSessionKeysEquivalent } from "../../lib/sessions/session-key.ts";
 import { nextBooleanToolOverrides } from "../../lib/sessions/tool-overrides.ts";
-import { refreshCurrentChatSessionList } from "./chat-session.ts";
+import { refreshCurrentChatSessionList, type ChatModelSettingsHost } from "./chat-session.ts";
 import { patchChatSessionSettings } from "./chat-settings-patches.ts";
-import type { ChatPageHost } from "./chat-state-host.ts";
-import type { ChatComposerCapabilityMenuProps } from "./components/chat-composer-plus-menu.types.ts";
+import type { ChatComposerCapabilityMenuProps } from "./components/chat-composer-capability-menu.types.ts";
 import { ChatLazyBoundary } from "./components/chat-lazy-boundary.tsx";
 import {
   ComposerSkillCatalog,
@@ -54,6 +58,14 @@ const ComposerAddServerDialog = lazy(
 );
 
 type ComposerMcpServerScope = "session" | "everywhere";
+
+type ComposerCapabilityState = ChatModelSettingsHost &
+  Parameters<typeof hasDirectSessionRun>[0] & {
+    client: GatewayBrowserClient | null;
+    connectionEpoch: number;
+    basePath: string;
+    sessionsResult: SessionsListResult | null;
+  };
 
 function activeConfigFingerprint(
   snapshot: ConfigSnapshot | null,
@@ -95,7 +107,7 @@ export class ChatComposerCapabilityHost {
 
   private effectiveToolsKeys(
     context: ApplicationContext,
-    state: ChatPageHost,
+    state: ComposerCapabilityState,
     agentId: string,
   ): string {
     const requestKey = buildToolsEffectiveRequestKey(
@@ -115,7 +127,7 @@ export class ChatComposerCapabilityHost {
 
   private loadEffectiveTools(
     context: ApplicationContext,
-    state: ChatPageHost,
+    state: ComposerCapabilityState,
     agentId: string,
     refresh = false,
   ): void {
@@ -174,7 +186,7 @@ export class ChatComposerCapabilityHost {
       });
   }
 
-  private trackRunSettlement(state: ChatPageHost): void {
+  private trackRunSettlement(state: ComposerCapabilityState): void {
     const runActive = hasDirectSessionRun(state);
     if (this.runActive && !runActive && this.runSessionKey === state.sessionKey) {
       this.settledRuns += 1;
@@ -185,7 +197,7 @@ export class ChatComposerCapabilityHost {
 
   private async patch(
     context: ApplicationContext,
-    state: ChatPageHost,
+    state: ComposerCapabilityState,
     next: SessionToolOverrides | null,
   ): Promise<string | undefined> {
     if (!state.connected || !state.client) {
@@ -250,7 +262,7 @@ export class ChatComposerCapabilityHost {
 
   private addServerBlockedReason(
     context: ApplicationContext,
-    state: ChatPageHost,
+    state: ComposerCapabilityState,
     session: GatewaySessionRow | undefined,
     scope: ComposerMcpServerScope,
   ): string | null {
@@ -271,7 +283,7 @@ export class ChatComposerCapabilityHost {
   }
 
   private async loadCurrentSessionOverrides(
-    state: ChatPageHost,
+    state: ComposerCapabilityState,
     sessionKey: string,
     agentId: string | undefined,
   ) {
@@ -300,7 +312,7 @@ export class ChatComposerCapabilityHost {
 
   private async submitAddServer(
     context: ApplicationContext,
-    state: ChatPageHost,
+    state: ComposerCapabilityState,
     session: GatewaySessionRow | undefined,
     form: McpServerForm,
   ): Promise<void> {
@@ -362,7 +374,7 @@ export class ChatComposerCapabilityHost {
 
   dialogView(
     context: ApplicationContext,
-    state: ChatPageHost,
+    state: ComposerCapabilityState,
     session: GatewaySessionRow | undefined,
   ) {
     return {
@@ -406,7 +418,7 @@ export class ChatComposerCapabilityHost {
   }
 
   // Keep admitted reads and dialogs current after the menu closes, without building menu props.
-  synchronize(state: ChatPageHost, agentId: string): () => boolean {
+  synchronize(state: ComposerCapabilityState, agentId: string): () => boolean {
     if (this.client !== state.client || this.connectionEpoch !== state.connectionEpoch) {
       this.client = state.client;
       this.connectionEpoch = state.connectionEpoch;
@@ -435,7 +447,7 @@ export class ChatComposerCapabilityHost {
 
   props(
     context: ApplicationContext,
-    state: ChatPageHost,
+    state: ComposerCapabilityState,
     session: GatewaySessionRow | undefined,
     agentId: string,
   ): ChatComposerCapabilityMenuProps {

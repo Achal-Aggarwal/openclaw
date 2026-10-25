@@ -8,12 +8,17 @@ import {
   type Component,
   type Element,
 } from "solid-js";
+import { isIncognitoSessionKey } from "../../../../../src/shared/incognito-session-key.js";
 import { elementRef } from "../../../lib/reactive/element-ref.ts";
+import { t } from "../../../lib/reactive/i18n.ts";
+import { createMediaQuery } from "../../../lib/reactive/platform.ts";
+import { usePanePresentation } from "../chat-pane-presentation.ts";
 import { chatPaneLayoutModel, ChatPaneLayoutHeaderActions } from "./chat-header-panel-actions.tsx";
 import type { HeaderSessionMenuMobileHost } from "./chat-header-session-menu-mobile.tsx";
 import { ChatHeaderSessionMenu } from "./chat-header-session-menu.tsx";
 import { ChatLazyBoundary } from "./chat-lazy-boundary.tsx";
 import type { ChatPaneHeaderProps } from "./chat-pane-header.types.ts";
+import { ChatPaneMobileChrome } from "./chat-pane-mobile-chrome.runtime.tsx";
 import type { ChatPanePlacementProps } from "./chat-pane-placement.tsx";
 import type { HeaderMenuSessionAction } from "./chat-quick-action.tsx";
 
@@ -27,7 +32,10 @@ export type ChatPaneMobileActions = {
   compactActions: () => HeaderMenuSessionAction[];
   menuHost: HeaderSessionMenuMobileHost;
   pageOpen: () => boolean;
-  openMachine: () => void;
+  deviceOffline: () => boolean | undefined;
+  peopleExpanded: () => boolean;
+  openMachine: (source?: HTMLElement) => void;
+  openPeople: (source: HTMLElement) => void;
   openMove: () => void;
 };
 
@@ -46,6 +54,12 @@ export function ChatPaneMobileComposition(props: {
   const mobile = () =>
     Boolean(props.header.mergedChrome && props.header.detailsControl?.mobileHost);
   const mobileActivated = createMemo<boolean>((previous) => previous === true || mobile());
+  const panePresented = usePanePresentation(() => props.header.presented);
+  const presented = () => mobile() && panePresented();
+  const compactActions = createMediaQuery("(max-width: 349px)");
+  const incognito = () =>
+    (props.header.incognito ?? props.header.session?.incognito) ||
+    isIncognitoSessionKey(props.header.session?.key);
   const [mobileActions, setMobileActions] = createSignal<ChatPaneMobileActions>();
   const emptyPlacement: ChatPanePlacementProps = { session: undefined };
   const readMachineName = createMemo(() => props.header.readMachineName);
@@ -169,15 +183,33 @@ export function ChatPaneMobileComposition(props: {
   return (
     <>
       <Show when={mobileActivated()}>
+        {/* First-screen chrome paints synchronously; destination factories remain lazy. */}
+        <ChatPaneMobileChrome
+          header={props.header}
+          project={props.project}
+          details={details}
+          notice={props.notice}
+          sessionMenu={sessionMenu}
+          mobile={mobile()}
+          presented={presented()}
+          incognito={incognito()}
+          compactActions={compactActions()}
+          deviceOffline={mobileActions()?.deviceOffline()}
+          machineName={machineName()}
+          peopleControls={`${props.header.paneId}-mobile-people`}
+          peopleLabel={t("chat.sessionHeader.people")}
+          morePeople={(count) => t("chat.sessionHeader.morePeople", { count: String(count) })}
+          peopleExpanded={mobileActions()?.peopleExpanded() ?? false}
+          onOpenMachine={(source) => mobileActions()?.openMachine(source)}
+          onOpenPeople={(source) => mobileActions()?.openPeople(source)}
+        />
         <ChatLazyBoundary>
           <ChatPaneMobileRuntime
             header={props.header}
-            project={props.project}
-            details={details}
-            notice={props.notice}
-            sessionMenu={sessionMenu}
+            presented={presented()}
+            incognito={incognito()}
+            compactActions={compactActions()}
             placement={placement}
-            machineName={machineName}
             layoutModel={layoutModel}
             actionSource={actionSource}
             onReady={setMobileActions}

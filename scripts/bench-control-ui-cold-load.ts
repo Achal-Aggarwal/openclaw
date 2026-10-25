@@ -1896,11 +1896,9 @@ try {
                       params.sessionKeys.includes(coreSessionKey)
                     );
                   });
-                const branch = pane?.querySelector(
-                  '.chat-pr[data-state="branch"] .chat-pr__branch',
-                );
+                const branch = pane?.querySelector(".chat-environment__branch-name");
                 const publication = pane?.querySelector<HTMLAnchorElement>(
-                  '.chat-pr__create[href="https://github.com/example/boot-fixture/pull/1"]',
+                  '.chat-pr__link[href="https://github.com/example/boot-fixture/pull/1"]',
                 );
                 return {
                   reads,

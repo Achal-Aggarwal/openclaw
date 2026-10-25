@@ -3,12 +3,8 @@ import { escapeHtml } from "../../../src/shared/html-escape.js";
 import { t } from "../i18n/index.ts";
 import { registerCodeBlocksEnglish } from "../i18n/locales/en-code-blocks.ts";
 import { copyMarkdownText } from "./markdown-copy.ts";
-import {
-  renderMarkdownJsonModes,
-  renderMarkdownJsonTree,
-  type MarkdownJson,
-  type MarkdownJsonParser,
-} from "./markdown-json.ts";
+import { renderMarkdownJsonModes, renderMarkdownJsonTree } from "./markdown-json.ts";
+import type { MarkdownJson, MarkdownJsonParser } from "./markdown-json.types.ts";
 import type { MarkdownInputEnv, MarkdownInputOptions } from "./markdown-render-options.ts";
 import { isMarkdownBlockArtText } from "./markdown-text.ts";
 

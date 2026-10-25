@@ -38,6 +38,7 @@ it("projects native identities and mentions through the People body without send
   const mentions = createChatMobilePeopleMentions(composer.mentionAccess);
   const release = mentions.activate();
   onTestFinished(release);
+  await vi.dynamicImportSettled();
   await vi.advanceTimersByTimeAsync(0);
   expect(mentions.status).toBe("ready");
   expect(composer.request).toHaveBeenCalledTimes(1);

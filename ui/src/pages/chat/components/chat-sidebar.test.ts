@@ -272,12 +272,17 @@ describe("markdown sidebar", () => {
       container.append(panel);
       await panel.updateComplete;
 
-      const link = panel.querySelector<HTMLAnchorElement>(`a[href^="${window.location.origin}"]`);
+      const link = await waitForSolid(() =>
+        expectDefined(
+          panel.querySelector<HTMLAnchorElement>(`a[href^="${window.location.origin}"]`),
+          "Markdown session link",
+        ),
+      );
       const event =
         action === "click"
           ? new MouseEvent("click", { bubbles: true, button: 0, cancelable: true })
           : new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true });
-      link?.dispatchEvent(event);
+      link.dispatchEvent(event);
 
       expect(event.defaultPrevented).toBe(true);
       expect(onOpenSessionLink).toHaveBeenCalledWith({

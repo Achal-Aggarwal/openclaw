@@ -15,7 +15,7 @@ import {
   prepareMarkdownHumanMentions,
   restoreMarkdownHumanMentions,
 } from "./markdown-human-mentions.ts";
-import type { MarkdownJson } from "./markdown-json.ts";
+import type { MarkdownJson } from "./markdown-json.types.ts";
 import { createMarkdownParser } from "./markdown-parser.ts";
 import { stripProgressCardRawContentBlocks } from "./markdown-raw-content.ts";
 import {

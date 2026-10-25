@@ -14,7 +14,7 @@ import {
   createMarkdownRef,
   type MarkdownContentValue,
 } from "../../../components/markdown-dom-ref.ts";
-import type { MarkdownJson } from "../../../components/markdown-json.ts";
+import type { MarkdownJson } from "../../../components/markdown-json.types.ts";
 import { loadStreamingMarkdown } from "../../../components/markdown-live-loader.ts";
 import type { MarkdownInputOptions } from "../../../components/markdown-render-options.ts";
 import { partitionMarkdownHtml, toSanitizedJsonHtml } from "../../../components/markdown.ts";

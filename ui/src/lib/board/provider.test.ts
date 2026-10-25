@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { GatewayProtocolRequestError } from "@openclaw/gateway-client/browser";
-import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
+import { afterEach, assert, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { createDeferred } from "../../../../test/helpers/promise.js";
 import type { GatewayEventFrame } from "../../api/gateway.ts";
 import type { GatewayRequestHandler } from "../../test-helpers/gateway-client.ts";
@@ -555,6 +555,7 @@ describe("board snapshots and refreshes", () => {
     expect(f.p.snapshot$.value.widgets[0]).toEqual({ ...minted, sizeW: 8, grantState: "granted" });
     expect(remainingBoardWidgetTicketTtlMs(f.p.snapshot$.value.widgets[0]!)).toBe(10_000);
     const [cached, at] = persisted.mock.lastCall!;
+    assert(cached, "Expected a persisted board snapshot");
     expect([cached?.widgets[0]?.viewTicketTtlMs, at]).toEqual([10_000, 51_000]);
     vi.setSystemTime(71_000);
     restored.restoreSnapshot(cached, at);

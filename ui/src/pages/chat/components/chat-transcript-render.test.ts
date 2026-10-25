@@ -86,6 +86,8 @@ async function mountThread(props: ChatThreadProps, transcript = createTestTransc
   const fixture = threadFixture(props, transcript);
   fixture.rerender(true);
   await flushDeferredRowPrune();
+  await vi.dynamicImportSettled();
+  flush();
   return fixture;
 }
 
@@ -657,13 +659,14 @@ describe("chat transcript rendering", () => {
     );
   }
 
-  function searchFor(container: HTMLElement, query: string) {
+  async function searchFor(container: HTMLElement, query: string) {
+    await waitForSolid(() => expect(container.querySelector("input")).not.toBeNull());
     const input = requireElement(container, "input") as HTMLInputElement;
     input.value = query;
     input.dispatchEvent(new Event("input", { bubbles: true }));
   }
 
-  it("projects search changes without redraw callbacks or replacing its input", () => {
+  it("projects search changes without redraw callbacks or replacing its input", async () => {
     const paneId = "native-search-revision";
     const state = getTranscriptState(paneId);
     const container = transcriptContainer();
@@ -671,6 +674,7 @@ describe("chat transcript rendering", () => {
     expect(container.querySelector("input")).toBeNull();
     state.search.toggle();
     flush();
+    await waitForSolid(() => expect(container.querySelector("input")).not.toBeNull());
     const input = requireElement(container, "input") as HTMLInputElement;
     input.focus();
     state.search.setQuery("updated query");
@@ -855,7 +859,7 @@ describe("chat transcript rendering", () => {
       toggleTranscriptSearch(paneId);
       flush();
       transcript.start();
-      searchFor(searchContainer, text);
+      await searchFor(searchContainer, text);
       await flushDeferredRowPrune();
 
       const bubble = requireElement(container, ".chat-group.assistant .chat-bubble");
@@ -901,7 +905,7 @@ describe("chat transcript rendering", () => {
       transcript.start();
       rerender();
       if (search) {
-        searchFor(searchContainer, "workspace layout");
+        await searchFor(searchContainer, "workspace layout");
       }
       await flushDeferredRowPrune();
 

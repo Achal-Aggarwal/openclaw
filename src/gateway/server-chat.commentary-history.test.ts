@@ -1,7 +1,8 @@
 import { Value } from "typebox/value";
-import { expect, it, vi } from "vitest";
+import { beforeAll, expect, it, vi } from "vitest";
 import { ChatEventSchema } from "../../packages/gateway-protocol/src/schema/logs-chat.js";
 import { extractText } from "../../ui/src/lib/chat/message-extract.ts";
+import { prepareChatToolFamily } from "../../ui/src/lib/chat/tool-family.ts";
 import { handleChatGatewayEvent } from "../../ui/src/pages/chat/chat-gateway.ts";
 import {
   activeHistory,
@@ -22,6 +23,10 @@ import {
 } from "./server-chat.agent-events.test-harness.js";
 import { subscribeAgentEvents } from "./server-chat.agent-events.test-helpers.js";
 import { projectSessionMessagePayload } from "./session-transcript-message.js";
+
+beforeAll(async () => {
+  await prepareChatToolFamily([{ role: "toolResult", content: "" }]);
+});
 
 function renderedItems(state: TestState, showActivity = true) {
   return buildChatItems({

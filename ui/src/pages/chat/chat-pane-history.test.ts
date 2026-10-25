@@ -206,6 +206,7 @@ it.each(["pending", "resolved"] as const)(
         textarea.setSelectionRange(textarea.value.length, textarea.value.length);
         textarea.dispatchEvent(new InputEvent("input", input));
       }
+      await vi.dynamicImportSettled();
       await vi.advanceTimersByTimeAsync(150);
       expect(request).toHaveBeenCalledExactlyOnceWith("users.mentionable", {
         sessionKey: state.sessionKey,

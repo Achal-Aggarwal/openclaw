@@ -30,7 +30,7 @@ it("keeps ordinary message-group text synchronous", () => {
     "assistant",
   );
   const view = mountSolid(() => (
-    <MessageGroupContent group={group} options={{ isStreaming: false, showReasoning: false }} />
+    <MessageGroupContent group={group} options={{ showReasoning: false }} />
   ));
   onTestFinished(view.unmount);
   expect(view.container.querySelector(".chat-text")?.textContent?.trim()).toBe(
@@ -145,7 +145,7 @@ it("retains Markdown through rich-content and image import retries and uses curr
       key: "growing-answer",
       message: {
         role: "assistant",
-        content: "A retained paragraph.\nMEDIA:https://example.com/first-image.png",
+        content: "A retained paragraph.\n\nMEDIA:https://example.com/first-image.png",
       },
     },
   ]);
@@ -163,7 +163,8 @@ it("retains Markdown through rich-content and image import retries and uses curr
   view.container.querySelector<HTMLButtonElement>(".lazy-view-error__action")!.click();
   await waitForSolid(() => {
     expect(loadRich).toHaveBeenCalledTimes(2);
-    expect(view.container.querySelector('[role="alert"]')).toBeNull();
+    // Errored retains the failure until the held replacement lands.
+    expect(view.container.querySelector('[role="alert"]')).not.toBeNull();
   });
   expect(view.container.querySelector(".chat-text p")).toBe(paragraph);
   richRetry.resolve();
@@ -181,7 +182,7 @@ it("retains Markdown through rich-content and image import retries and uses curr
   view.container.querySelector<HTMLButtonElement>(".lazy-view-error__action")!.click();
   await waitForSolid(() => {
     expect(loadImages).toHaveBeenCalledTimes(2);
-    expect(view.container.querySelector('[role="alert"]')).toBeNull();
+    expect(view.container.querySelector('[role="alert"]')).not.toBeNull();
   });
   setOpenImage(() => currentOpen);
   setMessages([
@@ -189,7 +190,7 @@ it("retains Markdown through rich-content and image import retries and uses curr
       key: "growing-answer",
       message: {
         role: "assistant",
-        content: "A retained paragraph.\nMEDIA:https://example.com/current-image.png",
+        content: "A retained paragraph.\n\nMEDIA:https://example.com/current-image.png",
       },
     },
   ]);

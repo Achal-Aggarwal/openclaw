@@ -58,6 +58,9 @@ export function createActivityContext(
     get channels(): never {
       throw new Error("Activity fixture does not provide channels");
     },
+    getChannels(): never {
+      throw new Error("Activity fixture does not provide channels");
+    },
     get config(): never {
       throw new Error("Activity fixture does not provide config");
     },

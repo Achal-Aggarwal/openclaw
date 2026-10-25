@@ -293,13 +293,12 @@ export function resolveCollapsedToolArgumentPreview(args: unknown): string | und
 
 let nextPreviewRevision = 0;
 
-function extractToolCards(message: unknown): ToolCard[] {
-  const m = message as Record<string, unknown>;
+function extractToolCards(m: Record<string, unknown>): ToolCard[] {
   const catalogMetadata = asNullableRecord(m["__openclaw"]);
   const catalogSource = catalogMetadata?.catalogSource === true;
   const role = typeof m.role === "string" ? m.role.toLowerCase() : "";
   const isStandaloneToolMessage =
-    isToolResultMessage(message) ||
+    isToolResultMessage(m) ||
     role === "tool" ||
     role === "function" ||
     typeof m.toolName === "string" ||
@@ -443,14 +442,14 @@ function extractToolCards(message: unknown): ToolCard[] {
       ...(callId ? { callId } : {}),
       ...(messageRunId ? { runId: messageRunId } : {}),
       name,
-      completed: isToolResultMessage(message) || role === "tool" || role === "function",
+      completed: isToolResultMessage(m) || role === "tool" || role === "function",
       messageId: transcriptMessageId,
       ...readResult(m, name, true),
     });
   }
 
   const activityByCall = new Map(
-    readPreparedActivity(message)
+    readPreparedActivity(m)
       .filter((item) => !item.suppressChannelProgress)
       .map((item) => [item.toolCallId ?? item.itemId, item]),
   );
@@ -475,15 +474,16 @@ function extractToolCards(message: unknown): ToolCard[] {
 const toolCardsByMessage = new WeakMap<object, ToolCard[]>();
 
 export function extractToolCardsCached(message: unknown): ToolCard[] {
-  if (!message || typeof message !== "object") {
-    return extractToolCards(message);
+  const record = readRecord(message);
+  if (!record) {
+    return [];
   }
-  const cached = toolCardsByMessage.get(message);
+  const cached = toolCardsByMessage.get(record);
   if (cached) {
     return cached;
   }
-  const cards = extractToolCards(message);
-  toolCardsByMessage.set(message, cards);
+  const cards = extractToolCards(record);
+  toolCardsByMessage.set(record, cards);
   return cards;
 }
 

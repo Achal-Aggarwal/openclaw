@@ -3,6 +3,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ChatQueueItem } from "../../lib/chat/chat-types.ts";
 import { prepareChatToolPresentation } from "../../lib/chat/tool-family.ts";
+import { waitForSolid } from "../../test-helpers/solid-settle.ts";
 import { createComposerContainer } from "./chat-composer.test-support.ts";
 import * as chatThread from "./chat-thread.ts";
 import { resetChatViewState } from "./chat-view-state.test-support.ts";
@@ -130,8 +131,8 @@ describe("chat transcript cache", () => {
       });
     const tokens = () => container.querySelector(".chat-working-indicator__tokens")?.textContent;
     drawUsage(5_500, 1);
-    expect(tokens()).toContain("5.5k");
+    await waitForSolid(() => expect(tokens()).toContain("5.5k"));
     drawUsage(7_200, 2);
-    expect(tokens()).toContain("7.2k");
+    await waitForSolid(() => expect(tokens()).toContain("7.2k"));
   });
 });

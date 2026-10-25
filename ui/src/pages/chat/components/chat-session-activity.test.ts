@@ -1,6 +1,7 @@
 /* @vitest-environment jsdom */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { waitForSolid } from "../../../test-helpers/solid-settle.ts";
 import { buildChatItems } from "../chat-thread-build.ts";
 import { resetChatThreadState } from "../chat-thread.ts";
 import { createMessageGroupHarness } from "./chat-message-native.test-support.tsx";
@@ -63,7 +64,7 @@ function automation(id: string, jobId = "daily", source = sessionKey) {
 }
 
 describe("session activity", () => {
-  it("collapses recorded automation inputs and reveals their exact run from the shared disclosure", () => {
+  it("collapses recorded automation inputs and reveals their exact run from the shared disclosure", async () => {
     const input = automation("execution");
     const projection = chain([input]);
     const group = projection.transcriptItems[0];
@@ -83,6 +84,9 @@ describe("session activity", () => {
         },
       });
     draw();
+    await waitForSolid(() =>
+      expect(container.querySelector(".chat-session-activity")).not.toBeNull(),
+    );
     const disclosure = container.querySelector<HTMLDetailsElement>(".chat-session-activity");
     expect(disclosure).not.toBeNull();
     expect(disclosure?.open).toBe(false);
@@ -103,6 +107,7 @@ describe("session activity", () => {
     );
     expandReplyTargetWork(projection.transcriptItems, expanded, "execution");
     draw();
+    await waitForSolid(() => expect(container.textContent).toContain("END execution"));
     expect(disclosure?.open).toBe(true);
     expect(container.textContent).toContain("END execution");
     expect(disclosure?.querySelector("a[data-cron-run-link]")?.getAttribute("href")).toBe(
@@ -208,7 +213,7 @@ describe("session activity", () => {
     },
   );
 
-  it("expands the full original messages in one disclosure and retains source navigation", () => {
+  it("expands the full original messages in one disclosure and retains source navigation", async () => {
     const group = chain([update("first"), update("second")]).transcriptItems[0];
     if (group?.kind !== "group") {
       throw new Error("expected activity group");
@@ -227,6 +232,9 @@ describe("session activity", () => {
         },
       });
     draw();
+    await waitForSolid(() =>
+      expect(container.querySelector(".chat-session-activity")).not.toBeNull(),
+    );
     const disclosure = container.querySelector<HTMLDetailsElement>(".chat-session-activity");
     const summary = disclosure?.querySelector("summary");
     if (!disclosure || !summary) {
@@ -248,6 +256,9 @@ describe("session activity", () => {
     );
     disclosure.open = true;
     disclosure.dispatchEvent(new Event("toggle"));
+    await waitForSolid(() =>
+      expect(disclosure.querySelectorAll(".chat-reply-attribution")).toHaveLength(1),
+    );
     expect(disclosure.querySelectorAll(".chat-reply-attribution")).toHaveLength(1);
     expect(summaryMarkup()).toBe(collapsedMarkup);
     expect(
@@ -264,7 +275,7 @@ describe("session activity", () => {
     expect(container.textContent).not.toContain("Original receipt");
   });
 
-  it("retains a focused action while a same-key forwarded message refreshes", () => {
+  it("retains a focused action while a same-key forwarded message refreshes", async () => {
     const message = update("retained");
     const onReply = vi.fn();
     const draw = (content: string) => {
@@ -281,6 +292,11 @@ describe("session activity", () => {
     document.body.append(container);
     try {
       draw(message.content);
+      await waitForSolid(() =>
+        expect(
+          container.querySelector(".chat-group-footer-actions .chat-reply-btn"),
+        ).not.toBeNull(),
+      );
       const action = container.querySelector<HTMLButtonElement>(
         ".chat-group-footer-actions .chat-reply-btn",
       );
@@ -299,7 +315,7 @@ describe("session activity", () => {
     }
   });
 
-  it("keeps reply-bearing receipts separate and preserves navigation to their original", () => {
+  it("keeps reply-bearing receipts separate and preserves navigation to their original", async () => {
     const reply = update("reply");
     const messages = [
       update("first"),
@@ -336,6 +352,11 @@ describe("session activity", () => {
       resolveReplyPreview,
       onOpenReply,
     });
+    await waitForSolid(() =>
+      expect(
+        container.querySelector('.chat-reply-attribution button[aria-label="Replying to Alice"]'),
+      ).not.toBeNull(),
+    );
     const target = container.querySelector<HTMLButtonElement>(
       '.chat-reply-attribution button[aria-label="Replying to Alice"]',
     );
@@ -344,7 +365,7 @@ describe("session activity", () => {
     expect(onOpenReply).toHaveBeenCalledWith("older");
   });
 
-  it("shows matching text immediately in transcript search", () => {
+  it("shows matching text immediately in transcript search", async () => {
     const projection = chain([update("search")], true);
     const group = projection.transcriptItems[0];
     if (group?.kind !== "group") {
@@ -355,6 +376,9 @@ describe("session activity", () => {
       searchResult: true,
       isToolMessageExpanded: () => false,
     });
+    await waitForSolid(() =>
+      expect(container.querySelectorAll(".chat-reply-attribution")).toHaveLength(1),
+    );
     expect(container.querySelector<HTMLDetailsElement>(".chat-session-activity")?.open).toBe(true);
     expect(container.textContent).toContain("END search");
     expect(container.querySelectorAll(".chat-reply-attribution")).toHaveLength(1);

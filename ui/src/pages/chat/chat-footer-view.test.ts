@@ -134,6 +134,7 @@ it("leaves ordinary turn history and the draft intact without delegated-work row
     draft: "Keep the draft while progress arrives",
   };
   const container = renderChatView(props);
+  await waitForSolid(() => expect(transcript.scrollElement).toBeInstanceOf(HTMLElement));
   const viewport = transcript.scrollElement!;
   Object.defineProperty(viewport, "clientHeight", { configurable: true, value: 600 });
   for (const observer of resizeObservers) {

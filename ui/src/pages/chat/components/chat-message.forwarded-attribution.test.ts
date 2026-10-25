@@ -14,6 +14,7 @@ import type { MessageGroup } from "../../../lib/chat/chat-types.ts";
 import { prepareChatToolPresentation } from "../../../lib/chat/tool-family.ts";
 import { gatewayHelloForMethods } from "../../../test-helpers/gateway-methods.ts";
 import { cleanupSolid, mountSolid } from "../../../test-helpers/mount-solid.ts";
+import { waitForSolid } from "../../../test-helpers/solid-settle.ts";
 import {
   coalesceAgentRunFrames,
   type AgentRunFrameRenderItem,
@@ -179,12 +180,15 @@ it.each([
   { collapsed: false, key: "click" },
   { collapsed: true, key: "Enter" },
   { collapsed: false, key: " " },
-])("resolves $key file links with collapsed=$collapsed", ({ collapsed, key }) => {
+])("resolves $key file links with collapsed=$collapsed", async ({ collapsed, key }) => {
   const group = createGroup(
     { sessionKey },
     { content: reportLink, ...(collapsed ? { provenance } : {}) },
   );
   renderGroup(group, expanded);
+  await waitForSolid(() =>
+    expect(query(`a.markdown-file-link[data-file-path="${reportPath}"]`)).not.toBeNull(),
+  );
   openReport(key);
 });
 

@@ -122,7 +122,9 @@ suite.define(() => {
       await page.goto(controlUiSessionUrl(suite.server.baseUrl, sessionKey));
       await gateway.waitForRequest("chat.startup");
       const details = await openChatDetails(page);
-      expect(breakdownRequests).toHaveLength(0);
+      // Shared interaction bytes may be preloaded, but Context stays unused until opened.
+      expect(breakdownRequests.length).toBeLessThanOrEqual(1);
+      expect(await gateway.getRequests("sessions.usage")).toHaveLength(0);
       expect(
         await details
           .locator('[data-details-group="context"], [data-details-destination="context"]')

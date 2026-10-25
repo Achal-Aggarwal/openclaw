@@ -618,7 +618,7 @@ export abstract class ChatPaneHeader extends ChatPaneDiscussion {
                   : boardWidgetMenu,
               sessionActions: [],
               actionSource: {
-                owner: this,
+                readOwner: () => this,
                 readRow: () => this.headerMenuRow,
                 stopDisabledReason: placement.reclaimDisabledReason,
               },

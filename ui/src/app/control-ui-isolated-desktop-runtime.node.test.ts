@@ -330,18 +330,22 @@ it("prioritizes route and common interaction hints, retaining saved Context byte
     (id) => chunkFor(id).fileName,
   );
   expect(chunkFor(entries.liveEvents).fileName).toBe(chunkFor(entries.toolFamily).fileName);
-  const optionalChunks = [
-    entries.search,
-    entries.contextBreakdown,
-    entries.headerOperations,
-    entries.command,
-  ].map((id) => chunkFor(id).fileName);
-  expect(new Set(optionalChunks).size).toBe(4);
+  const optionalChunks = [entries.search, entries.headerOperations, entries.command].map(
+    (id) => chunkFor(id).fileName,
+  );
+  expect(new Set(optionalChunks).size).toBe(3);
   for (const file of optionalChunks) {
     expect(toolChunks).not.toContain(file);
   }
+  // Saved panels share the rich-renderer download while their initializers remain lazy.
   const contextChunk = chunkFor(entries.contextBreakdown).fileName;
-  for (const id of [entries.contextModel, entries.contextReport, entries.contextOwner]) {
+  for (const id of [
+    entries.contextModel,
+    entries.contextReport,
+    entries.contextOwner,
+    entries.toolFamily,
+    entries.toolPresentation,
+  ]) {
     expect(chunkFor(id).fileName).toBe(contextChunk);
   }
   expect(chunkFor(entries.headerOperations).fileName).toBe(
@@ -354,7 +358,9 @@ it("prioritizes route and common interaction hints, retaining saved Context byte
   for (const id of [entries.desktopProcess, entries.process, entries.environment]) {
     expect(chunkFor(id).fileName).toBe(detailsChunk);
   }
-  expect(toolChunks).not.toContain(detailsChunk);
+  expect(detailsChunk).toBe(contextChunk);
+  const frameChunk = chunkFor(entries.runFrame).fileName;
+  expect(frameChunk).not.toBe(contextChunk);
   const placementChunks = [entries.placement, placementDependency].map(
     (id) => chunkFor(id).fileName,
   );
@@ -365,7 +371,9 @@ it("prioritizes route and common interaction hints, retaining saved Context byte
       ...new Set([
         signerChunk,
         chatChunk,
+        frameChunk,
         ...commonChunks,
+        payloadChunk,
         ...toolChunks,
         detailsChunk,
         contextChunk,
@@ -373,7 +381,7 @@ it("prioritizes route and common interaction hints, retaining saved Context byte
     ].toSorted(),
   );
   expect(routePreloads(html, "new").toSorted()).toEqual(
-    [...new Set([signerChunk, ...commonChunks, ...placementChunks])].toSorted(),
+    [...new Set([signerChunk, ...commonChunks, payloadChunk, ...placementChunks])].toSorted(),
   );
   expect(chatPreloads[0]).toBe(signerChunk);
   expect(chatPreloads.indexOf(chatChunk)).toBeLessThan(
@@ -383,18 +391,14 @@ it("prioritizes route and common interaction hints, retaining saved Context byte
   const linkFor = (file: string) => links.find((link) => link.includes(`href="./${file}"`));
   expect(linkFor(chunkFor(entries.online).fileName)).toContain('fetchpriority="low"');
   expect(linkFor(chunkFor(entries.draftWrite).fileName)).toContain('fetchpriority="low"');
-  expect(linkFor(payloadChunk)).toBeUndefined();
+  expect(linkFor(payloadChunk)).toContain('fetchpriority="low"');
   for (const file of optionalChunks) {
-    if (file === contextChunk) {
-      expect(linkFor(file)).toBeDefined();
-      expect(linkFor(file)).toContain('fetchpriority="low"');
-    } else {
-      expect(linkFor(file)).toBeUndefined();
-    }
+    expect(linkFor(file)).toBeUndefined();
   }
   for (const file of [...toolChunks, detailsChunk]) {
     expect(linkFor(file)).toContain('fetchpriority="low"');
   }
+  expect(linkFor(frameChunk)).not.toContain("fetchpriority");
   expect(linkFor(chunkFor(commonDependency).fileName)).not.toContain("fetchpriority");
   expect(linkFor(signerChunk)).not.toContain("fetchpriority");
   expect(html).not.toContain(chunkFor(signingFallback).fileName);

@@ -286,7 +286,7 @@ suite.define(() => {
       },
     });
     await expect.poll(() => assistantTexts(page)).toEqual([...commentary, "Still working."]);
-    expect(await page.locator(".chat-tool-msg-summary").count()).toBe(1);
+    await expect.poll(() => page.locator(".chat-tool-msg-summary").count()).toBe(1);
   });
 
   it.each([

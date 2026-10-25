@@ -136,6 +136,7 @@ describe("transcript projection", () => {
     transcript.update();
     await vi.advanceTimersByTimeAsync(0);
     const currentBubble = () => view.container.querySelector<HTMLElement>(".chat-bubble.streaming");
+    await waitForSolid(() => expect(currentBubble()).not.toBeNull());
     const bubble = currentBubble()!;
     expect(bubble).not.toBeNull();
     projectRows.mockClear();

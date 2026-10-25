@@ -45,7 +45,7 @@ it.each([
   ["preparing_context", "Preparing this turn…"],
   ["answer", null],
   ["finishing", null],
-] as const)("keeps Stop available during %s", (phase, status) => {
+] as const)("keeps Stop available during %s", async (phase, status) => {
   const onAbort = vi.fn();
   const onSend = vi.fn();
   const container = renderChatView({
@@ -58,10 +58,10 @@ it.each([
     onSend,
   });
   if (status) {
-    expect(workingStatus(container)).toContain(status);
+    await waitForSolid(() => expect(workingStatus(container)).toContain(status));
     expect(container.querySelector(".chat-error")).toBeNull();
   } else {
-    expect(container.textContent).toContain("The answer is ready.");
+    await waitForSolid(() => expect(container.textContent).toContain("The answer is ready."));
     expect(container.querySelector(".chat-working-indicator")).toBeNull();
     expect(
       container.querySelector(".agent-chat__run-status-announcement")?.textContent?.trim(),
@@ -74,14 +74,16 @@ it.each([
   expect(onSend).not.toHaveBeenCalled();
 });
 
-it("waits for startup progress rather than claiming preparation before the first status", () => {
+it("waits for startup progress rather than claiming preparation before the first status", async () => {
   const container = renderChatView({ runActive: true, stream: "" });
-  expect(workingStatus(container)).toContain("Waiting for turn to start…");
+  await waitForSolid(() =>
+    expect(workingStatus(container)).toContain("Waiting for turn to start…"),
+  );
 });
 
 it.each(["submitting", "sending", "waiting-model"] as const)(
   "awaits %s without Stop",
-  (sendState) => {
+  async (sendState) => {
     const container = renderChatView({
       runActive: false,
       canAbort: false,
@@ -90,7 +92,9 @@ it.each(["submitting", "sending", "waiting-model"] as const)(
         { id: "pending-send", sessionKey: "main", text: "Continue", createdAt: 1, sendState },
       ],
     });
-    expect(workingStatus(container)).toContain("Waiting for turn to start…");
+    await waitForSolid(() =>
+      expect(workingStatus(container)).toContain("Waiting for turn to start…"),
+    );
     expect(container.querySelector(".chat-send-btn--stop")).toBeNull();
   },
 );

@@ -10,6 +10,7 @@ import type {
 import { createDeferred } from "../../../../test/helpers/promise.js";
 import type { GatewayBrowserClient } from "../../api/gateway.ts";
 import { extractToolCardsCached } from "../../lib/chat/tool-cards.ts";
+import { prepareChatToolFamily } from "../../lib/chat/tool-family.ts";
 import { buildCatalogSessionKey, type CatalogSessionKey } from "../../lib/sessions/catalog-key.ts";
 import type { SessionCapability } from "../../lib/sessions/index.ts";
 import { createApplicationContextProvider } from "../../test-helpers/application-context.ts";
@@ -234,18 +235,22 @@ describe("chat pane catalog", () => {
     expect(pane.history.catalogMessages).toEqual([]);
   });
 
-  it("keeps raw and structured tool inputs visible without call IDs", () => {
+  it("keeps raw and structured tool inputs visible without call IDs", async () => {
     const { pane } = createCatalogPane(vi.fn());
     expect(
       pane.catalogItemMessage({ type: "toolCall", raw: { command: "git status --short" } }),
     ).toMatchObject({
       content: [{ type: "toolCall", arguments: "git status --short" }],
     });
-    expect(
-      extractToolCardsCached(
-        pane.catalogItemMessage({ type: "toolResult", toolInput: { count: 2 }, text: "done" }),
-      ),
-    ).toMatchObject([{ args: { count: 2 }, outputText: "done", completed: true }]);
+    const result = pane.catalogItemMessage({
+      type: "toolResult",
+      toolInput: { count: 2 },
+      text: "done",
+    });
+    await prepareChatToolFamily([result]);
+    expect(extractToolCardsCached(result)).toMatchObject([
+      { args: { count: 2 }, outputText: "done", completed: true },
+    ]);
   });
 
   it("keeps reasoning in thinking content and omits empty placeholders", () => {

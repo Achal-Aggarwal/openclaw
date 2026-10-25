@@ -2,6 +2,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { GatewayBrowserClient } from "../../api/gateway.ts";
 import { extractText } from "../../lib/chat/message-extract.ts";
+import { prepareChatToolFamily } from "../../lib/chat/tool-family.ts";
 import type { ChatHistoryResponse, ChatHistoryResult } from "./chat-history-snapshot.ts";
 import {
   activeHistory,
@@ -149,6 +150,7 @@ it("restores cleared activity alongside an owned run's current text", async () =
   });
   const continued = "Restored. Still streaming.";
   assistant(state, "run-live", continued);
+  await prepareChatToolFamily(state.chatMessages, state.chatToolMessages);
   expect(renderedText(state)).toContain(continued);
   expect(renderedText(state)).not.toContain("Restored.");
   expect(state.chatToolMessages[0]).toMatchObject({

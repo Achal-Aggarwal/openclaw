@@ -109,6 +109,7 @@ it.each([
     document.documentElement.dataset.themeMode = theme;
     const { draw } = fixture(role, width);
     await document.fonts.ready;
+    await expect.poll(() => host.querySelector(".chat-reply-attribution a")).not.toBeNull();
     const bubbles = host.querySelectorAll<HTMLElement>(".chat-bubble");
     const content = bubbles[0]!.querySelector<HTMLElement>(".chat-message-disclosure__content");
     expect(content).not.toBeNull();
@@ -236,6 +237,9 @@ it.each([
       URL.revokeObjectURL(avatarUrl);
     }
     fixture("assistant", width, new Map([["research", avatarUrl]]));
+    await expect
+      .poll(() => host.querySelector(".chat-reply-attribution__agent-avatar .chat-avatar-slot"))
+      .not.toBeNull();
     const slot = host.querySelector<HTMLElement>(
       ".chat-reply-attribution__agent-avatar .chat-avatar-slot",
     )!;

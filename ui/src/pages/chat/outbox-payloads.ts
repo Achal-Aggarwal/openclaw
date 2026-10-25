@@ -16,6 +16,10 @@ export type PayloadResult =
   | { status: "ready"; update: PayloadUpdate }
   | { status: "failed"; reason: OutboxPayloadFailure };
 
+// Preview and drain share equivalent reads/copies before loading the engine.
+// Validate every caller independently; share attachment updates, never delivery state.
+const pendingPayloads = new Map<string, Promise<PayloadResult>>();
+
 export function outboxPayloadError(reason: OutboxPayloadFailure): string {
   return t(
     `chat.sendErrors.outboxPayload${reason === "capacity" ? "Capacity" : reason === "missing" ? "Missing" : "Unavailable"}`,
@@ -78,11 +82,41 @@ export async function prepareOutboxPayload(
     return { status: "failed", reason: "unavailable" };
   }
   const isCurrent = captureOutboxPayloadOwner(host, scope);
+  const reference = item.attachmentPayload;
+  const key = reference
+    ? JSON.stringify([
+        item.id,
+        reference.key,
+        reference.tabId,
+        reference.recoveryScope,
+        scope,
+        host.settings?.gatewayUrl,
+        recoveryScope,
+        purpose,
+        item.attachments?.map(({ mimeType, fileName, sizeBytes, origin }) => [
+          mimeType,
+          fileName,
+          sizeBytes,
+          origin,
+        ]),
+      ])
+    : undefined;
   try {
-    const { prepareOutboxPayload: prepare } = await import("./outbox-payloads.runtime.ts");
-    return isCurrent()
-      ? prepare(host, item, purpose, { scope, recoveryScope, isCurrent })
-      : { status: "failed", reason: "unavailable" };
+    let pending = key ? pendingPayloads.get(key) : undefined;
+    if (!pending) {
+      pending = (async (): Promise<PayloadResult> => {
+        const { prepareOutboxPayload: prepare } = await import("./outbox-payloads.runtime.ts");
+        return isCurrent()
+          ? prepare(host, item, purpose, { recoveryScope, isCurrent })
+          : { status: "failed", reason: "unavailable" };
+      })();
+      if (key) {
+        pending = pending.finally(() => pendingPayloads.delete(key));
+        pendingPayloads.set(key, pending);
+      }
+    }
+    const result = await pending;
+    return isCurrent() ? result : { status: "failed", reason: "unavailable" };
   } catch {
     return { status: "failed", reason: "unavailable" };
   }

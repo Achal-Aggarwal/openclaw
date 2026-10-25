@@ -107,9 +107,6 @@ export function controlUiStableChunkName(id: string): string | undefined {
     case "ui/src/pages/chat/components/chat-message-context-view.tsx":
     case "ui/src/pages/chat/components/chat-workspace-conflict.tsx":
       return "chat-interaction-runtime";
-    case "ui/src/pages/chat/components/chat-agent-run-frame.tsx":
-    case "ui/src/pages/chat/components/chat-message-stream-view.tsx":
-      return "chat-interaction-runtime";
     case "ui/src/pages/chat/components/chat-working-indicator.tsx":
     case "ui/src/pages/chat/components/chat-working-indicator-branding.tsx":
     case "ui/src/components/working-phrase-solid.tsx":
@@ -133,11 +130,9 @@ export function controlUiStableChunkName(id: string): string | undefined {
     case "ui/src/pages/chat/chat-outbox-recovery-actions.ts":
       return "chat-outbox-recovery-runtime";
     case "ui/src/pages/chat/components/chat-pane-mobile-runtime.tsx":
-    case "ui/src/pages/chat/components/chat-pane-mobile-chrome.runtime.tsx":
-    case "ui/src/pages/chat/components/chat-pane-mobile-header.tsx":
     case "ui/src/pages/chat/components/chat-session-sharing-mobile-adapter.tsx":
     case "ui/src/pages/chat/components/chat-session-sharing-options.tsx":
-      // Download the mobile renderer with Chat, but evaluate it on the first mobile layout.
+      // Download mobile destinations with Chat, but evaluate them on the first mobile layout.
       return "chat-interaction-runtime";
     case "ui/src/pages/chat/chat-tool-family-runtime.ts":
     case "ui/src/pages/chat/chat-tool-activity-coalesce.runtime.ts":

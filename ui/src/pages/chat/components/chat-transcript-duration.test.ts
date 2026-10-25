@@ -1,5 +1,6 @@
 /* @vitest-environment jsdom */
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { waitForSolid } from "../../../test-helpers/solid-settle.ts";
 import { projectChatTranscriptMetadata } from "../session-message-cache.ts";
 import { threadFixture } from "./chat-transcript-fixture.test-support.tsx";
 import {
@@ -91,7 +92,10 @@ it("keeps the recap duration when zero runtime cannot label completed work", asy
   const runId = "zero-runtime";
   const props = propsFor(runId, [prompt(runId, 1_000), work(runId, 1_000)]);
   running(props, runId, 42);
-  const { text, rerender } = mount(props);
+  const { container, text, rerender } = mount(props);
+  await waitForSolid(() =>
+    expect(container.querySelector(".chat-working-indicator")).not.toBeNull(),
+  );
   props.messages = [...props.messages, reply(runId, 1_000)];
   props.runActive = false;
   props.runWorking = false;

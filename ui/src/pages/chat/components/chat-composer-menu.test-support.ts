@@ -2,8 +2,8 @@ import { vi } from "vitest";
 import type { ToolsEffectiveResult } from "../../../api/types.ts";
 import type { McpServerSummary } from "../../../lib/config/mcp-servers.ts";
 import { createChatAttachmentInputHandle } from "./chat-attachment-inputs.ts";
+import type { ChatComposerCapabilityMenuProps } from "./chat-composer-capability-menu.types.ts";
 import type {
-  ChatComposerCapabilityMenuProps,
   ChatComposerCapabilityMenuSource,
   ChatComposerPlusMenuProps,
 } from "./chat-composer-plus-menu.types.ts";

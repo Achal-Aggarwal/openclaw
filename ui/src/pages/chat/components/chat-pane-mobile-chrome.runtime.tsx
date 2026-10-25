@@ -1,8 +1,9 @@
-import { createMemo, lazy, Loading, Show, type Element } from "solid-js";
+import { createMemo, lazy, Loading, onSettled, Show, type Element } from "solid-js";
 import {
   SHELL_NAV_DRAWER_TOGGLE_EVENT,
   type ShellNavDrawerToggleDetail,
 } from "../../../components/command-palette-contract.ts";
+import { closeMenusWithin } from "../../../components/solid/menu.tsx";
 import { isSessionTitlePending } from "../../../lib/session-display.ts";
 import { ContentPresentation } from "../../../lib/solid/presentation.ts";
 import type { ChatPaneHeaderProps } from "./chat-pane-header.types.ts";
@@ -29,18 +30,28 @@ export function ChatPaneMobileChrome(props: {
   peopleLabel: string;
   morePeople: (count: number) => string;
   peopleExpanded: boolean;
-  onChromeRef: (element: HTMLDivElement) => void;
   onOpenPeople: (source: HTMLElement) => void;
   onOpenMachine: (source: HTMLElement) => void;
 }) {
+  let chromeRoot: HTMLDivElement | undefined;
   const host = () => props.header.detailsControl?.mobileHost;
   // A desktop-first pane defers People; an adopted trigger survives desktop parking.
   const mobileActivated = createMemo<boolean>((previous) => previous === true || props.mobile);
   return (
     <ContentPresentation value={() => props.presented}>
+      <Show when={!props.presented}>
+        {(_parked) => {
+          onSettled(() => {
+            if (chromeRoot) {
+              closeMenusWithin(chromeRoot);
+            }
+          });
+          return undefined;
+        }}
+      </Show>
       <div
         ref={(element) => {
-          props.onChromeRef(element);
+          chromeRoot = element;
         }}
         hidden={!props.mobile}
         inert={!props.presented}

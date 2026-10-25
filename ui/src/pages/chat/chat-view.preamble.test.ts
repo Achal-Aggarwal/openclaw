@@ -1,6 +1,7 @@
 /* @vitest-environment jsdom */
 import { afterEach, beforeEach, expect, it } from "vitest";
 import type { ChatStreamSegment } from "../../lib/chat/chat-types.ts";
+import { waitForSolid } from "../../test-helpers/solid-settle.ts";
 import { createComposerContainer } from "./chat-composer.test-support.ts";
 import { resetChatViewState } from "./chat-view-state.test-support.ts";
 import { renderChatInto } from "./chat-view.test-helpers.ts";
@@ -38,7 +39,7 @@ const textBlock = (id: string, phase: string, text: string) => ({
 const draw = (container: HTMLElement, overrides: Parameters<typeof renderChatInto>[1]) =>
   renderChatInto(container, { runActive: true, runId, streamStartedAt: 1, ...overrides });
 
-it("keeps successive commentary inline and formatted across the live-to-history handoff", () => {
+it("keeps successive commentary inline and formatted across the live-to-history handoff", async () => {
   const container = createComposerContainer();
   const earlier = preamble("Reading the files.", 2, "read");
   const detail = "Checking the caller and its lifecycle. ".repeat(25);
@@ -50,7 +51,9 @@ it("keeps successive commentary inline and formatted across the live-to-history 
   });
   const narration = () => container.querySelectorAll(".chat-group.assistant .chat-text");
   const content = () => Array.from(narration(), (element) => element.textContent?.trim());
-  expect(content()).toEqual(["Reading the files.", expect.stringContaining(detail)]);
+  await waitForSolid(() =>
+    expect(content()).toEqual(["Reading the files.", expect.stringContaining(detail)]),
+  );
   expect(narration()[1]?.querySelector("strong")?.textContent).toBe("Checking");
   expect(narration()[1]?.textContent).toContain("End of the explanation.");
   expect(container.querySelector(".chat-working-indicator")?.textContent).not.toContain("Checking");
@@ -59,11 +62,13 @@ it("keeps successive commentary inline and formatted across the live-to-history 
     messages: [...messages, preamble(text, 3, "test")],
     streamSegments: [{ text: "Reviewing the result.", ts: 4, runId, itemId: "review" }],
   });
-  expect(content()).toEqual([
-    "Reading the files.",
-    expect.stringContaining(detail),
-    "Reviewing the result.",
-  ]);
+  await waitForSolid(() =>
+    expect(content()).toEqual([
+      "Reading the files.",
+      expect.stringContaining(detail),
+      "Reviewing the result.",
+    ]),
+  );
   expect(container.textContent?.match(/End of the explanation\./g)).toHaveLength(1);
   expect(container.querySelector(".chat-working-indicator")?.textContent).not.toContain(
     "Reviewing",
@@ -136,7 +141,7 @@ it.each(["explicit", "segment", "tool", "cached"] as const)(
   },
 );
 
-it("leaves unphased answers and mixed-phase narration and final text in the transcript", () => {
+it("leaves unphased answers and mixed-phase narration and final text in the transcript", async () => {
   const container = createComposerContainer();
   renderChatInto(container, {
     runActive: true,
@@ -156,6 +161,7 @@ it("leaves unphased answers and mixed-phase narration and final text in the tran
       },
     ],
   });
+  await waitForSolid(() => expect(container.textContent).toContain("Unphased answer."));
   const narration = Array.from(
     container.querySelectorAll(".chat-group.assistant .chat-text"),
     (element) => element.textContent,

@@ -216,6 +216,7 @@ describe("chat transcript invalidation", () => {
 
         toggleTranscriptSearch(paneId);
         flush();
+        await waitForSolid(() => expect(searchContainer.querySelector("input")).not.toBeNull());
         const input = expectDefined(searchContainer.querySelector("input"), "search input");
         input.value = ownMessage.content;
         input.dispatchEvent(new Event("input", { bubbles: true }));
@@ -450,6 +451,10 @@ describe("chat transcript invalidation", () => {
       rerender();
       transcript.start();
       await flushDeferredRowPrune();
+      await waitForSolid(() => {
+        expect(find(container, '[data-entry-id="settled-final"]')).not.toBeNull();
+        expect(find(container, ".chat-bubble.streaming")?.textContent).toContain(props.stream);
+      });
       const finalBubble = required(container, '[data-entry-id="settled-final"]');
       const workToggle = expectDefined(
         finalBubble.closest(".chat-group")?.querySelector(".chat-work-group button"),

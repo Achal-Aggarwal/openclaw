@@ -41,10 +41,7 @@ import {
 } from "./chat-send-queue-state.ts";
 import { requestChatSend } from "./chat-send-request.ts";
 import { retireDeliveredQueuedUserTurn } from "./chat-send-support.runtime.ts";
-import {
-  OFFLINE_QUEUE_STORAGE_ERROR,
-  surfaceChatDeliveryFailure,
-} from "./chat-send-support.ts";
+import { OFFLINE_QUEUE_STORAGE_ERROR, surfaceChatDeliveryFailure } from "./chat-send-support.ts";
 import { refreshChatSessionListForTarget } from "./chat-session.ts";
 import { attachmentBatchRejection } from "./components/chat-attachment-admission.ts";
 import { formatConnectError } from "./connect-error.ts";

@@ -371,8 +371,11 @@ describe("first chat startup snapshot ordering", () => {
     const loading = h.start();
     expect(h.request).toHaveBeenCalledOnce();
     const fresh = { ...h.liveResult, messages: structuredClone(stored.messages) };
+    const hydration = chatHistoryRequests(h.state).initialSnapshotHydration?.promise;
     record.resolve(snapshotRecord(h, snapshot));
+    await vi.dynamicImportSettled();
     await vi.advanceTimersByTimeAsync(0);
+    await hydration;
     network.resolve(fresh);
     await loading;
     flush();

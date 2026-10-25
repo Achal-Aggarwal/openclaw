@@ -6,18 +6,16 @@ import {
   removeOutboxPayloads,
   writeOutboxPayload,
 } from "../../lib/chat/outbox-payload-store.runtime.ts";
-import type { StoredChatOutboxScope } from "../../lib/chat/outbox-store-scope.ts";
 import { storageTargetForGateway } from "../../lib/chat/outbox-store.ts";
 import { captureDurableChatAttachments } from "./durable-composer-persistence.ts";
 import type { Host, PayloadResult } from "./outbox-payloads.ts";
 
 type AdmittedPayloadContext = {
-  scope: StoredChatOutboxScope;
   recoveryScope: string;
   isCurrent: () => boolean;
 };
 
-async function preparePayload(
+export async function prepareOutboxPayload(
   host: Host,
   item: ChatQueueItem,
   purpose: "send" | "handoff",
@@ -125,49 +123,4 @@ async function preparePayload(
     status: "ready",
     update: { attachmentPayload: result.value, attachmentStorageError: undefined },
   };
-}
-
-// Preview and drain share reads/copies so a cloned tab cannot create competing refs.
-// Check admission per caller; only equivalent bundle identities and metadata may join.
-// Share attachment updates, never the first caller's delivery state or captured destination.
-const pendingPayloads = new Map<string, Promise<PayloadResult>>();
-export async function prepareOutboxPayload(
-  host: Host,
-  item: ChatQueueItem,
-  purpose: "send" | "handoff",
-  context: AdmittedPayloadContext,
-): Promise<PayloadResult> {
-  const reference = item.attachmentPayload;
-  const { scope, recoveryScope, isCurrent } = context;
-  if (!reference) {
-    return preparePayload(host, item, purpose, context);
-  }
-  const key = JSON.stringify([
-    item.id,
-    reference.key,
-    reference.tabId,
-    reference.recoveryScope,
-    scope,
-    host.settings?.gatewayUrl,
-    recoveryScope,
-    purpose,
-    item.attachments?.map(({ mimeType, fileName, sizeBytes, origin }) => [
-      mimeType,
-      fileName,
-      sizeBytes,
-      origin,
-    ]),
-  ]);
-  let pending = pendingPayloads.get(key);
-  if (!pending) {
-    pending = preparePayload(host, item, purpose, context).finally(() =>
-      pendingPayloads.delete(key),
-    );
-    pendingPayloads.set(key, pending);
-  }
-  const result = await pending;
-  if (!isCurrent()) {
-    return { status: "failed", reason: "unavailable" };
-  }
-  return result;
 }

@@ -399,7 +399,7 @@ it.each(["claim", "stage", "retire", "discard"] as const)(
   },
 );
 
-it("retires attachment payloads only after the last recovery copy is discarded", () => {
+it("retires attachment payloads only after the last recovery copy is discarded", async () => {
   const f = fixture("queue");
   const reference = { key: "blob", tabId: "this-tab", recoveryScope: "account-a" };
   const legacy = f.legacy();
@@ -412,6 +412,7 @@ it("retires attachment payloads only after the last recovery copy is discarded",
     expect(f.entries()).toEqual([]);
   });
   expect(f.discard()).toBe("discarded");
+  await vi.dynamicImportSettled();
   expect(cleanup).toHaveBeenCalledExactlyOnceWith([reference]);
 });
 

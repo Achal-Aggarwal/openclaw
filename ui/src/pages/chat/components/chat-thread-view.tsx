@@ -136,7 +136,7 @@ function PreparedChatThread(input: ChatThreadInput) {
     toolsReady();
     const searchState = search().read();
     const { session } = presentation();
-    const projection = projectChatTranscript(input.props, session, searchState);
+    const projection = projectChatTranscript(input.props, session, searchState, toolsReady);
     expansionVersions();
     // Empty shells establish the baseline for first-submission animation.
     if (projection.isEmpty || projection.showLoadingSkeleton) {

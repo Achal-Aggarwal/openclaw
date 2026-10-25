@@ -1526,7 +1526,9 @@ describe("chat loading skeleton", () => {
       "retained assistant reply",
     );
     const reply = expectDefined(bubble.closest(".chat-group"), "assistant group");
-    expect(reply.querySelector(".chat-working-indicator--continuation")).not.toBeNull();
+    await waitForSolid(() =>
+      expect(reply.querySelector(".chat-working-indicator--continuation")).not.toBeNull(),
+    );
 
     vi.mocked(chatThread.buildCachedChatItems).mockReturnValue([
       replyGroup,
@@ -1535,12 +1537,14 @@ describe("chat loading skeleton", () => {
     ] as ReturnType<typeof chatThread.buildCachedChatItems>);
     renderChatInto(container, props);
 
-    expect(container.querySelector('[data-message-id="message:assistant:reply"]')).toBe(bubble);
-    expect(reply.querySelector(".chat-working-indicator")).toBeNull();
-    expect(container.querySelectorAll(".chat-working-indicator")).toHaveLength(1);
+    await waitForSolid(() => {
+      expect(container.querySelector('[data-message-id="message:assistant:reply"]')).toBe(bubble);
+      expect(reply.querySelector(".chat-working-indicator")).toBeNull();
+      expect(container.querySelectorAll(".chat-working-indicator")).toHaveLength(1);
+    });
   });
 
-  it("shows prompt-bar progress beside context usage while the current session send is awaiting acknowledgement", () => {
+  it("shows prompt-bar progress beside context usage while the current session send is awaiting acknowledgement", async () => {
     const container = renderChatView({
       sending: true,
       composerControls: createComposerControlsFixture(),
@@ -1556,7 +1560,9 @@ describe("chat loading skeleton", () => {
     expect(container.querySelector(".agent-chat__run-status-announcement")?.textContent).toContain(
       "Sending message",
     );
-    expect(container.querySelector(".chat-reading-indicator")).not.toBeNull();
+    await waitForSolid(() =>
+      expect(container.querySelector(".chat-reading-indicator")).not.toBeNull(),
+    );
     expect(contextUsage?.closest(".agent-chat__composer-context")).not.toBeNull();
   });
 
@@ -1621,7 +1627,7 @@ describe("chat loading skeleton", () => {
       false,
       true,
     ],
-  ])("%s", (_name, props, announcement, exact, spark) => {
+  ])("%s", async (_name, props, announcement, exact, spark) => {
     const container = renderChatView(props);
     const announcementElement = container.querySelector(".agent-chat__run-status-announcement");
     expect(announcementElement).not.toBeNull();
@@ -1631,7 +1637,9 @@ describe("chat loading skeleton", () => {
     } else {
       expect(actual).toContain(announcement);
     }
-    expect(container.querySelector(".chat-reading-indicator") !== null).toBe(spark);
+    await waitForSolid(() =>
+      expect(container.querySelector(".chat-reading-indicator") !== null).toBe(spark),
+    );
   });
 
   it("lets terminal run status win over stale abortable session UI", () => {

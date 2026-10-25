@@ -215,11 +215,11 @@ try {
             : undefined,
         );
         await page.addInitScript(
-          ({ gatewayUrl, prefs }) => {
+          ({ gatewayUrl: settingsGatewayUrl, prefs }) => {
             if (location.origin !== "null") {
               localStorage.setItem(
-                `openclaw.control.settings.v1:${gatewayUrl}`,
-                JSON.stringify({ gatewayUrl, ...prefs }),
+                `openclaw.control.settings.v1:${settingsGatewayUrl}`,
+                JSON.stringify({ gatewayUrl: settingsGatewayUrl, ...prefs }),
               );
             }
           },
@@ -228,7 +228,9 @@ try {
         await installMockGateway(page, scenario);
         // HTTP interception disables the browser cache, including speculative
         // preload reuse. The isolated server owns the synthetic bootstrap read.
-        if (server) await page.unrouteAll();
+        if (server) {
+          await page.unrouteAll();
+        }
         const init = ({
           bootstrap,
           attribute,
@@ -350,7 +352,9 @@ try {
         });
         cdp.on("Network.responseReceived", (event) => {
           const request = requestsById.get(event.requestId);
-          if (request) request.responseTimestampSeconds = event.timestamp;
+          if (request) {
+            request.responseTimestampSeconds = event.timestamp;
+          }
           const { response } = event;
           responses.push({
             url: response.url,
@@ -452,7 +456,9 @@ try {
         earlyHints.length = 0;
         requests.length = 0;
         requestsById.clear();
-        if (server) server.requests.length = 0;
+        if (server) {
+          server.requests.length = 0;
+        }
         const workerRequestStart = workerNetwork?.snapshot().requests.length ?? 0;
         await page.goto(controlUiSessionUrl(baseUrl, sessionKey), {
           waitUntil: "domcontentloaded",
@@ -528,23 +534,25 @@ try {
           }),
         );
         const coverage = values.coverage
-          ? (await page.coverage.stopJSCoverage()).map((entry) => ({
-              url: entry.url,
-              functions: entry.functions,
-              ...summarizeScriptCoverage(entry),
-            }))
+          ? (await page.coverage.stopJSCoverage()).map((entry) =>
+              Object.assign(
+                { url: entry.url, functions: entry.functions },
+                summarizeScriptCoverage(entry),
+              ),
+            )
           : undefined;
         let trace: ReturnType<typeof summarizeColdLoadTrace> | undefined;
         if (values.trace) {
           const profile = await cdp.send("Profiler.stop");
-          const complete = new Promise<void>((resolve) =>
-            cdp.once("Tracing.tracingComplete", () => resolve()),
-          );
+          const complete = new Promise<void>((resolve) => {
+            cdp.once("Tracing.tracingComplete", () => resolve());
+          });
           await cdp.send("Tracing.end");
           await complete;
           trace = summarizeColdLoadTrace(rawTrace.map(prepareColdLoadTraceEvent), data.at);
-          if (!trace.navigationStartFound)
+          if (!trace.navigationStartFound) {
             throw new Error("Rich trace lacks navigationStart boundary");
+          }
           const prefix = path.join(output, `${variant}-${pair}`);
           await writeFile(`${prefix}.trace.json`, JSON.stringify({ traceEvents: rawTrace }));
           await writeFile(`${prefix}.cpuprofile`, JSON.stringify(profile.profile));

@@ -115,6 +115,7 @@ it("reports failed write and recovery chunks without losing the saved draft", as
   vi.doMock("../../lib/chat/composer-draft-write.runtime.ts", () => {
     throw new Error("Synthetic draft writer unavailable");
   });
+  // mock-isolation: Reject the recovery chunk while keeping stored draft reads real.
   vi.doMock("../../lib/chat/composer-draft-recovery.runtime.ts", () => {
     throw new Error("Synthetic recovery chunk unavailable");
   });

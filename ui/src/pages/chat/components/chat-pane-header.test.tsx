@@ -190,7 +190,7 @@ describe("chat pane header", () => {
       sessionMenuAction: {
         ...sessionMenuAction,
         actionSource: {
-          owner: getPaneTestRuntime(pane),
+          readOwner: () => getPaneTestRuntime(pane),
           readRow: () => row(),
           stopDisabledReason: undefined,
         },
@@ -228,6 +228,35 @@ describe("chat pane header", () => {
     expect(menu.querySelector('[data-value="layout:close-pane"]')).toBeNull();
   });
 
+  it("applies a menu rename to the authoritative pane through its presentation projection", async () => {
+    const { pane, state } = createTestChatPane({
+      client: createTestGatewayClient(async () => ({})),
+    });
+    const session = row({ key: state.sessionKey, sessionId: "rename-owner", label: "Original" });
+    const owner = getPaneTestRuntime(pane);
+    const { container } = mountHeader({
+      sessionMenuAction: {
+        ...chatPaneHeaderSessionMenu(),
+        onAction: undefined,
+        actionSource: {
+          readOwner: () => owner,
+          readRow: () => session,
+          stopDisabledReason: undefined,
+        },
+      },
+    });
+    const menu = container.querySelector("openclaw-chat-header-session-menu")!;
+
+    await selectNativeMenu(menu, "rename");
+
+    expect(pane.headerPresentation.renameSession).toEqual({
+      key: session.key,
+      sessionId: session.sessionId,
+      label: session.label,
+    });
+    expect(pane.headerPresentation.renameValue).toBe("Original");
+  });
+
   it("continues in terminal through native actions when no composition action handles it", async () => {
     const { pane } = createTestChatPane({
       client: createTestGatewayClient(async () => ({})),
@@ -241,7 +270,11 @@ describe("chat pane header", () => {
       ...chatPaneHeaderSessionMenu(),
       compact: true,
       onAction: undefined,
-      actionSource: { owner, readRow: () => session, stopDisabledReason: undefined },
+      actionSource: {
+        readOwner: () => owner,
+        readRow: () => session,
+        stopDisabledReason: undefined,
+      },
     };
     const { container, update } = mountHeader({ sessionMenuAction });
     const menu = container.querySelector("openclaw-chat-header-session-menu")!;

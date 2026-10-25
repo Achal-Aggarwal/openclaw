@@ -21,15 +21,15 @@ import {
 } from "./components/chat-pane-header.test-support.ts";
 import { openSlot } from "./sidebar-layout.ts";
 
-async function openPanelMenu(container: HTMLElement) {
+async function openPanelMenu(container: HTMLElement, readyValue?: string) {
   const menu = container.querySelector<HTMLElement>(".chat-pane__layout-menu");
   expect(menu).not.toBeNull();
-  await openNativeMenu(menu!);
+  await openNativeMenu(menu!, readyValue);
   return menu!;
 }
 
 async function selectPanel(container: HTMLElement, value: string) {
-  const menu = await openPanelMenu(container);
+  const menu = await openPanelMenu(container, value);
   const item = menu.querySelector<HTMLButtonElement>(`button[data-value="${value}"]`);
   if (!item) {
     throw new Error(`Expected Layout panel action: ${value}`);

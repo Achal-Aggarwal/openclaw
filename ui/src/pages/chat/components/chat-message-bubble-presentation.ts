@@ -1,7 +1,7 @@
 import { readSessionMessageIdentity } from "@openclaw/gateway-client/browser";
 import type { Accessor } from "solid-js";
 import { CHAT_PENDING_INPUT_MESSAGE_PREFIX } from "../../../../../packages/gateway-protocol/src/schema/chat-history-constants.js";
-import type { MarkdownJson } from "../../../components/markdown-json.ts";
+import type { MarkdownJson } from "../../../components/markdown-json.types.ts";
 import type { MarkdownInputOptions } from "../../../components/markdown-render-options.ts";
 import { extractThinkingCached } from "../../../lib/chat/message-extract.ts";
 import {

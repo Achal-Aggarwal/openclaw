@@ -7,6 +7,8 @@ import { controlUiBootEntryRoute, controlUiBootManifestKey } from "./control-ui-
 const sharedInteractionEntries = new Set([
   // First edit downloads in parallel, without running the writer.
   "ui/src/lib/chat/composer-draft-write.runtime.ts",
+  // Queued attachments must remain writable after the connection drops.
+  "ui/src/pages/chat/outbox-payloads.runtime.ts",
   "ui/src/pages/chat/components/chat-composer-slash-menu.tsx",
   "ui/src/pages/chat/components/chat-composer-slash-menu-options.tsx",
   "ui/src/pages/chat/components/chat-composer-skill-menu.tsx",

@@ -9,25 +9,20 @@ import {
   type Accessor,
   type Element,
 } from "solid-js";
-import { isIncognitoSessionKey } from "../../../../../src/shared/incognito-session-key.js";
 import {
   isStaleChunkImportError,
   retryStaleChunkReloadWhenReachable,
 } from "../../../app/stale-chunk-reload.ts";
 import type { SessionPlacementPresentation } from "../../../components/session-placement-move-dialog.tsx";
 import { LazyViewError } from "../../../components/solid/lazy-view-error.tsx";
-import { closeMenusWithin } from "../../../components/solid/menu.tsx";
 import { PanelLoadingSkeleton } from "../../../components/solid/panel-loading-skeleton.tsx";
 import { registerChatSessionEnglish } from "../../../i18n/locales/en-chat-session.ts";
 import { registerEnglishCatalog, t } from "../../../lib/reactive/i18n.ts";
-import { createMediaQuery } from "../../../lib/reactive/platform.ts";
 import type { MobileHostDestination } from "../chat-mobile-host.ts";
-import { usePanePresentation } from "../chat-pane-presentation.ts";
 import { companionClearAction } from "../chat-panel-header-actions.tsx";
 import type { chatPaneLayoutModel } from "./chat-header-panel-actions.tsx";
 import type { HeaderSessionMenuPage } from "./chat-header-session-menu-mobile.tsx";
 import type { ChatPaneHeaderProps } from "./chat-pane-header.types.ts";
-import { ChatPaneMobileChrome } from "./chat-pane-mobile-chrome.runtime.tsx";
 import type { ChatPaneMobileActions } from "./chat-pane-mobile-composition.tsx";
 import {
   createChatMachinePresentation,
@@ -42,12 +37,10 @@ registerEnglishCatalog(registerChatSessionEnglish);
 /** Mobile destinations stay alive when the shared header returns to desktop. */
 export function ChatPaneMobileRuntime(props: {
   header: ChatPaneHeaderProps;
-  project?: Element;
-  details: Element;
-  notice: Element;
-  sessionMenu: Element;
+  presented: boolean;
+  incognito: boolean;
+  compactActions: boolean;
   placement: ChatPanePlacementProps;
-  machineName: Accessor<string | undefined>;
   layoutModel: Accessor<ReturnType<typeof chatPaneLayoutModel>>;
   actionSource: () => HTMLElement | undefined;
   onReady: (actions: ChatPaneMobileActions | undefined) => void;
@@ -115,14 +108,6 @@ export function ChatPaneMobileRuntime(props: {
     export: "ChatSessionAccessMobile",
   });
   const host = () => props.header.detailsControl?.mobileHost;
-  const mobile = () => Boolean(props.header.mergedChrome && host());
-  const compactActions = createMediaQuery("(max-width: 349px)");
-  const panePresented = usePanePresentation(() => props.header.presented);
-  const presented = () => mobile() && panePresented();
-  let chromeRoot: HTMLDivElement | undefined;
-  const incognito = () =>
-    (props.header.incognito ?? props.header.session?.incognito) ||
-    isIncognitoSessionKey(props.header.session?.key);
   const sharing = () => props.header.mobileSharing;
   const machine = createChatMachinePresentation(props.placement);
   const peopleId = () => `${props.header.paneId}-mobile-people`;
@@ -160,7 +145,7 @@ export function ChatPaneMobileRuntime(props: {
     onOpenAccess: () => host()?.navigate(accessPage),
     onApplied: () => host()?.navigate(sharingPage),
     accessTarget: () =>
-      presented() && host()?.open && !host()?.suspended && host()?.destination === accessPage
+      props.presented && host()?.open && !host()?.suspended && host()?.destination === accessPage
         ? accessPage
         : undefined,
   });
@@ -338,7 +323,7 @@ export function ChatPaneMobileRuntime(props: {
     return source ? companionClearAction(source) : undefined;
   });
   const compactHeaderActions = createMemo((): HeaderMenuSessionAction[] =>
-    compactActions()
+    props.compactActions
       ? [
           ...(props.header.onOpenDashboard
             ? [
@@ -404,7 +389,7 @@ export function ChatPaneMobileRuntime(props: {
           },
         ]
       : []),
-    ...(adapter.available && (!props.header.mobilePeople?.header.length || incognito())
+    ...(adapter.available && (!props.header.mobilePeople?.header.length || props.incognito)
       ? [
           {
             id: "header-sharing",
@@ -434,12 +419,14 @@ export function ChatPaneMobileRuntime(props: {
     isCurrent: (page: HeaderSessionMenuPage) => {
       const current = host();
       return Boolean(
-        presented() && current?.open && !current.suspended && current.destination.page === page,
+        props.presented && current?.open && !current.suspended && current.destination.page === page,
       );
     },
   };
   const actionsPageOpen = createMemo(() =>
-    Boolean(presented() && host()?.open && host()?.destination.page?.key.startsWith("session-")),
+    Boolean(
+      props.presented && host()?.open && host()?.destination.page?.key.startsWith("session-"),
+    ),
   );
   onSettled(() => {
     props.onReady({
@@ -447,40 +434,11 @@ export function ChatPaneMobileRuntime(props: {
       compactActions: compactHeaderActions,
       menuHost,
       pageOpen: actionsPageOpen,
-      openMachine: () => host()?.navigate(machinePage),
-      openMove,
-    });
-    return () => {
-      disposed = true;
-      moveRequest()?.cancel();
-      props.onReady(undefined);
-    };
-  });
-  // The first mobile frame needs this header’s height and focus targets.
-  // The host retains page JSX across viewport changes. Keep its owner (including
-  // the native session menu's page roots) mounted while its chrome is parked.
-  const chrome = (
-    <ChatPaneMobileChrome
-      header={props.header}
-      project={props.project}
-      details={props.details}
-      notice={props.notice}
-      sessionMenu={props.sessionMenu}
-      mobile={mobile()}
-      presented={presented()}
-      incognito={incognito()}
-      compactActions={compactActions()}
-      deviceOffline={machine()?.deviceOffline}
-      machineName={props.machineName()}
-      peopleControls={peopleId()}
-      peopleLabel={labels.people}
-      morePeople={labels.morePeople}
-      peopleExpanded={Boolean(host()?.open && !host()?.suspended && host()?.destination === people)}
-      onChromeRef={(element) => {
-        chromeRoot = element;
-      }}
-      onOpenMachine={(source) => host()?.navigate(machinePage, source)}
-      onOpenPeople={(source) => {
+      deviceOffline: () => machine()?.deviceOffline,
+      peopleExpanded: () =>
+        Boolean(host()?.open && !host()?.suspended && host()?.destination === people),
+      openMachine: (source) => host()?.navigate(machinePage, source),
+      openPeople: (source) => {
         const current = host();
         if (!current) {
           return;
@@ -494,21 +452,17 @@ export function ChatPaneMobileRuntime(props: {
           );
         }
         current.navigate(people, source);
-      }}
-    />
-  );
+      },
+      openMove,
+    });
+    return () => {
+      disposed = true;
+      moveRequest()?.cancel();
+      props.onReady(undefined);
+    };
+  });
   return (
     <>
-      <Show when={!presented()}>
-        {(_parked) => {
-          onSettled(() => {
-            if (chromeRoot) {
-              closeMenusWithin(chromeRoot);
-            }
-          });
-          return undefined;
-        }}
-      </Show>
       <Show when={peopleActive() ? props.header.mobilePeopleMentions?.activate : undefined} keyed>
         {(activate) => {
           onSettled(activate);
@@ -521,7 +475,6 @@ export function ChatPaneMobileRuntime(props: {
           return undefined;
         }}
       </Show>
-      {chrome}
     </>
   );
 }

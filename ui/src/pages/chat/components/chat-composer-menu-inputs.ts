@@ -6,10 +6,8 @@ import {
   resolveToolOverrideState,
 } from "../../../lib/sessions/tool-overrides.ts";
 import { uploadsEnabled } from "../../../lib/uploads.ts";
-import type {
-  ChatComposerPlusMenuContentProps,
-  ChatComposerPlusMenuView,
-} from "./chat-composer-plus-menu.types.ts";
+import type { ChatComposerPlusMenuView } from "./chat-composer-capability-menu.types.ts";
+import type { ChatComposerPlusMenuContentProps } from "./chat-composer-plus-menu.types.ts";
 
 type McpToolEntry = ToolsEffectiveEntry & { mcpServer: string; mcpToolName: string };
 export const toolsForServer = (

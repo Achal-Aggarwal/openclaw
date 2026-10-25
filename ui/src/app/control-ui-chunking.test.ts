@@ -116,6 +116,7 @@ describe("Control UI build chunking", () => {
     const copy = modulePath("../components/solid/copy-button.tsx");
     const online = modulePath("../components/app-sidebar-online.tsx");
     const delivery = modulePath("../pages/chat/chat-send-delivery.runtime.ts");
+    const payloads = modulePath("../pages/chat/outbox-payloads.runtime.ts");
     const live = modulePath("../pages/chat/chat-live-events.runtime.ts");
     const tools = modulePath("../pages/chat/chat-tool-family-runtime.ts");
     const diff = modulePath("../lib/chat/tool-call-diff.ts");
@@ -129,7 +130,7 @@ describe("Control UI build chunking", () => {
     const sources = new Map([
       [
         entry,
-        `export const chat = () => import(${JSON.stringify(chat)}); export const newSession = () => import(${JSON.stringify(newSession)}); export const devices = () => import(${JSON.stringify(devices)}); export const talk = () => import(${JSON.stringify(talk)}); export const plugins = () => import(${JSON.stringify(pluginLoader)}); export const mutate = () => import(${JSON.stringify(mutations)}); export const copy = () => import(${JSON.stringify(copy)}); export const online = () => import(${JSON.stringify(online)}); export const deliver = () => import(${JSON.stringify(delivery)}); export const live = () => import(${JSON.stringify(live)}); export const tools = () => import(${JSON.stringify(tools)});`,
+        `export const chat = () => import(${JSON.stringify(chat)}); export const newSession = () => import(${JSON.stringify(newSession)}); export const devices = () => import(${JSON.stringify(devices)}); export const talk = () => import(${JSON.stringify(talk)}); export const plugins = () => import(${JSON.stringify(pluginLoader)}); export const mutate = () => import(${JSON.stringify(mutations)}); export const copy = () => import(${JSON.stringify(copy)}); export const online = () => import(${JSON.stringify(online)}); export const deliver = () => import(${JSON.stringify(delivery)}); export const payloads = () => import(${JSON.stringify(payloads)}); export const live = () => import(${JSON.stringify(live)}); export const tools = () => import(${JSON.stringify(tools)});`,
       ],
       [
         chat,
@@ -161,6 +162,7 @@ describe("Control UI build chunking", () => {
       [copy, "export const copy = () => 'copied';"],
       [online, "export const online = () => 'online';"],
       [delivery, "export const deliver = () => 'delivered';"],
+      [payloads, "export const prepare = () => 'payload';"],
       [
         live,
         `import { diff } from ${JSON.stringify(diff)}; import { preamble } from ${JSON.stringify(preamble)}; export const live = () => diff() + preamble();`,
@@ -281,6 +283,13 @@ describe("Control UI build chunking", () => {
     expect(boot.new).not.toContain(liveChunk.fileName);
     expect(boot.initial).not.toContain(copyChunk.fileName);
     expect(boot.initial).not.toContain(liveChunk.fileName);
+    const payloadChunk = chunks.find((chunk) => payloads in chunk.modules)!;
+    expect(staticImports(entryChunk.fileName)).not.toContain(payloadChunk.fileName);
+    expect(boot.initial).not.toContain(payloadChunk.fileName);
+    for (const route of ["chat", "new"] as const) {
+      expect(boot[route]).toContain(payloadChunk.fileName);
+      expect(boot.interactionOnly[route]).toContain(payloadChunk.fileName);
+    }
     const mutationChunk = chunks.find((chunk) => mutations in chunk.modules)!;
     expect(staticImports(entryChunk.fileName)).not.toContain(mutationChunk.fileName);
     expect(staticImports(mutationChunk.fileName)).not.toContain(chatChunk.fileName);

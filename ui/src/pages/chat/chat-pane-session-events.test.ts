@@ -11,6 +11,7 @@ import type {
 } from "../../lib/sessions/session-capability.ts";
 import type { GatewayRequestHandler } from "../../test-helpers/gateway-client.ts";
 import { mountSolid } from "../../test-helpers/solid-render.tsx";
+import { waitForSolid } from "../../test-helpers/solid-settle.ts";
 import type { ChatHistoryResult } from "./chat-history-snapshot.ts";
 import { getChatHistoryLoadState } from "./chat-history-state.ts";
 import { loadChatHistory } from "./chat-history.ts";
@@ -119,8 +120,10 @@ describe("mounted pane session event ownership", () => {
     });
     transcript.start();
     await flushDeferredRowPrune();
-    expect(view.container.querySelector(".chat-activity-group__label")?.textContent).toBe(
-      "Worked for 3 minutes",
+    await waitForSolid(() =>
+      expect(view.container.querySelector(".chat-activity-group__label")?.textContent).toBe(
+        "Worked for 3 minutes",
+      ),
     );
   });
 
@@ -766,11 +769,8 @@ describe("mounted pane session event ownership", () => {
       expect(descriptor.row).toMatchObject(observed);
       expect(selectedChatSessionRow(state)).toMatchObject(observed);
       const container = document.createElement("div");
-      const view = mountSolid(
-        ChatPermissionPicker,
-        composerControls(state).permissionPicker,
-        container,
-      );
+      const permissionPicker = composerControls(state).permissionPicker;
+      const view = mountSolid(ChatPermissionPicker, permissionPicker, container);
       const draw = () => {
         view.update(composerControls(state).permissionPicker);
         return container.querySelector<HTMLButtonElement>("[data-chat-permission-select]");

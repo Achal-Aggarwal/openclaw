@@ -3,7 +3,7 @@
 import { expectDefined } from "@openclaw/normalization-core";
 import { Virtualizer } from "@tanstack/virtual-core";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { flush } from "../../../test-helpers/solid-settle.ts";
+import { flush, waitForSolid } from "../../../test-helpers/solid-settle.ts";
 import { createTestTranscript, stubAnimationFrames } from "../chat-view.test-helpers.ts";
 import { saveChatSessionScrollPosition } from "../scroll.ts";
 import { SIDEBAR_GEOMETRY_COMMIT_EVENT } from "../sidebar-layout.ts";
@@ -215,6 +215,7 @@ it("updates rail geometry for size changes without measuring streamed content or
     flush();
     await flushDeferredRowPrune();
     const viewport = expectDefined(transcript.scrollElement, "rail viewport");
+    await waitForSolid(() => expect(viewport.textContent).toContain("Live start"));
     const inner = requireElement(viewport, ".chat-thread-inner");
     const column = requireElement(inner, ".chat-virtual-sizer");
     resizeRail(viewport);

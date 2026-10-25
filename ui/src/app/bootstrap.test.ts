@@ -76,7 +76,9 @@ describe("bootstrapApplication", () => {
     const runtime = openAt("/chat/main/main", "agent:main:main");
     runtime.stop();
 
-    expect(() => runtime.context.getChannels(create)).toThrowError(DOMException);
+    expect(() => runtime.context.getChannels(create)).toThrowError(
+      expect.objectContaining({ name: "AbortError" }),
+    );
     expect(create).not.toHaveBeenCalled();
   });
 

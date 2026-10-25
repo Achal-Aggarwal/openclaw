@@ -3,7 +3,7 @@
 import { createSignal } from "solid-js";
 import { afterEach, assert, beforeEach, describe, expect, it, vi } from "vitest";
 import { mountSolid } from "../../../test-helpers/mount-solid.ts";
-import { flush } from "../../../test-helpers/solid-settle.ts";
+import { flush, waitForSolid } from "../../../test-helpers/solid-settle.ts";
 import { createTestTranscript, stubSettledAnimationFrames } from "../chat-view.test-helpers.ts";
 import {
   mountChatThread as mountThread,
@@ -135,10 +135,11 @@ const settleFrames = () =>
 
 describe("conversation position rail", () => {
   beforeEach(installTranscriptDomMocks);
-  afterEach(() => {
+  afterEach(async () => {
     for (const cleanup of fixtureCleanups.splice(0).toReversed()) {
       cleanup();
     }
+    await vi.dynamicImportSettled();
     resetTranscriptTestDom();
   });
 
@@ -649,6 +650,11 @@ describe("conversation position rail", () => {
     expect(container.querySelectorAll(".chat-position-rail__marker")).toHaveLength(1);
     props.stream = "Draft response";
     rerender();
+    await waitForSolid(() =>
+      expect(container.querySelector(".chat-bubble.streaming")?.textContent).toContain(
+        "Draft response",
+      ),
+    );
     const provisional = marker();
     provisional.focus();
     flush();

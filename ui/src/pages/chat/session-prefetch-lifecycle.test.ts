@@ -98,6 +98,8 @@ it.each(["stored read", "cursor reset"])(
     );
     const target = intend(first);
     await advance();
+    await vi.dynamicImportSettled();
+    await settlePromises();
     expect(cursorRequest.mock.calls.map(sessionKeyFromCall)).toEqual(
       phase === "cursor reset" ? [first] : [],
     );

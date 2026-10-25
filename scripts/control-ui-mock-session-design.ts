@@ -2388,10 +2388,10 @@ function installSessionDesign(
 /** Seed the client-owned outbox once per mock tab; edits/removals survive reload. */
 async function seedSessionDesignMobileQueue(sessionKey: string): Promise<void> {
   const storeModulePath = "/src/lib/chat/outbox-store.ts";
-  const payloadModulePath = "/src/lib/chat/outbox-payload-store.runtime.ts";
+  const payloadModulePath = "/src/lib/chat/outbox-payload-owner.ts";
   const [storeOwner, payloadOwner]: [
     typeof import("../ui/src/lib/chat/outbox-store.ts"),
-    typeof import("../ui/src/lib/chat/outbox-payload-store.runtime.ts"),
+    typeof import("../ui/src/lib/chat/outbox-payload-owner.ts"),
   ] = await Promise.all([
     import(/* @vite-ignore */ storeModulePath),
     import(/* @vite-ignore */ payloadModulePath),

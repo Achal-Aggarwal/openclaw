@@ -2,7 +2,7 @@
 import { afterEach, beforeAll, beforeEach, expect, it, vi } from "vitest";
 import { extractThinkingCached } from "../../lib/chat/message-extract.ts";
 import { prepareChatToolPresentation } from "../../lib/chat/tool-family.ts";
-import { waitForSolid } from "../../test-helpers/solid-settle.ts";
+import { flush, waitForSolid } from "../../test-helpers/solid-settle.ts";
 import { createComposerContainer } from "./chat-composer.test-support.ts";
 import { handleChatGatewayEvent } from "./chat-gateway.ts";
 import {
@@ -134,7 +134,7 @@ function expectAnswer() {
   );
 }
 
-function show(mode: "on" | "off" | "stream" = "on", showThinking = true) {
+async function show(mode: "on" | "off" | "stream" = "on", showThinking = true) {
   renderChatInto(container, {
     sessionKey: state.sessionKey,
     messages: state.chatMessages,
@@ -148,10 +148,12 @@ function show(mode: "on" | "off" | "stream" = "on", showThinking = true) {
     selectedSession: { key: state.sessionKey, kind: "direct", updatedAt: 1, reasoningLevel: mode },
     showThinking,
   });
+  await vi.dynamicImportSettled();
+  flush();
 }
 
-function showReasoning(count: number, mode: "on" | "off" | "stream" = "on", visible = true) {
-  show(mode, visible);
+async function showReasoning(count: number, mode: "on" | "off" | "stream" = "on", visible = true) {
+  await show(mode, visible);
   expect(thinkingNodes()).toHaveLength(count);
 }
 
@@ -191,12 +193,12 @@ function applyMessage(
 it("shows thinking while generating and retains it through thinking-only history hydration", async () => {
   thinking("Checking");
   thinking("**Checking** the evidence.", 2);
-  show();
+  await show();
   expect(container.querySelector(".chat-thinking strong")?.textContent).toBe("Checking");
   expect(state.chatMessages).toEqual([user]);
 
   await loadChatHistory(state);
-  show();
+  await show();
   expect(thinkingNode()?.textContent).toContain("the evidence.");
   expect(state.chatRunId).toBe(runId);
 });
@@ -207,14 +209,14 @@ it.each([
 ])("hands reasoning to history once $order final", async ({ order, appended, displayed }) => {
   const text = "Checking the evidence carefully.";
   thinking(text);
-  showReasoning(1);
+  await showReasoning(1);
   if (order === "before") {
     persistReasoning(text, true, { appended, displayed });
-    showReasoning(1);
+    await showReasoning(1);
     expect(state.chatReasoning?.items.at(-1)?.receipt?.persisted).toBe(true);
   }
   final();
-  show();
+  await show();
   expectAnswer();
   expect(state.chatReasoning).toBeNull();
   if (order === "after") {
@@ -222,33 +224,33 @@ it.each([
     await loadChatHistory(state);
     expect(state.chatMessages.map(extractThinkingCached)).toContain(text);
     persistReasoning(text, false, { appended, displayed });
-    show();
+    await show();
     expectAnswer();
   }
   expect(state.chatMessages).toHaveLength(2);
 });
 
-it("applies View and session visibility independently to live and saved reasoning", () => {
+it("applies View and session visibility independently to live and saved reasoning", async () => {
   thinking("Private synthetic reasoning.");
   for (const [mode, visible] of [
     ["on", true],
     ["stream", true],
     ["off", false],
   ] as const) {
-    show(mode);
+    await show(mode);
     expect(Boolean(thinkingNode())).toBe(visible);
-    show(mode, false);
+    await show(mode, false);
     expect(thinkingNode()).toBeNull();
   }
   persistReasoning("Private synthetic reasoning.", true);
   for (const mode of ["on", "stream"] as const) {
-    showReasoning(1, mode);
+    await showReasoning(1, mode);
     expect(thinkingNode()?.textContent).toContain("Private synthetic");
   }
   final("The answer is 42.", 2);
-  show("stream");
+  await show("stream");
   expect(thinkingNode()).toBeNull();
-  show("on");
+  await show("on");
   expect(thinkingNode()?.textContent).toContain("Private synthetic");
 });
 
@@ -334,11 +336,11 @@ it("accepts pre-acknowledgment reasoning but retires it when the authoritative s
   expect(state.chatReasoning).toBeNull();
 });
 
-it("does not let an earlier receipt consume equal reasoning from the next assistant occurrence", () => {
+it("does not let an earlier receipt consume equal reasoning from the next assistant occurrence", async () => {
   const text = "Checking the same evidence.";
   thinking(text, 1, runId, "earlier");
   thinking(text, 2, runId, "later");
-  showReasoning(2);
+  await showReasoning(2);
   receipt("earlier", "earlier", 3);
   applyMessage(
     transcriptRow(
@@ -351,7 +353,7 @@ it("does not let an earlier receipt consume equal reasoning from the next assist
   expect(state.chatReasoning?.items.at(-1)).toMatchObject({ itemId: "later", text });
   expect(state.chatReasoning?.items.at(-1)?.receipt?.messageId).toBeUndefined();
   for (const mode of ["on", "stream"] as const) {
-    showReasoning(2, mode);
+    await showReasoning(2, mode);
   }
 });
 
@@ -416,7 +418,7 @@ it("keeps persisted tool-step reasoning visible until its run finishes", async (
       expect.stringContaining(thoughts[2]),
     ]);
   };
-  show();
+  await show();
   await waitForSolid(expectSteps);
   for (const index of [0, 1]) {
     const message = toolMessage(index, runId, thoughts[index]!, 1_050 + index * 100);
@@ -432,12 +434,12 @@ it("keeps persisted tool-step reasoning visible until its run finishes", async (
     );
     applyMessage(message, { sessionKey });
     for (const mode of ["on", "stream"] as const) {
-      show(mode);
+      await show(mode);
       await waitForSolid(expectSteps);
     }
   }
-  showReasoning(0, "on", false);
-  show();
+  await showReasoning(0, "on", false);
+  await show();
   await waitForSolid(expectSteps);
 
   const worked = () =>
@@ -450,22 +452,22 @@ it("keeps persisted tool-step reasoning visible until its run finishes", async (
     )!;
   expect(worked()).toHaveLength(1);
   worked()[0]!.click();
-  show();
+  await show();
   await waitForSolid(() => expect(rawDetails()?.getAttribute("aria-expanded")).toBe("false"));
   await waitForSolid(expectSteps);
   worked()[0]!.click();
-  show();
+  await show();
 
   final("The answer is 42.", ++seq);
-  show();
+  await show();
   expect(worked()).toHaveLength(2);
   expect(thinkingNodes()).toHaveLength(1);
   worked()[1]!.click();
-  show();
+  await show();
   expect(rawDetails().getAttribute("aria-expanded")).toBe("false");
   expect(thinkingNodes()).toHaveLength(1);
   rawDetails().click();
-  showReasoning(3);
+  await showReasoning(3);
 });
 
 it("does not attach known-committed pre-tool reasoning to a later final answer", () => {
@@ -477,17 +479,17 @@ it("does not attach known-committed pre-tool reasoning to a later final answer",
 
 it.each([false, true])(
   "clears the current draft without promoting earlier reasoning (%s)",
-  (earlier) => {
+  async (earlier) => {
     if (earlier) {
       thinking("Keep the earlier tool reasoning.", 1, runId, "earlier");
     }
     const itemId = earlier ? "later" : "thinking-1";
     const seq = earlier ? 2 : 1;
     thinking("A discarded draft.", seq, runId, itemId);
-    show();
+    await show();
     expect(thinkingNode()).not.toBeNull();
     thinking("", seq + 1, runId, itemId);
-    showReasoning(earlier ? 1 : 0);
+    await showReasoning(earlier ? 1 : 0);
     if (earlier) {
       expect(thinkingNode()?.textContent).toContain("Keep the earlier tool reasoning.");
     }
@@ -512,6 +514,6 @@ it("uses the producer run in the receipt when Gateway remaps the live client run
     messageId: "source-answer",
     persisted: true,
   });
-  show();
+  await show();
   await waitForSolid(() => expect(thinkingNodes()).toHaveLength(1));
 });

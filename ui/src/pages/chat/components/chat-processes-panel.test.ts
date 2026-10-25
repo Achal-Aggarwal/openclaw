@@ -286,7 +286,7 @@ it("keeps the full panel read-error flow while compact Details retains its share
   await settle(panel, 0);
   expect(request).toHaveBeenCalledOnce();
   expect(panel.textContent).toContain("Build app");
-  expect(details.textContent).toContain("Build app");
+  await waitForSolid(() => expect(details.textContent).toContain("Build app"));
   connection.publishEvent("sessions.processes.changed", {
     sessionKey: panel.sessionKey,
     agentId: "main",

@@ -90,6 +90,10 @@ function PlusMenuSurface(props: { menu: ChatComposerPlusMenuProps }) {
     };
   });
   const view = createMemo(() => (props.menu.capabilityMenu ? props.menu.view : "root"));
+  // Native opening validates a row before the controlled open prop settles.
+  const loadingItems = (): MenuEntry[] => [
+    { id: "plus-menu-loading", label: t("common.loading"), disabled: true },
+  ];
   const items: MenuEntry[] = [
     {
       kind: "group",
@@ -114,12 +118,8 @@ function PlusMenuSurface(props: { menu: ChatComposerPlusMenuProps }) {
             );
           }}
         >
-          <Loading
-            fallback={renderItems(() => [
-              { id: "plus-menu-loading", label: t("common.loading"), disabled: true },
-            ])}
-          >
-            <Show when={props.menu.open}>
+          <Show when={props.menu.open} fallback={renderItems(loadingItems)}>
+            <Loading fallback={renderItems(loadingItems)}>
               <Content
                 menu={props.menu}
                 view={view()}
@@ -132,8 +132,8 @@ function PlusMenuSurface(props: { menu: ChatComposerPlusMenuProps }) {
                 }}
                 renderItems={renderItems}
               />
-            </Show>
-          </Loading>
+            </Loading>
+          </Show>
         </Errored>
       ),
     },

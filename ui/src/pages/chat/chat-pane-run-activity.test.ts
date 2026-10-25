@@ -6,7 +6,7 @@ import type { GatewayBrowserClient } from "../../api/gateway.ts";
 import type { GatewaySessionRow, SessionsListResult } from "../../api/types.ts";
 import { createApplicationContextProvider } from "../../test-helpers/application-context.ts";
 import { sessionMutationGatewayHello } from "../../test-helpers/gateway-methods.ts";
-import { flush } from "../../test-helpers/solid-settle.ts";
+import { flush, waitForSolid } from "../../test-helpers/solid-settle.ts";
 import {
   createComposerContainer,
   createComposerProps,
@@ -57,7 +57,7 @@ describe.each([false, true])("chat run activity (recovery ready: %s)", (recovery
       parentActive: true,
       expectWorking: true,
     },
-  ])("$name", ({ selectedKey, parentActive, expectWorking }) => {
+  ])("$name", async ({ selectedKey, parentActive, expectWorking }) => {
     const parentKey = "agent:main:main";
     const childKey = "agent:main:subagent:attachment-fix";
     const parent = {
@@ -96,6 +96,8 @@ describe.each([false, true])("chat run activity (recovery ready: %s)", (recovery
 
     const container = createApplicationContextProvider(context);
     renderChatPropsInto(container, expectDefined(pane.chatProps, "chat props"), context);
+    await vi.dynamicImportSettled();
+    flush();
 
     expect(pane.chatProps?.canAbort).toBe(true);
     expect(
@@ -181,9 +183,11 @@ describe("composer run status", () => {
         expect(container.querySelector(".agent-chat__composer-run-status")).toBeNull();
       };
       await draw([], false);
-      expect(
-        container.querySelector(".chat-working-indicator .chat-reading-indicator"),
-      ).not.toBeNull();
+      await waitForSolid(() =>
+        expect(
+          container.querySelector(".chat-working-indicator .chat-reading-indicator"),
+        ).not.toBeNull(),
+      );
       await draw([child]);
       await vi.dynamicImportSettled();
       flush();

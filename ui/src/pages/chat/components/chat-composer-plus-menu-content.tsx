@@ -20,6 +20,10 @@ import { uploadsEnabled } from "../../../lib/uploads.ts";
 import "./chat-camera-capture.tsx";
 import { resolveComposerSkills } from "../composer-capability-catalog.ts";
 import { useNativeAttachmentSourceMenu } from "./chat-attachment-picker-policy.ts";
+import type {
+  ChatComposerMenuSkill,
+  ChatComposerPlusMenuView,
+} from "./chat-composer-capability-menu.types.ts";
 import {
   handleComposerLibrarySelection,
   composerLibraryMenuItems,
@@ -37,10 +41,8 @@ import {
   menuDivider,
 } from "./chat-composer-menu-rows.tsx";
 import type {
-  ChatComposerMenuSkill,
   ChatComposerPlusMenuBodyProps,
   ChatComposerPlusMenuContentProps,
-  ChatComposerPlusMenuView,
 } from "./chat-composer-plus-menu.types.ts";
 
 registerEnglishCatalog(registerChatComposerMenuEnglish);

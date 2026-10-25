@@ -1,8 +1,5 @@
-import {
-  classifyMarkdownJson,
-  type MarkdownJson,
-  type MarkdownJsonParser,
-} from "../components/markdown-json.ts";
+import { classifyMarkdownJson } from "../components/markdown-json.ts";
+import type { MarkdownJson, MarkdownJsonParser } from "../components/markdown-json.types.ts";
 import {
   MARKDOWN_PARSE_LIMIT,
   type MarkdownInputOptions,

@@ -62,6 +62,7 @@ export function projectChatTranscript(
   props: ChatThreadProps,
   transcript: ChatTranscriptSession,
   search = getTranscriptState(props.paneId).search.snapshot,
+  toolsReady?: () => true,
 ) {
   const state = getTranscriptState(props.paneId);
   const latestBrowserTabs = props.readLatestBrowserTabs?.();
@@ -140,6 +141,7 @@ export function projectChatTranscript(
   const { snapshot, live, resolveLiveStream } = createTranscriptStreamSource(
     chatItemsInput,
     searchFiltering,
+    toolsReady,
   );
   const chatItems = snapshot.items;
   const {

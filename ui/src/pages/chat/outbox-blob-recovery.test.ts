@@ -140,6 +140,7 @@ function clearOutbox(host: Host) {
   writeStore(sessionStorage, ownedTarget, store);
 }
 async function settleCleanup(cleanup: MockInstance<typeof payloadStore.removeOutboxPayloads>) {
+  await vi.dynamicImportSettled();
   await Promise.all(
     cleanup.mock.results.flatMap((result) => (result.type === "return" ? [result.value] : [])),
   );
@@ -254,8 +255,8 @@ it.each(["agent:main:topic", "global"])(
     await expectBytes(host, restored);
     expect(cleanup).not.toHaveBeenCalled();
     clearOutbox(host);
-    expect(cleanup).toHaveBeenCalledWith([item.attachmentPayload]);
     await settleCleanup(cleanup);
+    expect(cleanup).toHaveBeenCalledWith([item.attachmentPayload]);
     await expectUnavailable(host, restored, "missing");
   },
 );
@@ -397,6 +398,7 @@ it("partitions a mixed-principal v3 bucket while retaining foreign recovery acro
   expect(restoreRecovery(b, ownedA, destination)).toBe("conflict");
   expect(restoreRecovery(a, ownedA, destination)).toBe("restored");
   clearOutbox(a);
+  await settleCleanup(cleanup);
   expect(cleanup).toHaveBeenCalledWith([first.attachmentPayload]);
   expect(cleanup).toHaveBeenCalledTimes(1);
   await expectBytes(b, second);

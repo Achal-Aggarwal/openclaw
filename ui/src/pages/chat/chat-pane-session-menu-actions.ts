@@ -15,7 +15,8 @@ import { resolveChatAgentId, selectedChatSessionRow } from "./chat-state-route.t
 import type { HeaderMenuAction } from "./components/chat-header-session-menu.ts";
 
 export type ChatHeaderSessionActionSource = {
-  owner: Pick<
+  /** Keep mutation authority outside the menu's deep presentation projection. */
+  readOwner: () => Pick<
     ChatPaneSessionMenu,
     | "context"
     | "state"
@@ -37,7 +38,7 @@ export type ChatHeaderSessionActionSource = {
 
 /** Loaded by the menu before its actions exist; gesture-bound work stays synchronous. */
 export async function runChatHeaderSessionAction(
-  owner: ChatHeaderSessionActionSource["owner"],
+  owner: ReturnType<ChatHeaderSessionActionSource["readOwner"]>,
   action: HeaderMenuAction,
   row: GatewaySessionRow,
 ): Promise<SidebarSessionMutationResult | void> {

@@ -455,6 +455,7 @@ describe("chat attachment terminal retirement", () => {
       consumedRunId = item.sendRunId;
       history.resolve(consumedHistory());
       await loadChatHistory(visible);
+      await vi.dynamicImportSettled();
 
       expect(listStoredChatOutboxes(visible)).toStrictEqual([]);
       expect(cleanup).toHaveBeenCalledWith([item.attachmentPayload]);

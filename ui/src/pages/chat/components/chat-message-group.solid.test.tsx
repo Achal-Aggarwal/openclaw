@@ -503,7 +503,7 @@ describe("owned message controls", () => {
   beforeEach(() => localStorage.removeItem("openclaw:skip-rewind-confirm"));
   afterEach(() => dismissConfirmedActionPopovers(document.body));
 
-  it("keeps an open work-context disclosure when the same message key receives fresh metadata", () => {
+  it("keeps an open work-context disclosure when the same message key receives fresh metadata", async () => {
     const message = (title: string) =>
       buildLocalUserMessage({
         text: "Explain this selection",
@@ -518,6 +518,9 @@ describe("owned message controls", () => {
         options={{ isStreaming: false, showReasoning: false }}
       />
     ));
+    await waitForSolid(() =>
+      expect(view.container.querySelector(".chat-context-attachment")).not.toBeNull(),
+    );
     const disclosure = view.container.querySelector<HTMLDetailsElement>(
       ".chat-context-attachment",
     )!;

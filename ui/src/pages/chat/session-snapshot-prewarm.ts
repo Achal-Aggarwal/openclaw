@@ -43,10 +43,13 @@ export async function prewarmChatSnapshot(cacheKey: string): Promise<void> {
       .catch(() => undefined),
   };
   pending = entry;
-  // Load alongside storage so a warm transcript can send its cursor with connect.
-  // Keep board restoration independent of this optional metadata validator.
+  // Load alongside storage so decoding adds no serial import to a warm first paint.
+  // Board restoration remains independent of the optional history validator.
   try {
-    await import("../../lib/protocol-validators.generated/history-state.js");
+    await Promise.all([
+      import("./session-snapshot-decoder.ts"),
+      import("../../lib/protocol-validators.generated/history-state.js"),
+    ]);
   } catch {}
 }
 

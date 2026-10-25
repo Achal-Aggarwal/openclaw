@@ -52,7 +52,7 @@ export function ChatHeaderSessionMenuContent(inputs: HeaderMenuContentProps) {
     if (source) {
       const row = source.readRow();
       if (row) {
-        void runChatHeaderSessionAction(source.owner, action, row);
+        void runChatHeaderSessionAction(source.readOwner(), action, row);
       }
     }
   };
@@ -62,7 +62,7 @@ export function ChatHeaderSessionMenuContent(inputs: HeaderMenuContentProps) {
     const actions = source
       ? [
           ...nativeActions.read(
-            source.owner.context,
+            source.readOwner().context,
             source.readRow(),
             source.stopDisabledReason,
             onAction,

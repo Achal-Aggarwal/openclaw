@@ -1,5 +1,6 @@
 import { createScanner, parseTree, type ParseError } from "jsonc-parser";
-import { classifyMarkdownJson, type MarkdownJson } from "./markdown-json.ts";
+import { classifyMarkdownJson } from "./markdown-json.ts";
+import type { MarkdownJson } from "./markdown-json.types.ts";
 
 const MAX_JSON_DEPTH = 64;
 const MAX_JSON_TOKENS = 4_000;

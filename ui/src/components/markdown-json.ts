@@ -2,14 +2,12 @@ import type { Node } from "jsonc-parser";
 import { escapeHtml } from "../../../src/shared/html-escape.js";
 import { t } from "../i18n/index.ts";
 import { registerCodeBlocksEnglish } from "../i18n/locales/en-code-blocks.ts";
+import type { MarkdownJson } from "./markdown-json.types.ts";
 import { MARKDOWN_PARSE_LIMIT } from "./markdown-render-options.ts";
 
 registerCodeBlocksEnglish();
 
 const MAX_JSON_CHARS = 20_000;
-
-export type MarkdownJson = { text: string; root?: Node };
-export type MarkdownJsonParser = (text: string) => MarkdownJson | null;
 
 /** Preserve the synchronous source/shape budgets before loading the tree parser. */
 export function classifyMarkdownJson(text: string): "none" | "raw" | "parse" {

@@ -3,7 +3,7 @@
 import { createSignal } from "solid-js";
 import { afterEach, expect, it, vi } from "vitest";
 import { mountSolid } from "../../../test-helpers/mount-solid.ts";
-import { flush } from "../../../test-helpers/solid-settle.ts";
+import { flush, waitForSolid } from "../../../test-helpers/solid-settle.ts";
 import { GroupedMessage } from "./chat-message-bubble-view.tsx";
 import { prepareChatMessageRender } from "./chat-message-markdown-view.tsx";
 import * as media from "./chat-message-media.ts";
@@ -82,7 +82,7 @@ it("keeps another pane's QR expiry alive when one message retires", async () => 
     expect(current?.refresh).toBeDefined();
     await vi.advanceTimersByTimeAsync(1_000);
     flush();
-    expect(second.container.textContent).toContain("Pairing QR expired");
+    await waitForSolid(() => expect(second.container.textContent).toContain("Pairing QR expired"));
     expect(media.readChatMediaResource("pairing-qr", messageKey)).toBeUndefined();
     expect(current?.refresh).toBeUndefined();
   } finally {

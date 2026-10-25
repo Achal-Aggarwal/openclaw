@@ -104,6 +104,7 @@ it.each(["keyboard", "last", "pointer", "external", "closed", "reopened"] as con
     const external = view.getByRole("textbox", { name: "Other field" });
     if (mode === "external") {
       external.focus();
+      await waitForSolid(() => expect(view.panel.matches(":popover-open")).toBe(false));
     } else if (mode === "closed" || mode === "reopened") {
       view.setMenu((current) => ({ ...current, open: false }));
       await waitForSolid(() => expect(view.panel.matches(":popover-open")).toBe(false));
@@ -114,12 +115,12 @@ it.each(["keyboard", "last", "pointer", "external", "closed", "reopened"] as con
     }
     ready.resolve();
     await imported.promise;
-    if (mode === "closed") {
+    if (mode === "closed" || mode === "external") {
       expect(view.panel.matches(":popover-open")).toBe(false);
       expect(
         view.queryByRole("menuitemcheckbox", { name: "Updated toggle", hidden: true }),
       ).toBeNull();
-      expect(document.activeElement).toBe(view.trigger);
+      expect(document.activeElement).toBe(mode === "external" ? external : view.trigger);
       return;
     }
     await waitForSolid(() =>
@@ -129,11 +130,7 @@ it.each(["keyboard", "last", "pointer", "external", "closed", "reopened"] as con
     );
     expect(view.container.querySelector(".agent-chat__input-btn--attach")).toBe(view.trigger);
     expect(loads).toBe(1);
-    if (mode === "closed") {
-      expect(view.panel.matches(":popover-open")).toBe(false);
-    } else if (mode === "external") {
-      expect(document.activeElement).toBe(external);
-    } else if (mode === "pointer") {
+    if (mode === "pointer") {
       expect(document.activeElement).toBe(view.trigger);
     } else {
       await waitForSolid(() =>

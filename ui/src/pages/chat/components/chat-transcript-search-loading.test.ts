@@ -14,6 +14,7 @@ it("retires a pending search and preserves the composer through the next search"
       "./chat-transcript-search-content.tsx",
     );
   });
+  // mock-isolation: Delay the real search chunk to exercise close/reopen before it settles.
   vi.doMock("./chat-transcript-search-content.tsx", load);
   const platform = vi.spyOn(navigator, "platform", "get").mockReturnValue("MacIntel");
   onTestFinished(() => {

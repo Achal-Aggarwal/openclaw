@@ -131,6 +131,10 @@ function readChatMessagePreview(toolMessage: Record<string, unknown>) {
       };
     }
   }
+  // Card extraction already checked each tool output, including absent previews.
+  if (cards.length > 0) {
+    return null;
+  }
   const text = extractTextCached(toolMessage) ?? undefined;
   const preview = extractToolPreview(text);
   if (preview?.kind !== "canvas") {

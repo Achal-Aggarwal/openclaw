@@ -320,7 +320,7 @@ suite.define(() => {
     }
 
     const rows = page.locator(".chat-activity-group__body .chat-tool-msg-summary");
-    expect(await rows.count()).toBe(2);
+    await expect.poll(() => rows.count()).toBe(2);
     expect(await rows.locator(".chat-tool-row__chevron").count()).toBe(2);
     expect(await page.locator(".chat-tool-msg-summary__label", { hasText: "Tool" }).count()).toBe(
       0,
