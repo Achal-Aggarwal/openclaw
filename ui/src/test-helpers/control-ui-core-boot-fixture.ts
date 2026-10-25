@@ -44,6 +44,8 @@ export function createControlUiCoreBootFixture(sessionKey: string, gatewayBootId
       repoRoot: "/synthetic/core-boot-project",
     },
     methodResponses: {
+      "update.status": { sentinel: null, updateAvailable: null },
+      "presence.activity": { ok: true },
       "sessions.github.options": publication,
       "session.discussion.info": { state: "none" },
       "sessions.observer.visibility": { ok: true },

@@ -4,6 +4,7 @@ import { Compile } from "typebox/compile";
 import { expect, vi } from "vitest";
 import { ChannelsPairingListResultSchema } from "../../../packages/gateway-protocol/src/schema/channel-pairing.ts";
 import { ChannelsStatusResultSchema } from "../../../packages/gateway-protocol/src/schema/channels.ts";
+import { UpdateStatusResultSchema } from "../../../packages/gateway-protocol/src/schema/config.ts";
 import { MigrationProtocolSchemas } from "../../../packages/gateway-protocol/src/schema/migrations.ts";
 import { SystemAgentChatHistoryResultSchema } from "../../../packages/gateway-protocol/src/schema/openclaw.ts";
 import {
@@ -36,6 +37,37 @@ it("fails an unmodeled strict fixture request through the page error boundary", 
   await flushMockTimers();
   expect(errors).toEqual(["Unhandled mock Gateway method: fixture.unmodeled"]);
   expect(socket.frames.some((frame) => frame.id === "unmodeled")).toBe(false);
+});
+
+it("answers initial core update status and activity requests under strict admission", async ({
+  gatewayPage,
+}) => {
+  const fixture = createControlUiCoreBootFixture("selected", "fixture-boot");
+  gatewayPage.execute(
+    createControlUiMockGatewayInitScript({
+      rejectUnhandledMethods: true,
+      methodResponses: fixture.methodResponses,
+    }),
+  );
+  const errors: string[] = [];
+  gatewayPage.window.addEventListener("error", (event) => {
+    errors.push(event.message);
+    event.preventDefault();
+  });
+  const socket = gatewayPage.connect();
+  await flushMockTimers();
+  socket.send("updates", "update.status", {});
+  socket.send("activity", "presence.activity", {});
+  await flushMockTimers();
+  expect(errors).toEqual([]);
+  const updates = socket.frames.find((frame) => frame.id === "updates");
+  expect(updates).toMatchObject({ type: "res", ok: true });
+  expect(Compile(UpdateStatusResultSchema).Check(updates?.payload)).toBe(true);
+  expect(socket.frames.find((frame) => frame.id === "activity")).toMatchObject({
+    type: "res",
+    ok: true,
+    payload: { ok: true },
+  });
 });
 
 it("acknowledges core PR replacement sets before socket-scoped snapshots", async ({
