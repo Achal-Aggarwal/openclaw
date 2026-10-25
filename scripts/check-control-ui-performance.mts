@@ -70,9 +70,8 @@ const controlUiPerformanceBudgets = {
   // Keep room for compression lost across the optional component stylesheets.
   totalCssGzipBytes: 306_086,
   // Vyctor approved the restored mobile topbar in #182599 (2026-10-24).
-  // Completed-run fragments bound mounted content in 2,000-message sessions.
-  // Their spacing adds 94 raw bytes; retain the measured total without new headroom.
-  totalCssRawBytes: 1_595_749,
+  // Base measures 1,595,655 B. Keep main's 64 B build variance.
+  totalCssRawBytes: 1_595_719,
 } satisfies Record<string, number>;
 export const CONTROL_UI_PERFORMANCE_BUDGETS = Object.freeze(controlUiPerformanceBudgets);
 
