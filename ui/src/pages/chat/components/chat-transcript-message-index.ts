@@ -274,6 +274,17 @@ function buildTranscriptIndex(
   expandedToolCards: Map<string, boolean>,
   props: Pick<ChatThreadProps, "assistantName" | "userId" | "userName">,
 ): TranscriptIndex {
+  // Smaller transcripts scroll more cheaply without repeatedly mounting fragments.
+  let sourceCount = 0;
+  const windowCompletedFrames = chain.transcriptItems.some((item) => {
+    for (const group of chatItemGroups(item)) {
+      sourceCount += group.messages.length;
+      if (sourceCount > 256) {
+        return true;
+      }
+    }
+    return false;
+  });
   const loadedReplySources = new Map<string, LoadedReplySource>();
   const messageRowKeysById = new Map<string, string>();
   const transcriptMessageKeys = new Map<string, string>();
@@ -282,7 +293,9 @@ function buildTranscriptIndex(
   const rows: TranscriptRow<ChatRenderItem>[] = [];
   for (const item of chain.transcriptItems) {
     const rendered =
-      item.kind === "agent-run-frame" ? completedFrameRows(item, expandedToolCards) : [item];
+      windowCompletedFrames && item.kind === "agent-run-frame"
+        ? completedFrameRows(item, expandedToolCards)
+        : [item];
     for (const rowItem of rendered) {
       // Rich work sources include their Markdown and paired tool output.
       const estimatedSize =

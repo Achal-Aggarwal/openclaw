@@ -23,7 +23,7 @@ it.each([false, true])(
     });
     const longMessages = [
       entry("question", 1, { role: "user", content: "Inspect the workspace" }),
-      ...Array.from({ length: 200 }, (_, index) => [
+      ...Array.from({ length: 300 }, (_, index) => [
         entry(`step-${index}`, index * 2 + 2, {
           role: "assistant",
           phase: "commentary",
@@ -45,7 +45,7 @@ it.each([false, true])(
           content: "Read complete",
         }),
       ]).flat(),
-      entry("long-answer", 500, {
+      entry("long-answer", 602, {
         role: "assistant",
         phase: "final_answer",
         stopReason: "stop",
@@ -108,7 +108,7 @@ it.each([false, true])(
           expect(container.querySelectorAll(".chat-bubble").length).toBeLessThan(100),
         );
         expect(container.textContent).toContain("Inspecting file 0");
-        expect(container.textContent).not.toContain("Inspecting file 199");
+        expect(container.textContent).not.toContain("Inspecting file 299");
       }
     }
   },

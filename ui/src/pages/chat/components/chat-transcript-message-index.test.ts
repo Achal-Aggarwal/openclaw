@@ -96,29 +96,61 @@ const replyFrameShape = (outcome: unknown, ...parts: unknown[]) => ({
 });
 
 describe("long completed runs", () => {
-  function longRun(extra: unknown[] = []) {
+  function longRun(extra: unknown[] = [], steps = 300, run = 0) {
+    const suffix = run === 0 ? "" : `-${run}`;
+    const runId = `run-${run + 1}`;
+    const offset = run * 10_000;
     return [
-      history[0],
-      ...Array.from({ length: 100 }, (_, index) => [
-        makeMessage(`step-${index}`, index * 2 + 2, {
+      makeMessage(`question${suffix}`, offset + 1, { role: "user", runId }),
+      ...Array.from({ length: steps }, (_, index) => [
+        makeMessage(`step-${index}${suffix}`, offset + index * 2 + 2, {
+          runId,
           phase: "commentary",
           stopReason: "toolUse",
           content: [
             { type: "text", text: `Inspecting file ${index}` },
             {
               type: "toolCall",
-              id: `tool-${index}`,
+              id: `tool-${index}${suffix}`,
               name: "read",
               arguments: { path: `file-${index}.md` },
             },
           ],
         }),
-        makeTool(`tool-${index}`, index * 2 + 3, "run-1", index * 20 + 30),
+        makeTool(
+          `tool-${index}${suffix}`,
+          offset + index * 2 + 3,
+          runId,
+          offset * 10 + index * 20 + 30,
+        ),
       ]).flat(),
       ...extra,
-      finalAnswer("long-answer", 300),
+      finalAnswer(`long-answer${suffix}`, offset + steps * 2 + 2 + extra.length, { runId }),
     ];
   }
+
+  it.each([1, 2])(
+    "windows medium frames only when their combined history is large (%s runs)",
+    (runs) => {
+      const messages = Array.from({ length: runs }, (_, run) => longRun([], 199, run)).flat();
+      const chain = projectHistory(messages, { sessionKey: "agent:main:telegram:direct:42" });
+      const frames = framesOf(chain);
+      expect(frames).toHaveLength(runs);
+      const index = indexFor(chain);
+      for (const [run, frame] of frames.entries()) {
+        const suffix = run === 0 ? "" : `-${run}`;
+        const first = index.messageRowKeysById.get(`step-0${suffix}`);
+        const last = index.messageRowKeysById.get(`step-198${suffix}`);
+        if (runs === 1) {
+          expect(first).toBe(frame.key);
+          expect(last).toBe(frame.key);
+        } else {
+          expect(first).not.toBe(last);
+        }
+        expect(index.messageRowKeysById.get(`long-answer${suffix}`)).toBe(frame.key);
+      }
+    },
+  );
 
   it.each([sessionKey, "agent:main:telegram:direct:42"])(
     "windows completed work and maps distant replies to their own row in %s",
@@ -136,7 +168,7 @@ describe("long completed runs", () => {
       const workRows = rows.filter((row) => row.item.kind === "agent-run-frame");
       expect(workRows.length).toBeGreaterThan(1);
       expect(index.messageRowKeysById.get("step-0")).not.toBe(
-        index.messageRowKeysById.get("step-99"),
+        index.messageRowKeysById.get("step-299"),
       );
       expect(index.messageRowKeysById.get("long-answer")).toBe(frame.key);
       expect(rows.at(-1)?.key).toBe(frame.key);
@@ -161,7 +193,7 @@ describe("long completed runs", () => {
   );
 
   it("keeps widget-bearing completed runs in the retained frame", () => {
-    const canvas = makeMessage("canvas", 250, {
+    const canvas = makeMessage("canvas", 602, {
       content: [
         {
           type: "canvas",
@@ -199,7 +231,7 @@ describe("long completed runs", () => {
   });
 
   it("retains the answer row when completed work follows the final answer", () => {
-    const chain = projectHistory([...longRun(), makeTool("late-tool", 301, "run-1", 4_000)], {
+    const chain = projectHistory([...longRun(), makeTool("late-tool", 603, "run-1", 6_030)], {
       sessionKey: "agent:main:telegram:direct:42",
     });
     const frame = onlyFrame(chain);
