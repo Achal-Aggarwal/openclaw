@@ -234,6 +234,8 @@ not qualify a product scheduling change against live behavior.
 `--latency-ms` sets the inbound message delay (default 35 ms). `--frame-gap-ms`
 sets the minimum separation between Gateway message deliveries (default 4 ms).
 Concurrent requests remain concurrent; replies share one serialized wire.
+Sequenced events retain socket order even when delayed browser callbacks overtake;
+each event still dispatches in its own task, without holding independent RPC replies.
 `--sidebar-query-latency-ms ownerFirst=400` (also `involvingMe`, `ownerCounts`, and
 `children`) overrides method latency for that sidebar query shape. Use
 `--omit-hello-self-presence --method-latency-ms users.self=900` to exercise identity

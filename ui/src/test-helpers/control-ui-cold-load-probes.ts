@@ -348,6 +348,19 @@ function installColdLoadProbes(
     construct(target, args) {
       // The mock constructor returns its routed socket rather than its own instance.
       const socket: WebSocket = Reflect.construct(target, args);
+      const eventDeliveries: Array<{ ready: boolean; deliver: () => void }> = [];
+      let eventDrainScheduled = false;
+      const drainEvent = () => {
+        eventDrainScheduled = false;
+        if (!eventDeliveries[0]?.ready) {
+          return;
+        }
+        eventDeliveries.shift()!.deliver();
+        if (eventDeliveries[0]?.ready) {
+          eventDrainScheduled = true;
+          window.setTimeout(drainEvent, 0);
+        }
+      };
       // A closed transport cannot answer; count its attempts without blocking settlement.
       socket.addEventListener(
         "close",
@@ -445,7 +458,7 @@ function installColdLoadProbes(
             : 0,
         );
         queued++;
-        const deliver = () => {
+        const dispatchFrame = () => {
           queued--;
           const request = pending.get(frame.id);
           const rpcIndex = rpcs.length;
@@ -481,6 +494,25 @@ function installColdLoadProbes(
             performance.mark(`${responseMark}:end`);
           }
           lastActivity = performance.now();
+        };
+        // Delayed callbacks can overtake under load; sequenced events retain
+        // their socket's wire order without batching multiple message tasks.
+        const eventDelivery =
+          frame.type === "event" && typeof frame.seq === "number"
+            ? { ready: false, deliver: dispatchFrame }
+            : undefined;
+        if (eventDelivery) {
+          eventDeliveries.push(eventDelivery);
+        }
+        const deliver = () => {
+          if (!eventDelivery) {
+            dispatchFrame();
+            return;
+          }
+          eventDelivery.ready = true;
+          if (!eventDrainScheduled) {
+            drainEvent();
+          }
         };
         window.setTimeout(
           () => {
