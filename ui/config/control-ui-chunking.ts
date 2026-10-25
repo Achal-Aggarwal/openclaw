@@ -107,22 +107,10 @@ export function controlUiStableChunkName(id: string): string | undefined {
     case "ui/src/pages/chat/components/chat-message-context-view.tsx":
     case "ui/src/pages/chat/components/chat-workspace-conflict.tsx":
       return "chat-interaction-runtime";
-    case "ui/src/pages/chat/components/chat-working-indicator.tsx":
-    case "ui/src/pages/chat/components/chat-working-indicator-branding.tsx":
-    case "ui/src/components/working-phrase-solid.tsx":
-    case "ui/src/pages/chat/components/chat-retry-status.tsx":
-    case "ui/src/pages/chat/components/chat-working-indicator-surprise.ts":
-      // Initial presentation must not evaluate the optional composer menus.
-      return "control-ui-boot-shared";
-    case "ui/src/pages/chat/composer-capability-catalog.ts":
-    case "ui/src/lib/config/mcp-servers.ts":
-    case "src/config/patch-replace-paths.ts":
-    case "src/infra/plain-object.ts":
-    case "src/infra/prototype-keys.ts":
-      // Both composers need the catalog, independently of the New Session page.
-      return "control-ui-boot-shared";
     case "ui/src/lib/chat/composer-draft-write.runtime.ts":
-      // Both routes prefetch this file; distinct module initializers still wait for use.
+    case "ui/src/pages/chat/outbox-payloads.runtime.ts":
+    case "ui/src/lib/chat/outbox-payload-store.runtime.ts":
+      // Both routes prefetch these runtimes; their initializers still wait for use.
       return "composer-invocation-menus";
     case "ui/src/lib/chat/composer-draft-recovery.runtime.ts":
       return "composer-draft-recovery-runtime";
@@ -163,9 +151,6 @@ export function controlUiStableChunkName(id: string): string | undefined {
     case "ui/src/pages/chat/components/chat-details-environment-desktop.css":
       // Share styles without making Outputs import the Details renderer.
       return "chat-details-styles";
-    case "ui/src/pages/chat/outbox-payloads.runtime.ts":
-    case "ui/src/lib/chat/outbox-payload-store.runtime.ts":
-      return "outbox-payload-runtime";
     case "ui/src/components/session-git-diff.tsx":
     case "ui/src/lib/sessions/usage.ts":
     case "src/shared/weak-owner-map.ts":
@@ -514,6 +499,17 @@ export function createControlUiCodeSplitting(options: { includeBootGroups?: bool
                 modules.add("ui/src/lib/platform-label.ts");
                 // Placement and delivery share retries without importing either route's bundle.
                 modules.add("ui/src/pages/chat/chat-outbox-retry.ts");
+                // Initial presentation shares this existing group, not the optional menu runtime.
+                modules.add("ui/src/pages/chat/components/chat-working-indicator.tsx");
+                modules.add("ui/src/pages/chat/components/chat-working-indicator-branding.tsx");
+                modules.add("ui/src/components/working-phrase-solid.tsx");
+                modules.add("ui/src/pages/chat/components/chat-retry-status.tsx");
+                modules.add("ui/src/pages/chat/components/chat-working-indicator-surprise.ts");
+                modules.add("ui/src/pages/chat/composer-capability-catalog.ts");
+                modules.add("ui/src/lib/config/mcp-servers.ts");
+                modules.add("src/config/patch-replace-paths.ts");
+                modules.add("src/infra/plain-object.ts");
+                modules.add("src/infra/prototype-keys.ts");
               }
               return {
                 name: `control-ui-boot-${route}`,

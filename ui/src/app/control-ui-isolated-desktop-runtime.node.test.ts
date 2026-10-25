@@ -35,7 +35,9 @@ it.each([false, true])(
     const outbox = modulePath("../lib/chat/outbox-store-projection.ts");
     const chat = modulePath("../pages/chat/route-loader.ts");
     const composer = modulePath("../pages/chat/components/chat-composer.tsx");
+    const indicator = modulePath("../pages/chat/components/chat-working-indicator-branding.tsx");
     const composerInteraction = modulePath("../pages/chat/components/chat-composer-slash-menu.tsx");
+    const payload = modulePath("../pages/chat/outbox-payloads.runtime.ts");
     // Real manifest entry IDs and payloads above the production group's minimum size.
     const sidebarValue = "sidebar-value-".repeat(12_000);
     const outboxValue = "outbox-value-".repeat(12_000);
@@ -43,9 +45,12 @@ it.each([false, true])(
     const sources: Record<string, string> = {
       [sidebar]: `globalThis.desktopBuildFixture.events.push("sidebar"); export const value = ${JSON.stringify(sidebarValue)};`,
       [outbox]: `globalThis.desktopBuildFixture.events.push("outbox"); export const value = ${JSON.stringify(outboxValue)};`,
-      [chat]: `${hasComposer ? 'import "fixture:composer";' : ""} globalThis.desktopBuildFixture.events.push("chat"); export const value = ${JSON.stringify(chatValue)};`,
+      [chat]: `import "fixture:indicator"; ${hasComposer ? 'import "fixture:composer";' : ""} globalThis.desktopBuildFixture.events.push("chat"); export const value = ${JSON.stringify(chatValue)};`,
       [composer]: 'globalThis.desktopBuildFixture.events.push("composer");',
+      [indicator]: 'globalThis.desktopBuildFixture.events.push("indicator");',
       [composerInteraction]: 'globalThis.desktopBuildFixture.events.push("composer-interaction");',
+      [payload]:
+        'globalThis.desktopBuildFixture.events.push("payload"); export const value = "payload";',
     };
     const files = {
       "package.json": '{"type":"module"}',
@@ -55,6 +60,7 @@ it.each([false, true])(
        globalThis.desktopBuildFixture.loadOutbox = () => import("fixture:outbox");
        globalThis.desktopBuildFixture.loadChat = () => import("fixture:chat");
        globalThis.desktopBuildFixture.loadComposerInteraction = () => import("fixture:composer-interaction");
+       globalThis.desktopBuildFixture.loadPayload = () => import("fixture:payload");
        globalThis.desktopBuildFixture.loadDesktop = () => import("@novnc/novnc");`,
       "desktop.js": `globalThis.desktopBuildFixture.events.push("desktop");
        globalThis.desktopBuildFixture.entered();
@@ -70,7 +76,9 @@ it.each([false, true])(
       "fixture:outbox": outbox,
       "fixture:chat": chat,
       "fixture:composer": composer,
+      "fixture:indicator": indicator,
       "fixture:composer-interaction": composerInteraction,
+      "fixture:payload": payload,
     };
     const buildFixture = async (isolated: boolean) => {
       const outDir = local(isolated ? "isolated" : "original");
@@ -118,10 +126,12 @@ it.each([false, true])(
       (chunk) => sidebar in chunk.modules && outbox in chunk.modules,
     );
     expect(shared).toBeDefined();
+    expect(indicator in shared!.modules).toBe(true);
     const chatChunk = isolated.chunks.find((chunk) => chat in chunk.modules);
     expect(chatChunk).toBeDefined();
     const interactionChunk = isolated.chunks.find((chunk) => composerInteraction in chunk.modules);
     expect(interactionChunk).toBeDefined();
+    expect(payload in interactionChunk!.modules).toBe(true);
     for (const route of ["chat", "new"] as const) {
       const before = routePreloads(original.html, route);
       const after = routePreloads(isolated.html, route);
@@ -168,11 +178,24 @@ it.each([false, true])(
       loadSidebar: notLoaded<{ value: string }>,
       loadOutbox: notLoaded<{ value: string }>,
       loadChat: notLoaded<{ value: string }>,
+      loadComposerInteraction: notLoaded<unknown>,
+      loadPayload: notLoaded<{ value: string }>,
       loadDesktop: notLoaded<{ default: { codec: string } }>,
     };
     vi.stubGlobal("desktopBuildFixture", fixture);
     const entry = isolated.chunks.find((chunk) => chunk.isEntry);
     expect(entry).toBeDefined();
+    const startup = new Set<string>();
+    const visitImports = (file: string) => {
+      if (startup.has(file)) {
+        return;
+      }
+      startup.add(file);
+      isolated.chunks.find((chunk) => chunk.fileName === file)?.imports.forEach(visitImports);
+    };
+    visitImports(entry!.fileName);
+    expect(startup.has(shared!.fileName)).toBe(false);
+    expect(startup.has(interactionChunk!.fileName)).toBe(false);
     await import(
       /* @vite-ignore */ pathToFileURL(path.join(isolated.outDir, entry!.fileName)).href
     );
@@ -182,7 +205,13 @@ it.each([false, true])(
     await expect(fixture.loadOutbox()).resolves.toMatchObject({ value: outboxValue });
     expect(fixture.events).toEqual(["sidebar", "outbox"]);
     await expect(fixture.loadChat()).resolves.toMatchObject({ value: chatValue });
-    const chatEvents = ["sidebar", "outbox", ...(hasComposer ? ["composer"] : []), "chat"];
+    const chatEvents = [
+      "sidebar",
+      "outbox",
+      "indicator",
+      ...(hasComposer ? ["composer"] : []),
+      "chat",
+    ];
     expect(fixture.events).toEqual(chatEvents);
 
     let resolved = false;
@@ -198,6 +227,10 @@ it.each([false, true])(
       codec.resolve("h264");
     }
     expect((await loadingDesktop).default.codec).toBe("h264");
+    await fixture.loadComposerInteraction();
+    expect(fixture.events).toEqual([...chatEvents, "desktop", "composer-interaction"]);
+    await expect(fixture.loadPayload()).resolves.toMatchObject({ value: "payload" });
+    expect(fixture.events).toEqual([...chatEvents, "desktop", "composer-interaction", "payload"]);
   },
 );
 
