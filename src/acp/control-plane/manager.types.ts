@@ -182,13 +182,6 @@ export type ActiveTurnState = {
   cancelPromise?: Promise<void>;
 };
 
-export type TurnLatencyStats = {
-  completed: number;
-  failed: number;
-  totalMs: number;
-  maxMs: number;
-};
-
 export type AcpSessionManagerDeps = {
   listAcpSessions: typeof listAcpSessionEntries;
   loadSessionEntry: typeof readAcpSessionEntry;

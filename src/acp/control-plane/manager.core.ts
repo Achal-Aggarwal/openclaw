@@ -58,7 +58,6 @@ import {
   type SessionAcpMeta,
   type SessionEntry,
   type SetManagerSessionState,
-  type TurnLatencyStats,
   type WriteManagerSessionMeta,
 } from "./manager.types.js";
 import {
@@ -86,7 +85,7 @@ export class AcpSessionManager {
   // Disposal aborts in-flight and later turns of this retired instance.
   private readonly lifecycle = new AbortController();
   private readonly producerOwner = {};
-  private readonly turnLatencyStats: TurnLatencyStats = {
+  private readonly turnLatencyStats = {
     completed: 0,
     failed: 0,
     totalMs: 0,
