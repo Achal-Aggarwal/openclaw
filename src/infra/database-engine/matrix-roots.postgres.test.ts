@@ -198,46 +198,6 @@ describe.skipIf(!connection)("Matrix declared account-root database portability"
             );
           }
         };
-        const preflight = () => port({ family: "state", to: "postgres", dryRun: true });
-        await expect(preflight()).resolves.toMatchObject({ phase: "preflight" });
-        const retainedEntries = files.map(sqliteEntries);
-        const legacy = {
-          roomId: "!legacy:example.org",
-          eventId: "$before-upgrade",
-          ts: Date.now(),
-        };
-        const legacyKey = `active:${createHash("sha256")
-          .update(`active\0${legacy.roomId}\0${legacy.eventId}`)
-          .digest("hex")}`;
-        {
-          using db = openNodeSqliteDatabase(files[0]!);
-          db.prepare(
-            "INSERT INTO plugin_state_entries (plugin_id, namespace, entry_key, value_json, created_at) VALUES ('matrix', 'inbound-dedupe', ?, ?, ?)",
-          ).run(legacyKey, JSON.stringify(legacy), legacy.ts);
-        }
-        await expect(preflight()).rejects.toThrow(
-          "Run openclaw doctor --fix first, then retry port. If a named plugin is disabled, enable it for repair.",
-        );
-        // Complete Doctor's retained-root scan before porting, then keep testing a disabled plugin.
-        const repairConfig: OpenClawConfig = {
-          ...config,
-          plugins: { entries: { matrix: { enabled: true } } },
-        };
-        await state.writeConfig(repairConfig);
-        const repaired = await runPluginDoctorStateMigrationPlans({
-          detected: {
-            stateDir: state.stateDir,
-            oauthDir: state.statePath("credentials"),
-            doctorOnlyStateMigrations: true,
-          },
-          config: repairConfig,
-          env: state.env,
-        });
-        expect(repaired.warnings).toEqual([]);
-        expect(repaired.completedPluginIds).toContain("matrix");
-        await closeOpenClawStateDatabaseAsync();
-        expect(files.map(sqliteEntries)).toEqual(retainedEntries);
-        await state.writeConfig(config);
         await run(state, files, config, expectCredentials);
         expectCredentials();
       } finally {
@@ -298,6 +258,46 @@ describe.skipIf(!connection)("Matrix declared account-root database portability"
   // Green CI runs 39068774273/39071119824 measured p95 at 310s across the real root round trip.
   it("ports every retained token/account root with the state family and restores fresh namespaces", async () => {
     await withRoots(async (state, files, config, expectCredentials) => {
+      const preflight = () => port({ family: "state", to: "postgres", dryRun: true });
+      await expect(preflight()).resolves.toMatchObject({ phase: "preflight" });
+      const retainedEntries = files.map(sqliteEntries);
+      const legacy = {
+        roomId: "!legacy:example.org",
+        eventId: "$before-upgrade",
+        ts: Date.now(),
+      };
+      const legacyKey = `active:${createHash("sha256")
+        .update(`active\0${legacy.roomId}\0${legacy.eventId}`)
+        .digest("hex")}`;
+      {
+        using db = openNodeSqliteDatabase(files[0]!);
+        db.prepare(
+          "INSERT INTO plugin_state_entries (plugin_id, namespace, entry_key, value_json, created_at) VALUES ('matrix', 'inbound-dedupe', ?, ?, ?)",
+        ).run(legacyKey, JSON.stringify(legacy), legacy.ts);
+      }
+      await expect(preflight()).rejects.toThrow(
+        "Run openclaw doctor --fix first, then retry port. If a named plugin is disabled, enable it for repair.",
+      );
+      // Complete Doctor's retained-root scan before porting, then keep testing a disabled plugin.
+      const repairConfig: OpenClawConfig = {
+        ...config,
+        plugins: { entries: { matrix: { enabled: true } } },
+      };
+      await state.writeConfig(repairConfig);
+      const repaired = await runPluginDoctorStateMigrationPlans({
+        detected: {
+          stateDir: state.stateDir,
+          oauthDir: state.statePath("credentials"),
+          doctorOnlyStateMigrations: true,
+        },
+        config: repairConfig,
+        env: state.env,
+      });
+      expect(repaired.warnings).toEqual([]);
+      expect(repaired.completedPluginIds).toContain("matrix");
+      await closeOpenClawStateDatabaseAsync();
+      expect(files.map(sqliteEntries)).toEqual(retainedEntries);
+      await state.writeConfig(config);
       const expected = files.map(sqliteEntries);
       const forward = await port({ family: "state", to: "postgres" });
       expect(forward).toMatchObject({ engine: "postgres" });
