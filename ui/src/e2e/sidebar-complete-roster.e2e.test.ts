@@ -243,10 +243,11 @@ suite.define(() => {
             });
           }
           // Keep the old client snapshot, but restore the mock server's new canonical rows.
-          const warmState = await page.evaluate(persistColdLoadWarmState, {
+          const warmInput: Parameters<typeof persistColdLoadWarmState>[0] = {
             sessionKey: fixture.selectedSessionKey,
             sidebarView: "sessions",
-          });
+          };
+          const warmState = await page.evaluate(persistColdLoadWarmState, warmInput);
           expect(warmState.sidebarBytes).toBeGreaterThan(0);
           await writeFile(
             path.join(suite.artifactDir, `${face}-before-reload-geometry.json`),
