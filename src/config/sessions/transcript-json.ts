@@ -9,6 +9,26 @@ export function isOwnedTranscriptPayload(value: object): boolean {
   return ownedTranscriptRoots.has(value);
 }
 
+/** Own a detached, decoded JSON payload; its message envelope stays mutable. */
+export function ownDecodedTranscriptPayload(value: unknown): void {
+  if (!value || typeof value !== "object" || ownedTranscriptRoots.has(value)) {
+    return;
+  }
+  const pending = [value];
+  while (pending.length) {
+    const candidate = pending.pop()!;
+    Object.freeze(candidate);
+    for (const key in candidate) {
+      const child: unknown = Reflect.get(candidate, key);
+      if (child && typeof child === "object" && !ownedTranscriptRoots.has(child)) {
+        pending.push(child);
+      }
+    }
+  }
+  // Decoded JSON is acyclic; retain one ownership fact, not every descendant.
+  ownedTranscriptRoots.add(value);
+}
+
 /** Preserve ordinary transcript objects while admitting their JSON storage shape. */
 export function normalizeTranscriptJsonValue(value: unknown, key: string): unknown {
   const visited = new Set<object>();
