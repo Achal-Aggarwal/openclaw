@@ -26,11 +26,6 @@ import { resolveFireworksThinkingProfile } from "./thinking-policy.js";
 
 const PROVIDER_ID = "fireworks";
 
-function isFireworksProviderId(providerId: string): boolean {
-  const normalized = normalizeProviderId(providerId);
-  return normalized === "fireworks" || normalized === "fireworks-ai";
-}
-
 function isFireworksGlmModelId(modelId: string): boolean {
   const normalized = modelId.trim().toLowerCase();
   const lastSegment = normalized.split("/").pop() ?? normalized;
@@ -95,8 +90,9 @@ export default defineSingleProviderPluginEntry({
           })
         : model,
     wrapStreamFn(ctx) {
+      const providerId = normalizeProviderId(ctx.provider);
       if (
-        !isFireworksProviderId(ctx.provider) ||
+        (providerId !== "fireworks" && providerId !== "fireworks-ai") ||
         (ctx.sourceApi ?? ctx.model?.api) !== "openai-completions"
       ) {
         return undefined;
