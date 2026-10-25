@@ -201,7 +201,7 @@ it.each([false, true])(
   },
 );
 
-it("prioritizes signing and route dependencies over unevaluated interaction hints", async () => {
+it("prioritizes route and common interaction hints, retaining saved Context bytes", async () => {
   const root = tempDirs.make("control-ui-renderer-preloads-");
   const local = (name: string) => path.join(root, name);
   const modulePath = (name: string) => fileURLToPath(new URL(name, import.meta.url));
@@ -225,6 +225,15 @@ it("prioritizes signing and route dependencies over unevaluated interaction hint
     toolPresentation: modulePath("../pages/chat/chat-tool-presentation.runtime.ts"),
     liveEvents: modulePath("../pages/chat/chat-live-events.runtime.ts"),
     search: modulePath("../pages/chat/components/chat-transcript-search-content.tsx"),
+    contextBreakdown: modulePath("../pages/chat/components/chat-context-breakdown.tsx"),
+    contextModel: modulePath("../pages/chat/components/chat-context-breakdown-model.ts"),
+    contextReport: modulePath("../pages/chat/components/chat-context-report.tsx"),
+    contextOwner: modulePath("../lib/session-context-report.ts"),
+    headerOperations: modulePath("../pages/chat/chat-pane-session-operations.ts"),
+    sessionOperations: modulePath("../pages/chat/chat-pane-session-operations.runtime.ts"),
+    command: modulePath("../pages/chat/chat-command-dispatch.runtime.ts"),
+    delivery: modulePath("../pages/chat/chat-send-delivery.runtime.ts"),
+    modelRecovery: modulePath("../pages/chat/chat-model-recovery.runtime.ts"),
     desktopProcess: modulePath("../pages/chat/components/chat-details-desktop-process-row.tsx"),
     process: modulePath("../pages/chat/components/chat-details-process-row.tsx"),
     subagents: modulePath("../pages/chat/components/chat-details-subagent-rows.tsx"),
@@ -321,7 +330,26 @@ it("prioritizes signing and route dependencies over unevaluated interaction hint
     (id) => chunkFor(id).fileName,
   );
   expect(chunkFor(entries.liveEvents).fileName).toBe(chunkFor(entries.toolFamily).fileName);
-  expect(chunkFor(entries.search).fileName).toBe(chunkFor(entries.toolFamily).fileName);
+  const optionalChunks = [
+    entries.search,
+    entries.contextBreakdown,
+    entries.headerOperations,
+    entries.command,
+  ].map((id) => chunkFor(id).fileName);
+  expect(new Set(optionalChunks).size).toBe(4);
+  for (const file of optionalChunks) {
+    expect(toolChunks).not.toContain(file);
+  }
+  const contextChunk = chunkFor(entries.contextBreakdown).fileName;
+  for (const id of [entries.contextModel, entries.contextReport, entries.contextOwner]) {
+    expect(chunkFor(id).fileName).toBe(contextChunk);
+  }
+  expect(chunkFor(entries.headerOperations).fileName).toBe(
+    chunkFor(entries.sessionOperations).fileName,
+  );
+  for (const id of [entries.delivery, entries.modelRecovery]) {
+    expect(chunkFor(id).fileName).toBe(chunkFor(entries.toolFamily).fileName);
+  }
   const detailsChunk = chunkFor(entries.subagents).fileName;
   for (const id of [entries.desktopProcess, entries.process, entries.environment]) {
     expect(chunkFor(id).fileName).toBe(detailsChunk);
@@ -333,7 +361,16 @@ it("prioritizes signing and route dependencies over unevaluated interaction hint
   const html = await fs.readFile(local("dist/index.html"), "utf8");
   const chatPreloads = routePreloads(html, "chat");
   expect(chatPreloads.toSorted()).toEqual(
-    [...new Set([signerChunk, chatChunk, ...commonChunks, ...toolChunks, detailsChunk])].toSorted(),
+    [
+      ...new Set([
+        signerChunk,
+        chatChunk,
+        ...commonChunks,
+        ...toolChunks,
+        detailsChunk,
+        contextChunk,
+      ]),
+    ].toSorted(),
   );
   expect(routePreloads(html, "new").toSorted()).toEqual(
     [...new Set([signerChunk, ...commonChunks, ...placementChunks])].toSorted(),
@@ -347,6 +384,14 @@ it("prioritizes signing and route dependencies over unevaluated interaction hint
   expect(linkFor(chunkFor(entries.online).fileName)).toContain('fetchpriority="low"');
   expect(linkFor(chunkFor(entries.draftWrite).fileName)).toContain('fetchpriority="low"');
   expect(linkFor(payloadChunk)).toBeUndefined();
+  for (const file of optionalChunks) {
+    if (file === contextChunk) {
+      expect(linkFor(file)).toBeDefined();
+      expect(linkFor(file)).toContain('fetchpriority="low"');
+    } else {
+      expect(linkFor(file)).toBeUndefined();
+    }
+  }
   for (const file of [...toolChunks, detailsChunk]) {
     expect(linkFor(file)).toContain('fetchpriority="low"');
   }
@@ -429,4 +474,10 @@ it("prioritizes signing and route dependencies over unevaluated interaction hint
     "toolPresentation",
     "runFrame",
   ]);
+  // Common preloaded interactions do not initialize optional families.
+  for (const name of ["search", "contextBreakdown", "headerOperations", "command"]) {
+    expect(fixture.events).not.toContain(name);
+    expect((await fixture.load[name]!()).value).toBe("common");
+    expect(fixture.events).toContain(name);
+  }
 });

@@ -70,6 +70,19 @@ export function controlUiStableChunkName(id: string): string | undefined {
   const normalized = normalizeModuleId(id);
 
   switch (controlUiBootManifestKey(id)) {
+    case "ui/src/pages/chat/components/chat-context-breakdown.tsx":
+    case "ui/src/pages/chat/components/chat-context-breakdown-model.ts":
+    case "ui/src/pages/chat/components/chat-context-report.tsx":
+    case "ui/src/lib/session-context-report.ts":
+      // Explicit inspection, or the saved Context side-panel's own lazy graph.
+      return "chat-context-runtime";
+    case "ui/src/pages/chat/components/chat-transcript-search-content.tsx":
+      return "chat-search-runtime";
+    case "ui/src/pages/chat/chat-pane-session-operations.ts":
+    case "ui/src/pages/chat/chat-pane-session-operations.runtime.ts":
+      return "chat-session-operations-runtime";
+    case "ui/src/pages/chat/chat-command-dispatch.runtime.ts":
+      return "chat-command-runtime";
     case "ui/src/pages/chat/chat-composer-capability-host.tsx":
     case "ui/src/pages/chat/composer-library-session.ts":
       // The open Chat menu owns these; New Session shares only the catalog.
@@ -166,8 +179,6 @@ export function controlUiStableChunkName(id: string): string | undefined {
       return "chat-saved-annotations-runtime";
     case "ui/src/pages/chat/components/chat-forwarded-attribution.tsx":
       return "chat-forwarded-attribution-runtime";
-    case "ui/src/pages/chat/components/chat-transcript-search-content.tsx":
-      return "chat-interaction-runtime";
     case "ui/src/pages/chat/components/chat-details-desktop-process-row.tsx":
     case "ui/src/pages/chat/components/chat-details-process-row.tsx":
     case "ui/src/pages/chat/components/chat-details-subagent-rows.tsx":
@@ -181,9 +192,6 @@ export function controlUiStableChunkName(id: string): string | undefined {
     case "ui/src/pages/chat/chat-send-support.runtime.ts":
     case "ui/src/pages/chat/chat-send-queue-runtime.ts":
     case "ui/src/pages/chat/chat-model-recovery.runtime.ts":
-    case "ui/src/pages/chat/chat-command-dispatch.runtime.ts":
-    case "ui/src/pages/chat/chat-pane-session-operations.ts":
-    case "ui/src/pages/chat/chat-pane-session-operations.runtime.ts":
     case "ui/src/pages/chat/chat-live-events.runtime.ts":
     case "ui/src/pages/chat/chat-gateway.ts":
     case "ui/src/pages/chat/tool-stream.ts":
@@ -192,11 +200,6 @@ export function controlUiStableChunkName(id: string): string | undefined {
     case "ui/src/lib/chat/tool-call-diff.ts":
     case "src/agents/agent-activity-presentation.ts":
       // Chat already preloads both families; their initializers still run only on use.
-      return "chat-interaction-runtime";
-    case "ui/src/pages/chat/components/chat-context-breakdown.tsx":
-    case "ui/src/pages/chat/components/chat-context-breakdown-model.ts":
-    case "ui/src/pages/chat/components/chat-context-report.tsx":
-    case "ui/src/lib/session-context-report.ts":
       return "chat-interaction-runtime";
     case "node_modules/@solidjs/signals/dist/prod/deferred.js":
       // Route readers share this hook below without adding it to eager Solid code.

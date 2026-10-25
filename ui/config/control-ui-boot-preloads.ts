@@ -20,26 +20,23 @@ const sharedInteractionEntries = new Set([
 const chatInteractionEntries = new Set([
   // Viewport transitions use cached bytes while desktop boot skips mobile evaluation.
   "ui/src/pages/chat/components/chat-pane-mobile-runtime.tsx",
+  // A saved Context panel can render on the first screen.
   "ui/src/pages/chat/components/chat-context-breakdown.tsx",
-  "ui/src/pages/chat/components/chat-transcript-search-content.tsx",
   "ui/src/pages/chat/components/chat-details-desktop-process-row.tsx",
   "ui/src/pages/chat/components/chat-details-process-row.tsx",
   "ui/src/pages/chat/components/chat-details-subagent-rows.tsx",
   "ui/src/components/markdown-live.ts",
   // Cached environment facts reveal without another network round trip.
   "ui/src/pages/chat/components/chat-details-environment-body.tsx",
-  "ui/src/pages/chat/chat-pane-session-operations.ts",
   "ui/src/pages/chat/chat-send-delivery.runtime.ts",
   // Keep the first live reply and common actions to one network round trip.
   "ui/src/pages/chat/chat-composer-capability-host.tsx",
   "ui/src/pages/chat/chat-live-events.runtime.ts",
   "ui/src/pages/chat/tool-stream.ts",
-  "ui/src/pages/chat/chat-command-dispatch.runtime.ts",
-  "ui/src/pages/chat/chat-pane-session-operations.runtime.ts",
   // Download common tool facts and collapsed chrome without evaluating them for plain transcripts.
   "ui/src/pages/chat/chat-tool-family-runtime.ts",
   "ui/src/pages/chat/chat-tool-presentation.runtime.ts",
-  // Image viewers and provider-review dialogs load only when their own UI is needed.
+  // Search, session actions, commands and viewers load on explicit demand.
 ]);
 
 export function collectControlUiStaticAssets(
