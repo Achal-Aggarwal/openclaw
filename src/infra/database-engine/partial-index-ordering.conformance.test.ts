@@ -1,6 +1,7 @@
 import type { SQLInputValue } from "node:sqlite";
 import { Worker } from "node:worker_threads";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { declarePostgresTestRoot } from "../../../test/helpers/postgres-pool-roots.js";
 import { getMessageRangeReaders } from "../../config/sessions/session-accessor.sqlite-projection-read.js";
 import { readDiskEvictableArchivedSessionBatchInDatabase } from "../../config/sessions/session-history-eviction-candidates.js";
 import { listTerminalOperatorApprovalsInDatabase } from "../../gateway/operator-approval-store.kernel.worker.js";
@@ -207,6 +208,7 @@ async function readJournalPlans(
         transferList: [admission.port],
       },
     );
+    declarePostgresTestRoot(worker.threadId);
   } catch (error) {
     admission.finish();
     throw error;
