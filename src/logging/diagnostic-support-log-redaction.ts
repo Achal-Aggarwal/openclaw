@@ -47,49 +47,25 @@ export function sanitizeSupportLogRecord(
 
   const sanitized: Record<string, unknown> = Object.create(null);
   addLogObjectFields(sanitized, source, redaction);
-  addLogTapeMetaFields(sanitized, source, redaction);
-  addLogTapeArgFields(sanitized, source, redaction);
-
-  return Object.keys(sanitized).length > 0
-    ? sanitized
-    : {
-        omitted: "no-safe-fields",
-        bytes: Buffer.byteLength(line, "utf8"),
-      };
-}
-
-function addLogTapeMetaFields(
-  sanitized: Record<string, unknown>,
-  source: Record<string, unknown>,
-  redaction: SupportRedactionContext,
-): void {
   const meta = asOptionalRecord(source._meta);
-  if (!meta) {
-    return;
-  }
-  for (const [sourceKey, outputKey] of LOGTAPE_META_STRING_FIELDS) {
-    if (sanitized[outputKey] !== undefined) {
-      continue;
-    }
-    const value = meta[sourceKey];
-    if (typeof value === "string") {
-      if (sourceKey === "name") {
-        const record = safeParseJsonRecord(value.trim());
-        if (record) {
-          addLogObjectFields(sanitized, record, redaction);
-          continue;
-        }
+  if (meta) {
+    for (const [sourceKey, outputKey] of LOGTAPE_META_STRING_FIELDS) {
+      if (sanitized[outputKey] !== undefined) {
+        continue;
       }
-      sanitized[outputKey] = sanitizeLogString(value, redaction);
+      const value = meta[sourceKey];
+      if (typeof value === "string") {
+        if (sourceKey === "name") {
+          const record = safeParseJsonRecord(value.trim());
+          if (record) {
+            addLogObjectFields(sanitized, record, redaction);
+            continue;
+          }
+        }
+        sanitized[outputKey] = sanitizeLogString(value, redaction);
+      }
     }
   }
-}
-
-function addLogTapeArgFields(
-  sanitized: Record<string, unknown>,
-  source: Record<string, unknown>,
-  redaction: SupportRedactionContext,
-): void {
   const args = Object.entries(source)
     .filter(([key]) => LOGTAPE_ARG_FIELD_RE.test(key))
     .toSorted(([left], [right]) => Number(left) - Number(right));
@@ -104,22 +80,21 @@ function addLogTapeArgFields(
     }
 
     if (typeof value === "string") {
-      addLogTapeMessageField(sanitized, value, redaction);
+      const message = sanitizeLogString(value, redaction);
+      if (sanitized.msg === undefined && message && !UNSAFE_LOG_MESSAGE_RE.test(message)) {
+        sanitized.msg = message;
+        continue;
+      }
+      addOmittedLogMessageMetadata(sanitized, value);
     }
   }
-}
 
-function addLogTapeMessageField(
-  sanitized: Record<string, unknown>,
-  value: string,
-  redaction: SupportRedactionContext,
-): void {
-  const message = sanitizeLogString(value, redaction);
-  if (sanitized.msg === undefined && message && !UNSAFE_LOG_MESSAGE_RE.test(message)) {
-    sanitized.msg = message;
-    return;
-  }
-  addOmittedLogMessageMetadata(sanitized, value);
+  return Object.keys(sanitized).length > 0
+    ? sanitized
+    : {
+        omitted: "no-safe-fields",
+        bytes: Buffer.byteLength(line, "utf8"),
+      };
 }
 
 function addOmittedLogMessageMetadata(sanitized: Record<string, unknown>, value: string): void {
