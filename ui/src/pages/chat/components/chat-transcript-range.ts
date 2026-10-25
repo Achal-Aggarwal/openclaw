@@ -20,6 +20,7 @@ export function previewTranscriptRowKeys(
   virtualizer: Virtualizer<HTMLDivElement, HTMLElement>,
   nextKeys: readonly string[],
   focusedRowKey: string | null,
+  overscan: number,
 ): Set<string> {
   const nextIndexes = new Map(nextKeys.map((key, index) => [key, index]));
   const preview = new Virtualizer<HTMLDivElement, HTMLElement>({
@@ -37,6 +38,7 @@ export function previewTranscriptRowKeys(
     ...preview.options,
     count: nextKeys.length,
     getItemKey: (index) => nextKeys[index]!,
+    overscan,
   });
   return new Set(preview.getVirtualIndexes().map((index) => nextKeys[index]!));
 }

@@ -392,9 +392,6 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
       this.scrollRestoreHost.pendingScrollFrame = null;
     }
     this.threadInnerElement = null;
-    if (!this.connected) {
-      return;
-    }
     this.connected = false;
     this.stopGeometry?.();
     this.stopGeometry = undefined;
@@ -471,6 +468,12 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
         rows.some((row, index) => row.key !== this.rowKeys[index]));
     const nextKeys = rowModelChanged ? rows.map((row) => row.key) : this.rowKeys;
     const virtualizer = this.virtualizer;
+    // Rich fragments need one offscreen row; ordinary transcripts retain their window.
+    const nextOverscan = rowModelChanged
+      ? rows.some((row) => row.estimatedSize !== undefined)
+        ? 1
+        : CHAT_TRANSCRIPT_OVERSCAN
+      : virtualizer.options.overscan;
     const nextRowKeys = rowModelChanged
       ? nextKeys
       : virtualizer.getVirtualItems().map(({ index }) => rows[index]!.key);
@@ -507,7 +510,7 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
         }
         this.headerHeight = header?.height ?? 0;
         if (rowModelChanged) {
-          this.syncRows(nextKeys);
+          this.syncRows(nextKeys, nextOverscan);
         } else {
           this.appliedHeaderHeight = reconcileTranscriptHeaderMargin(
             virtualizer,
@@ -543,7 +546,7 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
       () =>
         leavingTranscriptMcpAppRows(this.threadInnerElement, () =>
           rowModelChanged
-            ? previewTranscriptRowKeys(virtualizer, nextKeys, this.focusedRowKey)
+            ? previewTranscriptRowKeys(virtualizer, nextKeys, this.focusedRowKey, nextOverscan)
             : new Set(nextRowKeys),
         ),
       {
@@ -704,7 +707,7 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
     }
   }
 
-  private syncRows(nextKeys: readonly string[]): void {
+  private syncRows(nextKeys: readonly string[], overscan: number): void {
     this.rowKeys = nextKeys;
     this.rowIndexesByKey = new Map(this.rowKeys.map((key, index) => [key, index]));
     // The header margin must land in the same setOptions as the key change:
@@ -717,6 +720,7 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
       ...this.virtualizer.options,
       count: nextKeys.length,
       getItemKey: (index) => nextKeys[index]!,
+      overscan,
       scrollMargin,
     });
   }
