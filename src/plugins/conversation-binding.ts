@@ -222,7 +222,7 @@ async function resolvePluginConversationBindingState(conversation: PluginBinding
   };
 }
 
-async function resolveOwnedPluginConversationBinding(params: {
+export async function getCurrentPluginConversationBinding(params: {
   pluginRoot: string;
   conversation: PluginBindingConversation;
 }): Promise<PluginConversationBinding | null> {
@@ -503,13 +503,6 @@ export async function requestPluginConversationBinding(params: {
       },
     };
   });
-}
-
-export async function getCurrentPluginConversationBinding(params: {
-  pluginRoot: string;
-  conversation: PluginBindingConversation;
-}): Promise<PluginConversationBinding | null> {
-  return resolveOwnedPluginConversationBinding(params);
 }
 
 export async function detachPluginConversationBinding(params: {
