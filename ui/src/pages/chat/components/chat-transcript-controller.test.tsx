@@ -324,29 +324,6 @@ it.each(["append", "reorder", "focused reorder"] as const)(
   },
 );
 
-it("awaits MCP teardown when rich rows narrow the offscreen window", async () => {
-  const pending = createDeferred();
-  const rows = numberedContentRows(24);
-  const { container, renderRows } = await mountTestTranscript("narrow-mcp-window", rows);
-  const edgeIndex = Number(transcriptRows(container)[0]!.dataset.index);
-  expect(edgeIndex).toBeGreaterThan(0);
-  rows[edgeIndex]!.content = <mcp-app-view />;
-  renderRows(rows);
-  const { app, teardown } = stubMcpAppLifecycle(container, () => pending.promise);
-  const nextRows = rows.map((row, index) =>
-    index === 0 ? Object.assign({}, row, { key: "rich", estimatedSize: 120 }) : row,
-  );
-
-  renderRows(nextRows);
-  expect(teardown).toHaveBeenCalledOnce();
-  expect(app.isConnected).toBe(true);
-  pending.resolve();
-  await pending.promise;
-  await flushDeferredRowPrune();
-  renderRows(nextRows);
-  expect(app.isConnected).toBe(false);
-});
-
 it("reconciles an implicit end anchor when committed content has no scroll range", async () => {
   const flushFrames = stubAnimationFrames();
   transcriptDomState.measuredRowHeight = 20;
@@ -481,6 +458,7 @@ it("retries a growing restore without pane commits and renders the settled reade
     flushFrame();
     await host.settleUpdates();
     expect(onSettled).not.toHaveBeenCalled();
+    expect(host.committedRenders - initialCommits).toBe(0);
   }
   scrollHeight = 4800;
   flushFrame();
@@ -488,8 +466,6 @@ it("retries a growing restore without pane commits and renders the settled reade
   expect(onSettled).toHaveBeenCalledExactlyOnceWith({ scrollTop: 2420, anchorToEnd: false });
   expect(container.scrollTop).toBe(2420);
   expect(container.querySelector("output")?.textContent).toBe("Reading history");
-  expect.soft(host.committedRenders - initialCommits).toBe(0);
-
   // jsdom does not emit native scroll events for scrollTop writes. Deliver the browser read-back.
   scroll(container);
   await host.settleUpdates();

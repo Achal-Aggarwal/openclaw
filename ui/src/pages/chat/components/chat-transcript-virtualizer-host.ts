@@ -74,7 +74,7 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
   private readonly viewportRect: TranscriptViewportRect;
   private readonly presentation: ReturnType<typeof createTranscriptPresentation>;
   private cleanupVirtualizer?: () => void;
-  contentElement: HTMLDivElement | null = null;
+  private threadInnerElement: HTMLDivElement | null = null;
   connected = false;
   private contentReady = false;
   // The in-flow history header's fixed height, folded into scrollMargin.
@@ -88,6 +88,11 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
     this.scheduleEndReconcile();
   };
   readonly layout = new TranscriptLayoutOwner(this.recordEndLayoutCorrection);
+  private readonly followEnd = () =>
+    this.scrollToEnd({
+      source: "auto",
+      behavior: this.offsetState.scrollCommand?.behavior ?? "auto",
+    });
   private readonly reconcileEnd = () => {
     if (!this.connected || this.offsetState.pendingInteractionAnchor) {
       return;
@@ -97,11 +102,7 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
       this.scrollElement,
       this.canAutoFollow(),
       this.offsetState.pendingScrollOffset !== null || this.offsetState.touchActive,
-      () =>
-        this.scrollToEnd({
-          source: "auto",
-          behavior: this.offsetState.scrollCommand?.behavior ?? "auto",
-        }),
+      this.followEnd,
     );
   };
   private readonly scrollRestoreHost: TranscriptScrollRestoreHost;
@@ -109,13 +110,16 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
   // The caller can insert this root after its first native commit. Resolve the
   // scroll parent lazily or a stable ref can permanently capture null.
   get scrollElement(): HTMLDivElement | null {
-    const parent = this.contentElement?.parentElement;
+    const parent = this.threadInnerElement?.parentElement;
     return this.connected && parent instanceof HTMLDivElement && parent.isConnected ? parent : null;
+  }
+  get contentElement(): HTMLDivElement | null {
+    return this.threadInnerElement;
   }
   // Keep one ref per root and row so redraws do not repeat attachment work.
   private scrollElementAttachQueued = false;
   readonly scrollElementRef = (element?: Element) => {
-    this.contentElement = element instanceof HTMLDivElement ? element : null;
+    this.threadInnerElement = element instanceof HTMLDivElement ? element : null;
     // A retained root can move to another host without changing its identity.
     // Attach after commit so a foreign host cannot leave the virtualizer detached.
     if (this.scrollElementAttachQueued) {
@@ -181,7 +185,7 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
     this.mcpAppUnmountGate = createMcpAppUnmountGate(invalidate);
     this.positionRail = createPositionRailGutter(
       () => this.scrollElement,
-      () => this.contentElement,
+      () => this.threadInnerElement,
       () => this.renderer.columnElement,
     );
     this.viewportRect = new TranscriptViewportRect({
@@ -253,7 +257,7 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
     );
     this.rowRefs = new TranscriptRowRefs(this.virtualizer, {
       isCurrentRow: (element, key) =>
-        this.contentElement?.contains(element) === true && this.rowIndexesByKey.has(key),
+        this.threadInnerElement?.contains(element) === true && this.rowIndexesByKey.has(key),
       onMount: () => this.queueLayout(),
     });
     this.scrollRestoreHost = {
@@ -330,7 +334,7 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
     this.connected && this.endAnchor.scheduleReconcile(this.reconcileEnd, contentSize);
 
   update(): void {
-    if (this.contentElement) {
+    if (this.threadInnerElement) {
       this.renderer.commit();
     } else if (this.connected) {
       // Empty shells have no native row root; their host still commits readiness.
@@ -390,7 +394,7 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
       cancelAnimationFrame(this.scrollRestoreHost.pendingScrollFrame);
       this.scrollRestoreHost.pendingScrollFrame = null;
     }
-    this.contentElement = null;
+    this.threadInnerElement = null;
     this.connected = false;
     this.stopGeometry?.();
     this.stopGeometry = undefined;
@@ -467,12 +471,6 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
         rows.some((row, index) => row.key !== this.rowKeys[index]));
     const nextKeys = rowModelChanged ? rows.map((row) => row.key) : this.rowKeys;
     const virtualizer = this.virtualizer;
-    // Rich fragments need one offscreen row; ordinary transcripts retain their window.
-    const nextOverscan = rowModelChanged
-      ? rows.some((row) => row.estimatedSize !== undefined)
-        ? 1
-        : CHAT_TRANSCRIPT_OVERSCAN
-      : virtualizer.options.overscan;
     const nextRowKeys = rowModelChanged
       ? nextKeys
       : virtualizer.getVirtualItems().map(({ index }) => rows[index]!.key);
@@ -509,7 +507,7 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
         }
         this.headerHeight = header?.height ?? 0;
         if (rowModelChanged) {
-          this.syncRows(nextKeys, nextOverscan);
+          this.syncRows(nextKeys);
         } else {
           this.appliedHeaderHeight = reconcileTranscriptHeaderMargin(
             virtualizer,
@@ -543,9 +541,9 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
         });
       },
       () =>
-        leavingTranscriptMcpAppRows(this.contentElement, () =>
+        leavingTranscriptMcpAppRows(this.threadInnerElement, () =>
           rowModelChanged
-            ? previewTranscriptRowKeys(virtualizer, nextKeys, this.focusedRowKey, nextOverscan)
+            ? previewTranscriptRowKeys(virtualizer, nextKeys, this.focusedRowKey)
             : new Set(nextRowKeys),
         ),
       {
@@ -706,7 +704,7 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
     }
   }
 
-  private syncRows(nextKeys: readonly string[], overscan: number): void {
+  private syncRows(nextKeys: readonly string[]): void {
     this.rowKeys = nextKeys;
     this.rowIndexesByKey = new Map(this.rowKeys.map((key, index) => [key, index]));
     // The header margin must land in the same setOptions as the key change:
@@ -720,7 +718,6 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
       count: nextKeys.length,
       getItemKey: (index) => nextKeys[index]!,
       rangeExtractor: (range) => this.initialRange.extract(range),
-      overscan,
       scrollMargin,
     });
   }
@@ -739,7 +736,7 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
       return;
     }
     this.messageReveal.complete(
-      this.contentElement,
+      this.threadInnerElement,
       this.offsetState,
       this.virtualizer,
       this.messageRowKeysById,
@@ -766,7 +763,7 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
       this.scrollToEnd({ source: "auto", behavior: "instant" });
       this.offsetState.syncNativeOffset?.();
     }
-    if (isTranscriptRangeCommitted(this.contentElement, this.virtualizer)) {
+    if (isTranscriptRangeCommitted(this.threadInnerElement, this.virtualizer)) {
       this.initialRange.finish(true);
       this.renderer.syncInitialPosition();
     }
