@@ -209,12 +209,14 @@ it.each([false, true])(
     expect(transcript.revealMessage("source")).toBe(true);
     rerender();
     await flushDeferredRowPrune();
-    expect(requireElement(container, ".chat-work-group button").getAttribute("aria-expanded")).toBe(
-      "true",
-    );
-    expect(requireElement(container, "[data-entry-id='source']").textContent).toContain(
-      "The original answer",
-    );
+    await waitForSolid(() => {
+      expect(
+        requireElement(container, ".chat-work-group button").getAttribute("aria-expanded"),
+      ).toBe("true");
+      expect(requireElement(container, "[data-entry-id='source']").textContent).toContain(
+        "The original answer",
+      );
+    });
   },
 );
 

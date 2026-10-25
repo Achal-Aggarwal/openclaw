@@ -387,11 +387,14 @@ it("prioritizes route and common interaction hints, retaining saved Context byte
   for (const id of [entries.delivery, entries.modelRecovery]) {
     expect(chunkFor(id).fileName).toBe(chunkFor(entries.toolFamily).fileName);
   }
-  const detailsChunk = chunkFor(entries.subagents).fileName;
-  for (const id of [entries.desktopProcess, entries.process, entries.environment]) {
+  const detailsChunk = chunkFor(entries.desktopProcess).fileName;
+  for (const id of [entries.process, entries.environment]) {
     expect(chunkFor(id).fileName).toBe(detailsChunk);
   }
   expect(detailsChunk).toBe(contextChunk);
+  // Without measured boot groups, subagent rows remain an independently preloaded entry.
+  const subagentsChunk = chunkFor(entries.subagents).fileName;
+  expect(subagentsChunk).not.toBe(detailsChunk);
   const frameChunk = chunkFor(entries.runFrame).fileName;
   expect(frameChunk).not.toBe(contextChunk);
   const placementChunks = [entries.placement, placementDependency].map(
@@ -409,6 +412,7 @@ it("prioritizes route and common interaction hints, retaining saved Context byte
         payloadChunk,
         ...toolChunks,
         detailsChunk,
+        subagentsChunk,
         contextChunk,
       ]),
     ].toSorted(),
@@ -428,7 +432,7 @@ it("prioritizes route and common interaction hints, retaining saved Context byte
   for (const file of optionalChunks) {
     expect(linkFor(file)).toBeUndefined();
   }
-  for (const file of [...toolChunks, detailsChunk]) {
+  for (const file of [...toolChunks, detailsChunk, subagentsChunk]) {
     expect(linkFor(file)).toContain('fetchpriority="low"');
   }
   expect(linkFor(frameChunk)).not.toContain("fetchpriority");

@@ -616,12 +616,17 @@ describe("chat transcript invalidation", () => {
         rerender();
         transcript.start();
         await flushDeferredRowPrune();
-        expect(required(container, ".chat-question-summary button").textContent).toBe("Answer");
+        await waitForSolid(() =>
+          expect(required(container, ".chat-question-summary button").textContent).toBe("Answer"),
+        );
 
         resetTranscriptSession(props.paneId, container);
         presentQuestions();
         rerender();
         await flushDeferredRowPrune();
+        await waitForSolid(() =>
+          expect(required(container, ".chat-question-summary button").textContent).toBe("Answer"),
+        );
         click(container, ".chat-question-summary button");
 
         expect(onReopen).toHaveBeenCalledWith("audience-question", expect.any(String));
