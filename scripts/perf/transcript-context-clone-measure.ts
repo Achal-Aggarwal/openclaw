@@ -268,7 +268,17 @@ if (values.retention) {
   };
   warmRetention();
   await collect();
-  const results = [];
+  const results: Array<{
+    sample: number;
+    contexts: number;
+    readsPerContext: number;
+    beforeBytes: number;
+    retainedBytes: number;
+    releasedBytes: number;
+    retainedBytesPerContext: number;
+    replicaSurvivors: number;
+    viewSurvivors: number;
+  }> = [];
   for (let sample = 0; sample < 5; sample++) {
     for (const reads of sample % 2 ? [4, 1, 0] : [0, 1, 4]) {
       await collect();
