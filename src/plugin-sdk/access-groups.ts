@@ -175,15 +175,7 @@ export async function expandAllowFromWithAccessGroups(
   },
 ): Promise<string[]> {
   const allowFrom = (params.allowFrom ?? []).map(String);
-  const matched = await resolveAccessGroupAllowFromMatches({
-    cfg: params.cfg,
-    allowFrom,
-    channel: params.channel,
-    accountId: params.accountId,
-    senderId: params.senderId,
-    isSenderAllowed: params.isSenderAllowed,
-    resolveMembership: params.resolveMembership,
-  });
+  const matched = await resolveAccessGroupAllowFromMatches(params);
   if (matched.length === 0) {
     return allowFrom;
   }
