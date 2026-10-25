@@ -71,9 +71,33 @@ function shareSummaryIdentityStrings(entry: InternalSessionEntry | undefined, ke
   return entry;
 }
 
-function shareSummaryRowStrings<T extends { entries: SessionEntrySummary[] }>(value: T): T {
-  for (const { entry, sessionKey } of value.entries) {
+function shareSummaryRowStrings<
+  T extends { entries: SessionEntrySummary[] } | { rows: SessionEntrySummary[] },
+>(value: T): T {
+  // Only this decoded reply owns the table. Its strings survive in the rows, not a cache.
+  const strings = new Map<string, string>();
+  const share = (text: string) => {
+    const previous = strings.get(text);
+    if (previous !== undefined) {
+      return previous;
+    }
+    if (strings.size === 32_768) {
+      strings.clear();
+    }
+    strings.set(text, text);
+    return text;
+  };
+  for (const { entry, sessionKey } of "entries" in value ? value.entries : value.rows) {
     shareSummaryIdentityStrings(entry, sessionKey);
+    if (entry.spawnedCwd !== undefined) {
+      entry.spawnedCwd = share(entry.spawnedCwd);
+    }
+    if (entry.spawnedWorkspaceDir !== undefined) {
+      entry.spawnedWorkspaceDir = share(entry.spawnedWorkspaceDir);
+    }
+    if (entry.worktree) {
+      entry.worktree.repoRoot = share(entry.worktree.repoRoot);
+    }
   }
   return value;
 }
@@ -334,12 +358,7 @@ const readers: Readers & ThisType<ReaderContext> = {
     return await this.runRequest(
       () => ({ kind: "session-row-facts", ...captured }),
       JSON.stringify(captured).length * 2,
-      (value) => {
-        for (const { entry, sessionKey } of value.rows) {
-          shareSummaryIdentityStrings(entry, sessionKey);
-        }
-        return value;
-      },
+      shareSummaryRowStrings,
     );
   },
   readProgressCard: reader("session-progress-card", (value) => value.card),

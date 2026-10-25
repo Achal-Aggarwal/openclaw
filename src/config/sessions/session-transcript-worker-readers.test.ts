@@ -22,6 +22,13 @@ function summaryEntry(sessionKey: string): InternalSessionEntry {
     lifecycleRevision: "synthetic-lifecycle",
     updatedAt: 1,
     lastRunId: "synthetic-run",
+    spawnedCwd: "/synthetic/worktree",
+    spawnedWorkspaceDir: "/synthetic/repository",
+    worktree: {
+      id: "synthetic-worktree",
+      branch: "synthetic-branch",
+      repoRoot: "/synthetic/repository",
+    },
     observerDigest: {
       sessionKey,
       sessionId: "synthetic-session",
@@ -102,11 +109,14 @@ it.each(["matching", "stale", "legacy"] as const)(
 
 const session = { ...storageInput, sessionId: "one" };
 
-it("retains one physical string for each equal summary identity after worker decoding", () => {
+it("shares physical summary identities and workspace paths within a decoded worker reply", () => {
   const sessionKey = "agent:main:synthetic-summary";
   const payload = JSON.stringify({
     kind: "session-exact-entries",
-    entries: [{ sessionKey, entry: summaryEntry(sessionKey) }],
+    entries: [sessionKey, `${sessionKey}-other`].map((key) => ({
+      sessionKey: key,
+      entry: summaryEntry(key),
+    })),
     lifecycleTimestamps: {},
   });
   // A small fresh isolate avoids snapshotting the test runner and its other loaded suites.
@@ -115,11 +125,16 @@ it("retains one physical string for each equal summary identity after worker dec
       import assert from "node:assert/strict";
       import { getHeapSnapshot } from "node:v8";
       import { createSessionHistoryWorkerReaders } from "./src/config/sessions/session-transcript-worker-readers.ts";
-      const readers = createSessionHistoryWorkerReaders(async (_prepare, _bytes, receive) =>
-        receive(JSON.parse(${JSON.stringify(payload)})));
-      class RetainedSummaryRows { constructor(rows) { this.rows = rows; } }
+      const readers = createSessionHistoryWorkerReaders(async (_prepare, _bytes, receive) => {
+        const decoded = JSON.parse(${JSON.stringify(payload)});
+        const result = receive(decoded);
+        assert.equal(result, decoded);
+        assert.deepEqual(result, JSON.parse(${JSON.stringify(payload)}));
+        return result;
+      });
+      class RetainedSummaryRows { constructor(reply) { this.rows = reply.entries; } }
       globalThis.fixture = new RetainedSummaryRows(
-        (await readers.readExactEntries({ env: {}, sessionKeys: [${JSON.stringify(sessionKey)}] })).entries);
+        await readers.readExactEntries({ env: {}, sessionKeys: [${JSON.stringify(sessionKey)}] }));
       const chunks = [];
       for await (const chunk of getHeapSnapshot()) chunks.push(chunk);
       const { snapshot, nodes, edges, strings } = JSON.parse(Buffer.concat(chunks).toString("utf8"));
@@ -164,6 +179,12 @@ it("retains one physical string for each equal summary identity after worker dec
       assert.equal(target(source, "sourceRunId"), target(entry, "lastRunId"));
       assert.equal(target(digest, "runId"), target(entry, "lastRunId"));
       assert.equal(target(source, "agentId"), target(digest, "agentId"));
+      const otherEntry = target(target(target(holder, "rows"), 1), "entry");
+      for (const field of ["spawnedCwd", "spawnedWorkspaceDir"]) {
+        assert.equal(target(entry, field), target(otherEntry, field), field + " retained a duplicate");
+      }
+      assert.equal(target(target(entry, "worktree"), "repoRoot"), target(target(otherEntry, "worktree"), "repoRoot"));
+      assert.equal(target(entry, "spawnedWorkspaceDir"), target(target(entry, "worktree"), "repoRoot"));
       console.log("shared summary identities");
     `,
     { imports: ["./scripts/tsx.mjs"], timeout: 30_000 },
