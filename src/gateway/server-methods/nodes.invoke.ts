@@ -34,10 +34,6 @@ import {
   respondUnavailableOnNodeInvokeErrorWithProvenance,
   parseGatewayPayload,
 } from "./nodes.helpers.js";
-import {
-  isForwardedNodeInvokeApprovalAuthorityActive,
-  resolveNodeInvokeRuntimeAuthorityError,
-} from "./nodes.invoke-authority.js";
 import { shouldQueueAsPendingForegroundAction } from "./nodes.invoke-foreground.js";
 import { emitTalkPttNodeEvent } from "./nodes.invoke-talk-events.js";
 import { toPendingParamsJSON } from "./nodes.pending.js";
@@ -374,18 +370,29 @@ export const nodeInvokeHandlers: GatewayRequestHandlers = {
             return;
           }
         }
-        const runtimeAuthorityError = () =>
-          resolveNodeInvokeRuntimeAuthorityError({
-            context,
-            client,
-            approvalAuthority: forwardedParams.approvalAuthority,
-          });
-        const isForwardedApprovalAuthorityActive = () =>
-          isUploadAllowed() &&
-          isForwardedNodeInvokeApprovalAuthorityActive({
-            manager: context.execApprovalManager,
-            authority: forwardedParams.approvalAuthority,
-          });
+        const isForwardedApprovalAuthorityActive = () => {
+          const authority = forwardedParams.approvalAuthority;
+          return (
+            !authority ||
+            context.execApprovalManager?.projectDecisionIfActive(
+              authority.recordId,
+              authority.decision,
+            ) === authority.decision
+          );
+        };
+        const runtimeAuthorityError = () => {
+          const callerIdentity = client?.internal?.agentRuntimeIdentity;
+          if (
+            callerIdentity &&
+            context.validateAgentRuntimeApprovalAuthority?.(callerIdentity) !== true
+          ) {
+            return "agent runtime approval authority closed before node dispatch";
+          }
+          if (!isForwardedApprovalAuthorityActive()) {
+            return "approved runtime authority closed before node dispatch";
+          }
+          return undefined;
+        };
         if (rejectDisabledUpload()) {
           return;
         }
@@ -419,7 +426,8 @@ export const nodeInvokeHandlers: GatewayRequestHandlers = {
                 generation,
                 lifecycle: wakeLifecycle,
               })) && isUploadAllowed(),
-            isApprovalAuthorityActive: isForwardedApprovalAuthorityActive,
+            isApprovalAuthorityActive: () =>
+              isUploadAllowed() && isForwardedApprovalAuthorityActive(),
             ...(nodeInvokeStream ? { nodeInvokeStream } : {}),
           }),
         );

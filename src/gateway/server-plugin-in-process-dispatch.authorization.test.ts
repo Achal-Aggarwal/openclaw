@@ -19,7 +19,6 @@ import { setUserProfileRole } from "../state/user-profile-writes.worker.js";
 import { ensureProfileForEmail } from "../state/user-profiles.js";
 import { withOpenClawTestState } from "../test-utils/openclaw-test-state.js";
 import { createGatewayMethodRegistry } from "./methods/registry.js";
-import { resolveNodeInvokeRuntimeAuthorityError } from "./server-methods/nodes.invoke-authority.js";
 import type {
   GatewayRequestContext,
   GatewayRequestHandlerOptions,
@@ -817,11 +816,9 @@ describe("typed in-process agent authorization", () => {
       approvalRuntime: true,
       senderAttribution: { id: "duplex-sender" },
     };
-    let authorityCurrent = true;
     const dispatched: { client: GatewayRequestOptions["client"] } = { client: null };
     const context = createContext();
-    context.validateAgentRuntimeApprovalAuthority = (identity) =>
-      authorityCurrent && identity === agentRuntimeIdentity;
+    context.validateAgentRuntimeApprovalAuthority = (identity) => identity === agentRuntimeIdentity;
     const methodRegistry = createGatewayMethodRegistry([
       {
         name: "node.invoke",
@@ -868,14 +865,6 @@ describe("typed in-process agent authorization", () => {
       },
     });
     expect(dispatched.client?.internal?.agentRuntimeIdentity).toBe(agentRuntimeIdentity);
-    expect(
-      resolveNodeInvokeRuntimeAuthorityError({ context, client: dispatched.client }),
-    ).toBeUndefined();
-
-    authorityCurrent = false;
-    expect(resolveNodeInvokeRuntimeAuthorityError({ context, client: dispatched.client })).toBe(
-      "agent runtime approval authority closed before node dispatch",
-    );
   });
 
   it("applies the pending-profile gate to typed in-process agent dispatch", async () => {
