@@ -21,7 +21,7 @@ import { readQueuedMessageById, updateQueuedMessage } from "./chat-queue.ts";
 import { isActiveLeafChangedError } from "./chat-send-ack.ts";
 import { restoreRejectedChatDelivery } from "./chat-send-composer.ts";
 import type { ChatHost } from "./chat-send-contract.ts";
-import { deliveryStateWriter, updateQueuedSendItem } from "./chat-send-queue-state.ts";
+import { deliveryStateWriter, updateQueuedSendItem } from "./chat-send-queue-write.ts";
 import { surfaceChatDeliveryFailure, OFFLINE_QUEUE_STORAGE_ERROR } from "./chat-send-support.ts";
 import { formatConnectError } from "./connect-error.ts";
 import {

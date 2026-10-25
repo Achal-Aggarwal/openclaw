@@ -6,6 +6,7 @@ import {
   INTERRUPTED_SETTINGS_WAIT_ERROR,
   sameQueuedDeliveryVersion,
 } from "../../lib/chat/outbox-store-codec.ts";
+import { listStoredChatOutboxes } from "../../lib/chat/outbox-store-projection.ts";
 import { chatOutboxDeliveryKey, storedChatOutboxScopeKey } from "../../lib/chat/outbox-store.ts";
 import { isAgentRuntimeRestrictionErrorDetails } from "../../lib/protocol-validators.generated/session-input.js";
 import { scopedAgentIdForSession, visibleSessionMatches } from "../../lib/sessions/index.ts";
@@ -19,6 +20,8 @@ import { captureChatNativeRuntimeRecovery } from "./chat-model-recovery.runtime.
 import {
   flushStoredChatOutbox,
   scheduleStoredChatOutboxRetry,
+  scheduleStoredChatOutboxDrain as scheduleOutboxDrain,
+  type ChatOutboxDrainDependencies,
   type QueuedChatSendOptions,
   type QueuedChatSendResult,
 } from "./chat-outbox-drain.ts";
@@ -27,30 +30,139 @@ import { excludeComposerAttachments, readQueuedMessageById } from "./chat-queue.
 import { formatTerminalChatSendAckError, isTerminalFailureChatSendAck } from "./chat-send-ack.ts";
 import { restoreRejectedChatDelivery } from "./chat-send-composer.ts";
 import type { ChatHost } from "./chat-send-contract.ts";
-import { chatOutboxDrainDependencies, sendQueuedChatMessage } from "./chat-send-delivery.ts";
+import { sendQueuedChatMessage } from "./chat-send-delivery.ts";
 import {
   finishScopedChatSending,
   prepareQueuedChatPayload,
   settleQueuedChatSendFailure,
 } from "./chat-send-queue-runtime.ts";
-import {
-  deliveryStateWriter,
-  finishChatDeliveryAdmission,
-  settleDeliverySettings,
-  updateQueuedSendItem,
-} from "./chat-send-queue-state.ts";
+import { finishChatDeliveryAdmission, settleDeliverySettings } from "./chat-send-queue-state.ts";
+import { deliveryStateWriter, updateQueuedSendItem } from "./chat-send-queue-write.ts";
 import { requestChatSend } from "./chat-send-request.ts";
 import { retireDeliveredQueuedUserTurn } from "./chat-send-support.runtime.ts";
 import { OFFLINE_QUEUE_STORAGE_ERROR, surfaceChatDeliveryFailure } from "./chat-send-support.ts";
 import { refreshChatSessionListForTarget } from "./chat-session.ts";
+import { getPendingChatPickerPatch } from "./chat-settings-patches.ts";
 import { attachmentBatchRejection } from "./components/chat-attachment-admission.ts";
 import { formatConnectError } from "./connect-error.ts";
 import { readChatSessionProjectionScope, reduceChatSessionProjection } from "./history-merge.ts";
-import { adoptStartedChatRun, reconcileChatRunLifecycle } from "./run-lifecycle.ts";
+import { resetChatInputHistoryNavigation } from "./input-history.ts";
+import {
+  adoptStartedChatRun,
+  hasDirectSessionRun,
+  isChatBusy,
+  reconcileChatRunLifecycle,
+} from "./run-lifecycle.ts";
+import { scheduleChatScroll } from "./scroll.ts";
 import { resetToolStream } from "./tool-stream-state.ts";
 import { buildLocalUserMessage } from "./user-message-content.ts";
 
-export { chatOutboxDrainDependencies } from "./chat-send-delivery.ts";
+export const chatOutboxDrainDependencies: ChatOutboxDrainDependencies = {
+  sendQueuedChatMessage,
+};
+
+export async function deliverAdmittedChatQueueItem(
+  host: ChatHost,
+  item: ChatQueueItem,
+  sendOptions: QueuedChatSendOptions & {
+    routingSessionKey: string;
+    storageMode: "memory" | "durable";
+  },
+  deliveryConnectionIsCurrent: () => boolean,
+  deliveryAgentId?: string,
+): Promise<QueuedChatSendResult> {
+  const { routingSessionKey, storageMode } = sendOptions;
+  const sessionKey = item.sessionKey ?? routingSessionKey;
+  let result: QueuedChatSendResult;
+  if (storageMode === "memory") {
+    result = await sendQueuedChatMessage(host, item.id, sendOptions, sessionKey);
+  } else {
+    const outbox = listStoredChatOutboxes(host).find((candidate) =>
+      candidate.queue.some((entry) => entry.id === item.id),
+    );
+    if (!outbox) {
+      // Admission succeeded; removal or another drain can retire the row while we yield.
+      chatOutboxOwner(host).syncHost(host);
+      return "pending";
+    }
+    const drain = async (admittedItem: ChatQueueItem): Promise<QueuedChatSendResult> => {
+      const routeVisible = visibleSessionMatches(host, routingSessionKey, admittedItem.agentId);
+      if (
+        routeVisible &&
+        !admittedItem.queueMode &&
+        !sendOptions.allowActiveRunSend &&
+        (isChatBusy(host) || hasDirectSessionRun(host))
+      ) {
+        const parked = finishChatDeliveryAdmission(
+          host,
+          admittedItem,
+          storageMode,
+          sessionKey,
+          sendOptions,
+        );
+        if (typeof parked === "string") {
+          if (parked === "pending") {
+            // A local busy flag can outlive a missed terminal event. Reconcile
+            // through the outbox owner before leaving the follow-up parked.
+            void scheduleOutboxDrain(
+              host,
+              outbox,
+              chatOutboxDrainDependencies,
+              undefined,
+              undefined,
+              undefined,
+              true,
+            );
+          }
+          return parked;
+        }
+      }
+      if (!host.connected || !host.client) {
+        return "pending";
+      }
+      // FIFO may have already spent a reconnect or settings-event drain while
+      // this row was waiting-model, so foreground admission owns the wakeup.
+      const drained = routeVisible
+        ? await scheduleOutboxDrain(host, outbox, chatOutboxDrainDependencies, item.id, {
+            ...sendOptions,
+            pendingSettings: undefined,
+          })
+        : await scheduleOutboxDrain(host, outbox, chatOutboxDrainDependencies);
+      return drained ?? "pending";
+    };
+    const initialSettings = item.localCommandName
+      ? undefined
+      : (sendOptions.pendingSettings ??
+        getPendingChatPickerPatch(host, routingSessionKey, item.agentId));
+    result = initialSettings
+      ? await settleDeliverySettings(
+          host,
+          item,
+          storageMode,
+          sessionKey,
+          { ...sendOptions, pendingSettings: initialSettings },
+          drain,
+        )
+      : await drain(item);
+  }
+  if (result === "sent" && visibleSessionMatches(host, sessionKey, deliveryAgentId)) {
+    resetChatInputHistoryNavigation(host);
+  }
+  if (
+    deliveryConnectionIsCurrent() &&
+    visibleSessionMatches(host, routingSessionKey, deliveryAgentId)
+  ) {
+    scheduleChatScroll(host, true, true);
+  }
+  if (
+    result === "sent" &&
+    visibleSessionMatches(host, sessionKey, deliveryAgentId) &&
+    !host.chatRunId
+  ) {
+    void flushStoredChatOutbox(host, chatOutboxDrainDependencies);
+  }
+  return result;
+}
 
 export async function sendPreparedChatQueueItem(
   host: ChatHost,

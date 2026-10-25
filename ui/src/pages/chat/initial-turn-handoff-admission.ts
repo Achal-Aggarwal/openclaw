@@ -46,7 +46,7 @@ export function admitInitialTurnHandoff(host: ChatHost, sessionKey: string): boo
           isCurrent() && ownsConnection() && composerOwner?.resolveOwner() === host;
         const [{ retryQueuedChatMessage }, { waitForQueuedChatHistory }] = await Promise.all([
           import("./chat-send-actions.ts"),
-          import("./chat-send-queue-state.ts"),
+          import("./chat-send-history.ts"),
         ]);
         const current = readQueuedMessageById(host, item.id);
         if (

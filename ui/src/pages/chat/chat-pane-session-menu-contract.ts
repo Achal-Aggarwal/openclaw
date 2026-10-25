@@ -1,6 +1,9 @@
 import type { GatewaySessionRow } from "../../api/types.ts";
 import type { ApplicationContext } from "../../app/context.ts";
-import type { SidebarSessionMutationResult } from "../../components/app-sidebar-session-types.ts";
+import type {
+  SidebarSessionMutationResult,
+  SidebarSessionMutationScope,
+} from "../../components/app-sidebar-session-types.ts";
 import type { SessionManagementAction } from "../../components/session-menu-actions.ts";
 import type { ChatPageHost } from "./chat-state-host.ts";
 
@@ -43,13 +46,19 @@ type ChatHeaderSessionActionOwner = {
   beginHeaderRename(row: GatewaySessionRow): void;
   ownsHeaderOutcome(owner: string): boolean;
   openContinueInTerminalDialog(row: GatewaySessionRow): void;
-  openHeaderSessionGroup(row: GatewaySessionRow): Promise<void>;
+  openHeaderSessionGroup(
+    moveToGroup: (name: string) => Promise<SidebarSessionMutationResult | void>,
+  ): Promise<void>;
   publishHeaderError(error: unknown, owner?: string): void;
-  runHeaderSessionMutation(
-    action: HeaderSessionOperation,
-    row: GatewaySessionRow,
-  ): Promise<SidebarSessionMutationResult | void>;
-  captureHeaderSessionActionScope(): { signal: AbortSignal } | null;
+  presented: boolean;
+  paneId: string;
+  onPaneSessionChange?: (paneId: string, nextSessionKey: string) => boolean | void;
+  headerSessionDraftAbortController: AbortController;
+  resolveHeaderSessionTitle(row: GatewaySessionRow | undefined): string;
+  isHeaderSessionActionCurrent(scope: SidebarSessionMutationScope, owner: string): boolean;
+  captureHeaderSessionActionScope(
+    allowDeferred?: boolean,
+  ): (SidebarSessionMutationScope & { signal: AbortSignal }) | null;
 };
 
 export type ChatHeaderSessionActionSource = {
@@ -57,4 +66,5 @@ export type ChatHeaderSessionActionSource = {
   readOwner: () => ChatHeaderSessionActionOwner;
   readRow: () => GatewaySessionRow | undefined;
   stopDisabledReason: string | undefined;
+  workspaceRoot: string | null;
 };
