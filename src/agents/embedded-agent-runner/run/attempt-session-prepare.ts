@@ -59,6 +59,8 @@ import {
   type SystemPromptUpdatePreparation,
 } from "./attempt-permission-prompt.js";
 import { buildAfterTurnRuntimeContext } from "./attempt-prompt-helpers.js";
+import type { EmbeddedAttemptSessionPreparationInput } from "./attempt-session-prepare-input.js";
+import { openSessionAfterProjectionRecovery } from "./attempt-session-projection-recovery.js";
 import { resolveExistingAttemptTranscriptState } from "./attempt-transcript-helpers.js";
 import type { EmbeddedAttemptTranscriptLifecycle } from "./attempt-transcript-lifecycle.js";
 import { createUserTranscriptContextRegistry } from "./attempt-user-transcript-context-registry.js";
@@ -486,19 +488,9 @@ export async function prepareEmbeddedAttemptSessionBoundary(input: {
   };
 }
 
-type WithOwnedTranscriptWrite = <T>(operation: () => Promise<T> | T) => Promise<T>;
-export async function prepareEmbeddedAttemptSessionManager(input: {
-  attempt: EmbeddedRunAttemptParams;
-  activeContextEngine?: ContextEngine;
-  agentDir: string;
-  effectiveCwd: string;
-  effectiveWorkspace: string;
-  onSessionManagerCreated: (sessionManager: AttemptSessionManager) => void;
-  replayAllowedToolNames: ReadonlySet<string>;
-  resolveActiveContextEnginePluginId: () => string | undefined;
-  sessionAgentId: string;
-  withOwnedTranscriptWrite: WithOwnedTranscriptWrite;
-}) {
+export async function prepareEmbeddedAttemptSessionManager(
+  input: EmbeddedAttemptSessionPreparationInput,
+) {
   const { attempt } = input;
   const transcriptStateParams = {
     sessionManager: attempt.sessionManager,
@@ -543,43 +535,56 @@ export async function prepareEmbeddedAttemptSessionManager(input: {
   let latestRuntimeUserMessage: AgentMessage | undefined;
   let latestUserTurnTranscriptRecorder = attempt.userTurnTranscriptRecorder;
   const userTranscriptContextRegistry = createUserTranscriptContextRegistry();
+  const openSignal = attempt.abortSignal
+    ? AbortSignal.any([attempt.abortSignal, input.runAbortSignal])
+    : input.runAbortSignal;
   let publishedSessionManager: SessionManager | undefined;
   let initialReplay: Parameters<typeof preparePersistedCurrentUserTurn>[0]["initial"];
   let messagePresence: boolean | undefined;
-  const unguardedSessionManager =
-    attempt.sessionManager ??
-    (attempt.sessionTarget
-      ? await input.withOwnedTranscriptWrite(async () => {
-          const target = attempt.sessionTarget as SessionTranscriptRuntimeTarget;
-          const limits = resolveEmbeddedSessionContextLimits(attempt.contextTokenBudget);
-          const initial = prepareInitialPersistedUserTurnCohort({
-            target,
-            message: preparedUserTurnMessage,
-            recorder: attempt.userTurnTranscriptRecorder,
-            runId: attempt.runId,
-          });
-          if (initial) {
-            const manager = await SessionManager[sessionManagerOpenTranscriptCohort](
-              target,
-              { ...limits, cwd: input.effectiveCwd, signal: attempt.abortSignal },
-              initial.selection,
-              (opened, prepared, assertView) => {
-                try {
-                  initial.consume(opened, prepared, assertView);
-                } finally {
-                  // Cleanup owns even a refused manager; publication cannot supply replay evidence.
-                  publishedSessionManager = opened;
-                  input.onSessionManagerCreated(opened);
-                }
-              },
-            );
-            initialReplay = initial.readInitial();
-            messagePresence = initial.readMessagePresence();
-            return manager;
-          }
-          return SessionManager.openAsync(target, input.effectiveCwd, limits, attempt.abortSignal);
+  const openSessionManager = (target: SessionTranscriptRuntimeTarget) =>
+    input.withOwnedTranscriptWrite(async () => {
+      const limits = resolveEmbeddedSessionContextLimits(attempt.contextTokenBudget);
+      const initial = prepareInitialPersistedUserTurnCohort({
+        target,
+        message: preparedUserTurnMessage,
+        recorder: attempt.userTurnTranscriptRecorder,
+        runId: attempt.runId,
+      });
+      if (initial) {
+        const manager = await SessionManager[sessionManagerOpenTranscriptCohort](
+          target,
+          { ...limits, cwd: input.effectiveCwd, signal: openSignal },
+          initial.selection,
+          (opened, prepared, assertView) => {
+            try {
+              initial.consume(opened, prepared, assertView);
+            } finally {
+              // Cleanup owns even a refused manager; publication cannot supply replay evidence.
+              publishedSessionManager = opened;
+              input.onSessionManagerCreated(opened);
+            }
+          },
+        );
+        initialReplay = initial.readInitial();
+        messagePresence = initial.readMessagePresence();
+        return manager;
+      }
+      return SessionManager.openAsync(target, input.effectiveCwd, limits, openSignal);
+    });
+  const sessionTarget = attempt.sessionTarget as SessionTranscriptRuntimeTarget | undefined;
+  const openedSessionManager =
+    !attempt.sessionManager && sessionTarget
+      ? await openSessionAfterProjectionRecovery({
+          open: () => openSessionManager(sessionTarget),
+          target: sessionTarget,
+          timeoutMs: attempt.timeoutMs,
+          signal: openSignal,
+          assertCurrent: input.assertCurrent,
+          replyOperation: attempt.replyOperation,
         })
-      : SessionManager.inMemory(input.effectiveCwd));
+      : undefined;
+  const unguardedSessionManager =
+    attempt.sessionManager ?? openedSessionManager ?? SessionManager.inMemory(input.effectiveCwd);
   // Publish ownership before awaiting preparation; outer cleanup must receive
   // this same manager even when replay validation or bootstrap fails.
   if (publishedSessionManager !== unguardedSessionManager) {

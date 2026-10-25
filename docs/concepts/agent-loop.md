@@ -55,6 +55,8 @@ continuation does not replay the original task or increase the retry budget.
 
 Runs are serialized per session key (session lane) and optionally through a global lane, preventing tool/session races. Messaging channels choose a queue mode (steer/followup/collect/interrupt) that feeds this lane system; see [Command Queue](/concepts/queue).
 
+Transcript projection rebuilds normally finish before global admission. If hydration finds a rebuild after admission, the same turn releases global capacity while waiting, then rejoins the queue before retrying hydration once. Its session and writer ownership stay intact, and cancellation still stops the wait.
+
 Before streaming, an admitted run records its durable `activeWriterRunId` claim. Every transcript append or rewrite supplies `expectedWriterRunId`, and the synchronous commit transaction verifies that it still matches the active claim. A superseded run therefore cannot commit stale transcript data. The SQLite writer queue orders per-agent mutations, while the Gateway state-directory lock prevents another Gateway or `openclaw agent --local` process from owning the same state directory concurrently.
 
 ## Session and workspace preparation
