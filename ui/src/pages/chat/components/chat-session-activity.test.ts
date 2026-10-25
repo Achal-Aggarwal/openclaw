@@ -85,12 +85,13 @@ describe("session activity", () => {
       });
     draw();
     await waitForSolid(() =>
-      expect(container.querySelector(".chat-session-activity")).not.toBeNull(),
+      expect(container.querySelector(".chat-session-activity summary")?.textContent).toContain(
+        "Daily report",
+      ),
     );
     const disclosure = container.querySelector<HTMLDetailsElement>(".chat-session-activity");
     expect(disclosure).not.toBeNull();
     expect(disclosure?.open).toBe(false);
-    expect(disclosure?.querySelector("summary")?.textContent).toContain("Daily report");
     expect(disclosure?.querySelector("summary a[data-cron-run-link]")?.getAttribute("href")).toBe(
       "/automations?job=daily&run=execution",
     );
@@ -233,7 +234,12 @@ describe("session activity", () => {
       });
     draw();
     await waitForSolid(() =>
-      expect(container.querySelector(".chat-session-activity")).not.toBeNull(),
+      expect(
+        container
+          .querySelector(".chat-session-activity summary")
+          ?.textContent?.replace(/\s+/gu, " ")
+          .trim(),
+      ).toBe("2 updates from Visualize tool icons"),
     );
     const disclosure = container.querySelector<HTMLDetailsElement>(".chat-session-activity");
     const summary = disclosure?.querySelector("summary");
@@ -244,9 +250,6 @@ describe("session activity", () => {
     const summaryMarkup = () => summary.innerHTML.replace(/<!--[^]*?-->/gu, "");
     const collapsedMarkup = summaryMarkup();
     expect(disclosure.open).toBe(false);
-    expect(summary.textContent?.replace(/\s+/gu, " ").trim()).toBe(
-      "2 updates from Visualize tool icons",
-    );
     expect(container.textContent).not.toContain("Original receipt");
     expect(
       container.querySelector(".chat-avatar, .chat-avatar-slot, .chat-group--forwarded"),

@@ -113,14 +113,35 @@ it.each(["keyboard", "last", "pointer", "external", "closed", "reopened"] as con
         await waitForSolid(() => expect(view.panel.matches(":popover-open")).toBe(true));
       }
     }
+    const readCapabilities = vi.fn(() => undefined);
+    const initializeCapabilities = vi.fn();
+    if (mode === "closed" || mode === "external") {
+      view.setMenu((current) => ({
+        ...current,
+        capabilityMenu: { read: readCapabilities, initialize: initializeCapabilities },
+      }));
+      flush();
+    }
     ready.resolve();
     await imported.promise;
+    await import("./chat-composer-plus-menu-content.tsx");
+    flush();
     if (mode === "closed" || mode === "external") {
       expect(view.panel.matches(":popover-open")).toBe(false);
       expect(
         view.queryByRole("menuitemcheckbox", { name: "Updated toggle", hidden: true }),
       ).toBeNull();
+      expect(readCapabilities).not.toHaveBeenCalled();
+      expect(initializeCapabilities).not.toHaveBeenCalled();
       expect(document.activeElement).toBe(mode === "external" ? external : view.trigger);
+      view.setMenu((current) => ({ ...current, capabilityMenu: undefined }));
+      view.trigger.click();
+      await waitForSolid(() =>
+        expect(
+          view.getByRole("menuitemcheckbox", { name: "Updated toggle", hidden: true }),
+        ).toBeTruthy(),
+      );
+      expect(view.panel.matches(":popover-open")).toBe(true);
       return;
     }
     await waitForSolid(() =>
@@ -141,6 +162,11 @@ it.each(["keyboard", "last", "pointer", "external", "closed", "reopened"] as con
         ),
       );
       if (mode === "keyboard") {
+        // Content readiness and the separately loaded navigation machine are independent.
+        await import("../../../components/solid/menu-runtime.ts");
+        await waitForSolid(() =>
+          expect(document.activeElement?.hasAttribute("data-highlighted")).toBe(true),
+        );
         document.activeElement!.dispatchEvent(
           new KeyboardEvent("keydown", { key: "End", bubbles: true, cancelable: true }),
         );

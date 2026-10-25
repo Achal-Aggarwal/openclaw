@@ -189,6 +189,7 @@ it("retains the focused capability row and management link through catalog refre
       ...changes,
       capabilityMenu: makeCapabilities({ ...previous.capabilityMenu!.read()!, ...capability }),
     }));
+  await import("./chat-composer-plus-menu-content.tsx");
   await waitForSolid(() => expect(checkbox("Focused skill")).toBeTruthy());
   for (const name of ["Broken deps missing", "Private not available for this agent"]) {
     expect(checkbox(name).hasAttribute("disabled")).toBe(true);
@@ -287,6 +288,7 @@ it("retains attachment choices while the native menu closes and reopens", async 
   )!;
   trigger.click();
   await waitForSolid(() => expect(trigger.getAttribute("aria-expanded")).toBe("true"));
+  await import("./chat-composer-plus-menu-content.tsx");
   await waitForSolid(() =>
     expect(view.getByRole("menuitemcheckbox", { name: "Test toggle", hidden: true })).toBeTruthy(),
   );
@@ -322,6 +324,7 @@ it.each(["item", "external", "closed"] as const)(
         />
       </>
     ));
+    await import("./chat-composer-plus-menu-content.tsx");
     await waitForSolid(() =>
       expect(view.getByRole("menuitem", { name: "Back", hidden: true })).toBeTruthy(),
     );
@@ -426,6 +429,7 @@ it("keeps skill navigation live through failure, retry and a retired connection 
   const panel = view.container.querySelector<HTMLElement>(".agent-chat__capability-menu-panel")!;
   expect(request).not.toHaveBeenCalled();
   trigger.click();
+  await import("./chat-composer-plus-menu-content.tsx");
   await waitForSolid(() =>
     expect(view.getByRole("menuitem", { name: "Skills", hidden: true })).toBeTruthy(),
   );

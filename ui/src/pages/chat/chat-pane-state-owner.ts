@@ -50,6 +50,7 @@ import { createChatPaneDiscussionState } from "./chat-pane-discussion-state.ts";
 import { createChatPanePresence } from "./chat-pane-presence.ts";
 import type { PendingSessionPanelToggle } from "./chat-pane-session-panel-toggle.ts";
 import type { ChatPaneConnectionScope, PaneSessionChangeOptions } from "./chat-pane-shared.ts";
+import type { ChatSessionSharingState } from "./chat-pane-sharing-contract.ts";
 import { SessionParticipationTracker } from "./chat-pane-state.ts";
 import { chatRunPresentation } from "./chat-run-presentation.ts";
 import { createChatState } from "./chat-state-controller.ts";
@@ -61,7 +62,6 @@ import type {
 } from "./chat-typing-presence.ts";
 import { getChatComposerState } from "./components/chat-composer-state.ts";
 import type { ChatPaneHeaderAction } from "./components/chat-pane-header.types.ts";
-import type { ChatSessionSharingState } from "./components/chat-session-sharing-shared.tsx";
 import { getTranscriptState } from "./components/chat-thread-interactions.ts";
 import { createChatTranscript } from "./components/chat-transcript-controller.ts";
 import type { ComposerActivityLayout } from "./components/chat-transcript-layout-owner.ts";

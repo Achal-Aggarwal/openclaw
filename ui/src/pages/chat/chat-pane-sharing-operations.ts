@@ -9,7 +9,7 @@ import type { ChatPaneConnectionScope } from "./chat-pane-shared.ts";
 import type {
   ChatSessionSharingOutcome,
   ChatSessionSharingState,
-} from "./components/chat-session-sharing-shared.tsx";
+} from "./chat-pane-sharing-contract.ts";
 
 export async function setSessionPublicShare(
   scope: ChatPaneConnectionScope,

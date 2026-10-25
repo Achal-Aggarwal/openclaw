@@ -42,7 +42,7 @@ it.each([
     7,
   ],
   ["escaped terminal-control filenames", ["src/line\nbreak.ts"], "claim-control", undefined],
-] as const)("renders %s in durable history", (_label, paths, ref, totalCount) => {
+] as const)("renders %s in durable history", async (_label, paths, ref, totalCount) => {
   const stagedResultRef = `refs/openclaw/worker-results/${ref}`;
   renderGroupedMessage(
     {
@@ -54,7 +54,7 @@ it.each([
     },
     "custom",
   );
-  expect(harness.view.textContent).toContain(stagedResultRef);
+  await waitForSolid(() => expect(harness.view.textContent).toContain(stagedResultRef));
   if (totalCount === undefined) {
     expect(elementText(".chat-workspace-conflict-paths code")).toBe("src/line\\u{000a}break.ts");
   } else {
@@ -332,7 +332,7 @@ describe("grouped chat rendering", () => {
     expect(container.querySelector(".chat-group--reply")).not.toBeNull();
   });
 
-  it("morphs one assistant turn from working status to its terminal recap", () => {
+  it("morphs one assistant turn from working status to its terminal recap", async () => {
     const message = createAssistantMessage("First result is ready.", { timestamp: 1_000 });
 
     renderAssistantMessage(message, {
@@ -344,7 +344,7 @@ describe("grouped chat rendering", () => {
 
     expectCount(".chat-group.assistant", 1);
     expectAbsent(".chat-reading-indicator");
-    expectPresent(".chat-working-indicator--continuation");
+    await waitForSolid(() => expectPresent(".chat-working-indicator--continuation"));
     expect(elementText(".chat-working-indicator__status")).toContain("Working…");
     // The footer row is reserved but empty until the turn settles.
     expect(element(".chat-group-footer")?.childElementCount).toBe(0);

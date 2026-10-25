@@ -118,22 +118,20 @@ function PlusMenuSurface(props: { menu: ChatComposerPlusMenuProps }) {
             );
           }}
         >
-          <Show when={props.menu.open} fallback={renderItems(loadingItems)}>
-            <Loading fallback={renderItems(loadingItems)}>
-              <Content
-                menu={props.menu}
-                view={view()}
-                readMenu={() => handle}
-                onReady={(next) => {
-                  setHandlers(next);
-                  if (next) {
-                    onSettled(focusLoadedItems);
-                  }
-                }}
-                renderItems={renderItems}
-              />
-            </Loading>
-          </Show>
+          <Loading fallback={renderItems(loadingItems)}>
+            <Content
+              menu={props.menu}
+              view={view()}
+              readMenu={() => handle}
+              onReady={(next) => {
+                setHandlers(next);
+                if (next) {
+                  onSettled(focusLoadedItems);
+                }
+              }}
+              renderItems={renderItems}
+            />
+          </Loading>
         </Errored>
       ),
     },
@@ -178,7 +176,9 @@ function PlusMenuSurface(props: { menu: ChatComposerPlusMenuProps }) {
         }}
         onOpenChange={(open) => {
           host.toggleAttribute("open", open);
-          if (!open) {
+          if (open && handlers()) {
+            props.menu.capabilityMenu?.read()?.onLoadSkills();
+          } else if (!open) {
             focusOnReady = false;
             openingFocus = undefined;
           }

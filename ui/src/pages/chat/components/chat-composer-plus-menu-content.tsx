@@ -393,7 +393,7 @@ function handleMenuSelection(
   { id: value }: MenuItem,
   event: CustomEvent<MenuItem>,
   menu: MenuHandle,
-  ownerProps: { menu: ChatComposerPlusMenuContentProps },
+  ownerProps: { menu: ChatComposerPlusMenuContentProps; open: boolean },
 ) {
   const props = ownerProps.menu;
   const overlay = menu.overlay;
@@ -421,7 +421,7 @@ function handleMenuSelection(
       // A controlled close can settle before Menu applies it; newer focus also wins.
       if (
         overlay.open &&
-        ownerProps.menu.open &&
+        ownerProps.open &&
         (active === focused || (active === surface.ownerDocument.body && !focused?.isConnected))
       ) {
         menu.focusFirst();
@@ -559,8 +559,12 @@ function menuItems(
 }
 
 export function ChatComposerPlusMenuContent(props: ChatComposerPlusMenuBodyProps) {
-  const resolved = createMemo(() => {
+  const resolved = createMemo<ChatComposerPlusMenuContentProps | undefined>((previous) => {
     const current = props.menu;
+    // Keep the native menu's retained rows dormant while it is closed.
+    if (!current.open && (previous || !props.readMenu().overlay.open)) {
+      return previous;
+    }
     const capabilityMenu = current.capabilityMenu?.read();
     if (current.capabilityMenu && !capabilityMenu) {
       return undefined;
@@ -588,7 +592,7 @@ export function ChatComposerPlusMenuContent(props: ChatComposerPlusMenuBodyProps
   });
   return (
     <Show when={resolved()} fallback={<InitializeCapability {...props} />}>
-      {(menu) => <ResolvedPlusMenuContent {...props} menu={menu()} />}
+      {(menu) => <ResolvedPlusMenuContent {...props} menu={menu()} open={props.menu.open} />}
     </Show>
   );
 }
@@ -596,7 +600,12 @@ export function ChatComposerPlusMenuContent(props: ChatComposerPlusMenuBodyProps
 function InitializeCapability(props: ChatComposerPlusMenuBodyProps) {
   return (
     <>
-      <Show when={props.menu.capabilityMenu?.initialize}>
+      <Show
+        when={
+          (props.menu.open || props.readMenu().overlay.open) &&
+          props.menu.capabilityMenu?.initialize
+        }
+      >
         {(initialize) => <ChatComposerCapabilityInitializer initialize={initialize()} />}
       </Show>
       {props.renderItems(() => [
@@ -607,7 +616,10 @@ function InitializeCapability(props: ChatComposerPlusMenuBodyProps) {
 }
 
 function ResolvedPlusMenuContent(
-  props: Omit<ChatComposerPlusMenuBodyProps, "menu"> & { menu: ChatComposerPlusMenuContentProps },
+  props: Omit<ChatComposerPlusMenuBodyProps, "menu"> & {
+    menu: ChatComposerPlusMenuContentProps;
+    open: boolean;
+  },
 ) {
   const inputs = createMemo(
     () => {
@@ -631,7 +643,9 @@ function ResolvedPlusMenuContent(
     { lazy: true },
   );
   onSettled(() => {
-    props.menu.onLoadSkills();
+    if (props.readMenu().overlay.open) {
+      props.menu.onLoadSkills();
+    }
     props.onReady({
       items,
       select: (item, event) => handleMenuSelection(item, event, props.readMenu(), props),

@@ -6,7 +6,6 @@ import { createDeferred } from "../../../../../test/helpers/promise.js";
 import { mountSolid } from "../../../test-helpers/mount-solid.ts";
 import { flush, waitForSolid } from "../../../test-helpers/solid-settle.ts";
 import { createAsyncQuestionPresentation } from "./chat-async-question.ts";
-import { ChatLazyBoundary } from "./chat-lazy-boundary.tsx";
 import { GroupedMessage } from "./chat-message-bubble-view.tsx";
 import { MessageGroupContent } from "./chat-message-group-view.tsx";
 import { prepareChatMessageRender } from "./chat-message-markdown-view.tsx";
@@ -38,17 +37,7 @@ it("keeps ordinary message-group text synchronous", () => {
   );
 });
 
-it("renders current text through the deferred transcript frame entry", async () => {
-  const ready = createDeferred();
-  const loadFrame = vi.fn(() => ready.promise);
-  vi.doMock(import("./chat-agent-run-frame.tsx"), async (original) => {
-    await loadFrame();
-    return original();
-  });
-  onTestFinished(() => {
-    ready.resolve();
-    vi.doUnmock("./chat-agent-run-frame.tsx");
-  });
+it("keeps transcript frame text synchronous and current", async () => {
   const { nativeRows } = await import("./chat-transcript-rows.ts");
   const Frame = nativeRows.frame;
   const frameFor = (text: string) => ({
@@ -57,31 +46,26 @@ it("renders current text through the deferred transcript frame entry", async () 
     runId: "retained-run",
     boundaryId: "retained-boundary",
     outcome: { kind: "completed" as const, actionOwner: null },
-    parts: [createMessageGroup({ role: "assistant", content: text }, "assistant")],
+    parts: [createMessageGroup({ role: "assistant", content: text, timestamp: 1 }, "assistant")],
   });
   const [frame, setFrame] = createSignal(frameFor("Earlier text"));
   const view = mountSolid(() => (
-    <ChatLazyBoundary fallback={<div role="status">Loading frame</div>}>
-      <Frame
-        frame={frame()}
-        options={{
-          streamOptions: {},
-          renderGroupOptions: () => ({ isStreaming: false, showReasoning: false }),
-          isWorkExpanded: () => false,
-          onToggleWork: () => {},
-        }}
-      />
-    </ChatLazyBoundary>
+    <Frame
+      frame={frame()}
+      options={{
+        streamOptions: {},
+        renderGroupOptions: () => ({ isStreaming: false, showReasoning: false }),
+        isWorkExpanded: () => false,
+        onToggleWork: () => {},
+      }}
+    />
   ));
   onTestFinished(view.unmount);
-  await waitForSolid(() => expect(loadFrame).toHaveBeenCalledOnce());
-  expect(view.container.querySelector(".chat-text")).toBeNull();
-  expect(view.container.querySelector('[role="status"]')?.textContent).toBe("Loading frame");
+  flush();
+  expect(view.container.querySelector(".chat-text")?.textContent?.trim()).toBe("Earlier text");
   setFrame(frameFor("Current text"));
-  ready.resolve();
-  await waitForSolid(() => {
-    expect(view.container.querySelector(".chat-text")?.textContent?.trim()).toBe("Current text");
-  });
+  flush();
+  expect(view.container.querySelector(".chat-text")?.textContent?.trim()).toBe("Current text");
   expect(view.container.textContent).not.toContain("Earlier text");
 });
 

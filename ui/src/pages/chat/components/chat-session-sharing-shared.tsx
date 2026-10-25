@@ -22,31 +22,21 @@ import { registerSessionPeopleEnglish } from "../../../i18n/locales/en-session-p
 import { formatUiError } from "../../../lib/format-error.ts";
 import { registerEnglishCatalog, t } from "../../../lib/reactive/i18n.ts";
 import { listen } from "../../../lib/reactive/listener.ts";
-import type { ChatSessionSharingOperationSource } from "../chat-pane-sharing-mutations.ts";
+import type {
+  ChatSessionSharingOperationSource,
+  ChatSessionSharingOutcome,
+  ChatSessionSharingState,
+} from "../chat-pane-sharing-contract.ts";
 
 registerEnglishCatalog(registerChatSessionEnglish);
 
 registerEnglishCatalog(registerSessionPeopleEnglish);
-
-export type ChatSessionSharingOutcome =
-  | { status: "success" }
-  | { status: "unchanged" | "unavailable" | "cancelled" | "stale" }
-  | { status: "failed"; error: string };
 
 // Legacy parents may still discard the result; only confirmed success closes a surface.
 type ChatSessionSharingAction =
   | void
   | ChatSessionSharingOutcome
   | Promise<void | ChatSessionSharingOutcome>;
-
-export type ChatSessionSharingState = {
-  loading: boolean;
-  /** Completes after the pane publishes or retires its admitted membership read. */
-  read?: Promise<void>;
-  result?: SessionMembersListEvidenceResult;
-  publicUrl?: string;
-  error?: string;
-};
 
 export type ChatSessionSharingProps = {
   session: GatewaySessionRow | undefined;

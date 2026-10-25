@@ -10,31 +10,11 @@ import {
 } from "../../lib/sessions/session-key.ts";
 import { runSessionNavigationAction } from "../../lib/sessions/session-menu-navigation.ts";
 import { runControlUiPluginAction } from "../../plugins/control-ui-actions.ts";
-import type { ChatPaneSessionMenu } from "./chat-pane-session-menu.ts";
+import type {
+  ChatHeaderSessionActionSource,
+  HeaderMenuAction,
+} from "./chat-pane-session-menu-contract.ts";
 import { resolveChatAgentId, selectedChatSessionRow } from "./chat-state-route.ts";
-import type { HeaderMenuAction } from "./components/chat-header-session-menu.ts";
-
-export type ChatHeaderSessionActionSource = {
-  /** Keep mutation authority outside the menu's deep presentation projection. */
-  readOwner: () => Pick<
-    ChatPaneSessionMenu,
-    | "context"
-    | "state"
-    | "mergedChrome"
-    | "headerOutcomeOwner"
-    | "changeHeaderPlacement"
-    | "canArchiveHeaderSession"
-    | "beginHeaderRename"
-    | "ownsHeaderOutcome"
-    | "openContinueInTerminalDialog"
-    | "openHeaderSessionGroup"
-    | "publishHeaderError"
-    | "runHeaderSessionMutation"
-    | "captureHeaderSessionActionScope"
-  >;
-  readRow: () => GatewaySessionRow | undefined;
-  stopDisabledReason: string | undefined;
-};
 
 /** Loaded by the menu before its actions exist; gesture-bound work stays synchronous. */
 export async function runChatHeaderSessionAction(

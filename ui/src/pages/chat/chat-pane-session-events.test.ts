@@ -4,6 +4,7 @@ import { asOptionalRecord } from "@openclaw/normalization-core/record-coerce";
 import { afterEach, assert, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { createDeferred } from "../../../../test/helpers/promise.js";
 import type { GatewaySessionRow } from "../../api/types.ts";
+import { prepareChatToolPresentation } from "../../lib/chat/tool-family.ts";
 import { sessionsResult } from "../../lib/sessions/session-capability.test-support.ts";
 import type {
   SessionRowEventListener,
@@ -99,6 +100,7 @@ describe("mounted pane session event ownership", () => {
         { role: "assistant", runId: "work-run", content: "Report reviewed", timestamp: 3_000 },
       ],
     };
+    await prepareChatToolPresentation(history.messages);
     const { context, mount } = createMountedPanes([row], "main", undefined, {
       "chat.history": async () => history,
       "chat.startup": async () => history,
@@ -284,11 +286,7 @@ describe("mounted pane session event ownership", () => {
         label: "Previous session",
       };
       const next = { ...previous, sessionId: "next-session", updatedAt: 2, label: "Next session" };
-      const newest = {
-        ...next,
-        updatedAt: 3,
-        label: "Newest session",
-      };
+      const newest = { ...next, updatedAt: 3, label: "Newest session" };
       const message = {
         role: "user",
         content: "First message in the successor session",

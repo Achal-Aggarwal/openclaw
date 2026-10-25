@@ -2,31 +2,16 @@ import type { GatewaySessionRow, SessionVisibility } from "../../api/types.ts";
 import { formatUiError } from "../../lib/format-error.ts";
 import { readSessionMethodAccess } from "../../lib/session-method-access.ts";
 import { areUiSessionKeysEquivalent } from "../../lib/sessions/session-key.ts";
-import type { ChatPaneSharingActions } from "./chat-pane-sharing-actions.ts";
+import type {
+  ChatSessionSharingOperationSource,
+  ChatSessionSharingOutcome,
+} from "./chat-pane-sharing-contract.ts";
 import type {
   ChatSessionSharingInput,
   ChatSessionSharingProps,
-  ChatSessionSharingOutcome,
   PreparedChatSessionSharing,
   PreparedSessionSharingInput,
 } from "./components/chat-session-sharing-shared.tsx";
-
-/** The lazy surface supplies code; pending state and authority remain on the pane. */
-export type ChatSessionSharingOperationSource = Pick<
-  ChatPaneSharingActions,
-  | "captureConnectionScope"
-  | "currentSessionSharingRow"
-  | "ownsHeaderOutcomeScope"
-  | "sessionSharingCacheKey"
-  | "sessionSharingAgentId"
-  | "collaboration"
-  | "setSessionSharingState"
-  | "sessionSharingHydrationTargets"
-  | "loadSessionSharing"
-  | "sessionSharingOutcome"
-  | "failSharing"
-  | "ownsSessionSharing"
->;
 
 export function resolveChatSessionSharing(input: ChatSessionSharingInput): ChatSessionSharingProps {
   return "operations" in input ? resolvePreparedChatSessionSharing(input) : input;

@@ -242,12 +242,21 @@ export function controlUiStableChunkName(id: string): string | undefined {
       return "chat-forwarded-attribution-runtime";
     case "ui/src/pages/chat/components/chat-details-desktop-process-row.tsx":
     case "ui/src/pages/chat/components/chat-details-process-row.tsx":
-    case "ui/src/pages/chat/components/chat-details-subagent-rows.tsx":
     case "ui/src/pages/chat/components/chat-details-environment-body.tsx":
       // Saved Details may render at boot without admitting tool/send interactions.
       return "chat-interaction-runtime";
     case "ui/src/pages/chat/chat-provider-review-controller.tsx":
       return "chat-provider-review";
+    case "ui/src/pages/chat/components/chat-details-desktop-section.tsx":
+    case "ui/src/pages/chat/components/session-automation-result.tsx":
+    case "ui/src/pages/chat/components/session-automation-schedule-loader.ts":
+    case "ui/src/pages/chat/components/chat-summary-automations.tsx":
+    case "ui/src/lib/reactive/keyed-list-motion.ts":
+    case "ui/src/pages/chat/components/chat-details-subagents.tsx":
+    case "ui/src/pages/chat/components/chat-details-processes-presentation.ts":
+    case "ui/src/pages/chat/components/chat-details-subagent-rows.tsx":
+      // Visible subagent summaries share the existing Details download, not optional interactions.
+      return "chat-details-processes-presentation";
     // Keep optional compression groups separate from code evaluated by text-only Chat.
     case "ui/src/pages/chat/chat-send-delivery.runtime.ts":
     case "ui/src/pages/chat/chat-send-support.runtime.ts":

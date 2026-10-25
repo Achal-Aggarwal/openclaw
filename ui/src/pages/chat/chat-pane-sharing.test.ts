@@ -9,6 +9,7 @@ import type { GatewaySessionRow, SessionMembersListEvidenceResult } from "../../
 import { sessionsResult } from "../../lib/sessions/session-capability.test-support.ts";
 import type { SessionRefreshOutcome } from "../../lib/sessions/session-capability.ts";
 import type { GatewayRequestHandler } from "../../test-helpers/gateway-client.ts";
+import type { ChatSessionSharingState } from "./chat-pane-sharing-contract.ts";
 import { resolvePreparedChatSessionSharing } from "./chat-pane-sharing-mutations.ts";
 import {
   createGatewayBrowserClientFixture,
@@ -18,10 +19,7 @@ import {
   type TestChatPane,
 } from "./chat-pane.test-support.ts";
 import type { ChatPageHost } from "./chat-state-host.ts";
-import type {
-  ChatSessionSharingState,
-  PreparedPaneSessionSharing,
-} from "./components/chat-session-sharing-shared.tsx";
+import type { PreparedPaneSessionSharing } from "./components/chat-session-sharing-shared.tsx";
 
 const { confirmPublicShare, copyPublicShare } = vi.hoisted(() => ({
   confirmPublicShare: vi.fn<(...args: unknown[]) => Promise<boolean>>(),

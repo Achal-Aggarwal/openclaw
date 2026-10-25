@@ -16,10 +16,10 @@ import type { MenuControls, MenuEntry, MenuItem } from "../../../components/soli
 import { SessionOwnerChip } from "../../../components/solid/session-owner-chip.tsx";
 import { registerChatSessionEnglish } from "../../../i18n/locales/en-chat-session.ts";
 import { registerEnglishCatalog, t } from "../../../lib/reactive/i18n.ts";
+import type { ChatSessionSharingOutcome } from "../chat-pane-sharing-contract.ts";
 import { resolveChatSessionSharing } from "../chat-pane-sharing-mutations.ts";
 import {
   type ChatSessionSharingInput,
-  type ChatSessionSharingOutcome,
   VISIBILITY_LABEL_KEYS,
   ChatSessionSharingModeIcon,
   projectChatSessionSharingRoster,

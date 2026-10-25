@@ -14,12 +14,9 @@ import { listen } from "../../../lib/reactive/listener.ts";
 import { isChatBubbleMode, setChatBubbleMode } from "../chat-bubble-mode.ts";
 import { ChatPaneNativeSessionActions } from "../chat-pane-native-session-actions.ts";
 import { runChatHeaderSessionAction } from "../chat-pane-session-menu-actions.ts";
+import type { HeaderMenuAction } from "../chat-pane-session-menu-contract.ts";
 import { createMobileHeaderSessionMenu } from "./chat-header-session-menu-mobile.tsx";
-import type {
-  HeaderMenuAction,
-  HeaderMenuContentProps,
-  CompactMenuView,
-} from "./chat-header-session-menu.tsx";
+import type { HeaderMenuContentProps, CompactMenuView } from "./chat-header-session-menu.tsx";
 import { useChatQuickActionEntries } from "./chat-quick-action.tsx";
 import { useChatSessionSharingMenu } from "./chat-session-sharing-menu.tsx";
 import { canManageChatSessionSharing } from "./chat-session-sharing-shared.tsx";

@@ -343,7 +343,9 @@ describe.skipIf(!hasPopoverApi)("platform menu hover", () => {
         { container: host },
       );
       await openMenu(host, '[aria-haspopup="menu"]');
+      await import("../pages/chat/components/chat-composer-plus-menu-content.tsx");
       await expect.poll(() => host.querySelector('[data-value="media"]')).not.toBeNull();
+      await expect.poll(() => host.querySelector('[data-value="open-skills"]')).not.toBeNull();
       const media = query(host, '[data-value="media"]');
       const skills = query(host, '[data-value="open-skills"]');
       await hoverBackground(media, highlight);

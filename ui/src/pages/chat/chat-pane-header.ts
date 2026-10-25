@@ -38,20 +38,18 @@ import { ChatPaneHeaderMemo } from "./chat-pane-header-memo.ts";
 import { ChatPaneHeaderPeople } from "./chat-pane-header-people.ts";
 import { resolveChatPaneDesktopTarget, resolveChatPanePlacement } from "./chat-pane-placement.ts";
 import type { createChatPaneRails } from "./chat-pane-rails.ts";
+import type { HeaderMenuActionKind } from "./chat-pane-session-menu-contract.ts";
 import { isChatRunWorking } from "./chat-run-working.ts";
-import { readChatSessionActionAccess } from "./chat-session-action-access.ts";
 import "./components/chat-header-session-menu.ts";
+import { readChatSessionActionAccess } from "./chat-session-action-access.ts";
 import { countRunningSubagents } from "./chat-subagent-wait.ts";
 import type { ChatDetails, ChatDetailsViewProps } from "./components/chat-details.tsx";
 import type { HeaderPanelAction } from "./components/chat-header-panel-actions.tsx";
 import type {
-  HeaderMenuActionKind,
-  HeaderMenuQuickAction,
-} from "./components/chat-header-session-menu.ts";
-import type {
   ChatPaneHeaderPresentation,
   ChatPaneHeaderProps,
 } from "./components/chat-pane-header.types.ts";
+import type { HeaderMenuQuickAction } from "./components/chat-quick-action.tsx";
 import { canManageChatSessionSharing } from "./components/chat-session-sharing-shared.tsx";
 import { hasDirectSessionRun } from "./run-lifecycle.ts";
 import {

@@ -99,8 +99,15 @@ it("does not persist a queued attachment under an account selected during chunk 
 });
 
 async function savedRecovery() {
+  // Seed storage without warming the facade whose first import failure is under test.
+  const writer = await vi.importActual<
+    typeof import("../../lib/chat/composer-draft-write.runtime.ts")
+  >("../../lib/chat/composer-draft-write.runtime.ts");
   await expect(
-    writeDurableComposerDraft(legacyScope, draft, { expectedRevision: 0, writeId: "saved-draft" }),
+    writer.writeDurableComposerDraft(legacyScope, draft, {
+      expectedRevision: 0,
+      writeId: "saved-draft",
+    }),
   ).resolves.toEqual({ status: "persisted", revision: 1, writeId: "saved-draft" });
   const recovery = await prepareDurableComposerRecovery(owner);
   if (recovery.status !== "ready" || recovery.entries.length !== 1) {

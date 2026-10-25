@@ -7,6 +7,7 @@ import type { GatewaySessionRow, SessionMembersListEvidenceResult } from "../../
 import { mountSolid } from "../../../test-helpers/mount-solid.ts";
 import { waitForSolid } from "../../../test-helpers/solid-settle.ts";
 import { createMountedPanes, refreshPane } from "../chat-pane-mounted.test-support.ts";
+import type { ChatSessionSharingOutcome } from "../chat-pane-sharing-contract.ts";
 import { resolvePreparedChatSessionSharing } from "../chat-pane-sharing-mutations.ts";
 import { createChatSessionSharingMobileAdapter } from "./chat-session-sharing-mobile-adapter.tsx";
 import {
@@ -16,7 +17,6 @@ import {
 import type {
   PreparedChatSessionSharing,
   PreparedPaneSessionSharing,
-  ChatSessionSharingOutcome,
 } from "./chat-session-sharing-shared.tsx";
 
 function prepared(overrides: Partial<PreparedChatSessionSharing> = {}): PreparedChatSessionSharing {
