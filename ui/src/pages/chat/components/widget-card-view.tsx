@@ -396,8 +396,11 @@ function WidgetContent(props: {
   options?: WidgetCardOptions;
   onExportSource: (source: WidgetExportSource) => void;
 }) {
+  const input = () => (props.preview.render === "input" ? props.preview.input : undefined);
+  const allowScripts = createMemo(() => !input() && props.sandbox.includes("allow-scripts"));
   const managed = () =>
-    props.preview.sandbox !== "strict" && isManagedCanvasDocumentPreview(props.preview);
+    Boolean(input()) ||
+    (props.preview.sandbox !== "strict" && isManagedCanvasDocumentPreview(props.preview));
   const layoutKey = () =>
     props.preview.mcpApp
       ? `mcp:${props.preview.mcpApp.viewId}`
@@ -460,7 +463,8 @@ function WidgetContent(props: {
                     onHeightChange={(nextHeight) =>
                       props.options?.widgetLayout?.write(layoutKey(), nextHeight)
                     }
-                    allowScripts={props.sandbox.includes("allow-scripts")}
+                    inputPreview={input()}
+                    allowScripts={allowScripts()}
                     connectionGeneration={getCanvasWidgetFrameConnectionGeneration()}
                   />
                 </ChatLazyBoundary>
@@ -574,6 +578,7 @@ function CanvasPreview(props: {
   const canPin = () => {
     const board = provider();
     return (
+      props.preview.render !== "input" &&
       board &&
       pinName() &&
       (props.preview.mcpApp
@@ -586,7 +591,9 @@ function CanvasPreview(props: {
   const canExportImage = () => !props.preview.mcpApp && isInternalCanvasEntryUrl(props.preview.url);
   const hasMenu = () => canExportImage() || Boolean(props.options?.rawText);
   const hasActions = () =>
-    props.options?.mediaReadAllowed !== false && Boolean(canPin() || hasMenu());
+    props.preview.render !== "input" &&
+    props.options?.mediaReadAllowed !== false &&
+    Boolean(canPin() || hasMenu());
   const pinTarget = createMemo(
     (): WidgetPinTarget | undefined =>
       canPin()
@@ -609,7 +616,13 @@ function CanvasPreview(props: {
     <div
       ref={widgetActionsPlacementRef(hasActions)}
       class="chat-tool-card__preview"
-      data-content-kind={props.preview.mcpApp ? "mcp-app" : "canvas-html"}
+      data-content-kind={
+        props.preview.render === "input"
+          ? "widget-input"
+          : props.preview.mcpApp
+            ? "mcp-app"
+            : "canvas-html"
+      }
       data-has-widget-actions={hasActions() ? "" : undefined}
       data-kind="canvas"
       data-surface={props.surface}

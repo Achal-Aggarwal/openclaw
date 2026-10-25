@@ -117,6 +117,32 @@ function readChatMessagePreview(toolMessage: Record<string, unknown>) {
   if (!safeNormalizeMessage(toolMessage)) {
     return null;
   }
+  // Project transient input alongside canonical canvas content before hidden
+  // tool rows are discarded. Only the live stream can supply this field.
+  const input =
+    toolMessage["__openclawToolStreamLive"] === true
+      ? asRecord(toolMessage["__openclawWidgetInputPreview"])
+      : null;
+  if (typeof input?.identity === "string") {
+    const preview = readCanvasContentPreview({
+      type: "canvas",
+      preview: {
+        kind: "canvas",
+        surface: "assistant_message",
+        render: "input",
+        viewId: `input:${input.identity}`,
+        input,
+      },
+    });
+    if (preview) {
+      return {
+        runId: typeof toolMessage.runId === "string" ? toolMessage.runId : undefined,
+        preview,
+        text: null,
+        timestamp: rawMessageTimestamp(toolMessage),
+      };
+    }
+  }
   const cards = extractToolCardsCached(toolMessage);
   for (let index = cards.length - 1; index >= 0; index--) {
     const card = cards[index];

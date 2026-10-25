@@ -86,6 +86,7 @@ function mount(
   docId = "cv_inline",
   parent: Element | ShadowRoot = document.body,
   operatorScopes?: string[],
+  inputPreview?: OpenClawCanvasWidgetView["inputPreview"],
 ) {
   const view = document.createElement(elementName) as OpenClawCanvasWidgetView;
   const listeners = new Set<GatewayEventListener>();
@@ -131,6 +132,7 @@ function mount(
       } as unknown as ApplicationContext);
     }
   });
+  view.inputPreview = inputPreview;
   view.docId = docId;
   view.sessionKey = "agent:main:widget-test";
   view.messageTimestamp = Date.now();
@@ -212,6 +214,45 @@ describe("Canvas widget view", () => {
     delete (document as unknown as Record<string, unknown>).activeElement;
     vi.restoreAllMocks();
     vi.useRealTimers();
+  });
+
+  it("keeps a transient frame while input grows, parks hidden updates, and loads only the final document", async () => {
+    const view = mount(client, "input:call", document.body, ["operator.read"], {
+      title: "Survey",
+      html: "<p>First",
+    });
+    const frame = await frameFor(view);
+    const post = vi.spyOn(frame.contentWindow!, "postMessage");
+    message(frame, { type: "openclaw:widget-input-ready" }, [], "null");
+    await settle(view);
+    expect(client.request).not.toHaveBeenCalled();
+    expect(frame.getAttribute("sandbox")).toBe("allow-scripts");
+    view.inputPreview = { title: "Survey", html: "<p>First complete</p>" };
+    await settle(view);
+    expect(view.querySelector("iframe")).toBe(frame);
+    expect(post.mock.calls.filter(([data]) => data.type === "openclaw:widget-input")).toHaveLength(
+      2,
+    );
+    const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
+    document.dispatchEvent(new Event("visibilitychange"));
+    await settle(view);
+    post.mockClear();
+    view.inputPreview = { title: "Survey", html: "<p>First complete</p><p>Latest" };
+    await settle(view);
+    expect(post).not.toHaveBeenCalled();
+    visibility.mockReturnValue("visible");
+    document.dispatchEvent(new Event("visibilitychange"));
+    await settle(view);
+    expect(post.mock.calls.filter(([data]) => data.type === "openclaw:widget-input")).toHaveLength(
+      1,
+    );
+    view.inputPreview = undefined;
+    view.docId = "cv_final";
+    await settle(view);
+    const finalFrame = await frameFor(view);
+    expect(finalFrame).not.toBe(frame);
+    expectRead(client, "cv_final");
+    expect(client.request).toHaveBeenCalledOnce();
   });
 
   it("loads authenticated HTML once for concurrent views and waits for the exact isolated proxy", async () => {

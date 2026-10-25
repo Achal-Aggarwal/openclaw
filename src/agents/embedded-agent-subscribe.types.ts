@@ -15,6 +15,7 @@ export type { BlockReplyChunking } from "./embedded-agent-subscribe.shared-types
 export type SubscribeEmbeddedAgentSessionParams = Pick<
   EmbeddedRunAttemptParams,
   | "runId"
+  | "clientCaps"
   | "lifecycleGeneration"
   | "messageChannel"
   | "initialReplayState"

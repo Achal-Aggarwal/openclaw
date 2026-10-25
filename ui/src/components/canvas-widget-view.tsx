@@ -6,7 +6,8 @@ import {
 import type { CanvasDocumentViewResult } from "@openclaw/gateway-protocol";
 import { asOptionalRecord } from "@openclaw/normalization-core/record-coerce";
 import { truncateUtf16Safe } from "@openclaw/normalization-core/utf16-slice";
-import { Show, createEffect, createMemo, onCleanup, onSettled } from "solid-js";
+import { createEffect, createMemo, onCleanup, onSettled } from "solid-js";
+import type { WidgetInputPreview } from "../../../src/shared/widget-input-preview.js";
 import type { ApplicationContext } from "../app/context.ts";
 import { hasOperatorReadAccess, hasOperatorSelfReadAccess } from "../app/operator-access.ts";
 import { registerBoardEnglish } from "../i18n/locales/en-board.ts";
@@ -18,18 +19,20 @@ import { projectCallbackOwner } from "../lib/reactive/callback-owner.ts";
 import { useApplication } from "../lib/reactive/context.ts";
 import { registerEnglishCatalog, t } from "../lib/reactive/i18n.ts";
 import { listen } from "../lib/reactive/listener.ts";
+import { createDocumentVisibility } from "../lib/reactive/platform.ts";
 import { defineSolidBridge, type SolidBridgeElement } from "../lib/solid-bridge.ts";
 import { generateUUID } from "../lib/uuid.ts";
+import { buildWidgetInputShell, parseWidgetInputDocument } from "../lib/widget-input-document.ts";
 import { WidgetSandboxHost, WIDGET_LOAD_NOTICE_MS } from "../lib/widget-sandbox-host.ts";
 import { registerWidgetThemeFrame, postWidgetTheme } from "../lib/widget-theme.ts";
 import { forwardChatWheelToTranscript } from "../pages/chat/chat-scroll-input.ts";
+import { CanvasWidgetFrame, resolveCanvasWidgetFrameSource } from "./canvas-widget-frame.tsx";
 import {
   createCanvasWidgetViewLoader,
   isCanvasWidgetLoadRetryEvent,
   type CanvasWidgetViewBinding,
 } from "./canvas-widget-view-loader.ts";
 import { allowWidgetPrompt, dispatchWidgetPrompt } from "./mcp-app-security.ts";
-import { resolveSandboxHostUrl } from "./sandbox-host.ts";
 
 registerEnglishCatalog(registerBoardEnglish);
 
@@ -54,6 +57,8 @@ type CanvasWidgetViewProps = {
   connectionGeneration: number;
   presentationActive: boolean;
   allowScripts: boolean;
+  /** Live input only; never a saved document or a script/host capability. */
+  inputPreview?: WidgetInputPreview;
 };
 
 type CanvasWidgetViewContent = {
@@ -83,6 +88,7 @@ function createCanvasWidget(
     contentHeight?: number;
     sandboxGeneration: number;
     pending: boolean;
+    inputShell?: string;
   } = {
     error: "",
     accessDenied: false,
@@ -105,6 +111,8 @@ function createCanvasWidget(
   let retryTimer: number | undefined;
   let slowTimer: number | undefined;
   let retryDelayMs = 1_000;
+  let inputReady = false;
+  let renderedInput = "";
   Object.defineProperties(element, {
     documentHtml: {
       configurable: true,
@@ -161,10 +169,13 @@ function createCanvasWidget(
     state.resourceError = false;
     activeBinding = undefined;
     state.view = undefined;
+    state.inputShell = undefined;
     clearSandbox();
   }
 
   function clearSandbox(): void {
+    inputReady = false;
+    renderedInput = "";
     scrollNonce = "";
     sandboxHost?.dispose();
     sandboxHost = undefined;
@@ -214,6 +225,9 @@ function createCanvasWidget(
   function reconcile(): void {
     const gateway = context.gateway;
     const client = gateway?.snapshot.client;
+    if (state.inputShell && !props.inputPreview) {
+      clearView();
+    }
     if (
       (activeBinding && !sameOwner(activeBinding)) ||
       (ownerBinding && !sameOwner(ownerBinding))
@@ -272,6 +286,15 @@ function createCanvasWidget(
       operatorRead: hasOperatorReadAccess(gateway.snapshot.hello?.auth ?? null),
     };
     activeBinding = binding;
+    if (props.inputPreview) {
+      ownerBinding = binding;
+      state.inputShell ??= buildWidgetInputShell(
+        generateUUID(),
+        new URL("../lib/widget-input-runtime.js?no-inline", import.meta.url).href,
+      );
+      state.pending = false;
+      return;
+    }
     state.pending = Boolean(state.view) || state.awaitingResult;
     slowTimer = window.setTimeout(() => {
       if (isCurrent(binding)) {
@@ -354,7 +377,32 @@ function createCanvasWidget(
     }),
   );
 
-  function syncSandbox(): void {
+  function syncSandbox(documentVisible = true): void {
+    if (props.inputPreview) {
+      if (
+        !inputReady ||
+        !props.presentationActive ||
+        !documentVisible ||
+        !isCurrent(activeBinding) ||
+        !frameElement?.isConnected
+      ) {
+        return;
+      }
+      const html = props.inputPreview.html;
+      if (html === renderedInput) {
+        return;
+      }
+      frameElement.contentWindow?.postMessage(
+        {
+          type: "openclaw:widget-input",
+          nodes: parseWidgetInputDocument(html),
+          reset: !html.startsWith(renderedInput),
+        },
+        "*",
+      );
+      renderedInput = html;
+      return;
+    }
     const active = props.presentationActive && isCurrent(validatedBinding);
     sandboxHost?.setActive(active);
     const frame = frameElement;
@@ -414,6 +462,33 @@ function createCanvasWidget(
   }
 
   const handleMessage = (event: Event): void => {
+    if (props.inputPreview) {
+      if (
+        !(event instanceof MessageEvent) ||
+        !frameElement?.isConnected ||
+        !isCurrent(activeBinding) ||
+        event.source !== frameElement.contentWindow ||
+        event.origin !== "null"
+      ) {
+        return;
+      }
+      if (event.data?.type === "openclaw:widget-input-ready") {
+        inputReady = true;
+        releaseTheme ??= registerWidgetThemeFrame(frameElement, "*");
+        postWidgetTheme(frameElement);
+        syncSandbox(document.visibilityState !== "hidden");
+      } else if (
+        event.data?.type === "openclaw:widget-size" &&
+        typeof event.data.height === "number" &&
+        Number.isFinite(event.data.height) &&
+        event.data.height > 0
+      ) {
+        state.contentHeight = Math.min(8000, Math.max(48, Math.trunc(event.data.height)));
+        props.onHeightChange?.(state.contentHeight);
+        notify();
+      }
+      return;
+    }
     const host = sandboxHost;
     const binding = ownerBinding;
     if (
@@ -555,6 +630,8 @@ function createCanvasWidget(
   };
 }
 
+export type CanvasWidgetViewState = ReturnType<typeof createCanvasWidget>["state"];
+
 export const CanvasWidgetView = defineSolidBridge<CanvasWidgetViewProps, CanvasWidgetViewContent>(
   "openclaw-canvas-widget-view",
   (props, host) => {
@@ -562,6 +639,7 @@ export const CanvasWidgetView = defineSolidBridge<CanvasWidgetViewProps, CanvasW
     host.style.minHeight = "";
     const context = useApplication();
     const gateway = projectGateway(context.gateway);
+    const documentVisible = createDocumentVisibility();
     const { owner: widget, view: projection } = projectCallbackOwner(
       (notify) => createCanvasWidget(host, host, context, notify),
       (owner) => owner.state,
@@ -586,6 +664,7 @@ export const CanvasWidgetView = defineSolidBridge<CanvasWidgetViewProps, CanvasW
         props.sessionKey,
         props.connectionGeneration,
         props.allowScripts,
+        props.inputPreview,
         props.presentationActive,
         gateway.read(),
       ],
@@ -595,8 +674,8 @@ export const CanvasWidgetView = defineSolidBridge<CanvasWidgetViewProps, CanvasW
       },
     );
     createEffect(
-      () => [projection.revision(), props.presentationActive],
-      () => widget.syncSandbox(),
+      () => [projection.revision(), props.presentationActive, documentVisible()],
+      (inputs) => widget.syncSandbox(inputs[2]),
     );
     onCleanup(() => {
       Object.defineProperty(host, "allowScripts", scriptProperty);
@@ -606,115 +685,27 @@ export const CanvasWidgetView = defineSolidBridge<CanvasWidgetViewProps, CanvasW
       widget.reconcile();
       widget.notify();
     };
-    const source = createMemo(() => {
-      const view = read().view;
-      if (!view || !context) {
-        return undefined;
-      }
-      try {
-        return {
-          src: props.allowScripts
-            ? resolveSandboxHostUrl(
-                view.sandboxUrl,
-                view.sandboxPort,
-                view.sandboxOrigin,
-                context.gateway.connection.gatewayUrl,
-                window.location.origin,
-              )
-            : undefined,
-        };
-      } catch (error) {
-        return { error: formatUiError(error) };
-      }
-    });
+    const source = createMemo(() =>
+      resolveCanvasWidgetFrameSource(
+        read().view,
+        read().inputShell,
+        props.allowScripts,
+        context.gateway.connection.gatewayUrl,
+      ),
+    );
     const height = () => read().contentHeight ?? props.preferredHeight ?? 420;
     return (
-      <Show
-        when={!read().error}
-        fallback={
-          <div class="board-widget__error" role="alert">
-            {read().error}
-            <Show when={!read().accessDenied}>
-              <button class="btn btn--small" onClick={retry}>
-                {t("common.retry")}
-              </button>
-            </Show>
-          </div>
-        }
-      >
-        <Show
-          when={Boolean(source())}
-          fallback={
-            <Show
-              when={read().pending}
-              fallback={
-                // Preserve the empty reserved box across the lazy element's upgrade.
-                <div
-                  role="status"
-                  aria-label={t("common.loading")}
-                  style={{ "min-height": `${height()}px` }}
-                />
-              }
-            >
-              <div
-                class="board-widget__notice"
-                role="status"
-                style={{ "min-height": `${height()}px` }}
-              >
-                {t(
-                  read().awaitingResult
-                    ? "board.widget.waitingForResult"
-                    : "board.widget.waitingForConnection",
-                )}
-              </div>
-            </Show>
-          }
-        >
-          <Show when={!source()?.error} fallback={<div role="alert">{source()?.error}</div>}>
-            <Show when={read().pending}>
-              <div class="board-widget__notice" role="status">
-                {t(
-                  read().awaitingResult
-                    ? "board.widget.waitingForResult"
-                    : "board.widget.waitingForConnection",
-                )}
-              </div>
-            </Show>
-            <Show when={read().resourceError}>
-              <div class="board-widget__notice" role="status">
-                {t("board.widget.resourceUnavailable")}
-                <button class="btn btn--small" onClick={retry}>
-                  {t("common.retry")}
-                </button>
-              </div>
-            </Show>
-            <Show when={read().runtimeError}>
-              <div class="board-widget__notice" role="status">
-                {t("board.widget.runtimeError", { message: read().runtimeError })}
-              </div>
-            </Show>
-            <Show when={String(read().sandboxGeneration)} keyed>
-              {(_generation) => (
-                <iframe
-                  class="chat-tool-card__preview-frame"
-                  allow="fullscreen"
-                  title={props.title}
-                  src={source()?.src}
-                  srcdoc={props.allowScripts ? undefined : read().view?.html}
-                  sandbox={props.allowScripts ? "allow-scripts allow-same-origin allow-forms" : ""}
-                  referrerpolicy="origin"
-                  style={{
-                    height: height() ? `${height()}px` : undefined,
-                    "min-height": height() ? `${height()}px` : undefined,
-                  }}
-                  ref={widget.setFrame}
-                  onError={() => widget.syncFrameError()}
-                />
-              )}
-            </Show>
-          </Show>
-        </Show>
-      </Show>
+      <CanvasWidgetFrame
+        state={read()}
+        source={source()}
+        height={height()}
+        title={props.title}
+        allowScripts={props.allowScripts}
+        input={Boolean(props.inputPreview)}
+        onRetry={retry}
+        onFrame={widget.setFrame}
+        onFrameError={widget.syncFrameError}
+      />
     );
   },
   {
@@ -728,6 +719,7 @@ export const CanvasWidgetView = defineSolidBridge<CanvasWidgetViewProps, CanvasW
       connectionGeneration: { default: 0 },
       presentationActive: { default: true },
       allowScripts: { default: true },
+      inputPreview: { default: undefined, attribute: false },
     },
   },
 );

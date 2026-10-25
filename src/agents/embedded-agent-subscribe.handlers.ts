@@ -24,10 +24,15 @@ import { handleToolExecutionStart } from "./embedded-agent-subscribe.handlers.to
 import type { EmbeddedAgentSubscribeContext } from "./embedded-agent-subscribe.handlers.types.js";
 import { recordEmbeddedToolTrajectoryEvent } from "./embedded-agent-subscribe.trajectory.js";
 import { prepareToolResult } from "./embedded-agent-tool-results.js";
+import {
+  createWidgetInputPreviewCapture,
+  emitWidgetInputPreview,
+} from "./embedded-agent-widget-preview.js";
 import type { AgentSessionEvent } from "./sessions/index.js";
 
 /** Create the serialized event dispatcher for subscribed embedded-agent sessions. */
 export function createEmbeddedAgentSessionEventHandler(ctx: EmbeddedAgentSubscribeContext) {
+  const widgetInputs = createWidgetInputPreviewCapture();
   let assistantSource: AgentAssistantSourceReceipt | undefined;
   const scheduleEvent = (evt: AgentSessionEvent, handler: () => unknown): void | Promise<void> => {
     const onError = (err: unknown) => {
@@ -64,6 +69,17 @@ export function createEmbeddedAgentSessionEventHandler(ctx: EmbeddedAgentSubscri
   };
 
   return (evt: AgentSessionEvent) => {
+    const widgetPreview =
+      evt.type === "message_update" &&
+      evt.message.role === "assistant" &&
+      ctx.params.clientCaps?.includes("inline-widgets") &&
+      ctx.params.coreBuiltinToolNames?.has("show_widget") &&
+      !ctx.params.suppressLiveStreamOutput
+        ? widgetInputs.capture(evt.assistantMessageEvent)
+        : undefined;
+    if (evt.type === "agent_end" || evt.type === "compaction_start") {
+      widgetInputs.clear();
+    }
     if (
       (evt.type === "message_start" ||
         evt.type === "message_update" ||
@@ -87,7 +103,10 @@ export function createEmbeddedAgentSessionEventHandler(ctx: EmbeddedAgentSubscri
         void scheduleEvent(evt, () => handleMessageStart(ctx, evt));
         return;
       case "message_update":
-        void scheduleEvent(evt, () => handleMessageUpdate(ctx, evt));
+        void scheduleEvent(evt, () => {
+          emitWidgetInputPreview(ctx, widgetPreview);
+          return handleMessageUpdate(ctx, evt);
+        });
         return;
       case "message_end":
         void scheduleEvent(evt, () => handleMessageEnd(ctx, evt));

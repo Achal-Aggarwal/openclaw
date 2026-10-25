@@ -64,6 +64,7 @@ import {
   projectChatTerminalMessage,
   scheduleLiveTextFlush,
 } from "./server-chat-live-text.js";
+import { createNodeToolPayloadSender } from "./server-chat-node-tool-payload.js";
 import { isChatAbortMarkerCurrent } from "./server-chat-state.js";
 import type {
   BufferedAgentEvent,
@@ -1047,37 +1048,13 @@ export function createAgentEventHandler({
     }
   };
 
-  const sendNodeToolPayload = (
-    event: AgentEventRuntimePayload,
-    sessionKey: string,
-    agentId: string | undefined,
-    payload: AgentEventPayload,
-  ) => {
-    const deliveryKeys = resolveSessionDeliveryKeys(sessionKey, agentId).filter(
-      nodeHasSessionSubscribers,
-    );
-    const firstDeliveryKey = deliveryKeys[0];
-    if (!firstDeliveryKey) {
-      return;
-    }
-    const verbose = resolveToolVerboseLevel(event, sessionKey, agentId);
-    if (verbose === "off") {
-      return;
-    }
-    let channelPayload = payload;
-    if (verbose !== "full") {
-      const data = { ...event.data };
-      delete data.result;
-      delete data.partialResult;
-      channelPayload = { ...payload, data };
-    }
-    const nodePayload = {
-      ...channelPayload,
-      ...buildSessionEventSnapshot(sessionKey, undefined, agentId),
-    };
-    // Registration is demand only; each send still validates its pairing generation.
-    nodeSendToSession(firstDeliveryKey, "agent", nodePayload, { sessionKeys: deliveryKeys });
-  };
+  const sendNodeToolPayload = createNodeToolPayloadSender({
+    resolveSessionDeliveryKeys,
+    nodeHasSessionSubscribers,
+    resolveToolVerboseLevel,
+    buildSessionEventSnapshot,
+    nodeSendToSession,
+  });
 
   const handleEvent = (event: AgentEventPayload, restartRecoveryState?: { suppress: boolean }) => {
     const evt = event as AgentEventRuntimePayload;
@@ -1268,6 +1245,9 @@ export function createAgentEventHandler({
     }
     if (isToolEvent) {
       const toolPhase = typeof evt.data?.phase === "string" ? evt.data.phase : "";
+      if (toolPhase === "widget_preview" && (isAborted || !isControlUiVisible)) {
+        return;
+      }
       if (toolPhase === "start") {
         updateRunToolErrorSummary?.({ runId: evt.runId, clientRunId, summary: undefined });
       } else if (toolPhase === "result") {

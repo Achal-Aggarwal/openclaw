@@ -1,10 +1,15 @@
 /* @vitest-environment jsdom */
 import { afterEach, beforeEach, expect, it, onTestFinished, vi } from "vitest";
 import { projectAgentToolActivity } from "../../../../../src/infra/agent-activity-events.js";
+import type { OpenClawCanvasWidgetView } from "../../../components/canvas-widget-view.tsx";
+import { createApplicationContextProvider } from "../../../test-helpers/application-context.ts";
 import { mountSolid } from "../../../test-helpers/solid-render.tsx";
 import { waitForSolid } from "../../../test-helpers/solid-settle.ts";
+import { createInitializationContext } from "../chat-pane.test-support.ts";
 import { createTestTranscript } from "../chat-view.test-helpers.ts";
 import { render, renderChatThread } from "../test-helpers/chat-transcript-native.tsx";
+import { agentEvent, createHost, useToolStreamFakeTimers } from "../tool-stream.test-helpers.ts";
+import { handleAgentEvent } from "../tool-stream.ts";
 import { createToolResultMessage } from "./chat-message.test-support.ts";
 import type { ChatThreadProps } from "./chat-thread-interactions.ts";
 import {
@@ -18,7 +23,11 @@ beforeEach(installTranscriptDomMocks);
 afterEach(resetTranscriptTestDom);
 
 function mountThread(id: string, overrides: Partial<ChatThreadProps> = {}) {
-  const container = document.body.appendChild(document.createElement("div"));
+  const container = document.body.appendChild(
+    overrides.applicationContext
+      ? createApplicationContextProvider(overrides.applicationContext)
+      : document.createElement("div"),
+  );
   const transcript = createTestTranscript();
   onTestFinished(() => {
     render(null, container);
@@ -207,4 +216,55 @@ it("keeps the active parent's work bubble and child count without embedding chil
   expect(count?.textContent).toBe("2 subagents running");
   count?.click();
   expect(onOpenSubagents).toHaveBeenCalledOnce();
+});
+
+it("renders unfinished widget input through the transcript with tool details hidden", async () => {
+  const applicationContext = createInitializationContext();
+  const host = createHost({ chatRunId: "bubble-run" });
+  const receive = (seq: number, data: Record<string, unknown>) => {
+    useToolStreamFakeTimers();
+    handleAgentEvent(
+      host,
+      agentEvent("bubble-run", seq, "tool", {
+        name: "show_widget",
+        toolCallId: "survey",
+        ...data,
+      }),
+    );
+    vi.advanceTimersByTime(100);
+    vi.useRealTimers();
+  };
+  const first = { title: "Survey", html: "<h2>Survey</h2>" };
+  receive(1, { phase: "widget_preview", preview: first });
+  const { container, props, draw, find } = mountThread("widget-input", {
+    sessionKey: "main",
+    applicationContext,
+    stream: null,
+    showToolCalls: false,
+    toolMessages: host.chatToolMessages,
+  });
+  const widget = () =>
+    container.querySelector<OpenClawCanvasWidgetView>("openclaw-canvas-widget-view");
+  await waitForSolid(() => expect(widget()?.inputPreview).toEqual(first));
+  const original = widget();
+  const next = { title: "Survey", html: "<h2>Survey</h2><p>24 sites</p>" };
+  receive(2, { phase: "widget_preview", preview: next });
+  props.toolMessages = host.chatToolMessages;
+  draw();
+  await waitForSolid(() => expect(widget()?.inputPreview).toEqual(next));
+  expect(widget()).toBe(original);
+  expect(find("[data-widget-actions]")).toBeNull();
+  props.mediaReadAllowed = false;
+  draw();
+  await waitForSolid(() => expect(widget()).toBeNull());
+  expect(find('[data-content-kind="widget-input"]')).not.toBeNull();
+  props.mediaReadAllowed = true;
+  receive(3, {
+    phase: "result",
+    isError: true,
+    result: { content: [{ type: "text", text: "Invalid script" }] },
+  });
+  props.toolMessages = host.chatToolMessages;
+  draw();
+  await waitForSolid(() => expect(find('[data-content-kind="widget-input"]')).toBeNull());
 });
