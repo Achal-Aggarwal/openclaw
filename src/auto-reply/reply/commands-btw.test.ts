@@ -7,6 +7,7 @@ import type { OpenClawConfig } from "../../config/config.js";
 import { resolveMessageActionTurnCapability } from "../../gateway/message-action-turn-capability.js";
 import { expectObjectFields, mockFirstObjectArg } from "../../test-utils/mock-call-assertions.js";
 import { resolveAgentDirMock } from "./commands-agent-scope.test-support.js";
+import { buildCommandContextForTest } from "./commands-context.test-support.js";
 import { buildCommandTestParams } from "./commands.test-harness.js";
 import { createMockTypingController } from "./test-helpers.js";
 
@@ -303,4 +304,26 @@ describe("handleBtwCommand", () => {
       });
     },
   );
+  it("passes every line of a side question asked in a group", async () => {
+    runBtwSideQuestionMock.mockResolvedValue({ text: "answer" });
+    const body = "@openclaw /btw why does this fail?\n\nError: ENOSPC\n    at write (app.js:3:5)";
+    const params = buildParams(body);
+    params.cfg = { ...params.cfg, messages: { groupChat: { mentionPatterns: ["@openclaw"] } } };
+    params.isGroup = true;
+    params.command = buildCommandContextForTest({
+      ctx: params.ctx,
+      cfg: params.cfg,
+      isGroup: true,
+      triggerBodyNormalized: body,
+      commandAuthorized: true,
+    });
+
+    params.agentDir = "/tmp/agent";
+    params.sessionEntry = { sessionId: "session-1", updatedAt: Date.now() };
+    await handleBtwCommand(params, true);
+
+    expect(mockFirstObjectArg(runBtwSideQuestionMock).question).toBe(
+      "why does this fail?\n\nError: ENOSPC\n    at write (app.js:3:5)",
+    );
+  });
 });

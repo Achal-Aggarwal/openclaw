@@ -1,5 +1,6 @@
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
+import { AsyncWorkScope } from "../shared/async-work-scope.js";
 import { createDeferredCore } from "../shared/deferred.js";
 import { bindPluginCacheRoot, createPluginCache, withPluginCache } from "./plugin-cache.js";
 import { PluginInstance } from "./plugin-instance.js";
@@ -7,7 +8,7 @@ import { createEmptyPluginRegistry } from "./registry-empty.js";
 import { resolvePluginRuntimeRecord } from "./runtime-context.js";
 import { withPluginRegistrationContext } from "./runtime.js";
 import { withPluginRuntimeGatewayRequestScope } from "./runtime/gateway-request-scope.js";
-import { createPluginRecord } from "./status.test-fixtures.js";
+import { createPluginRecord } from "./status.test-helpers.js";
 
 describe("plugin runtime record source ownership", () => {
   it.each([
@@ -258,25 +259,40 @@ describe("plugin runtime record source ownership", () => {
       await cleanupFinished.promise;
     });
     const call = instance.run(() => callFinished.promise);
-    const disposal = instance.dispose();
+    const owner = new AsyncWorkScope();
+    const disposal = owner.track(() => instance.dispose());
+    let ownerDrained = false;
+    const drained = owner.drain().then(() => {
+      ownerDrained = true;
+    });
     try {
-      withRequest(registry, undefined, () => expectOwner({ modulePath: captured }, retired));
+      withPluginRuntimeGatewayRequestScope(
+        { pluginRegistry: registry, isWebchatConnect: () => false },
+        () => expect(resolvePluginRuntimeRecord({ modulePath: captured })).toBe(retired),
+      );
       callFinished.resolve();
       await cleanupEntered.promise;
-      withRequest(registry, undefined, () => {
-        expectOwner({ modulePath: path.resolve("current/api.js") }, current);
-        expectOwner({ modulePath: captured });
-      });
+      withPluginRuntimeGatewayRequestScope(
+        { pluginRegistry: registry, isWebchatConnect: () => false },
+        () => {
+          expect(resolvePluginRuntimeRecord({ modulePath: path.resolve("current/api.js") })).toBe(
+            current,
+          );
+          expect(resolvePluginRuntimeRecord({ modulePath: captured })).toBeUndefined();
+        },
+      );
       expect(instance.owner?.registry).toBe(registry);
+      expect(ownerDrained).toBe(false);
       cleanupFinished.resolve();
-      await Promise.all([call, disposal]);
+      await Promise.all([call, disposal, drained]);
+      expect(ownerDrained).toBe(true);
       expect(instance.owner?.registry).toBeUndefined();
       expect(instance.hasModuleSource(captured)).toBe(false);
       expect(() => instance.loadModule(retired.source)).toThrow(/reloaded or disabled/);
     } finally {
       callFinished.resolve();
       cleanupFinished.resolve();
-      await Promise.allSettled([call, disposal]);
+      await Promise.allSettled([call, disposal, drained]);
     }
   });
 
