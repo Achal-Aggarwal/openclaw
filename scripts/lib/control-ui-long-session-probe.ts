@@ -291,6 +291,7 @@ export async function probeLongSession(options: {
   const initialMemory = await memory("initial");
   const scroll = async (direction: "top" | "bottom") => {
     const thread = pane.locator(".chat-thread");
+    let settledDistancePx: number | undefined;
     const { value, longTasks, maxLongTaskMs, ...timing } = await measureRendered(
       async () => {
         await movePointerToTranscript();
@@ -311,7 +312,8 @@ export async function probeLongSession(options: {
           }> = [];
           let previous = performance.now();
           const startTop = scroller.scrollTop;
-          for (let frame = 0; frame <= 60; frame++) {
+          let lastTarget = startTop;
+          const sampleFrame = async () => {
             const now = await new Promise<number>(requestAnimationFrame);
             const viewport = scroller.getBoundingClientRect();
             const rows = [...scroller.querySelectorAll<HTMLElement>(".chat-virtual-row")];
@@ -332,29 +334,66 @@ export async function probeLongSession(options: {
               covered += Math.max(0, bottom - Math.max(top, end));
               end = Math.max(end, bottom);
             }
-            frames.push({
+            const sample = {
               intervalMs: now - previous,
               coverage: covered / viewport.height,
               rows: rows.length,
               rowKeys: rows.map((row) => row.getAttribute("data-virtual-row-key")),
               scrollTop: scroller.scrollTop,
               scrollHeight: scroller.scrollHeight,
-            });
+            };
             previous = now;
+            return sample;
+          };
+          for (let frame = 0; frame <= 60; frame++) {
+            frames.push(await sampleFrame());
             if (frame < 60) {
               const target =
                 destination === "top" ? 0 : scroller.scrollHeight - scroller.clientHeight;
+              lastTarget = target;
               scroller.scrollTop = startTop + ((target - startTop) * (frame + 1)) / 60;
             }
           }
-          const distance =
+          const readDistance = () =>
             destination === "top"
               ? scroller.scrollTop
               : scroller.scrollHeight - scroller.clientHeight - scroller.scrollTop;
+          const trajectoryEnd = {
+            distancePx: readDistance(),
+            scrollHeight: scroller.scrollHeight,
+            lastTarget,
+          };
+          const settleFrames: typeof frames = [];
+          let correction: { distancePx: number; scrollHeight: number } | null = null;
+          // A row first measured on the last trajectory frame can move the end.
+          // Preserve that gap, then finish this reader-directed scroll once.
+          if (
+            destination === "bottom" &&
+            readDistance() > 2 &&
+            Math.abs(scroller.scrollHeight - scroller.clientHeight - lastTarget) > 2
+          ) {
+            for (let frame = 0; frame < 2; frame++) {
+              settleFrames.push(await sampleFrame());
+            }
+            if (
+              readDistance() > 2 &&
+              Math.abs(scroller.scrollHeight - scroller.clientHeight - lastTarget) > 2
+            ) {
+              correction = { distancePx: readDistance(), scrollHeight: scroller.scrollHeight };
+              scroller.scrollTop = scroller.scrollHeight - scroller.clientHeight;
+              for (let frame = 0; frame < 2; frame++) {
+                settleFrames.push(await sampleFrame());
+              }
+            }
+          }
+          const distance = readDistance();
           if (distance > 2) {
             Reflect.set(window, "__longSessionScrollFailure", {
               direction: destination,
               frames,
+              settleFrames,
+              trajectoryEnd,
+              correction,
               distance,
             });
             throw new Error(`Scroll did not reach ${destination}: ${distance}px remaining`);
@@ -362,6 +401,10 @@ export async function probeLongSession(options: {
           return {
             direction: destination,
             frames,
+            settleFrames,
+            trajectoryEnd,
+            correction,
+            endpointDistancePx: distance,
             blankFrames: frames.filter((frame) => frame.coverage === 0).length,
             maxRows: Math.max(...frames.map((frame) => frame.rows)),
             frameGapsOver50Ms: frames.filter((frame) => frame.intervalMs > 50).length,
@@ -373,7 +416,7 @@ export async function probeLongSession(options: {
         }, direction);
       },
       async () => {
-        await thread.evaluate((scroller, destination) => {
+        settledDistancePx = await thread.evaluate((scroller, destination) => {
           const distance =
             destination === "top"
               ? scroller.scrollTop
@@ -381,6 +424,7 @@ export async function probeLongSession(options: {
           if (distance > 2) {
             throw new Error(`Scroll did not settle at ${destination}: ${distance}px remaining`);
           }
+          return distance;
         }, direction);
       },
       async (error, trajectory) => {
@@ -401,7 +445,7 @@ export async function probeLongSession(options: {
         }
       },
     );
-    return { ...timing, result: { ...value, longTasks, maxLongTaskMs } };
+    return { ...timing, result: { ...value, settledDistancePx, longTasks, maxLongTaskMs } };
   };
   const renderFrames = (count = 2) =>
     page.evaluate(async (total) => {
@@ -463,7 +507,7 @@ export async function probeLongSession(options: {
   const save = async <T extends object>(result: T) => {
     const report = {
       measurement:
-        "Synthetic production UI; automation-to-visible/focus wall time and CDP duration deltas. Dedicated actions end after their DOM identity assertions and two rendering opportunities, not compositor presentation. Scroll includes real wheel admission, 60-frame native scrollTop trajectories, two rendering opportunities and a final endpoint check; one observer covers that entire action. Geometric row coverage is not compositor paint proof. Explicit GC and heap snapshots are outside action timings. CPU includes measurement overhead; compare identical paired instrumentation.",
+        "Synthetic production UI; automation-to-visible/focus wall time and CDP duration deltas. Dedicated actions end after their DOM identity assertions and two rendering opportunities, not compositor presentation. Scroll includes real wheel admission, 60-frame native scrollTop trajectories, two rendering opportunities and a final endpoint check. If the last frame changes the bottom extent, separately sampled settling frames and at most one final retarget remain inside the measured action; the original gap is retained. One observer covers that entire action. Geometric row coverage is not compositor paint proof. Explicit GC and heap snapshots are outside action timings. CPU includes measurement overhead; compare identical paired instrumentation.",
       scenario: workload.scenario,
       sessionKey,
       initialMemory,

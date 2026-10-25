@@ -42,6 +42,12 @@ rendering opportunities, not a compositor paint acknowledgment. Scroll trajector
 begin with real wheel input to retire placement/follow commands through the reader-input owner.
 One long-task observer covers hover, wheel admission, the trajectory, and two
 settling frames; the endpoint is checked again after those final frames.
+If the last trajectory frame changes the bottom extent, the probe retains the
+original endpoint gap, samples two settling frames, and permits one final move
+to the new bottom followed by two more sampled frames. That continuation stays
+inside the action's CPU, wall-time, and long-task measurements; its frames and
+correction are recorded separately from the original 61 trajectory samples.
+Top endpoints remain strict, and every final endpoint must be within two pixels.
 Each scroll frame retains ordered virtual-row keys alongside row counts, so
 membership changes and reentries can be distinguished from viewport geometry.
 Collapse starts
