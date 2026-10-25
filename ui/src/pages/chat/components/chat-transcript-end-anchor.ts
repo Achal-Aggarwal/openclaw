@@ -140,11 +140,11 @@ export class TranscriptEndAnchor {
   }
 
   get atEnd(): boolean {
-    return (
-      this.maxOffset !== null &&
-      this.lastOffset !== null &&
-      Math.abs(this.maxOffset - this.lastOffset) <= 1
-    );
+    return this.lastOffset !== null && this.isRecordedEnd(this.lastOffset);
+  }
+
+  isRecordedEnd(offset: number): boolean {
+    return this.maxOffset !== null && Math.abs(this.maxOffset - offset) <= 1;
   }
 
   recordViewport(element: HTMLDivElement | null): boolean {

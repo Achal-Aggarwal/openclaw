@@ -213,14 +213,20 @@ export function observeTranscriptOffset(
       owner.state.maintenanceScrollOffset = actualOffset === target ? actualOffset : null;
     }
     const programmatic = owner.isProgrammaticScroll();
-    if (scrolling && delta !== 0 && !programmatic) {
+    if (delta !== 0 && !programmatic) {
+      // Measurement can observe arrival before the native event unlocks pane following.
+      if (delta > 0 && !owner.canFollowEnd() && owner.endAnchor.isRecordedEnd(offset)) {
+        owner.onReaderScroll(true);
+      }
       if (delta > 0 && owner.canFollowEnd()) {
         owner.endAnchor.capture(element);
       } else {
         owner.endAnchor.clear();
       }
       // Input can precede projection capture; carry its later native movement.
-      owner.prependAnchor.moveWithReader(delta);
+      if (scrolling) {
+        owner.prependAnchor.moveWithReader(delta);
+      }
     }
     publish({
       type: "offset",
