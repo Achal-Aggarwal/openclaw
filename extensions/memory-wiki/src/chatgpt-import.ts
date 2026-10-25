@@ -6,7 +6,7 @@ import {
   withTrailingNewline,
 } from "openclaw/plugin-sdk/memory-host-markdown";
 import { timestampMsToIsoString } from "openclaw/plugin-sdk/number-runtime";
-import { root as fsRoot } from "openclaw/plugin-sdk/security-runtime";
+import { readRegularFile, root as fsRoot } from "openclaw/plugin-sdk/security-runtime";
 import {
   asNullableRecord,
   isRecord,
@@ -111,7 +111,7 @@ async function loadConversations(exportInputPath: string): Promise<{
   const conversationsPath = exportPath.endsWith(".json")
     ? exportPath
     : path.join(exportPath, "conversations.json");
-  const raw = await fs.readFile(conversationsPath, "utf8");
+  const raw = (await readRegularFile({ filePath: await fs.realpath(conversationsPath) })).buffer.toString("utf8");
   const parsed = JSON.parse(raw) as unknown;
   const conversations = Array.isArray(parsed)
     ? parsed
@@ -589,7 +589,7 @@ export async function importChatGptConversations(params: {
       const rendered = renderConversationPage(record);
       const absolutePath = path.join(params.config.vault.path, record.pagePath);
       const existing = await readExistingWikiPage(
-        () => fs.readFile(absolutePath, "utf8"),
+        async () => (await readRegularFile({ filePath: await fs.realpath(absolutePath) })).buffer.toString("utf8"),
         (error) => asNullableRecord(error)?.code === "ENOENT",
       );
       const stabilized = preserveExistingPageBlocks(rendered, existing);
