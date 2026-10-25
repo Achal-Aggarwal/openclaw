@@ -505,7 +505,7 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
         }
         // Structural changes can alter the end without a virtualizer notification.
         if (rowModelChanged || this.headerHeight !== (header?.height ?? 0)) {
-          this.renderer.queueAfterCommit(this.scheduleEndReconcile);
+          this.scheduleEndReconcile();
         }
         this.headerHeight = header?.height ?? 0;
         if (rowModelChanged) {

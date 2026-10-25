@@ -113,6 +113,7 @@ it("loads stream and run rows without losing the adjacent message or the latest 
         },
         options: {
           streamOptions: {},
+          workPreviews: new Map(),
           renderGroupOptions: () => ({ showReasoning: false }),
           isWorkExpanded: () => false,
           onToggleWork: () => {},
