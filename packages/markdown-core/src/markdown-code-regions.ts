@@ -34,4 +34,3 @@ export function findMarkdownCodeRegions(text: string): MarkdownCodeRegion[] {
   }
   return regions;
 }
-

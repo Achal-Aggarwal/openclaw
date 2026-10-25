@@ -2,7 +2,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { extractBasicHtmlContent, htmlToMarkdown, markdownToText } from "./web-fetch-utils.js";
 
-const extractText = async (html: string) => (await extractBasicHtmlContent({ html, extractMode: "text" }))?.text;
+const extractText = async (html: string) =>
+  (await extractBasicHtmlContent({ html, extractMode: "text" }))?.text;
 describe("web-fetch-utils", () => {
   it("keeps Markdown-looking inline code literal in text mode", () => {
     const markdown =
@@ -36,7 +37,6 @@ describe("web-fetch-utils", () => {
       `${fence}\n\n# heading`,
     );
   });
-
 
   it("removes complete balanced link destinations without leaking URL suffixes", async () => {
     const markdown =

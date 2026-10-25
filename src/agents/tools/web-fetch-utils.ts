@@ -1,4 +1,3 @@
-import { findMarkdownCodeRegions } from "../../../packages/markdown-core/src/markdown-code-regions.js";
 import { stripInlineLinks } from "@openclaw/normalization-core/markdown-plain-text";
 import { truncateUtf16Safe } from "@openclaw/normalization-core/utf16-slice";
 import {
@@ -10,6 +9,7 @@ import {
   readRawTextBounds,
   skipRawTextElement,
 } from "../../../packages/markdown-core/src/html-scanner.js";
+import { findMarkdownCodeRegions } from "../../../packages/markdown-core/src/markdown-code-regions.js";
 import { stripInvisibleUnicode } from "../../infra/unicode-visibility.js";
 import { decodeHtmlEntities } from "../../shared/html-entities.js";
 import { readHtmlAttribute } from "./web-fetch-attributes.js";
@@ -81,7 +81,9 @@ function closeContext(
       return;
     case "anchor":
       parent.parts.push(
-        !state.linksAsText && context.href && label ? `[${label}](${context.href})` : label || context.href || "",
+        !state.linksAsText && context.href && label
+          ? `[${label}](${context.href})`
+          : label || context.href || "",
       );
       return;
     case "heading":
@@ -100,7 +102,10 @@ function closeContext(
   }
 }
 
-function closeTopContext(stack: RenderContext[], state: { title?: string; linksAsText?: boolean }): void {
+function closeTopContext(
+  stack: RenderContext[],
+  state: { title?: string; linksAsText?: boolean },
+): void {
   const context = stack.pop()!;
   closeContext(context, stack[stack.length - 1]!, state);
 }
@@ -137,7 +142,10 @@ function pushContext(
   stack.push(context);
 }
 
-export function htmlToMarkdown(html: string, options?: { linksAsText?: boolean }): { text: string; title?: string } {
+export function htmlToMarkdown(
+  html: string,
+  options?: { linksAsText?: boolean },
+): { text: string; title?: string } {
   const root: RenderContext = { kind: "root", parts: [] };
   const stack: RenderContext[] = [root];
   const state: { title?: string; linksAsText?: boolean } = { linksAsText: options?.linksAsText };
