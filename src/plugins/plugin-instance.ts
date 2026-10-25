@@ -226,10 +226,15 @@ export class PluginInstance {
   }
 
   /** Track finite host work without granting invocation authority or joining disposal. */
-  retainWork(reason: PluginRetentionReason = "unknown"): PluginWorkRelease {
+  retainWork(
+    reason: PluginRetentionReason = "unknown",
+    onReplacementRequested?: () => void,
+  ): PluginWorkRelease {
     const token = {};
     this.retainedWork.add(token);
+    const unwatch = onReplacementRequested && this.replacement.watch(onReplacementRequested);
     return this.referenceDiagnostics.workRelease(token, this.activeCall()?.token, reason, () => {
+      unwatch?.();
       if (this.retainedWork.delete(token)) {
         this.waiters.forEach((wake) => wake());
       }

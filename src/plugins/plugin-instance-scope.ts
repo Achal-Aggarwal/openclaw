@@ -30,7 +30,11 @@ export interface PluginInstanceHandle extends PluginInvocationInstance, PluginIn
     factory: (...args: never[]) => unknown,
     resultCallbacks?: "tool" | readonly PropertyKey[],
   ): void;
-  retainWork(reason?: PluginRetentionReason): PluginWorkRelease;
+  /** `onReplacementRequested` runs once a reload reserves this instance while the work is held. */
+  retainWork(
+    reason?: PluginRetentionReason,
+    onReplacementRequested?: () => void,
+  ): PluginWorkRelease;
   retentionSnapshot(options?: { limit?: number; includeOwners?: boolean }): PluginRetentionSnapshot;
   readonly retainedWorkCount: number;
   readonly ordinaryCallCount: number;
