@@ -31,6 +31,15 @@ export type {
 export type { DurableComposerRecoveryEntry } from "./composer-draft-recovery.runtime.ts";
 export { subscribeDurableComposerDraftChanges } from "./composer-draft-changes.ts";
 
+let draftWriter: Promise<typeof import("./composer-draft-write.runtime.ts")> | undefined;
+function loadDraftWriter() {
+  // Warm teardown writes must reach transaction admission before the next task.
+  return (draftWriter ??= import("./composer-draft-write.runtime.ts").catch((error: unknown) => {
+    draftWriter = undefined;
+    throw error;
+  }));
+}
+
 export async function listDurableChatDraftPresence(
   owner: Pick<DurableComposerDraftScope, "gatewayOwner" | "recoveryScope">,
 ): Promise<
@@ -177,7 +186,7 @@ export async function writeDurableComposerDraft(
   ...args: Parameters<typeof import("./composer-draft-write.runtime.ts").writeDurableComposerDraft>
 ): ReturnType<typeof import("./composer-draft-write.runtime.ts").writeDurableComposerDraft> {
   try {
-    const runtime = await import("./composer-draft-write.runtime.ts");
+    const runtime = await loadDraftWriter();
     return runtime.writeDurableComposerDraft(...args);
   } catch {
     return { status: "storage-failed" };
@@ -188,7 +197,7 @@ export async function retireDurableComposerDraft(
   ...args: Parameters<typeof import("./composer-draft-write.runtime.ts").retireDurableComposerDraft>
 ): ReturnType<typeof import("./composer-draft-write.runtime.ts").retireDurableComposerDraft> {
   try {
-    const runtime = await import("./composer-draft-write.runtime.ts");
+    const runtime = await loadDraftWriter();
     return runtime.retireDurableComposerDraft(...args);
   } catch {
     return { status: "storage-failed" };
@@ -201,7 +210,7 @@ export async function retireDurableComposerDrafts(
   >
 ): ReturnType<typeof import("./composer-draft-write.runtime.ts").retireDurableComposerDrafts> {
   try {
-    const runtime = await import("./composer-draft-write.runtime.ts");
+    const runtime = await loadDraftWriter();
     return runtime.retireDurableComposerDrafts(...args);
   } catch {
     return "storage-failed";
