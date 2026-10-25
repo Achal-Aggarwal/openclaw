@@ -51,7 +51,9 @@ export function ChatHeaderSessionMenuContent(inputs: HeaderMenuContentProps) {
     const source = props.actionSource;
     if (source) {
       const row = source.readRow();
-      if (row) void runChatHeaderSessionAction(source.owner, action, row);
+      if (row) {
+        void runChatHeaderSessionAction(source.owner, action, row);
+      }
     }
   };
   const nativeActions = new ChatPaneNativeSessionActions();

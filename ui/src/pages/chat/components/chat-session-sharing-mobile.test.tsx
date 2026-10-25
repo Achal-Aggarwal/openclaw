@@ -13,9 +13,9 @@ import {
   ChatSessionAccessMobile,
   ChatSessionSharingMobile,
 } from "./chat-session-sharing-mobile.tsx";
-import type { PreparedPaneSessionSharing } from "./chat-session-sharing-shared.tsx";
 import type {
   PreparedChatSessionSharing,
+  PreparedPaneSessionSharing,
   ChatSessionSharingOutcome,
 } from "./chat-session-sharing-shared.tsx";
 

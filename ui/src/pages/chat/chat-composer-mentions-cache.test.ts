@@ -304,7 +304,7 @@ it("shares native mention lookup with external insertion and retires captured ac
 });
 
 function holdMentionEngine() {
-  const gate = createDeferred<void>();
+  const gate = createDeferred();
   const original = idleImport.createIdleImport;
   const spy = vi
     .spyOn(idleImport, "createIdleImport")

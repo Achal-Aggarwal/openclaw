@@ -543,16 +543,7 @@ export class ChatPaneRuntime extends ChatPaneLayoutRender {
       toolOverrides: selectedSession?.toolOverrides,
       capabilityMenu: catalogKey
         ? undefined
-        : {
-            initialize: (create) => this.ensureComposerCapabilities(create),
-            read: () =>
-              this.composerCapabilities?.props(
-                this.context,
-                state,
-                selectedSession,
-                currentAgentId,
-              ),
-          },
+        : this.composerCapabilityMenu(state, selectedSession, currentAgentId),
       ...childRoster,
       sessionHost: {
         assistantAgentId: state.assistantAgentId,

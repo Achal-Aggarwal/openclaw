@@ -10,7 +10,7 @@ type CachedTurn = { inputs: unknown[]; items: ChatItem[] };
 // Interleaved transcript builds share the cache without evicting other owners.
 const turnsByOwner = new WeakMap<object, CachedTurn>();
 
-function coalesceTurn(items: ChatItem[]): ChatItem[] {
+function coalesceLoadedTurn(items: ChatItem[]): ChatItem[] {
   return items.some((item) => item.kind === "message" && hasToolMessageDemand(item.message))
     ? readChatToolFamily().coalesceToolActivityTurn(items)
     : items;
@@ -20,7 +20,7 @@ export function coalesceToolActivityMessages(
   items: ChatItem[],
   hiddenKeys?: ReadonlySet<string>,
 ): ChatItem[] {
-  return coalesceToolActivityTurns(items, hiddenKeys, coalesceTurn);
+  return coalesceToolActivityTurns(items, hiddenKeys, coalesceLoadedTurn);
 }
 
 /** The deferred handoff reader reuses the same turn/cache owner with its loaded parser. */

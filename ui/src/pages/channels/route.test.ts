@@ -7,8 +7,8 @@ import { page } from "./route.ts";
 it.each(["channels", "config"] as const)(
   "starts config immediately and waits for both reads when %s finishes first",
   async (first) => {
-    const channelsLoaded = createDeferred<void>();
-    const configLoaded = createDeferred<void>();
+    const channelsLoaded = createDeferred();
+    const configLoaded = createDeferred();
     const refresh = vi.fn(() => channelsLoaded.promise);
     const ensureLoaded = vi.fn(() => configLoaded.promise);
     const ensureSchemaLoaded = vi.fn(async () => {});

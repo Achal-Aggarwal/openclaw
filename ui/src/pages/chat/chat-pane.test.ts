@@ -33,6 +33,7 @@ import {
   createSessionContext,
   createTestChatPane,
   createPaneTestHost,
+  dispatchSidebarShortcut,
   getPaneTestRuntime,
   connectPaneTestView,
   nativeHistoryMessage,
@@ -49,18 +50,6 @@ vi.mock("../../lib/toast.ts", () => ({ showToast: vi.fn() }));
 afterEach(() => {
   vi.unstubAllGlobals();
 });
-
-function dispatchSidebarShortcut(pane: TestChatPane, shiftKey = true) {
-  const event = new KeyboardEvent("keydown", {
-    cancelable: true,
-    key: "и",
-    code: "KeyB",
-    metaKey: true,
-    shiftKey,
-  });
-  pane.handleDocumentKeydown(event);
-  return event;
-}
 
 function observeErrors(state: ChatPageHost) {
   return createRoot((dispose) => {

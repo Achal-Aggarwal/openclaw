@@ -54,6 +54,26 @@ export function readSubagentToolEvent(
   };
 }
 
+export function mergeSubagentActivityCalls(
+  snapshot: SubagentActivitySnapshot,
+  calls: ReadonlyMap<string, AgentActivityItem>,
+  preparedCalls: ReadonlySet<string>,
+): void {
+  for (const [id, item] of calls) {
+    if (snapshot.calls.get(id)?.phase !== "end" || item.phase === "end") {
+      const prepared = preparedCalls.has(id);
+      const update = readSubagentToolEvent(
+        prepared ? "item" : "tool",
+        prepared ? item : { ...item, phase: item.phase === "end" ? "result" : item.phase },
+        snapshot.calls.get(id),
+      );
+      if (update) {
+        snapshot.calls.set(id, update);
+      }
+    }
+  }
+}
+
 export function readSubagentActivitySnapshot(history: ChatHistoryResult): SubagentActivitySnapshot {
   const messages = history.messages ?? [];
   const entries = messages.map((message) => ({

@@ -48,14 +48,18 @@ export function buildChatDiscussionPanel({
     openUrl,
     loadInfo: (key) => request("session.discussion.info", key),
     openDiscussion: (key) => request("session.discussion.open", key),
-    onStateChange: (key, discussionState, openUrl) => {
+    onStateChange: (key, discussionState, discussionUrl) => {
       // Panels created under a previous connection may report late; their
       // state belongs to the old provider and must not touch the new cache.
       if (contentGeneration !== owner.connectionGeneration) {
         return;
       }
       const isCurrentSession = state.sessionKey.trim() === key;
-      owner.sessionDiscussion.record(key, discussionState, isCurrentSession ? openUrl : undefined);
+      owner.sessionDiscussion.record(
+        key,
+        discussionState,
+        isCurrentSession ? discussionUrl : undefined,
+      );
       if (discussionState === "none" && isCurrentSession) {
         state.updateSidebarLayout(closeSlot(state.sidebarLayout, "discussion"));
       }

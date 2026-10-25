@@ -73,6 +73,18 @@ import type { SessionSnapshotStore } from "./session-snapshot-store.ts";
 
 export { createSessionCapabilityFixture } from "./chat-session-capability.test-support.ts";
 
+export function dispatchSidebarShortcut(pane: TestChatPane, shiftKey = true) {
+  const event = new KeyboardEvent("keydown", {
+    cancelable: true,
+    key: "и",
+    code: "KeyB",
+    metaKey: true,
+    shiftKey,
+  });
+  pane.handleDocumentKeydown(event);
+  return event;
+}
+
 type PaneHeaderWorkspace = ReturnType<typeof createChatPaneRails>["sessionWorkspace"];
 
 export function createPaneHeaderWorkspaceFixture(

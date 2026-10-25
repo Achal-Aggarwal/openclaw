@@ -182,7 +182,7 @@ export function projectChatTranscript(
   const workPreviews = projectTranscriptWorkPreviews(transcriptChain.workGroups, {
     sessionKey: props.sessionKey,
     expanded: expandedToolCards,
-    latestBrowserTabs: latestBrowserTabs,
+    latestBrowserTabs,
     bubbleMode: props.chatBubbleMode,
   });
   const questionPrompts = props.questionPrompts
@@ -336,7 +336,7 @@ export function projectChatTranscript(
       ...sharedMessageRenderOptions,
       messageReactions: props.messageReactions,
       onReact: props.onReact,
-      latestBrowserTabs: latestBrowserTabs,
+      latestBrowserTabs,
       showReasoning,
       showToolCalls: props.showToolCalls,
       activityRunId,

@@ -9,7 +9,7 @@ import type { BoardSnapshot } from "../lib/board/types.ts";
 import { createBoardWidget } from "../lib/board/widget.test-support.ts";
 import { createControlUiCoreBootFixture } from "./control-ui-core-boot-fixture.ts";
 import { createTeamScaleDuplicateReadFixture } from "./control-ui-duplicate-read-fixture.ts";
-import { defaultControlUiFeatureMethods } from "./control-ui-e2e-defaults.ts";
+import { teamScaleControlUiFeatureMethods } from "./control-ui-e2e-defaults.ts";
 import {
   createTeamScaleSessionEvents,
   prepareTeamScaleSidebarListChurn,
@@ -390,22 +390,7 @@ export function createControlUiTeamScaleFixture(options: FixtureOptions = {}) {
         }
       : {}),
     featureMethods: [
-      ...defaultControlUiFeatureMethods,
-      "sessions.list",
-      "sessions.describe",
-      "sessions.catalog.list",
-      "agents.list",
-      "agent.identity.get",
-      "users.list",
-      "users.prefs.get",
-      "users.prefs.set",
-      "plugins.controlUi.list",
-      "plugins.controlUi.report",
-      "board.get",
-      "canvas.document.view",
-      "progressCard.get",
-      "cron.list",
-      "cron.status",
+      ...teamScaleControlUiFeatureMethods,
       ...(options.dashboardMcpApp ? ["board.widget.appView", "mcp.app.view"] : []),
       ...(options.dashboardWidgetFontUrl ? ["mcp.app.discover"] : []),
       ...(duplicateReads?.featureMethods ?? []),

@@ -34,6 +34,7 @@ import { readChatSessionActionAccess } from "./chat-session-action-access.ts";
 import { isSubagentsPanelSession } from "./chat-spawned-subagent.ts";
 import { selectActivityHeadline } from "./components/chat-activity-headline-selection.ts";
 import {
+  mergeSubagentActivityCalls,
   readSubagentActivitySnapshot,
   readSubagentToolEvent,
   subagentToolCallCount,
@@ -449,19 +450,7 @@ export class SubagentsPanelData {
             }
           }
           const snapshot = readSubagentActivitySnapshot(history);
-          for (const [id, item] of metrics.calls) {
-            if (snapshot.calls.get(id)?.phase !== "end" || item.phase === "end") {
-              const prepared = metrics.preparedCalls.has(id);
-              const update = readSubagentToolEvent(
-                prepared ? "item" : "tool",
-                prepared ? item : { ...item, phase: item.phase === "end" ? "result" : item.phase },
-                snapshot.calls.get(id),
-              );
-              if (update) {
-                snapshot.calls.set(id, update);
-              }
-            }
-          }
+          mergeSubagentActivityCalls(snapshot, metrics.calls, metrics.preparedCalls);
           if (snapshot.calls.size > MAX_RETAINED_CALLS) {
             snapshot.calls.clear();
             metrics.preparedCalls.clear();

@@ -82,6 +82,25 @@ export const defaultControlUiFeatureMethods = [
   "worktrees.branches",
 ] as const;
 
+export const teamScaleControlUiFeatureMethods = [
+  ...defaultControlUiFeatureMethods,
+  "sessions.list",
+  "sessions.describe",
+  "sessions.catalog.list",
+  "agents.list",
+  "agent.identity.get",
+  "users.list",
+  "users.prefs.get",
+  "users.prefs.set",
+  "plugins.controlUi.list",
+  "plugins.controlUi.report",
+  "board.get",
+  "canvas.document.view",
+  "progressCard.get",
+  "cron.list",
+  "cron.status",
+] as const;
+
 export function createControlUiDefaultResponses(scenario: {
   presenceUsers?: ControlUiMockPresenceUser[];
 }) {

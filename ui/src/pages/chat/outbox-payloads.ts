@@ -79,9 +79,9 @@ export async function prepareOutboxPayload(
   }
   const isCurrent = captureOutboxPayloadOwner(host, scope);
   try {
-    const { prepareOutboxPayload } = await import("./outbox-payloads.runtime.ts");
+    const { prepareOutboxPayload: prepare } = await import("./outbox-payloads.runtime.ts");
     return isCurrent()
-      ? prepareOutboxPayload(host, item, purpose, { scope, recoveryScope, isCurrent })
+      ? prepare(host, item, purpose, { scope, recoveryScope, isCurrent })
       : { status: "failed", reason: "unavailable" };
   } catch {
     return { status: "failed", reason: "unavailable" };

@@ -417,6 +417,19 @@ export abstract class ChatPaneStateOwner {
   ensureComposerCapabilities(create: () => ChatComposerCapabilityHost) {
     return (this.composerCapabilities ??= create());
   }
+
+  protected composerCapabilityMenu(
+    state: ChatPageHost,
+    selectedSession: GatewaySessionRow | undefined,
+    currentAgentId: string,
+  ) {
+    return {
+      initialize: (create: () => ChatComposerCapabilityHost) =>
+        this.ensureComposerCapabilities(create),
+      read: () =>
+        this.composerCapabilities?.props(this.context, state, selectedSession, currentAgentId),
+    };
+  }
   readonly transcript = createChatTranscript(() => this.paneId, {
     geometryEventTarget: this.element,
     getComposerFloat: () => (this.usesMobileHost ? this.composerFloat : null),
