@@ -1,5 +1,5 @@
 {
-  "startupJsGzipBytes": 272544,
-  "reason": "PR #182993: bounded formatting cadence and no per-delta geometry reads cut standard streaming script CPU 20.8% and burst CPU 16.5% over 20 interleaved base/A-A/head triplets. Coordinator accepted the measured CPU/bytes tradeoff. After merging #183042, same-host builds measure startup 272577 to 272544 B, Chat +702 B (54 B within build variance of the approved +648 B), and New Session +19 B, with unchanged requests and CSS. Ratchet to measured integrated head.",
+  "startupJsGzipBytes": 271047,
+  "reason": "Per-instance observer/subscription sharing cuts provider script CPU 60.13% median and 61.79% p95, provider task time 15.06% and 13.94%, and retained Tooltip script CPU 92.50% and 92.51%. Same-host integrated 763ae526 to 8a6d6bcf stock builds measure startup 270647 to 271047 B gzip (+400 B), Chat +833 B and New Session +688 B; JS/CSS requests and CSS bytes are unchanged. Record the measured integrated startup value.",
   "updatedAt": "2026-10-25"
 }
