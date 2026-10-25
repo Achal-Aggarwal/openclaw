@@ -4,9 +4,19 @@
 
 Run the frozen v3.1.5 SQL observer's standard workload on an isolated Gateway
 with synthetic state, its loopback model provider, and a real WebSocket client.
-Use three fresh fixtures on current main before changing production code.
+For the IDLERECUR follow-up, first run one fresh fixture on current main before
+changing production code. Extend to three alternating pairs only if a recurring
+read candidate is found.
 Keep the five-second post-turn settling window separate from the subsequent
-300-second connected-idle window. Preserve the standard warm turns and restart.
+900-second connected-idle window. Preserve the standard warm turns and restart.
+Split the connected window into fifteen one-minute buckets; a window total is not
+a recurring rate. Classify one-shot settlement, fixed-period owner work, and
+client-driven RPCs separately. The frozen standard driver keeps a real WebSocket
+client connected but does not run the Control UI polling code; attribute that
+code separately and do not claim browser coverage from the driver.
+
+Invoke the unchanged frozen driver with `--idle-seconds 900 --settle-seconds 5`.
+Verify every frozen v3.1.5 file hash before and after measurement.
 
 Report every SQL shape and worker operation in both idle windows, its issuing
 owner, timer or subscription, and rate per minute. Report SQL, requests, and
