@@ -1,8 +1,8 @@
 // Google tests cover video generation provider plugin behavior.
 import { ApiError } from "@google/genai";
 import { formatErrorMessage, toStringifiedError } from "openclaw/plugin-sdk/error-runtime";
-import { mockPinnedHostnameResolution } from "openclaw/plugin-sdk/test-env";
-import { oversizedJsonResponse } from "openclaw/plugin-sdk/test-fixtures";
+import { mockPinnedHostnameResolution, requestUrl } from "openclaw/plugin-sdk/test-env";
+import { createRequireRecord, oversizedJsonResponse } from "openclaw/plugin-sdk/test-fixtures";
 import type { VideoGenerationRequest } from "openclaw/plugin-sdk/video-generation";
 import { afterAll, afterEach, assert, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -80,12 +80,7 @@ function firstObjectArg(mock: MockWithCalls): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
-function recordField(value: unknown, field: string): Record<string, unknown> {
-  if (value === undefined || value === null || typeof value !== "object" || Array.isArray(value)) {
-    throw new Error(`expected ${field} to be an object`);
-  }
-  return value as Record<string, unknown>;
-}
+const recordField = createRequireRecord("record", "expected-label-object");
 
 function firstGoogleClientHttpOptions(): Record<string, unknown> {
   return recordField(firstObjectArg(createGoogleGenAIMock).httpOptions, "httpOptions");
@@ -113,13 +108,7 @@ function parseFetchJsonBody(fetchMock: ReturnType<typeof vi.fn>, index: number):
 
 function fetchInputUrl(fetchMock: ReturnType<typeof vi.fn>, index: number): string {
   const [input] = requireFetchCall(fetchMock, index);
-  if (typeof input === "string") {
-    return input;
-  }
-  if (input instanceof URL) {
-    return input.toString();
-  }
-  return input.url;
+  return requestUrl(input);
 }
 
 let ssrfMock: { mockRestore: () => void } | undefined;
