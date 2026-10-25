@@ -11,19 +11,18 @@ import { storedChatOutboxScopeKey } from "../../lib/chat/outbox-store-scope.ts";
 import { captureChatOutboxAdmission } from "../../lib/chat/outbox-store.ts";
 import { visibleSessionMatches } from "../../lib/sessions/navigation.ts";
 import { generateUUID } from "../../lib/uuid.ts";
-import { captureChatConnectionOwner } from "./chat-connection-owner.ts";
 import {
   isExpiredIncognitoSession,
   isInitialChatHistoryUnavailable,
   setChatError,
 } from "./chat-history-state.ts";
-import type { QueuedChatSendOptions } from "./chat-outbox-drain.ts";
+import { scheduleStoredChatOutboxDrain, type QueuedChatSendOptions } from "./chat-outbox-drain.ts";
 import { chatOutboxOwner } from "./chat-outbox-owner.ts";
 import { flushChatQueueForEvent } from "./chat-outbox-resume.ts";
 import { chatProviderReviewRow } from "./chat-provider-review.ts";
 import { readQueuedMessageById, updateQueuedMessage } from "./chat-queue.ts";
 import type { ChatHost } from "./chat-send-contract.ts";
-import { deliverChatQueueItem } from "./chat-send-delivery.ts";
+import { chatOutboxDrainDependencies, deliverChatQueueItem } from "./chat-send-delivery.ts";
 import { canSendVolatileQueueItem, reconnectSafeQueuedSendState } from "./chat-send-eligibility.ts";
 import { OFFLINE_QUEUE_STORAGE_ERROR } from "./chat-send-support.ts";
 import {
@@ -274,12 +273,7 @@ export async function retryQueuedChatMessage(
         ...(retriesFailedDelivery ? { allowActiveRunSend: true } : {}),
       }
     : undefined;
-  const connectionIsCurrent = captureChatConnectionOwner(host);
-  const [{ scheduleStoredChatOutboxDrain }, { chatOutboxDrainDependencies }] = await Promise.all([
-    import("./chat-outbox-drain.ts"),
-    import("./chat-send-delivery.runtime.ts"),
-  ]);
-  if (!connectionIsCurrent() || (canDispatch && !canDispatch())) {
+  if (!host.connected || (canDispatch && !canDispatch())) {
     return;
   }
   const drain = scheduleStoredChatOutboxDrain(

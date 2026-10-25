@@ -70,10 +70,11 @@ it.each(["owner", "tile"] as const)(
         expect(container.querySelectorAll(".chat-attachment-thumb")[index]).toBe(tile),
       );
     const load = (index: number, base64: string) => {
-      Object.defineProperty(readers[index], "result", {
+      const reader = expectDefined(readers[index], "pending attachment reader");
+      Object.defineProperty(reader, "result", {
         value: `data:text/plain;base64,${base64}`,
       });
-      readers[index]?.dispatchEvent(new ProgressEvent("load"));
+      reader.dispatchEvent(new ProgressEvent("load"));
     };
     composer.dispatchEvent(
       createDragEvent("drop", [new File(["first"], "first.txt"), new File(["bad"], "bad.txt")]),
@@ -90,6 +91,7 @@ it.each(["owner", "tile"] as const)(
     const tiles = [...container.querySelectorAll(".chat-attachment-thumb")];
     expect(tiles).toHaveLength(3);
     expect(tiles.every((tile) => tile.getAttribute("aria-busy") === "true")).toBe(true);
+    await waitForFast(() => expect(readers).toHaveLength(3));
     readers[0]?.dispatchEvent(
       new ProgressEvent("progress", { lengthComputable: true, loaded: 5, total: 10 }),
     );
@@ -120,6 +122,7 @@ it.each(["owner", "tile"] as const)(
 
     composer.dispatchEvent(createDragEvent("drop", [new File(["held"], "held.txt")]));
     expect(attachmentDraft.reads.pendingReads).toBe(1);
+    await waitForFast(() => expect(readers).toHaveLength(4));
     if (cancellation === "owner") {
       attachmentDraft.reads.abortReads();
     } else {

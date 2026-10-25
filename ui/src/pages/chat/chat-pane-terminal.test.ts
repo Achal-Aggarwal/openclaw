@@ -18,6 +18,7 @@ import {
 import {
   openNativeMenu,
   renderPaneHeaderInto,
+  selectNativeMenu,
 } from "./components/chat-pane-header.test-support.ts";
 import { openSlot } from "./sidebar-layout.ts";
 
@@ -125,7 +126,7 @@ it.each(["session", "owner", "target", "client", "reconnect"] as const)(
   },
 );
 
-it("disables terminal continuation with query-specific guidance", () => {
+it("disables terminal continuation with query-specific guidance", async () => {
   const client = gateway({
     gatewayUrl: "wss://gateway.example/control?route=alpha",
   });
@@ -133,12 +134,16 @@ it("disables terminal continuation with query-specific guidance", () => {
   const row = directSession("main", "alpha");
   paint(row);
 
-  const menu = container.querySelector<
-    HTMLElement & {
-      actionDisabledReasons: Record<string, string>;
-    }
-  >("openclaw-chat-header-session-menu");
-  expect(menu?.actionDisabledReasons["continue-in-terminal"]).toBe(
+  const menu = container.querySelector<HTMLElement>("openclaw-chat-header-session-menu")!;
+  await selectNativeMenu(menu, "submenu:advanced");
+  await selectNativeMenu(menu, "submenu:open-in");
+  const continuation = await waitForSolid(() => {
+    const item = menu.querySelector<HTMLButtonElement>('[data-value="continue-in-terminal"]');
+    expect(item).not.toBeNull();
+    return item!;
+  });
+  expect(continuation.disabled).toBe(true);
+  expect(continuation.title).toBe(
     "Query-routed Gateway URLs cannot create credential-free continuation commands because authentication and stored device scope are not query-aware. Use a manually authenticated CLI target or a queryless configured Gateway URL.",
   );
 });

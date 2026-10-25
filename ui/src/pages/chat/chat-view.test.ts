@@ -2676,8 +2676,8 @@ describe("chat attachment picker", () => {
       textarea.dispatchEvent(createPasteEvent(pastedText));
       chat.dispatchEvent(dropEvent);
 
-      expect(readers).toHaveLength(1);
       expect(attachments).toHaveLength(1);
+      await waitForFast(() => expect(readers).toHaveLength(1));
       Object.defineProperty(readers[0], "result", {
         configurable: true,
         value: `data:application/pdf;base64,${btoa("%PDF-1.4\n")}`,

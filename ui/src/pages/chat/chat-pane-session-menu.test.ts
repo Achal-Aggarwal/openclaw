@@ -78,7 +78,9 @@ describe("chat pane session menu boundary", () => {
       ),
     );
     flush();
-    await new Promise((resolve) => setTimeout(resolve, 4_000));
+    await new Promise((resolve) => {
+      setTimeout(resolve, 4_000);
+    });
     flush();
     const menu = mounted.container.querySelector("openclaw-chat-header-session-menu")!;
     expect(menu.querySelectorAll('[role^="menuitem"]')).toHaveLength(0);

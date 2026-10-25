@@ -6,6 +6,7 @@ import { NAV_DRAWER_TOGGLE_REGISTRATION } from "../../../app/navigation-surface.
 import { RouteElements, type RouteElementEvent } from "../../../app/route-elements.ts";
 import { SHELL_NAV_DRAWER_TOGGLE_EVENT } from "../../../components/command-palette-contract.ts";
 import { KEYBOARD_SHORTCUT_COMBOS } from "../../../lib/keyboard-shortcut-contract.ts";
+import { registerSessionSplitHost } from "../../../lib/sessions/session-menu-navigation.ts";
 import { allMutationObserverOptions } from "../../../test-helpers/dom-probe.ts";
 import { createTestGatewayClient } from "../../../test-helpers/gateway-client.ts";
 import { waitForSolid } from "../../../test-helpers/solid-settle.ts";
@@ -193,12 +194,13 @@ describe("chat pane header", () => {
           readOwner: () => getPaneTestRuntime(pane),
           readRow: () => row(),
           stopDisabledReason: undefined,
+          workspaceRoot: "/repo/openclaw",
         },
         compact: true,
-        splitAllowed: true,
         session: { ...sessionMenuAction.session, target: { key: "agent:main:test" } },
       },
     });
+    onTestFinished(registerSessionSplitHost(container, () => true));
     const close = container.querySelector<HTMLButtonElement>(".chat-pane__close")!;
     const menu = container.querySelector("openclaw-chat-header-session-menu")!;
     await menu.updateComplete;
@@ -217,7 +219,7 @@ describe("chat pane header", () => {
     expect(close.disabled).toBe(true);
     close.click();
     expect(onClosePane).toHaveBeenCalledOnce();
-    await openNativeMenu(menu);
+    await openNativeMenu(menu, "quick:open-split-view");
     const split = menu.querySelector<HTMLButtonElement>('[data-value="quick:open-split-view"]')!;
     expect(split.disabled).toBe(true);
     split.click();
@@ -242,6 +244,7 @@ describe("chat pane header", () => {
           readOwner: () => owner,
           readRow: () => session,
           stopDisabledReason: undefined,
+          workspaceRoot: "/repo/openclaw",
         },
       },
     });
@@ -274,6 +277,7 @@ describe("chat pane header", () => {
         readOwner: () => owner,
         readRow: () => session,
         stopDisabledReason: undefined,
+        workspaceRoot: "/repo/openclaw",
       },
     };
     const { container, update } = mountHeader({ sessionMenuAction });

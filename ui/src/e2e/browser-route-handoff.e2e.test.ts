@@ -206,14 +206,15 @@ suite.define(() => {
           await page.getByText("History is ready.", { exact: true }).waitFor();
           await expectRequestCountStable(gateway, "browser.request", 0);
           expect(await page.locator("openclaw-browser-tab-card").count()).toBe(0);
-          for (const selector of [".chat-activity-group__summary", ".chat-tool-msg-summary"]) {
-            for (const summary of await page.locator(selector).all()) {
-              if ((await summary.getAttribute("aria-expanded")) !== "true") {
-                await summary.click();
+          if (includeHistory) {
+            for (const selector of [".chat-activity-group__summary", ".chat-tool-msg-summary"]) {
+              await page.locator(selector).first().waitFor();
+              for (const summary of await page.locator(selector).all()) {
+                if ((await summary.getAttribute("aria-expanded")) !== "true") {
+                  await summary.click();
+                }
               }
             }
-          }
-          if (includeHistory) {
             for (const output of [
               "Standalone ordinary output 0",
               "Standalone ordinary output 1",

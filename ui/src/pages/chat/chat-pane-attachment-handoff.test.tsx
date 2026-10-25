@@ -255,7 +255,6 @@ describe("cross-region Home composer ownership", () => {
       const input = container.querySelector<HTMLInputElement>(".agent-chat__file-input")!;
       selectFile(input, new File(["pending payload"], "handoff.txt", { type: "text/plain" }));
       expect(page.controller.attachmentReads.pendingReads).toBe(1);
-      const reader = readers[0]!;
 
       const dock = dockFrom(fixture);
       expect(dock.current.chatMessage).toBe("Keep this draft and file");
@@ -268,6 +267,8 @@ describe("cross-region Home composer ownership", () => {
       await waitForSolid(() =>
         expect(container.querySelector('.chat-attachment-thumb[aria-busy="true"]')).not.toBeNull(),
       );
+      await vi.waitFor(() => expect(readers).toHaveLength(1));
+      const reader = readers[0]!;
 
       dock.view.presented = false;
       page.view.presented = true;

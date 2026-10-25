@@ -223,8 +223,13 @@ suite.define(() => {
         await selectFile();
         await expect.poll(() => send.isDisabled()).toBe(true);
       }
-      const finishRead = () =>
-        page.evaluate(() => {
+      const finishRead = async () => {
+        await page.waitForFunction(
+          () =>
+            typeof (globalThis as unknown as { attachmentReadProof: DeferredAttachmentProof })
+              .attachmentReadProof.finish === "function",
+        );
+        await page.evaluate(() => {
           const proof = (globalThis as unknown as { attachmentReadProof: DeferredAttachmentProof })
             .attachmentReadProof;
           if (!proof.finish) {
@@ -232,6 +237,7 @@ suite.define(() => {
           }
           return proof.finish();
         });
+      };
       if (scenario === "same-draft" || scenario === "rewind-completed") {
         await finishRead();
         await page.getByRole("img", { name: "late-selection.png", exact: true }).waitFor();

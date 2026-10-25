@@ -148,7 +148,7 @@ export function openWorkspaceItem<T>(
         const resultPromise = readResult(controller.signal);
         const [result, runtime] = await Promise.all([
           resultPromise,
-          import("./chat-session-workspace-content.runtime.ts"),
+          import("./chat-session-workspace-preview.runtime.ts"),
         ]);
         const content = result == null ? null : render(result);
         const label = result == null ? undefined : options.resolveLabel?.(result);

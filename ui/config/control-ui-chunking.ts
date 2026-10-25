@@ -258,8 +258,6 @@ export function controlUiStableChunkName(id: string): string | undefined {
     case "ui/src/pages/chat/chat-send-delivery.runtime.ts":
     case "ui/src/pages/chat/chat-send-support.runtime.ts":
     case "ui/src/pages/chat/chat-send-queue-runtime.ts":
-    case "ui/src/pages/chat/chat-send-queue-state.ts":
-    case "ui/src/pages/chat/chat-outbox-drain.ts":
     case "ui/src/pages/chat/chat-model-recovery.runtime.ts":
     case "ui/src/pages/chat/chat-live-events.runtime.ts":
     case "ui/src/pages/chat/chat-gateway.ts":

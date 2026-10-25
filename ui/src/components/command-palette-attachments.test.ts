@@ -144,6 +144,7 @@ describe("command palette attachments", () => {
     );
     expect(input.getAttribute("aria-controls")).toBeNull();
     expect(start().disabled).toBe(true);
+    await vi.waitFor(() => expect(readers).toHaveLength(2));
     readers[0]!.dispatchEvent(new ProgressEvent("error"));
     finishRead(1, "data:application/pdf;base64,YnJpZWY=");
     setInputValue(input, "Review");
@@ -169,6 +170,7 @@ describe("command palette attachments", () => {
     const registered = vi.spyOn(payloads, "registerChatAttachmentPayload");
     const { palette, input, query } = await mount();
     paste(input, [image("ready.png"), image("pending.png")]);
+    await vi.waitFor(() => expect(readers).toHaveLength(2));
     finishRead(0);
     await palette.updateComplete;
     const attachment = registered.mock.calls[0]![0].attachment;
@@ -181,6 +183,7 @@ describe("command palette attachments", () => {
       expect(query(".chat-attachments-preview")?.querySelectorAll("img")).toHaveLength(2),
     );
     paste(paletteInput(palette), [image("late.png")]);
+    await vi.waitFor(() => expect(readers).toHaveLength(3));
     palette.remove();
     finishRead(2);
     expect(payloads.getChatAttachmentDataUrl(attachment)).toBeNull();
@@ -240,6 +243,7 @@ describe("command palette attachments", () => {
     const registered = vi.spyOn(payloads, "registerChatAttachmentPayload");
     const { palette, input, context, publish, query, create } = await mount();
     paste(input, [image("ready.png"), image("pending.png")]);
+    await vi.waitFor(() => expect(readers).toHaveLength(2));
     finishRead(0);
     await palette.updateComplete;
     const attachment = registered.mock.calls[0]![0].attachment;
@@ -327,6 +331,9 @@ describe("command palette attachments", () => {
     if (outcome === "dismissed") {
       key(replacement, { key: "Escape" });
     }
+    if (outcome !== "oversized" && !textOnly) {
+      await vi.waitFor(() => expect(readers).toHaveLength(1));
+    }
     if (outcome === "failed") {
       readers[0]!.dispatchEvent(new ProgressEvent("error"));
     } else if (outcome !== "oversized" && outcome !== "text-policy-delayed") {
@@ -366,6 +373,7 @@ it("keeps mobile attachment Return native and starts only from its button", asyn
   vi.spyOn(navigator, "userAgent", "get").mockReturnValue("Android");
   const { palette, input, query, start, context, expectSubmit } = await mount();
   paste(input, [image()]);
+  await vi.waitFor(() => expect(readers).toHaveLength(1));
   finishRead(0);
   setInputValue(input, "A mobile prompt");
   await vi.waitFor(() => expect(start().disabled).toBe(false));

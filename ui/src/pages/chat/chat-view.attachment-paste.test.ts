@@ -251,8 +251,8 @@ describe("chat attachment reading", () => {
         ),
         aborted ? "drop" : "file picker",
       );
-      expect(readers).toHaveLength(1);
       expect(reads.pendingReads).toBe(1);
+      await waitForFast(() => expect(readers).toHaveLength(1));
       if (aborted) {
         reads.abortReads();
         await Promise.resolve();
@@ -320,7 +320,6 @@ describe("chat attachment reading", () => {
 
     attachFile(container, file, "clipboard");
 
-    expect(readers).toHaveLength(1);
     expect(reads.pendingReads).toBe(1);
     const status = container.querySelector(".chat-attachments-status");
     expect(status?.textContent).toContain("Preparing 1 attachment");
@@ -343,6 +342,7 @@ describe("chat attachment reading", () => {
     );
     expect(onSend).not.toHaveBeenCalled();
 
+    await waitForFast(() => expect(readers).toHaveLength(1));
     const reader = expectDefined(readers[0], "deferred attachment reader");
     reader.dispatchEvent(
       new ProgressEvent("progress", { lengthComputable: true, loaded: 1, total: 2 }),

@@ -578,6 +578,7 @@ it.each(["ltr", "rtl"] as const)(
     const menu = page.getByRole("menu", { name: "Layout", exact: true }).element();
     await waitForSolid(() => {
       expect(menu.getAttribute("data-phase")).toBe("open");
+      expect(menu.querySelectorAll(".shortcut-kbd")).toHaveLength(4);
       // The opening transition scales DOM bounds; measure its final geometry.
       expect(getComputedStyle(menu).scale).toBe("1");
     });
