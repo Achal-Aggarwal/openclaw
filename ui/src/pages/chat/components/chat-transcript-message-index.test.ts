@@ -148,7 +148,7 @@ describe("long completed runs", () => {
             (count, group) => count + group.messages.length,
             0,
           ),
-        ).toBeLessThanOrEqual(8);
+        ).toBeLessThanOrEqual(2);
       }
       const summary = rows.find(
         (row) => row.item.kind === "agent-run-frame" && row.item.parts[0]?.kind === "work-group",

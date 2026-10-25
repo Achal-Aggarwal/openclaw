@@ -66,7 +66,7 @@ const controlUiPerformanceBudgets = {
   // Vyctor approved the restored mobile topbar in #182599 (2026-10-24).
   // Fixed bundle ceilings, not a repeatable per-PR growth allowance.
   totalCssGzipBytes: 303_372,
-  // Completed-run fragments reduce 2,000-message retention from 1,001 bubbles to 24.
+  // Completed-run fragments bound mounted content in 2,000-message sessions.
   // Their spacing adds 94 raw bytes; retain the measured total without new headroom.
   totalCssRawBytes: 1_595_666,
 } satisfies Record<string, number>;

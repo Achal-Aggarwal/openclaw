@@ -44,7 +44,7 @@ import { CHAT_TRANSCRIPT_ESTIMATED_ROW_PX } from "./chat-transcript-session.ts";
 import type { projectTranscriptWorkPreviews } from "./chat-transcript-work-previews.ts";
 
 type ChatRenderItem = SystemEventRenderItem;
-const COMPLETED_FRAME_ROW_MESSAGE_LIMIT = 8;
+const COMPLETED_FRAME_ROW_MESSAGE_LIMIT = 2;
 
 type TranscriptChain = Readonly<{
   searchActive: boolean;
