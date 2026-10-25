@@ -284,6 +284,7 @@ function buildTranscriptIndex(
     const rendered =
       item.kind === "agent-run-frame" ? completedFrameRows(item, expandedToolCards) : [item];
     for (const rowItem of rendered) {
+      // Rich work sources include their Markdown and paired tool output.
       const estimatedSize =
         rowItem.kind === "agent-run-frame" && rowItem.fragment
           ? rowItem.parts.reduce(
@@ -291,7 +292,9 @@ function buildTranscriptIndex(
                 size +
                 (part.kind === "group" && part.role === "assistant" ? part.messages.length : 1),
               0,
-            ) * CHAT_TRANSCRIPT_ESTIMATED_ROW_PX
+            ) *
+            CHAT_TRANSCRIPT_ESTIMATED_ROW_PX *
+            2
           : undefined;
       rows.push({ kind: "item", key: rowItem.key, item: rowItem, estimatedSize });
     }
