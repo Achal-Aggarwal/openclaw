@@ -111,6 +111,7 @@ async function run(factory: Factory, count: number, input?: Uint8Array) {
   for (let index = 0; index < count; index++) {
     retained = await owner.readStoreProjection(request);
   }
+  return retained;
 }
 for (const owner of owners) {
   await run(owner.factory, 1);
@@ -203,9 +204,9 @@ if (selected("snapshot")) {
   const snapshots: Reply[] = [];
   const input = serialize({ ...fixture, entries: fixture.entries.slice(0, 256) });
   for (const owner of owners) {
-    await run(owner.factory, 1, input);
-    assert(retained);
-    for (const { entry } of retained.entries) {
+    const reply = await run(owner.factory, 1, input);
+    assert(reply);
+    for (const { entry } of reply.entries) {
       for (const object of [
         entry,
         entry.worktree,
@@ -219,7 +220,7 @@ if (selected("snapshot")) {
         }
       }
     }
-    snapshots.push(retained);
+    snapshots.push(reply);
   }
   Reflect.set(globalThis, "metadataRetentionSnapshots", snapshots);
   globalThis.gc();
