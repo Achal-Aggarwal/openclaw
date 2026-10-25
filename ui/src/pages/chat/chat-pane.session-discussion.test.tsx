@@ -7,6 +7,8 @@ import type { GatewayBrowserClient } from "../../api/gateway.ts";
 import { projectOwner } from "../../lib/reactive/projection.ts";
 import { mountSolid } from "../../test-helpers/mount-solid.ts";
 import { flush } from "../../test-helpers/solid-settle.ts";
+import { buildChatDiscussionPanel } from "./chat-pane-discussion-panel.ts";
+import type { ChatDiscussionPanelSource } from "./chat-pane-panel-source.ts";
 import {
   createSessionCapabilityFixture,
   createTestChatPane,
@@ -19,10 +21,10 @@ import {
 import { openSlot } from "./sidebar-layout.ts";
 
 type DiscussionTestPane = TestChatPane & {
-  buildSessionDiscussionPanel: (
+  sessionDiscussionSource: (
     state: ReturnType<typeof createTestChatPane>["state"],
     sessionKey: string,
-  ) => SessionDiscussionPanelConfig | null;
+  ) => ChatDiscussionPanelSource | null;
   probeSessionDiscussion: (sessionKey: string) => Promise<void>;
   resolveSessionDiscussionAction: () => {
     label: string;
@@ -31,6 +33,14 @@ type DiscussionTestPane = TestChatPane & {
   } | null;
   paneWidth: number;
 };
+
+function discussionPanel(
+  pane: DiscussionTestPane,
+  state: ReturnType<typeof createTestChatPane>["state"],
+) {
+  const source = pane.sessionDiscussionSource(state, SESSION_KEY);
+  return source && buildChatDiscussionPanel(source);
+}
 
 const SESSION_KEY = "agent:main:current";
 
@@ -66,7 +76,7 @@ function createDiscussionPanelHarness(
     container,
     async render() {
       setFrame({
-        config: pane.buildSessionDiscussionPanel(state, SESSION_KEY),
+        config: discussionPanel(pane, state),
         sourceGeneration: pane.connectionGeneration,
       });
       flush();
@@ -114,14 +124,14 @@ describe("chat pane session discussion", () => {
       info: { state: "open", embedUrl: "https://clack.example/embed/c1", openUrl },
     });
 
-    const panel = pane.buildSessionDiscussionPanel(state, SESSION_KEY);
+    const panel = discussionPanel(pane, state);
     const view = mountSolid(() => {
       const discussion = projectOwner(pane.sessionDiscussion, (owner) => owner.snapshot);
       const frame = createMemo(() => {
         discussion.read();
         return {
           action: pane.resolveSessionDiscussionAction(),
-          panel: pane.buildSessionDiscussionPanel(state, SESSION_KEY),
+          panel: discussionPanel(pane, state),
         };
       });
       return (
@@ -138,7 +148,7 @@ describe("chat pane session discussion", () => {
     expect(updateSidebarLayout).not.toHaveBeenCalled();
 
     panel?.onStateChange(SESSION_KEY, "open", openUrl);
-    expect(pane.buildSessionDiscussionPanel(state, SESSION_KEY)).toBe(panel);
+    expect(discussionPanel(pane, state)).toBe(panel);
     flush();
     expect(view.container.querySelector("a")?.href).toBe(openUrl);
     view.unmount();
@@ -180,13 +190,31 @@ describe("chat pane session discussion", () => {
   it("ignores a stale none callback after switching sessions", async () => {
     const { pane, state } = createDiscussionPane();
     await pane.probeSessionDiscussion(SESSION_KEY);
-    const stalePanel = pane.buildSessionDiscussionPanel(state, SESSION_KEY);
+    const stalePanel = discussionPanel(pane, state);
     state.sessionKey = "agent:main:other";
     state.sidebarLayout = openSlot({ columns: [] }, "discussion");
 
     stalePanel?.onStateChange(SESSION_KEY, "none", null);
 
     expect(state.sidebarLayout.columns[0]?.panels[0]?.slot).toBe("discussion");
+  });
+
+  it("keeps a delayed panel tied to its render connection without replacing the current panel", async () => {
+    const { pane, state, request } = createDiscussionPane();
+    const staleSource = pane.sessionDiscussionSource(state, SESSION_KEY)!;
+    const connected = { ...pane.context.gateway.snapshot, phase: "connected" as const };
+    pane.applyGatewaySnapshot({ ...connected, phase: "reconnecting", hello: null });
+    pane.connectedClient = state.client;
+    pane.applyGatewaySnapshot(connected);
+    const currentPanel = discussionPanel(pane, state)!;
+    const delayedPanel = buildChatDiscussionPanel(staleSource);
+    request.mockClear();
+
+    await expect(delayedPanel.loadInfo(SESSION_KEY)).rejects.toThrow();
+    delayedPanel.onStateChange(SESSION_KEY, "none", null);
+
+    expect(request).not.toHaveBeenCalled();
+    expect(discussionPanel(pane, state)).toBe(currentPanel);
   });
 
   it("does not load a saved visible Discussion tab after reconnect without operator.read", async () => {
@@ -215,7 +243,7 @@ describe("chat pane session discussion", () => {
     const discussionRequests = () =>
       request.mock.calls.filter(([method]) => method === "session.discussion.info");
 
-    const previousConfig = pane.buildSessionDiscussionPanel(state, SESSION_KEY)!;
+    const previousConfig = discussionPanel(pane, state)!;
     await view.render();
     await vi.waitFor(() => expect(discussionRequests()).toHaveLength(1));
     await vi.waitFor(() =>

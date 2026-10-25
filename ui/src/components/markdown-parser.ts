@@ -1,4 +1,4 @@
-import MarkdownIt, { type MarkdownIt as MarkdownItParser, type Token } from "markdown-it";
+import MarkdownIt, { type Env, type MarkdownIt as MarkdownItParser, type Token } from "markdown-it";
 import markdownItCjkFriendly from "markdown-it-cjk-friendly";
 import { escapeHtml } from "../../../src/shared/html-escape.js";
 import { fileKindForPath, shortestFileLabels } from "./file-kind.ts";
@@ -11,7 +11,11 @@ import {
 } from "./github-link-target.ts";
 import { installAssistantTranscriptRoleMarkdown } from "./markdown-assistant-transcript.ts";
 import { installMarkdownAudioTranscript } from "./markdown-audio-transcript.ts";
-import { markdownCodeBlockCopyText, renderMarkdownCodeBlock } from "./markdown-code-blocks.ts";
+import {
+  markdownCodeBlockCopyText,
+  renderMarkdownCodeBlock,
+  type MarkdownCodeBlockEnv,
+} from "./markdown-code-blocks.ts";
 import { installMarkdownDetails } from "./markdown-details.ts";
 import {
   isHostLocalMarkdownFileHref,
@@ -53,6 +57,18 @@ type MarkdownFileLinkDecoration = {
 };
 
 const PROGRESS_HTML_RE = /^(?:<progress(?:\s[^<>]*)?>\s*(?:<\/progress>)?|<\/progress>)$/iu;
+
+function isMarkdownCodeBlockEnv(env: Env): env is Env & MarkdownCodeBlockEnv {
+  const { codeBlockChrome, codeBlockInteraction, jsonParser } = env;
+  return (
+    (codeBlockChrome === undefined || codeBlockChrome === "copy" || codeBlockChrome === "none") &&
+    (codeBlockInteraction === undefined ||
+      codeBlockInteraction === "static" ||
+      codeBlockInteraction === "interactive") &&
+    (jsonParser === undefined || typeof jsonParser === "function") &&
+    (codeBlockInteraction !== "interactive" || typeof jsonParser === "function")
+  );
+}
 
 function renderRawMarkdownHtml(
   tokens: readonly Token[],
@@ -583,6 +599,11 @@ export function createMarkdownParser(): MarkdownItParser {
     const token = tokens[index];
     if (!token) {
       return "";
+    }
+    if (env !== undefined && !isMarkdownCodeBlockEnv(env)) {
+      throw new TypeError(
+        "Invalid Markdown code-block environment; interactive rendering requires a prepared JSON parser",
+      );
     }
     const fenced = token.type === "fence";
     const language = fenced ? token.info.trim().split(/\s+/)[0] || "" : "";

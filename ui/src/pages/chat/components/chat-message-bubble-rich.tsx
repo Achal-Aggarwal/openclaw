@@ -2,6 +2,7 @@ import { asNullableRecord } from "@openclaw/normalization-core/record-coerce";
 import type { JSX } from "@solidjs/web";
 import { createMemo, lazy, For, Match, Show, Switch, type Accessor, useContext } from "solid-js";
 import { toSanitizedMarkdownHtml } from "../../../components/markdown.ts";
+import { prepareMarkdownJsonOptions } from "../../../lib/markdown-json.ts";
 import { t } from "../../../lib/reactive/i18n.ts";
 import { ContentPresentation } from "../../../lib/solid/presentation.ts";
 import { usePanePresentation } from "../chat-pane-presentation.ts";
@@ -9,11 +10,7 @@ import { ChatBubbleActivity } from "./chat-bubble-activity-view.tsx";
 import { ChatLazyBoundary } from "./chat-lazy-boundary.tsx";
 import { OmittedMedia, PairingQrNotices } from "./chat-message-attachment-status-solid.tsx";
 import type { MessageContentProps as ContentProps } from "./chat-message-bubble-presentation.ts";
-import {
-  BubbleToolCards,
-  InlineToolCards,
-  ToolMessage,
-} from "./chat-message-bubble-tools.tsx";
+import { BubbleToolCards, InlineToolCards, ToolMessage } from "./chat-message-bubble-tools.tsx";
 import {
   AssistantAttachments,
   ChatClawHubCard,
@@ -97,12 +94,15 @@ function VideoPreview(props: ContentProps & { item: Accessor<AttachmentItem | un
 }
 
 export function MessageReasoning(props: Pick<ContentProps, "state" | "options">) {
+  const options = createMemo(() =>
+    prepareMarkdownJsonOptions(props.state().reasoningMarkdown ?? "", {
+      codeBlockInteraction: "interactive",
+    }),
+  );
   const content = (
     <MarkdownText
       class="chat-thinking"
-      content={toSanitizedMarkdownHtml(props.state().reasoningMarkdown ?? "", {
-        codeBlockInteraction: "interactive",
-      })}
+      content={toSanitizedMarkdownHtml(props.state().reasoningMarkdown ?? "", options())}
     />
   );
   return (

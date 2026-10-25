@@ -17,6 +17,8 @@ import { registerChatMessageMetadataEnglish } from "../../../i18n/locales/en-cha
 import { registerChatSessionEnglish } from "../../../i18n/locales/en-chat-session.ts";
 import { registerChatToolLabelsEnglish } from "../../../i18n/locales/en-chat-tool-labels.ts";
 import { resolveMessageDisplayMarkdown } from "../../../lib/chat/message-display.ts";
+import { normalizeRoleForGrouping } from "../../../lib/chat/message-normalizer.ts";
+import { prepareMarkdownJson } from "../../../lib/markdown-json.ts";
 import { elementRef } from "../../../lib/reactive/element-ref.ts";
 import { registerEnglishCatalog, t } from "../../../lib/reactive/i18n.ts";
 import { assistantMessageIsInterrupted } from "../chat-assistant-reply.ts";
@@ -28,7 +30,10 @@ import {
   prepareGroupedMessage,
   type MessageContentProps as ContentProps,
 } from "./chat-message-bubble-presentation.ts";
-import type { ChatMessageRenderPreparation } from "./chat-message-markdown-view.tsx";
+import {
+  prepareChatMessageRender,
+  type ChatMessageRenderPreparation,
+} from "./chat-message-markdown-view.tsx";
 import type { MarkdownMedia, PositionedMedia } from "./chat-message-media-markdown.ts";
 import { prepareMarkdownMedia } from "./chat-message-media-markdown.ts";
 import {
@@ -99,13 +104,28 @@ export function GroupedMessage(props: GroupedMessageProps) {
 function PreparedGroupedMessage(props: GroupedMessageProps) {
   const toolsReady = useChatToolReadiness();
   const refreshMedia = () => void refresh(state);
+  const preparation = createMemo(() => {
+    const disclosure = props.options.assistantMessageDisclosure;
+    return disclosure?.expanded && disclosure.message
+      ? prepareChatMessageRender(disclosure.message)
+      : props.preparation;
+  });
+  const json = createMemo(() => {
+    const prepared = preparation();
+    const markdown =
+      normalizeRoleForGrouping(prepared.normalizedMessage.role) === "user"
+        ? (props.options.messageActions?.markdown ?? prepared.displayMarkdown)
+        : prepared.displayMarkdown;
+    return props.options.isStreaming ? null : prepareMarkdownJson(markdown);
+  });
   const state = createMemo(() => {
     toolsReady();
     return prepareGroupedMessage(
-      props.preparation,
+      preparation(),
       props.messageKey,
       props.options,
       props.onOpenSidebar,
+      json(),
     );
   });
   const messageElements = useContext(TranscriptMessageElementsContext);

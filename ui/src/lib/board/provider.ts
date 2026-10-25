@@ -74,7 +74,7 @@ export function boardProviderForSession(
 
 export type BoardProviderLease = {
   provider: BoardProvider;
-  restoreSnapshot: (snapshot: unknown, receivedAtMs: number) => void;
+  restoreSnapshot: (snapshot: BoardSnapshot, receivedAtMs: number) => void;
   update: (
     client: BoardGatewayClient,
     connected: boolean,

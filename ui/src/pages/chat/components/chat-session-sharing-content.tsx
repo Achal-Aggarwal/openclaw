@@ -26,6 +26,7 @@ import { SessionOwnerChip } from "../../../components/solid/session-owner-chip.t
 import { StrokeIcon } from "../../../components/solid/stroke-icon.tsx";
 import { registerChatSessionEnglish } from "../../../i18n/locales/en-chat-session.ts";
 import { registerEnglishCatalog, t } from "../../../lib/reactive/i18n.ts";
+import { resolveChatSessionSharing } from "../chat-pane-sharing-mutations.ts";
 import {
   type ChatSessionSharingProps,
   VISIBILITY_LABEL_KEYS,
@@ -611,7 +612,7 @@ export function ChatSessionSharingContent(inputs: ChatSessionSharingContentProps
     ref: () => inputs.controls.ref(),
   };
   const sharing = useDesktopSharing(
-    merge(() => inputs.sharing),
+    merge(() => resolveChatSessionSharing(inputs.sharing)),
     controls,
   );
   onSettled(() => {

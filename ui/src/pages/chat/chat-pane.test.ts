@@ -23,6 +23,7 @@ import { flush, waitForSolid } from "../../test-helpers/solid-settle.ts";
 import { isExpiredIncognitoSession } from "./chat-history-state.ts";
 import { loadChatHistory } from "./chat-history.ts";
 import { ChatPaneRuntime } from "./chat-pane-render.ts";
+import { runChatHeaderSessionAction } from "./chat-pane-session-menu-actions.ts";
 import { consumePaneSessionHandoff } from "./chat-pane-shared.ts";
 import { subscribeChatPaneSnapshotInvalidation } from "./chat-pane-startup-subscriptions.ts";
 import {
@@ -168,7 +169,11 @@ describe("chat pane header state", () => {
         label: "Current session",
       } satisfies GatewaySessionRow;
 
-      const pending = pane.handleHeaderSessionAction({ kind: "delete" }, session);
+      const pending = runChatHeaderSessionAction(
+        getPaneTestRuntime(pane),
+        { kind: "delete" },
+        session,
+      );
       await waitForConfirmDialogActions();
       // Mirrors a reconnect landing while the header's own confirm dialog is
       // open: the chat header builds this scope independently of
@@ -228,7 +233,11 @@ describe("chat pane header state", () => {
         sessions,
       });
 
-      const pending = pane.handleHeaderSessionAction({ kind: "new-group" }, session);
+      const pending = runChatHeaderSessionAction(
+        getPaneTestRuntime(pane),
+        { kind: "new-group" },
+        session,
+      );
       await waitForInputDialog();
       await submitInputDialog("Projects");
       await vi.waitFor(() => expect(groupsPut).toHaveBeenCalledOnce());
@@ -276,7 +285,11 @@ describe("chat pane header state", () => {
     });
 
     result.sessions = [];
-    await pane.handleHeaderSessionAction({ kind: "move-to-group", category: "Projects" }, session);
+    await runChatHeaderSessionAction(
+      getPaneTestRuntime(pane),
+      { kind: "move-to-group", category: "Projects" },
+      session,
+    );
 
     expect(patch).not.toHaveBeenCalled();
     expect(showToast).toHaveBeenCalledWith({ message: t("common.refresh") });

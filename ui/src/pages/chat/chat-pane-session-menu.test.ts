@@ -21,6 +21,7 @@ import { mountSolid } from "../../test-helpers/mount-solid.ts";
 import { openSubmenu } from "../../test-helpers/session-menu.ts";
 import { projectChatFields } from "./chat-field-projection.ts";
 import { createMountedPanes, refreshPane } from "./chat-pane-mounted.test-support.ts";
+import { runChatHeaderSessionAction } from "./chat-pane-session-menu-actions.ts";
 import {
   createGatewayBrowserClientFixture,
   createPaneHeaderWorkspaceFixture,
@@ -190,7 +191,9 @@ describe("chat pane session menu boundary", () => {
     state.sessionKey = row.key;
     state.sessionsResult = sessionsResult([row, child], 1);
     try {
-      const pending = modal.track(pane.handleHeaderSessionAction({ kind: "toggle-archived" }, row));
+      const pending = modal.track(
+        runChatHeaderSessionAction(getPaneTestRuntime(pane), { kind: "toggle-archived" }, row),
+      );
       const actions = await waitForConfirmDialogActions();
       expect(actions.textContent).toContain("Archive all (2)");
       answerConfirmDialog(actions, "cancel");
@@ -223,10 +226,10 @@ describe("chat pane session menu boundary", () => {
       state.sessionsResult = sessionsResult([row], 1);
       pane.context.gateway.snapshot.phase = phase;
       state.connected = phase === "connected";
-      await pane.handleHeaderSessionAction({ kind: "toggle-pin" }, row);
+      await runChatHeaderSessionAction(getPaneTestRuntime(pane), { kind: "toggle-pin" }, row);
       expect(pane.context.navigation.snapshot.sidebarEntries).toContain("session:" + row.key);
       expect(patch).not.toHaveBeenCalled();
-      await pane.handleHeaderSessionAction({ kind: "toggle-pin" }, row);
+      await runChatHeaderSessionAction(getPaneTestRuntime(pane), { kind: "toggle-pin" }, row);
       expect(pane.context.navigation.snapshot.sidebarEntries).not.toContain("session:" + row.key);
       expect(row.pinned).toBe(true);
     },
@@ -303,11 +306,9 @@ describe("chat pane session menu boundary", () => {
     expect(menu.querySelector('[value="view:reasoning"]')?.getAttribute("aria-checked")).toBe(
       String(state.settings.chatShowThinking),
     );
-    const action = vi.spyOn(pane, "handleHeaderSessionAction").mockResolvedValue(undefined);
     menu.querySelector<HTMLButtonElement>('[value="toggle-pin"]')!.click();
+    expect(pane.context.navigation.snapshot.sidebarEntries).toContain("session:" + session.key);
     await menu.updateComplete;
-    expect(action).toHaveBeenCalledWith({ kind: "toggle-pin" }, session);
-    expect(action.mock.calls[0]?.[1]).toBe(session);
     state.applySettings = vi.fn();
     expect(menu.openMenu()).toBe(true);
     flush();
@@ -667,7 +668,7 @@ describe("chat pane session menu boundary", () => {
       hasActiveRun: true,
     } satisfies GatewaySessionRow;
 
-    await pane.handleHeaderSessionAction({ kind: "fork" }, session);
+    await runChatHeaderSessionAction(getPaneTestRuntime(pane), { kind: "fork" }, session);
 
     expect(create).toHaveBeenCalledWith(
       {
@@ -747,7 +748,7 @@ describe("chat pane session menu boundary", () => {
                   : { sessionId: "replacement-session" }),
               },
             ];
-      await pane.handleHeaderSessionAction(action, original);
+      await runChatHeaderSessionAction(getPaneTestRuntime(pane), action, original);
       if (action.kind === "toggle-pin") {
         expect(patch).not.toHaveBeenCalled();
         expect(pane.context.navigation.snapshot.sidebarEntries).toEqual([]);
@@ -795,7 +796,9 @@ describe("chat pane session menu boundary", () => {
     state.sessionKey = row.key;
     state.assistantAgentId = "research";
     try {
-      const cancelled = modal.track(pane.handleHeaderSessionAction({ kind: "rename" }, row));
+      const cancelled = modal.track(
+        runChatHeaderSessionAction(getPaneTestRuntime(pane), { kind: "rename" }, row),
+      );
       const first = await waitForInputDialog();
       expect(first.value).toBe("Research notes");
       first.value = "Discarded draft";
@@ -811,7 +814,9 @@ describe("chat pane session menu boundary", () => {
       const connected = { ...pane.context.gateway.snapshot };
       pane.applyGatewaySnapshot({ ...connected, phase: "offline" });
       patch.mockResolvedValueOnce({ queued: true });
-      const queued = modal.track(pane.handleHeaderSessionAction({ kind: "rename" }, row));
+      const queued = modal.track(
+        runChatHeaderSessionAction(getPaneTestRuntime(pane), { kind: "rename" }, row),
+      );
       const offlineInput = await waitForInputDialog();
       expect(offlineInput.value).toBe("Research notes");
       expect(pane.context.gateway.snapshot.phase).toBe("offline");
@@ -825,7 +830,9 @@ describe("chat pane session menu boundary", () => {
       expect(document.querySelector("openclaw-modal-dialog")).toBeNull();
       pane.applyGatewaySnapshot(connected);
 
-      const saved = modal.track(pane.handleHeaderSessionAction({ kind: "rename" }, row));
+      const saved = modal.track(
+        runChatHeaderSessionAction(getPaneTestRuntime(pane), { kind: "rename" }, row),
+      );
       const input = await waitForInputDialog();
       expect(input.value).toBe("Research notes");
       expect(pane.headerPresentation.renameSession).toBeNull();
@@ -858,7 +865,9 @@ describe("chat pane session menu boundary", () => {
       );
       expect(document.querySelector("openclaw-modal-dialog")).toBeNull();
 
-      const retired = modal.track(pane.handleHeaderSessionAction({ kind: "rename" }, row));
+      const retired = modal.track(
+        runChatHeaderSessionAction(getPaneTestRuntime(pane), { kind: "rename" }, row),
+      );
       const retiredInput = await waitForInputDialog();
       retiredInput.value = "Other client must not inherit this";
       pane.applyGatewaySnapshot({

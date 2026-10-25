@@ -16,7 +16,7 @@ import { registerChatSessionEnglish } from "../../../i18n/locales/en-chat-sessio
 import { registerEnglishCatalog, t } from "../../../lib/reactive/i18n.ts";
 import { listen } from "../../../lib/reactive/listener.ts";
 import {
-  type ChatSessionSharingProps,
+  type ChatSessionSharingInput,
   VISIBILITY_LABEL_KEYS,
   canManageChatSessionSharing,
   ChatSessionSharingModeIcon,
@@ -34,14 +34,14 @@ type SharingHandlers = {
   onEscape(): boolean;
 };
 export type ChatSessionSharingContentProps = {
-  sharing: ChatSessionSharingProps;
+  sharing: ChatSessionSharingInput;
   controls: MenuControls;
   readMenu: () => MenuHandle | undefined;
   onReady: (handlers: SharingHandlers | undefined) => void;
   renderItems: (items: () => readonly MenuEntry[]) => JSX.Element;
 };
 
-export function ChatSessionSharing(props: ChatSessionSharingProps) {
+export function ChatSessionSharing(props: ChatSessionSharingInput) {
   const id = createUniqueId();
   const controls = createMenuControls();
   let sharing: SharingHandlers | undefined;

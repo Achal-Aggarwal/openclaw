@@ -21,8 +21,8 @@ import { CopyButton } from "../../../components/solid/copy-button.tsx";
 import { Icon } from "../../../components/solid/icon.tsx";
 import { LazyViewError } from "../../../components/solid/lazy-view-error.tsx";
 import { McpAppPanel } from "../../../components/solid/mcp-app-panel.tsx";
-import "../../../components/tooltip.ts";
 import { createTextOverflow } from "../../../components/solid/text-overflow.ts";
+import "../../../components/tooltip.ts";
 import { registerChatMediaEnglish } from "../../../i18n/locales/en-chat-media.ts";
 import { registerFilePreviewEnglish } from "../../../i18n/locales/en-file-preview.ts";
 import {
@@ -31,6 +31,7 @@ import {
   type EmbedSandboxMode,
 } from "../../../lib/chat/canvas-embed-policy.ts";
 import { createCanvasFramePresentation } from "../../../lib/chat/canvas-frame-presentation.ts";
+import { prepareMarkdownJsonOptions } from "../../../lib/markdown-json.ts";
 import { shouldHandleNavigationClick } from "../../../lib/navigation-click.ts";
 import { registerEnglishCatalog, t } from "../../../lib/reactive/i18n.ts";
 import { detectTextDirection } from "../../../lib/text-direction.ts";
@@ -537,14 +538,17 @@ export function SidebarPanel(props: SidebarPanelProps) {
                       }
                     >
                       {(_visible) => {
-                        const markdown = createMarkdownRef(() => ({
-                          incremental: true,
-                          content: toSanitizedMarkdownHtml(content().content, {
+                        const options = createMemo(() =>
+                          prepareMarkdownJsonOptions(content().content, {
                             codeBlockInteraction: "interactive",
                             fileLinks: true,
                             interactiveImages: props.onOpenImage !== undefined,
                             sessionLinks: true,
                           }),
+                        );
+                        const markdown = createMarkdownRef(() => ({
+                          incremental: true,
+                          content: toSanitizedMarkdownHtml(content().content, options()),
                         }));
                         return (
                           <article

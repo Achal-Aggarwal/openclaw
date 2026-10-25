@@ -22,6 +22,7 @@ import { registerSessionPeopleEnglish } from "../../../i18n/locales/en-session-p
 import { formatUiError } from "../../../lib/format-error.ts";
 import { registerEnglishCatalog, t } from "../../../lib/reactive/i18n.ts";
 import { listen } from "../../../lib/reactive/listener.ts";
+import type { ChatSessionSharingOperationSource } from "../chat-pane-sharing-mutations.ts";
 
 registerEnglishCatalog(registerChatSessionEnglish);
 
@@ -78,6 +79,14 @@ export type PreparedChatSessionSharing = Omit<
   onPublicShareChange: (enabled: boolean) => Promise<ChatSessionSharingOutcome>;
   onCopyPublicLink: () => Promise<ChatSessionSharingOutcome>;
 };
+
+/** Pane facts are available at first paint; optional controls bind their own code when loaded. */
+export type PreparedPaneSessionSharing = Omit<
+  PreparedChatSessionSharing,
+  "onVisibilityChange" | "onMemberChange" | "onPublicShareChange"
+> & { operations: ChatSessionSharingOperationSource };
+export type PreparedSessionSharingInput = PreparedChatSessionSharing | PreparedPaneSessionSharing;
+export type ChatSessionSharingInput = ChatSessionSharingProps | PreparedPaneSessionSharing;
 
 export const VISIBILITY_LABEL_KEYS: Record<SessionVisibility, string> = {
   shared: "chat.sessionSharing.shared",

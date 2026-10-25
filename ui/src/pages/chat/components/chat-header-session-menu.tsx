@@ -24,9 +24,10 @@ import { listen } from "../../../lib/reactive/listener.ts";
 import { createParkedProjection } from "../../../lib/reactive/parked-projection.ts";
 import type { SessionCreatedActor } from "../../../lib/session-owner.ts";
 import { defineSolidBridge, type SolidBridgeElement } from "../../../lib/solid-bridge.ts";
+import type { ChatHeaderSessionActionSource } from "../chat-pane-session-menu-actions.ts";
 import type { HeaderSessionMenuMobileHost } from "./chat-header-session-menu-mobile.tsx";
 import type { HeaderMenuSessionAction, HeaderMenuQuickAction } from "./chat-quick-action.tsx";
-import type { ChatSessionSharingProps } from "./chat-session-sharing-shared.tsx";
+import type { ChatSessionSharingInput } from "./chat-session-sharing-shared.tsx";
 
 registerEnglishCatalog(registerChatSessionEnglish);
 
@@ -67,10 +68,11 @@ export type HeaderMenuProps = {
     | "chatBubbleDisabledSessionKeys"
   >;
   sessionActions: HeaderMenuSessionAction[];
+  composeSessionActions?: (nativeActions: HeaderMenuSessionAction[]) => HeaderMenuSessionAction[];
   viewActions?: HeaderMenuQuickAction[];
   viewContent?: JSX.Element;
   boardWidgetMenu?: BoardWidgetPageMenu;
-  sharing: ChatSessionSharingProps | null;
+  sharing: ChatSessionSharingInput | null;
   groups: readonly string[];
   currentOwner: SessionCreatedActor | null;
   actionDisabledReasons: Partial<Record<HeaderMenuActionKind, string>>;
@@ -83,7 +85,9 @@ export type HeaderMenuProps = {
   onOpenCommandPalette: () => void;
   onOpenDetails?: (source: HTMLElement) => void;
   onSettingsChange: (patch: Partial<UiSettings>) => void;
-  onAction: (action: HeaderMenuAction) => void;
+  actionSource?: ChatHeaderSessionActionSource;
+  /** Returning false delegates to the loaded native dispatcher. */
+  onAction?: (action: HeaderMenuAction) => void | false;
 };
 
 type HeaderMenuMethods = {
@@ -293,6 +297,7 @@ export const ChatHeaderSessionMenu = defineSolidBridge<HeaderMenuProps, HeaderMe
       viewContent: { default: undefined, attribute: false },
       viewActions: { default: undefined, attribute: false },
       sessionActions: { default: [], attribute: false },
+      composeSessionActions: { default: undefined, attribute: false },
       boardWidgetMenu: { default: undefined, attribute: false },
       sharing: { default: null, attribute: false },
       groups: { default: [], attribute: false },
@@ -307,7 +312,8 @@ export const ChatHeaderSessionMenu = defineSolidBridge<HeaderMenuProps, HeaderMe
       onOpenCommandPalette: { default: () => {}, attribute: false },
       onOpenDetails: { default: undefined, attribute: false },
       onSettingsChange: { default: () => {}, attribute: false },
-      onAction: { default: () => {}, attribute: false },
+      actionSource: { default: undefined, attribute: false },
+      onAction: { default: undefined, attribute: false },
     },
   },
 );

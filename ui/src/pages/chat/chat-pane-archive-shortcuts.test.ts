@@ -71,7 +71,7 @@ it.each(["success", "failure"])("archives via the keyboard with %s feedback", as
   if (outcome === "failure") {
     patch.mockRejectedValue(new Error("Archive rejected"));
   }
-  const action = vi.spyOn(pane, "handleHeaderSessionAction");
+  const action = vi.spyOn(pane, "runHeaderSessionMutation");
   const scope = { agentId: "main", expectedSessionId: row.sessionId };
   expect(press(pane).defaultPrevented).toBe(true);
   expect(action).toHaveBeenCalledExactlyOnceWith({ kind: "toggle-archived" }, row);

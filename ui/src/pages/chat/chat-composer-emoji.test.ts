@@ -158,6 +158,7 @@ it("keeps native editing while cold and converts closing colons once ready", asy
   expect(imports.started).not.toHaveBeenCalled();
   f.input(":smile");
   expect(imports.started).toHaveBeenCalledTimes(1);
+  expect(textareaAnchor.createTextareaTokenAnchor).not.toHaveBeenCalled();
   expect(f.key("Tab").defaultPrevented).toBe(false);
   expect(f.colon().defaultPrevented).toBe(false);
   f.input(":smile:");
@@ -165,6 +166,7 @@ it("keeps native editing while cold and converts closing colons once ready", asy
   await vi.dynamicImportSettled();
   flush();
   f.closed(":smile:");
+  expect(textareaAnchor.createTextareaTokenAnchor).toHaveBeenCalledTimes(1);
   f.input(":smile");
   expect(f.colon().defaultPrevented).toBe(true);
   f.closed("😄");

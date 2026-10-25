@@ -1,11 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
 import { i18n } from "../i18n/index.ts";
-import type { MarkdownRenderOptions } from "./markdown-render-options.ts";
+import { parseMarkdownJson } from "./markdown-json-parser.runtime.ts";
+import type { MarkdownInputOptions } from "./markdown-render-options.ts";
 import { htmlFragment, withControlUiBasePath } from "./markdown.test-support.ts";
 import { toSanitizedMarkdownHtml } from "./markdown.ts";
 
-function render(source: string, options?: MarkdownRenderOptions) {
-  return htmlFragment(toSanitizedMarkdownHtml(source, options));
+function render(source: string, options?: MarkdownInputOptions) {
+  return htmlFragment(
+    toSanitizedMarkdownHtml(source, { ...options, jsonParser: parseMarkdownJson }),
+  );
 }
 
 function renderTranscript(source: string) {
@@ -251,7 +254,7 @@ describe("toSanitizedMarkdownHtml", () => {
     null,
     2,
   )}\n\`\`\``;
-  it.each<[string, string, MarkdownRenderOptions, MarkdownRenderOptions]>([
+  it.each<[string, string, MarkdownInputOptions, MarkdownInputOptions]>([
     ["copy", "```\ncode\n```", { codeBlockChrome: "none" }, {}],
     ["expand", jsonBlock, {}, { codeBlockInteraction: "interactive" }],
   ])("separates code-block %s button cache entries", (label, markdown, without, withButton) => {

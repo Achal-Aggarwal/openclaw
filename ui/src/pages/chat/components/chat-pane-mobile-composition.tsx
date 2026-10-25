@@ -23,7 +23,7 @@ const ChatPaneMobileRuntime = lazy(() => import("./chat-pane-mobile-runtime.tsx"
 
 /** Native navigation and menu methods become available with the retained mobile renderer. */
 export type ChatPaneMobileActions = {
-  sessionActions: () => HeaderMenuSessionAction[];
+  sessionActions: (nativeActions: HeaderMenuSessionAction[]) => HeaderMenuSessionAction[];
   compactActions: () => HeaderMenuSessionAction[];
   menuHost: HeaderSessionMenuMobileHost;
   pageOpen: () => boolean;
@@ -43,7 +43,8 @@ export function ChatPaneMobileComposition(props: {
     details: Element,
   ) => Element;
 }) {
-  const mobile = () => Boolean(props.header.mergedChrome && props.header.detailsControl?.mobileHost);
+  const mobile = () =>
+    Boolean(props.header.mergedChrome && props.header.detailsControl?.mobileHost);
   const mobileActivated = createMemo<boolean>((previous) => previous === true || mobile());
   const [mobileActions, setMobileActions] = createSignal<ChatPaneMobileActions>();
   const emptyPlacement: ChatPanePlacementProps = { session: undefined };
@@ -93,8 +94,10 @@ export function ChatPaneMobileComposition(props: {
   // Desktop View keeps only session-pane closure; panel controls belong to their frames.
   const desktopViewActions = () =>
     layoutModel().actions.filter((action) => action.id === "close-pane");
-  const desktopSessionActions = (): HeaderMenuSessionAction[] => [
-    ...(props.header.sessionMenuAction?.sessionActions ?? []),
+  const desktopSessionActions = (
+    nativeActions = props.header.sessionMenuAction?.sessionActions ?? [],
+  ): HeaderMenuSessionAction[] => [
+    ...nativeActions,
     ...(!props.header.mergedChrome
       ? layoutModel().actions.flatMap((action) =>
           action.id === "open-split-view" && action.kind !== "status" ? [action] : [],
@@ -126,12 +129,12 @@ export function ChatPaneMobileComposition(props: {
           ref={elementRef(registerActionsMenu)}
           {...sessionMenuAction()}
           paneTitle={sessionMenuAction() ? undefined : props.header.title}
-          sessionActions={
+          composeSessionActions={(nativeActions) =>
             mobile()
               ? sessionCommandsAvailable()
-                ? mobileActions()?.sessionActions() ?? []
-                : mobileActions()?.compactActions() ?? []
-              : desktopSessionActions()
+                ? (mobileActions()?.sessionActions(nativeActions) ?? nativeActions)
+                : (mobileActions()?.compactActions() ?? [])
+              : desktopSessionActions(nativeActions)
           }
           viewActions={mobile() ? layoutActions() : desktopViewActions()}
           viewContent={
@@ -152,7 +155,8 @@ export function ChatPaneMobileComposition(props: {
             } else if (!mobile() && action.kind === "split-below" && props.header.onSplitDown) {
               props.header.onSplitDown(props.header.paneId);
             } else {
-              sessionMenuAction()?.onAction(action);
+              const handler = sessionMenuAction()?.onAction;
+              return handler ? handler(action) : false;
             }
           }}
           mobile={mobile() || sessionMenuAction()?.mobile}

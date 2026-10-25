@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { GatewayPendingRequests } from "../../../../packages/gateway-client/src/pending-request.js";
 import { createDeferred } from "../../../../test/helpers/promise.js";
 import { GatewayBrowserClient, GatewayRequestError } from "../../api/gateway.ts";
+import * as idleImport from "../../lib/idle-import.ts";
 import {
   composerFixture,
   mention,
@@ -246,6 +247,7 @@ it.each(["pending", "denied"])(
     const input = { value: "@Al", selectionStart: 3, selectionEnd: 3 };
     menu.syncDirectory(directory);
     menu.update(input, "trigger");
+    await vi.dynamicImportSettled();
     await vi.advanceTimersByTimeAsync(150);
     menu.syncDirectory(other);
     menu.syncDirectory(directory);
@@ -277,6 +279,7 @@ it("shares native mention lookup with external insertion and retires captured ac
   view.request.mockReturnValueOnce(pending.promise);
   const first = access.request("Al");
   const second = access.request("Al");
+  await vi.dynamicImportSettled();
   expect(view.request).toHaveBeenCalledTimes(1);
   pending.resolve(people);
   const [read, shared] = await Promise.all([first, second]);
@@ -298,4 +301,101 @@ it("shares native mention lookup with external insertion and retires captured ac
   expect(read?.insert("profile-alex-offline")).toBe(false);
   expect(access.read("Al")).toBeNull();
   expect(view.value().draft).toBe("Before @Alex ");
+});
+
+function holdMentionEngine() {
+  const gate = createDeferred<void>();
+  const original = idleImport.createIdleImport;
+  const spy = vi
+    .spyOn(idleImport, "createIdleImport")
+    .mockImplementation(<T>(load: () => Promise<T>, onLoaded?: (value: T) => void) =>
+      original(async () => {
+        await gate.promise;
+        return load();
+      }, onLoaded),
+    );
+  onTestFinished(() => {
+    gate.resolve();
+    spy.mockRestore();
+  });
+  return gate.resolve;
+}
+
+it.each(["chat", "new-session"] as const)(
+  "keeps %s pending mention keys synchronous and retires a dismissed cold search",
+  async (kind) => {
+    const release = holdMentionEngine();
+    const view = composerFixture(kind);
+    view.edit("@Al");
+    for (const key of ["Enter", "Tab", "ArrowDown", "Escape"]) {
+      expect(view.key(key).defaultPrevented).toBe(true);
+    }
+    release();
+    await vi.dynamicImportSettled();
+    await vi.advanceTimersByTimeAsync(150);
+    expect(view.request).not.toHaveBeenCalled();
+    expect(view.send).not.toHaveBeenCalled();
+    view.expectValue("@Al");
+    expect(view.options()).toHaveLength(0);
+  },
+);
+
+it("uses the original search deadline after a cold engine and inserts without another loader", async () => {
+  const release = holdMentionEngine();
+  const view = composerFixture("chat");
+  view.edit("@Al");
+  await vi.advanceTimersByTimeAsync(150);
+  expect(view.request).not.toHaveBeenCalled();
+  release();
+  await vi.dynamicImportSettled();
+  await vi.advanceTimersByTimeAsync(0);
+  expect(view.request).toHaveBeenCalledTimes(1);
+  expect(view.key("Enter").defaultPrevented).toBe(true);
+  view.expectValue("@Alex ", [mention("profile-alex-online")]);
+  expect(view.send).not.toHaveBeenCalled();
+});
+
+it("rechecks the native caret when a cold mention engine arrives", async () => {
+  const release = holdMentionEngine();
+  const view = composerFixture("chat");
+  view.edit("Before @Al");
+  view.container.querySelector<HTMLTextAreaElement>("textarea")!.setSelectionRange(0, 0);
+  release();
+  await vi.dynamicImportSettled();
+  await vi.advanceTimersByTimeAsync(150);
+  expect(view.request).not.toHaveBeenCalled();
+  expect(view.options()).toHaveLength(0);
+  view.expectValue("Before @Al");
+});
+
+it("keeps the draft after a failed engine load and retries through the same search", async () => {
+  const original = idleImport.createIdleImport;
+  let fail = true;
+  const spy = vi
+    .spyOn(idleImport, "createIdleImport")
+    .mockImplementation(<T>(load: () => Promise<T>, onLoaded?: (value: T) => void) =>
+      original(async () => {
+        if (fail) {
+          fail = false;
+          throw new Error("Engine unavailable");
+        }
+        return load();
+      }, onLoaded),
+    );
+  onTestFinished(() => spy.mockRestore());
+  const view = composerFixture("chat");
+  view.edit("@Al");
+  await vi.advanceTimersByTimeAsync(0);
+  expect(view.container.textContent).toContain("Retry");
+  view.expectValue("@Al");
+  expect(view.key("Tab").defaultPrevented).toBe(false);
+  const retry = Array.from(view.container.querySelectorAll("button")).find(
+    (button) => button.textContent?.trim() === "Retry",
+  );
+  retry!.click();
+  await vi.dynamicImportSettled();
+  await vi.advanceTimersByTimeAsync(150);
+  expect(view.request).toHaveBeenCalledTimes(1);
+  expect(view.key("Enter").defaultPrevented).toBe(true);
+  view.expectValue("@Alex ", [mention("profile-alex-online")]);
 });

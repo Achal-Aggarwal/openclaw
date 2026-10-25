@@ -129,7 +129,7 @@ export function ChatPaneMobileHeader(props: ChatPaneMobileHeaderProps) {
         }}
       </Show>
       <Show when={props.active}>
-        {() => {
+        {(_active) => {
           onSettled(() => registerRouteElement(drawer, NAV_DRAWER_TOGGLE_REGISTRATION));
           return undefined;
         }}

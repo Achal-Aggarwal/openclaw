@@ -16,12 +16,13 @@ import {
 } from "../../../components/markdown-dom-ref.ts";
 import type { MarkdownJson } from "../../../components/markdown-json.ts";
 import { loadStreamingMarkdown } from "../../../components/markdown-live-loader.ts";
-import type { MarkdownRenderOptions } from "../../../components/markdown-render-options.ts";
+import type { MarkdownInputOptions } from "../../../components/markdown-render-options.ts";
 import { partitionMarkdownHtml, toSanitizedJsonHtml } from "../../../components/markdown.ts";
 import { Icon } from "../../../components/solid/icon.tsx";
 import { registerChatMessageMetadataEnglish } from "../../../i18n/locales/en-chat-message-metadata.ts";
 import type { MarkdownContent as PreparedMarkdownContent } from "../../../lib/markdown-content.ts";
 import type { MarkdownDomMedia, MarkdownMediaRoot } from "../../../lib/markdown-dom-reconciler.ts";
+import { prepareMarkdownJsonOptions } from "../../../lib/markdown-json.ts";
 import { elementRef as registerElementRef } from "../../../lib/reactive/element-ref.ts";
 import { registerEnglishCatalog, t } from "../../../lib/reactive/i18n.ts";
 import { ContentPresentation } from "../../../lib/solid/presentation.ts";
@@ -44,7 +45,7 @@ export function MessageJson(props: {
   json: MarkdownJson;
   messageKey: string;
   options: MessageTextOptions;
-  markdownOptions: MarkdownRenderOptions;
+  markdownOptions: MarkdownInputOptions;
 }) {
   const content = createMemo(() => ({
     messageKey: props.messageKey,
@@ -73,7 +74,7 @@ export type MessageMarkdownProps = {
   markdown: string;
   messageKey: string;
   options: MessageTextOptions;
-  markdownOptions: MarkdownRenderOptions;
+  markdownOptions: MarkdownInputOptions;
   duplicateSuffix?: DuplicateSuffix;
   media?: MarkdownMedia;
 };
@@ -89,12 +90,23 @@ export function MessageMarkdown(props: MessageMarkdownProps) {
         : undefined,
     { loadingValue: undefined },
   );
+  const preparedOptions = createMemo(() => {
+    const disclosure = props.options.assistantMessageDisclosure;
+    const recovered =
+      disclosure?.expanded &&
+      (props.options.role === "assistant" ||
+        (props.options.role === "user" && Boolean(disclosure.onRetryFullMessage)));
+    return prepareMarkdownJsonOptions(
+      recovered ? (disclosure.markdown ?? props.markdown) : props.markdown,
+      recovered ? { ...props.markdownOptions, mode: "document" } : props.markdownOptions,
+    );
+  });
   const presentation = createMemo(() =>
     prepareMessageMarkdown(
       props.markdown,
       props.messageKey,
       props.options,
-      props.markdownOptions,
+      preparedOptions(),
       props.duplicateSuffix,
       latest(streaming)?.toStreamingMarkdownDomParts,
       !initialStreamingRuntime && props.options.isStreaming,

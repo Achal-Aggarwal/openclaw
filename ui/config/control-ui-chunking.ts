@@ -70,6 +70,10 @@ export function controlUiStableChunkName(id: string): string | undefined {
   const normalized = normalizeModuleId(id);
 
   switch (controlUiBootManifestKey(id)) {
+    case "ui/src/pages/chat/session-snapshot-decoder.ts":
+    case "ui/src/lib/protocol-validators.generated/board.js":
+    case "ui/src/lib/protocol-validators.generated/transcript.js":
+      return "chat-snapshot-decoder";
     case "ui/src/pages/chat/components/chat-context-breakdown.tsx":
     case "ui/src/pages/chat/components/chat-context-breakdown-model.ts":
     case "ui/src/pages/chat/components/chat-context-report.tsx":
@@ -234,6 +238,11 @@ export function controlUiStableChunkName(id: string): string | undefined {
     case "ui/src/lib/sessions/session-delete-operation.ts":
       // Session actions must not import whole route chunks through earlier boot captures.
       return "session-mutation-runtime";
+    case "ui/src/pages/chat/components/chat-composer-mention-menu-engine.ts":
+      return "composer-mention-runtime";
+    case "ui/src/pages/chat/components/chat-composer-emoji-engine.ts":
+    case "ui/src/components/textarea-token-anchor.ts":
+      return "composer-emoji-runtime";
     case "ui/src/lib/chat/emoji.ts":
     case "node_modules/markdown-it-emoji/lib/data/full.mjs":
       // Shortcode input owns the catalog; earlier boot captures must not keep it eager.

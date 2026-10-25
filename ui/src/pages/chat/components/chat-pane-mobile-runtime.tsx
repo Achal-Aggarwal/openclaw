@@ -366,7 +366,7 @@ export function ChatPaneMobileRuntime(props: {
         ]
       : [],
   );
-  const nativeActions = createMemo((): HeaderMenuSessionAction[] => [
+  const nativeActions = (sessionActions: HeaderMenuSessionAction[]): HeaderMenuSessionAction[] => [
     ...compactHeaderActions(),
     ...(clearSideChat() ? [clearSideChat()!] : []),
     ...(props.header.runAction
@@ -379,7 +379,7 @@ export function ChatPaneMobileRuntime(props: {
           },
         ]
       : []),
-    ...(props.header.sessionMenuAction?.sessionActions ?? []),
+    ...sessionActions,
     ...(machine()?.showPlacementMenu
       ? [
           {
@@ -416,7 +416,7 @@ export function ChatPaneMobileRuntime(props: {
           },
         ]
       : []),
-  ]);
+  ];
   const adaptMenuPage = (page: HeaderSessionMenuPage): MobileHostDestination => ({
     area: "details",
     transient: true,

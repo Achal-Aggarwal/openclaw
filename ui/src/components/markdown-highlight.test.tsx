@@ -8,9 +8,9 @@ import { waitForSolid } from "../test-helpers/solid-settle.ts";
 import { LinkReaderMarkdown } from "./link-reader-markdown.tsx";
 import { handleMarkdownCodeBlockClick } from "./markdown-code-blocks.ts";
 import { createMarkdownRef } from "./markdown-dom-ref.ts";
-import { parseMarkdownJson } from "./markdown-json.ts";
+import { parseMarkdownJson } from "./markdown-json-parser.runtime.ts";
 import { toStreamingMarkdownDomParts } from "./markdown-live.ts";
-import type { MarkdownRenderOptions } from "./markdown-render-options.ts";
+import type { MarkdownInputOptions } from "./markdown-render-options.ts";
 import corpus from "./markdown-transcript-corpus.json" with { type: "json" };
 import { toStreamingMarkdownParts } from "./markdown.test-support.ts";
 import { toSanitizedMarkdownHtml } from "./markdown.ts";
@@ -56,7 +56,7 @@ it("preserves readable code and node state across lazy highlighting", async () =
         props.history ? initial + "```" : stream(),
         props.history ? "lazy-history" : "lazy-stream",
         { role: "assistant", isStreaming: props.streaming },
-        { codeBlockInteraction: "interactive" },
+        { codeBlockInteraction: "interactive", jsonParser: parseMarkdownJson },
         undefined,
         props.streaming ? toStreamingMarkdownDomParts : undefined,
       ),
@@ -130,5 +130,10 @@ it("preserves readable code and node state across lazy highlighting", async () =
 
 it.each(corpus)("preserves transcript $name byte for byte", ({ source, html, options }) => {
   // SAFETY: This checked-in corpus was captured with these renderer options at the merge base.
-  expect(toSanitizedMarkdownHtml(source, options as MarkdownRenderOptions)).toBe(html);
+  expect(
+    toSanitizedMarkdownHtml(source, {
+      ...(options as MarkdownInputOptions),
+      jsonParser: parseMarkdownJson,
+    }),
+  ).toBe(html);
 });

@@ -22,6 +22,8 @@ import {
   type AsyncRequest,
 } from "./chat-pane-placement.test-support.ts";
 import { resolveChatPanePlacement } from "./chat-pane-placement.ts";
+import { getPaneTestRuntime } from "./chat-pane-runtime.test-support.ts";
+import { runChatHeaderSessionAction } from "./chat-pane-session-menu-actions.ts";
 import {
   activePlacementSession as placementSession,
   offlineDeviceSession,
@@ -412,7 +414,7 @@ describe("local session placement actions", () => {
     async (change) => {
       const { pane, session, state, request } = localFixture();
       const moving = dialogs.track(
-        pane.handleHeaderSessionAction({ kind: "move-session" }, session),
+        runChatHeaderSessionAction(getPaneTestRuntime(pane), { kind: "move-session" }, session),
       );
       await selectRepositoryWorker();
       const current = { ...session };
@@ -478,7 +480,9 @@ describe("local session placement actions", () => {
           }
         : original(method, ...args),
     );
-    const moving = dialogs.track(pane.handleHeaderSessionAction({ kind: "move-session" }, session));
+    const moving = dialogs.track(
+      runChatHeaderSessionAction(getPaneTestRuntime(pane), { kind: "move-session" }, session),
+    );
     await dialogs.waitFor(() => expect(option("cloud:cloud")).not.toBeNull());
     option("cloud:cloud")!.click();
     flush();

@@ -16,6 +16,7 @@ import {
   createPaneHeaderWorkspaceFixture,
   createSessionCapabilityFixture,
   createTestChatPane,
+  getPaneTestRuntime,
 } from "../chat-pane.test-support.ts";
 import type { ChatPageHost } from "../chat-state-host.ts";
 import { openSlot } from "../sidebar-layout.ts";
@@ -132,27 +133,44 @@ describe("chat pane header", () => {
 
   it.each(["openclaw", null])(
     "preserves workspace identity alongside mobile connection status for %s",
-    (workspaceLabel) => {
+    async (workspaceLabel) => {
       const retry = vi.fn();
-      const { container, update } = mountHeader({ mergedChrome: true, workspaceLabel });
-      const title = container.querySelector(".chat-pane__session-title");
-      const workspace = container.querySelector(".chat-pane__workspace-chip");
-      const drawer = container.querySelector<HTMLButtonElement>(".chat-pane__nav-toggle")!;
-      update({ gatewayStatus: { kind: "offline", queuedCount: 2, onRetry: retry } });
-      const line = query(container, ".mobile-connection-status");
-      expect(line.textContent).toBe("Disconnected · 2 queued");
+      const { container, update } = mountHeader({
+        mergedChrome: true,
+        workspaceLabel,
+        detailsControl: {
+          chat: undefined,
+          elements: {},
+          mobile: true,
+          mobileHost: createChatMobileHostFixture("header-workspace-identity"),
+          presentation: true,
+          setRef: vi.fn(),
+        },
+      });
+      await waitForSolid(() =>
+        expect(container.querySelector(".agent-chat__header--mobile")).not.toBeNull(),
+      );
+      const header = query(container, ".agent-chat__header--mobile");
+      const title = query(header, ".mobile-header__title");
+      const workspace = header.querySelector(".chat-pane__workspace-chip");
+      expect(Boolean(workspace)).toBe(Boolean(workspaceLabel));
+      absent(container, ".chat-pane__header");
+      update({ gatewayStatus: { kind: "offline", onRetry: retry } });
+      const line = query(header, ".mobile-header__notices");
+      expect(text(line, ".mobile-header__notice > span")).toBe("Disconnected");
       expect(line.querySelector('[role="status"]')).toBeNull();
-      expect(container.querySelector(".chat-pane__workspace-chip")).toBe(workspace);
-      expect(container.querySelector(".chat-pane__session-title")).toBe(title);
-      expect(drawer.dataset.connectionStatus).toBe("offline");
-      line.querySelector<HTMLButtonElement>("button")!.click();
+      expect(container.querySelector(".agent-chat__header--mobile")).toBe(header);
+      expect(header.querySelector(".chat-pane__workspace-chip")).toBe(workspace);
+      expect(header.querySelector(".mobile-header__title")).toBe(title);
+      line.querySelector<HTMLButtonElement>(".mobile-header__retry")!.click();
       expect(retry).toHaveBeenCalledOnce();
       update({ gatewayStatus: { kind: "connected" } });
-      expect(container.querySelector(".mobile-connection-status")).toBeNull();
-      expect(Boolean(query(container, ".chat-pane__workspace-chip"))).toBe(Boolean(workspaceLabel));
-      expect(drawer.dataset.connectionStatus).toBe("connected");
+      expect(header.querySelector(".mobile-header__notices")).toBeNull();
+      expect(container.querySelector(".agent-chat__header--mobile")).toBe(header);
+      expect(header.querySelector(".chat-pane__workspace-chip")).toBe(workspace);
+      expect(header.querySelector(".mobile-header__title")).toBe(title);
       if (!workspaceLabel) {
-        absent(container, ".chat-pane__crumb-sep");
+        absent(header, ".chat-pane__crumb-sep");
       }
     },
   );
@@ -162,12 +180,20 @@ describe("chat pane header", () => {
     const onSplitDown = vi.fn();
     const onOpenSplitView = vi.fn();
     const sessionMenuAction = chatPaneHeaderSessionMenu();
+    const { pane } = createTestChatPane({
+      client: createTestGatewayClient(async () => ({})),
+    });
     const { container, update } = mountHeader({
       onClosePane,
       onSplitDown,
       onOpenSplitView,
       sessionMenuAction: {
         ...sessionMenuAction,
+        actionSource: {
+          owner: getPaneTestRuntime(pane),
+          readRow: () => row(),
+          stopDisabledReason: undefined,
+        },
         compact: true,
         splitAllowed: true,
         session: { ...sessionMenuAction.session, target: { key: "agent:main:test" } },
@@ -200,6 +226,39 @@ describe("chat pane header", () => {
     expect(container.querySelector(".chat-pane__close")).toBeNull();
     await selectNativeMenu(menu, "compact:open-view");
     expect(menu.querySelector('[data-value="layout:close-pane"]')).toBeNull();
+  });
+
+  it("continues in terminal through native actions when no composition action handles it", async () => {
+    const { pane } = createTestChatPane({
+      client: createTestGatewayClient(async () => ({})),
+    });
+    const owner = getPaneTestRuntime(pane);
+    const continueInTerminal = vi
+      .spyOn(owner, "openContinueInTerminalDialog")
+      .mockImplementation(() => {});
+    const session = row();
+    const sessionMenuAction = {
+      ...chatPaneHeaderSessionMenu(),
+      compact: true,
+      onAction: undefined,
+      actionSource: { owner, readRow: () => session, stopDisabledReason: undefined },
+    };
+    const { container, update } = mountHeader({ sessionMenuAction });
+    const menu = container.querySelector("openclaw-chat-header-session-menu")!;
+    const selectTerminal = async () => {
+      await selectNativeMenu(menu, "compact:open-advanced");
+      await selectNativeMenu(menu, "compact:open-open-in");
+      await selectNativeMenu(menu, "continue-in-terminal");
+    };
+
+    await selectTerminal();
+    expect(continueInTerminal).toHaveBeenCalledExactlyOnceWith(session);
+
+    const onAction = vi.fn(() => false as const);
+    update({ sessionMenuAction: { ...sessionMenuAction, onAction } });
+    await selectTerminal();
+    expect(onAction).toHaveBeenCalledExactlyOnceWith({ kind: "continue-in-terminal" });
+    expect(continueInTerminal).toHaveBeenCalledTimes(2);
   });
 
   it("toggles Panels through the native owner and reflects its current layout", () => {
@@ -256,7 +315,7 @@ describe("chat pane header", () => {
     });
     const menu = container.querySelector(".chat-pane__layout-menu")!;
     expect(readShortcut).not.toHaveBeenCalled();
-    await openNativeMenu(menu);
+    await openNativeMenu(menu, "terminal");
     const shortcut = menu.querySelector('[data-value="terminal"] kbd');
     expect(shortcut).not.toBeNull();
     update({ panelMenuActions: [action("Open terminal")] });
@@ -317,9 +376,18 @@ describe("chat pane header", () => {
     expect(text(container, ".chat-pane__placement-chip")).toBe("Moving to Gateway…");
   });
 
-  it("keeps the public indicator visible in narrow headers", () => {
+  it("keeps the public indicator icon visible in native mobile headers", async () => {
     const { container } = mountHeader({
       narrow: true,
+      mergedChrome: true,
+      detailsControl: {
+        chat: undefined,
+        elements: {},
+        mobile: true,
+        mobileHost: createChatMobileHostFixture("header-public-indicator"),
+        presentation: true,
+        setRef: vi.fn(),
+      },
       publicAccessIndicator: chatPaneHeaderSharing({
         state: {
           loading: false,
@@ -335,7 +403,12 @@ describe("chat pane header", () => {
       }),
     });
 
-    const indicator = container.querySelector(".chat-pane__public-share-indicator")!;
+    await waitForSolid(() =>
+      expect(container.querySelector(".agent-chat__header--mobile")).not.toBeNull(),
+    );
+    const header = query(container, ".agent-chat__header--mobile");
+    absent(container, ".chat-pane__header");
+    const indicator = query(header, ".chat-pane__public-share-indicator");
     expect(indicator.getAttribute("aria-label")).toBe(
       "Public — anyone can read without signing in.",
     );

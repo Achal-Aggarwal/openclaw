@@ -317,10 +317,10 @@ export abstract class ChatPaneStateOwner {
         : null,
     );
   };
-  protected get headerOutcomeOwner(): string {
+  get headerOutcomeOwner(): string {
     return `${this.connectionGeneration}:${this.headerPresentationGeneration}`;
   }
-  protected ownsHeaderOutcome(owner: string): boolean {
+  ownsHeaderOutcome(owner: string): boolean {
     return this.presented && owner === this.headerOutcomeOwner;
   }
   protected get selected(): boolean {
@@ -505,13 +505,13 @@ export abstract class ChatPaneStateOwner {
   protected connectedClient: GatewayBrowserClient | null = null;
   protected boardProviderLease: (BoardProviderLease & { cacheKey: string }) | undefined;
   protected boardProviderLifecycleConnected = false;
-  protected connectionGeneration = 0;
+  connectionGeneration = 0;
   // Owns the abort signal handed to header-scoped destructive confirm dialogs.
   // Retiring it alongside every connectionGeneration bump lets a dialog open
   // across a reconnect or pane teardown dismiss itself, matching
   // SessionDataController's own epoch-scoped controller for the sidebar.
   protected headerSessionMutationAbortController = new AbortController();
-  protected headerSessionDraftAbortController = new AbortController();
+  headerSessionDraftAbortController = new AbortController();
 
   readonly headerPresentation: {
     renameValue: string;
@@ -572,7 +572,7 @@ export abstract class ChatPaneStateOwner {
     typingOverflow: undefined,
     reactions: new Map(),
   };
-  protected readonly sessionSharingHydrationTargets = new Map<string, string>();
+  readonly sessionSharingHydrationTargets = new Map<string, string>();
   protected readonly sessionParticipationTracker = new SessionParticipationTracker();
   readonly resetConfirmation: {
     pending:
@@ -599,7 +599,7 @@ export abstract class ChatPaneStateOwner {
     requests: new Map<SessionPanelToggleSlot, PendingSessionPanelToggle>(),
   };
   protected readonly sessionDiscussionProbes = new Set<string>();
-  protected readonly sessionDiscussionPanels = new Map<
+  readonly sessionDiscussionPanels = new Map<
     string,
     {
       generation: number;

@@ -8,14 +8,21 @@ import { createDeferred } from "../../../../test/helpers/promise.js";
 import type { GatewayBrowserClient } from "../../api/gateway.ts";
 import type { ApplicationContext } from "../../app/context.ts";
 import type { BoardProvider } from "../../lib/board/provider.ts";
+import { transactionComplete } from "../../lib/chat/control-ui-database.runtime.ts";
 import { mountSolid } from "../../test-helpers/mount-solid.ts";
 import { waitForSolid } from "../../test-helpers/solid-settle.ts";
 import { chatHistoryRequests } from "./chat-history-state.ts";
+import { buildChatBoardPanel } from "./chat-pane-board-panel.ts";
+import type { ChatBoardPanelSource } from "./chat-pane-panel-source.ts";
 import type { ResolvedBoardView } from "./chat-pane-shared.ts";
 import { ChatBoardPanel } from "./chat-pane-surfaces.tsx";
 import { createSessionCapabilityFixture, createTestChatPane } from "./chat-pane.test-support.ts";
 import type { ChatPageHost } from "./chat-state-host.ts";
 import { cacheChatSessionSnapshot, readChatSessionSnapshot } from "./session-message-cache.ts";
+import {
+  CHAT_SNAPSHOT_STORE_NAME,
+  openSessionSnapshotDatabase,
+} from "./session-snapshot-database.ts";
 import { clearStoredChatSnapshots } from "./session-snapshot-invalidation.ts";
 import { resolveChatSnapshotKey } from "./session-snapshot-key.ts";
 import { SessionSnapshotStore } from "./session-snapshot-store.ts";
@@ -29,10 +36,10 @@ type BoardTestPane = HTMLElement & {
   hydrateStoredChatSnapshot: (state: ChatPageHost, sessionKey: string) => void;
   resolveBoardProvider: () => BoardProvider;
   resolveBoardView: () => ResolvedBoardView;
-  renderBoardPanel: (
+  boardPanelSource: (
     board: ResolvedBoardView,
     layout: ChatPageHost["sidebarLayout"],
-  ) => Parameters<typeof ChatBoardPanel>[0] | null;
+  ) => ChatBoardPanelSource | null;
   releaseBoardProviderLease: () => void;
 };
 
@@ -72,7 +79,8 @@ function createGatewayBoardPane(sessionKey: string) {
     snapshot,
     container,
     draw: () => {
-      setContent(pane.renderBoardPanel(pane.resolveBoardView(), layout));
+      const source = pane.boardPanelSource(pane.resolveBoardView(), layout);
+      setContent(source && buildChatBoardPanel(source));
       flush();
     },
     cleanup: () => {
@@ -163,17 +171,30 @@ describe("chat pane board loading states", () => {
     const store = new SessionSnapshotStore(pane.state.chatMessagesBySession);
     pane.sessionSnapshotStore = store;
     const messages = [{ role: "assistant", content: "Retained conversation" }];
-    store.write(resolveChatSnapshotKey(pane.state, { sessionKey }), {
-      messages,
-      sessionId: "retained-session",
-      pagination: { hasMore: false },
-      board: {
-        snapshot: { sessionKey, revision: 1, tabs: [], widgets: [{}] },
-        receivedAtMs: Date.now(),
-      },
-    });
     try {
-      await store.flush();
+      const database = expectDefined(await openSessionSnapshotDatabase(), "snapshot database");
+      try {
+        const transaction = database.transaction(CHAT_SNAPSHOT_STORE_NAME, "readwrite");
+        const completed = transactionComplete(transaction);
+        transaction.objectStore(CHAT_SNAPSHOT_STORE_NAME).put({
+          projectionVersion: 3,
+          sessionKey: resolveChatSnapshotKey(pane.state, { sessionKey }),
+          savedAt: Date.now(),
+          sessionId: "retained-session",
+          snapshot: {
+            messages,
+            sessionId: "retained-session",
+            pagination: { hasMore: false },
+            board: {
+              snapshot: { sessionKey, revision: 1, tabs: [], widgets: [{}] },
+              receivedAtMs: Date.now(),
+            },
+          },
+        });
+        await completed;
+      } finally {
+        database.close();
+      }
       const provider = pane.resolveBoardProvider();
       pane.hydrateStoredChatSnapshot(pane.state, sessionKey);
       await chatHistoryRequests(pane.state).initialSnapshotHydration?.promise;

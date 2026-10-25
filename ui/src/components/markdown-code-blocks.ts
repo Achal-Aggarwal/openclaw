@@ -4,12 +4,12 @@ import { t } from "../i18n/index.ts";
 import { registerCodeBlocksEnglish } from "../i18n/locales/en-code-blocks.ts";
 import { copyMarkdownText } from "./markdown-copy.ts";
 import {
-  parseMarkdownJson,
   renderMarkdownJsonModes,
   renderMarkdownJsonTree,
   type MarkdownJson,
+  type MarkdownJsonParser,
 } from "./markdown-json.ts";
-import type { MarkdownRenderEnv } from "./markdown-render-options.ts";
+import type { MarkdownInputEnv, MarkdownInputOptions } from "./markdown-render-options.ts";
 import { isMarkdownBlockArtText } from "./markdown-text.ts";
 
 registerCodeBlocksEnglish();
@@ -194,11 +194,39 @@ function renderCodeBlockCopyButton(text: string): string {
   return `<button type="button" class="code-block-copy" data-markdown-key="copy" data-code="${attrSafe}" data-code-encoding="${blockArtCodeBlockCopyPayloadEncoding}" aria-label="${escapeHtml(t("common.copyCode"))}"><span class="code-block-copy__idle" aria-hidden="true"></span><span class="code-block-copy__done" aria-hidden="true"></span><span class="code-block-copy__failed" aria-hidden="true">!</span></button>`;
 }
 
+type MarkdownCodeBlockOptions = {
+  blockArt?: boolean;
+  copyText?: string;
+  highlight?: boolean;
+  json?: MarkdownJson;
+};
+
+export type MarkdownCodeBlockEnv = {
+  codeBlockChrome?: "copy" | "none";
+} & (
+  | { codeBlockInteraction?: "static"; jsonParser?: MarkdownJsonParser }
+  | { codeBlockInteraction: "interactive"; jsonParser: MarkdownJsonParser }
+);
+
 export function renderMarkdownCodeBlock(
   text: string,
   lang: string,
-  env: unknown,
-  options: { blockArt?: boolean; copyText?: string; highlight?: boolean; json?: MarkdownJson } = {},
+  env: MarkdownCodeBlockEnv | undefined,
+  options?: MarkdownCodeBlockOptions,
+): string;
+export function renderMarkdownCodeBlock(
+  text: string,
+  lang: string,
+  env: MarkdownInputEnv,
+  options: MarkdownCodeBlockOptions & { json: MarkdownJson },
+): string;
+export function renderMarkdownCodeBlock(
+  text: string,
+  lang: string,
+  env:
+    | Pick<MarkdownInputOptions, "codeBlockChrome" | "codeBlockInteraction" | "jsonParser">
+    | undefined,
+  options: MarkdownCodeBlockOptions = {},
 ): string {
   const blockArt = options.blockArt || isMarkdownBlockArtText(text);
   const highlight = options.highlight;
@@ -207,9 +235,8 @@ export function renderMarkdownCodeBlock(
   const codeClass = blockArt ? "markdown-block-art" : markdownCodeClass(lang, highlighted);
   const classAttr = codeClass ? ` class="${escapeHtml(codeClass)}"` : "";
   const codeBlock = `<pre><code${classAttr}>${highlighted}</code></pre>`;
-  // SAFETY: markdown-it types renderer env as unknown; this internal renderer
-  // receives the normalized options object, or undefined from direct calls.
-  const renderEnv = env as Partial<MarkdownRenderEnv> | undefined;
+  // Bare JSON supplies its parsed tree; every other interactive caller supplies a parser.
+  const renderEnv = env;
   const copyEnabled = renderEnv?.codeBlockChrome !== "none";
   const interactive = renderEnv?.codeBlockInteraction === "interactive";
   if (!copyEnabled && !interactive) {
@@ -224,7 +251,7 @@ export function renderMarkdownCodeBlock(
   }
   const jsonSource =
     !blockArt && highlight !== false && (!lang || lang.toLowerCase() === "json")
-      ? (options.json ?? parseMarkdownJson(text))
+      ? (options.json ?? renderEnv?.jsonParser?.(text))
       : null;
   const tree = jsonSource ? renderMarkdownJsonTree(jsonSource) : "";
   const hiddenCount = { count: String(hiddenLineCount) };
