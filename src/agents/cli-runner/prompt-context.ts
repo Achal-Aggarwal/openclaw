@@ -26,6 +26,7 @@ async function buildCliTurnAppendContext(
     context: readonly (string | undefined)[];
     runtimeContextFragments?: RunCliAgentParams["runtimeContextFragments"];
     thinkLevel?: ThinkLevel;
+    nativeDelegationTools?: readonly string[];
     requesterProfileId?: string;
   },
 ): Promise<string> {
@@ -46,6 +47,7 @@ async function buildCliTurnAppendContext(
     buildProactiveSubagentOrchestrationSection({
       enabled: params.thinkLevel === "ultra",
       hasSessionsSpawn: params.capabilityToolNames.has("sessions_spawn"),
+      nativeDelegationTools: params.nativeDelegationTools,
     }).join("\n"),
     mediaTaskMessage ? labelRuntimeContextText(mediaTaskMessage.content) : undefined,
     // Native-prompt owners and first-only resumes do not receive the current runtime line.
