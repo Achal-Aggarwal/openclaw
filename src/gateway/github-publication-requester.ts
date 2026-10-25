@@ -108,9 +108,11 @@ function prepareRequesterPolicy(
   session: PublicationSession,
   getCommittedRuntimeConfig: () => OpenClawConfig,
   identity: PreparedProfileIdentity | undefined,
-  sessionFacts: PreparedPublicationSession | undefined,
-  onPolicy?: (authority: PluginGatewayAccessAuthority | undefined) => void,
+  initialSessionFacts: PreparedPublicationSession | undefined,
+  onSessionFacts: (facts: PreparedPublicationSession) => void,
 ) {
+  let sessionFacts = initialSessionFacts;
+  let policyAuthority: PluginGatewayAccessAuthority | undefined;
   const client = createSyntheticPluginRuntimeClient({
     operatorRoleActor: snapshot.actor,
     scopes: [...snapshot.scopes],
@@ -205,13 +207,12 @@ function prepareRequesterPolicy(
     }
     return current?.profile;
   };
-  return () => {
+  const assertCurrent = () => {
     const config = getCommittedRuntimeConfig();
     const profile = assertPrepared(config);
     if (profile) {
       try {
-        const authority = resumeGatewayOperatorAccessGrant(profile, config, snapshot.grant);
-        onPolicy?.(authority);
+        policyAuthority = resumeGatewayOperatorAccessGrant(profile, config, snapshot.grant);
       } catch (error) {
         if (error instanceof GatewayOperatorAccessDeniedError) {
           throw new GitHubPublicationRequesterUnavailableError();
@@ -221,6 +222,45 @@ function prepareRequesterPolicy(
       // A policy callback can synchronously change identity, role, or committed config.
       assertPrepared(getCommittedRuntimeConfig());
     }
+  };
+
+  return {
+    assertCurrent,
+    async prepareSource(
+      requester: GitHubPublicationRequesterPolicyV2,
+      selector: GitHubPublicationSourceSelector,
+    ) {
+      requester.assertCurrent();
+      if (selector.agentId !== session.agentId || selector.sessionKey !== session.sessionKey) {
+        throw new GitHubPublicationRequesterUnavailableError();
+      }
+      sessionFacts ??= await preparePublicationSession(session, getCommittedRuntimeConfig());
+      onSessionFacts(sessionFacts);
+      requester.assertCurrent();
+      const { sourcePath } = sessionFacts.readCurrent(getCommittedRuntimeConfig());
+      if (!sourcePath) {
+        throw new GitHubPublicationRecoveryPendingError(
+          "GitHub publication source is unavailable; retry after session storage is ready.",
+        );
+      }
+      return await prepareGitHubPublicationSource({
+        sourcePath,
+        selector: {
+          ...selector,
+          ...(snapshot.actor.kind === "operator"
+            ? {
+                profileId: snapshot.actor.profileId,
+                aliasBindingIds: snapshot.grant?.aliasBindingIds,
+              }
+            : {}),
+        },
+        signal: AbortSignal.any([
+          requester.signal,
+          ...(policyAuthority ? [policyAuthority.signal] : []),
+        ]),
+        assertCurrent: requester.assertCurrent,
+      });
+    },
   };
 }
 
@@ -285,15 +325,14 @@ export async function prepareGitHubPublicationRequesterV2(
       scopes: Object.freeze([...(source?.authority.scopes ?? options.client.connect.scopes ?? [])]),
       grant,
     });
-    let policyAuthority: PluginGatewayAccessAuthority | undefined;
-    const assertPolicy = prepareRequesterPolicy(
+    const policy = prepareRequesterPolicy(
       snapshot,
       session,
       options.context.getCommittedRuntimeConfig ?? options.context.getRuntimeConfig,
       identity,
       sessionFacts,
-      (authority) => {
-        policyAuthority = authority;
+      (facts) => {
+        sessionFacts = facts;
       },
     );
     const signal = AbortSignal.any([
@@ -320,41 +359,11 @@ export async function prepareGitHubPublicationRequesterV2(
       assertInvocationCurrent,
       assertCurrent: () => {
         assertInvocationCurrent();
-        assertPolicy();
+        policy.assertCurrent();
         assertInvocationCurrent();
       },
-      async prepareSource(selector: GitHubPublicationSourceSelector) {
-        requester.assertCurrent();
-        if (selector.agentId !== session.agentId || selector.sessionKey !== session.sessionKey) {
-          throw new GitHubPublicationRequesterUnavailableError();
-        }
-        sessionFacts ??= await preparePublicationSession(
-          session,
-          (options.context.getCommittedRuntimeConfig ?? options.context.getRuntimeConfig)(),
-        );
-        requester.assertCurrent();
-        const { sourcePath } = sessionFacts.readCurrent(
-          (options.context.getCommittedRuntimeConfig ?? options.context.getRuntimeConfig)(),
-        );
-        if (!sourcePath) {
-          throw new GitHubPublicationRecoveryPendingError(
-            "GitHub publication source is unavailable; retry after session storage is ready.",
-          );
-        }
-        return await prepareGitHubPublicationSource({
-          sourcePath,
-          selector: {
-            ...selector,
-            ...(snapshot.actor.kind === "operator"
-              ? {
-                  profileId: snapshot.actor.profileId,
-                  aliasBindingIds: snapshot.grant?.aliasBindingIds,
-                }
-              : {}),
-          },
-          signal: AbortSignal.any([signal, ...(policyAuthority ? [policyAuthority.signal] : [])]),
-          assertCurrent: requester.assertCurrent,
-        });
+      prepareSource(selector: GitHubPublicationSourceSelector) {
+        return policy.prepareSource(requester, selector);
       },
     });
     workerRequesters.add(requester);
@@ -401,15 +410,14 @@ export async function restoreGitHubPublicationRequester(
     identity?.release();
   };
   try {
-    let policyAuthority: PluginGatewayAccessAuthority | undefined;
-    const assertPolicy = prepareRequesterPolicy(
+    const policy = prepareRequesterPolicy(
       snapshot,
       session,
       getCommittedRuntimeConfig,
       identity,
       sessionFacts,
-      (authority) => {
-        policyAuthority = authority;
+      (facts) => {
+        sessionFacts = facts;
       },
     );
     const requester: GitHubPublicationRequesterPolicyV2 & { release: () => void } = Object.freeze({
@@ -418,38 +426,10 @@ export async function restoreGitHubPublicationRequester(
       snapshot,
       assertCurrent() {
         lifetime.signal.throwIfAborted();
-        assertPolicy();
+        policy.assertCurrent();
       },
-      async prepareSource(selector: GitHubPublicationSourceSelector) {
-        requester.assertCurrent();
-        if (selector.agentId !== session.agentId || selector.sessionKey !== session.sessionKey) {
-          throw new GitHubPublicationRequesterUnavailableError();
-        }
-        sessionFacts ??= await preparePublicationSession(session, getCommittedRuntimeConfig());
-        requester.assertCurrent();
-        const { sourcePath } = sessionFacts.readCurrent(getCommittedRuntimeConfig());
-        if (!sourcePath) {
-          throw new GitHubPublicationRecoveryPendingError(
-            "GitHub publication source is unavailable; retry after session storage is ready.",
-          );
-        }
-        return await prepareGitHubPublicationSource({
-          sourcePath,
-          selector: {
-            ...selector,
-            ...(snapshot.actor.kind === "operator"
-              ? {
-                  profileId: snapshot.actor.profileId,
-                  aliasBindingIds: snapshot.grant?.aliasBindingIds,
-                }
-              : {}),
-          },
-          signal: AbortSignal.any([
-            lifetime.signal,
-            ...(policyAuthority ? [policyAuthority.signal] : []),
-          ]),
-          assertCurrent: requester.assertCurrent,
-        });
+      prepareSource(selector: GitHubPublicationSourceSelector) {
+        return policy.prepareSource(requester, selector);
       },
       release,
     });
