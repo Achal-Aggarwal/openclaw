@@ -83,10 +83,7 @@ function completedVideoJob(url = "/api/v1/videos/job-123/content?index=0") {
 
 function releasedJson(value: unknown) {
   return {
-    response: new Response(JSON.stringify(value), {
-      status: 200,
-      headers: { "content-type": "application/json" },
-    }),
+    response: Response.json(value),
     release: vi.fn(async () => {}),
   };
 }

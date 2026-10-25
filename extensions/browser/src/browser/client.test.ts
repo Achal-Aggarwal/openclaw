@@ -31,9 +31,7 @@ function captureFetch(body: unknown, responseFor?: (url: string, init?: RequestI
     "fetch",
     vi.fn(async (url: string, init?: FetchCall["init"]) => {
       calls.push({ url, init });
-      return new Response(JSON.stringify(responseFor ? responseFor(url, init) : body), {
-        headers: { "content-type": "application/json" },
-      });
+      return Response.json(responseFor ? responseFor(url, init) : body);
     }),
   );
   return calls;

@@ -10,9 +10,7 @@ export function createGraphPageGuard(
       path: params.url.replace(GRAPH_ROOT, ""),
     });
     return {
-      response: new Response(JSON.stringify(payload), {
-        headers: { "content-type": "application/json" },
-      }),
+      response: Response.json(payload),
       finalUrl: params.url,
       release: async () => undefined,
     };
