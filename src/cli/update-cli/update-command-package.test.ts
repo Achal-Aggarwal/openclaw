@@ -798,13 +798,27 @@ it.each([
       };
       const installCommand = vi.mocked(processRunner.runCommandWithTimeout).getMockImplementation();
       assert(installCommand);
+      // Charge preparation to the existing Doctor budget without relying on wall time.
+      let monotonicNow = 0;
+      vi.spyOn(performance, "now").mockImplementation(() => monotonicNow);
+      vi.spyOn(Date, "now").mockReturnValue(Date.now());
+      const progress = {
+        onStepStart: ({ name }: { name: string }) => {
+          if (name === "openclaw doctor") {
+            monotonicNow += 125;
+          }
+        },
+      };
       let resultPath: string | undefined;
       vi.mocked(processRunner.runCommandWithTimeout).mockImplementation(async (argv, options) => {
         if (argv[2] !== "doctor") {
           return await installCommand(argv, options);
         }
         assert(typeof options === "object");
-        expect(options).toMatchObject({ timeoutMs: expectedDoctorTimeoutMs });
+        expect(options).toMatchObject({
+          timeoutMs:
+            expectedDoctorTimeoutMs === undefined ? undefined : expectedDoctorTimeoutMs - 125,
+        });
         resultPath = options.env?.[UPDATE_POST_INSTALL_DOCTOR_RESULT_PATH_ENV];
         assert(resultPath);
         await writeUpdatePostInstallDoctorResult({ resultPath, result: receipt });
@@ -817,6 +831,7 @@ it.each([
         if (method === "package") {
           result = await runPackageInstallUpdate({
             ...defaults,
+            progress,
             installEnv: env,
             managedServiceEnv: env,
             validateCandidate: async () => [],
