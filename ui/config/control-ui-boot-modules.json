@@ -1260,6 +1260,7 @@
   "ui/src/components/markdown-audio-transcript.ts",
   "ui/src/components/markdown-blocks-owner.ts",
   "ui/src/components/markdown-code-blocks.ts",
+  "ui/src/components/markdown-code-highlight.ts",
   "ui/src/components/markdown-copy.ts",
   "ui/src/components/markdown-details.ts",
   "ui/src/components/markdown-dom-ref.ts",
