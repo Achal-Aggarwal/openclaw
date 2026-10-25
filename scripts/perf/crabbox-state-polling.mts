@@ -23,6 +23,7 @@ const { values } = parseArgs({
     out: { type: "string" },
     observer: { type: "string" },
     entry: { type: "string" },
+    beam: { type: "boolean", default: false },
     profile: { type: "boolean", default: false },
   },
 });
@@ -64,7 +65,14 @@ const configPath = writeGatewayBenchConfig(
     agents: { defaults: { skipBootstrap: true } },
     cron: { enabled: false },
     logging: { file: path.join(output, "gateway-file.log") },
-    plugins: { enabled: true, allow: ["crabbox"], entries: { crabbox: { enabled: true } } },
+    plugins: {
+      enabled: true,
+      allow: values.beam ? ["crabbox", "beam"] : ["crabbox"],
+      entries: {
+        crabbox: { enabled: true },
+        ...(values.beam ? { beam: { enabled: true } } : {}),
+      },
+    },
     cloudWorkers: {
       preparedPool: { maxTotal: 0 },
       profiles: {
@@ -102,7 +110,13 @@ let phase = "boot";
 let phaseStart = Date.now();
 const evidence = {
   format: "openclaw-crabbox-state-polling-v1",
-  workload: { settleSeconds: 70, steadySeconds: 120, profiles: 1, readyWorkers: 0 },
+  workload: {
+    settleSeconds: 70,
+    steadySeconds: 120,
+    profiles: 1,
+    readyWorkers: 0,
+    beam: values.beam,
+  },
   phases: [] as Array<{ phase: string; start: number; end: number }>,
   ready: false,
   crabboxCalls: { version: 0, unexpected: 0 },

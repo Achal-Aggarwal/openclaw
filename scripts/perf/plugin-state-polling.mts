@@ -18,6 +18,10 @@ import {
   type ReefAuditStateRecord,
   verifyReefAuditWindow,
 } from "../../extensions/reef/src/audit-state-format.js";
+import {
+  REEF_DELIVERY_STORE_OPTIONS,
+  ReefOutboundDeliverySchema,
+} from "../../extensions/reef/src/trust-store-format.js";
 import { stopChild, delay } from "../lib/gateway-bench-child.ts";
 import { getFreePort } from "../lib/gateway-bench-probes.ts";
 import {
@@ -38,6 +42,7 @@ const { values } = parseArgs({
     seconds: { type: "string", default: "90" },
     messages: { type: "string", default: "18" },
     receipts: { type: "string", default: "0" },
+    "pending-delivery": { type: "boolean", default: false },
     "audit-prefill": { type: "boolean", default: false },
     "expired-peer": { type: "boolean", default: false },
     "expired-audit-orphan": { type: "boolean", default: false },
@@ -261,6 +266,23 @@ try {
         },
       },
     );
+    if (values["pending-delivery"]) {
+      const deliveries = createPluginStateKeyedStoreV2("reef", REEF_DELIVERY_STORE_OPTIONS, {
+        assertCurrent() {},
+      });
+      await deliveries.register(
+        `${sha256Hex(new TextEncoder().encode(`${relayUrl}\nreceiver`))}:sender:01J00000000000000000000000`,
+        ReefOutboundDeliverySchema.parse({
+          bodyHash: "0".repeat(64),
+          recipient: {
+            ed25519PublicKey: sender.signing.publicKey,
+            x25519PublicKey: sender.encryption.publicKey,
+            keyEpoch: 1,
+          },
+          sentAt: Date.now(),
+        }),
+      );
+    }
     const reviews = seed("reviews", 2000);
     for (const { review } of envelopes) {
       await reviews.register(review.approvalDigest, { review });
@@ -393,6 +415,7 @@ try {
     const result = {
       messageCount,
       receiptCount,
+      pendingDelivery: values["pending-delivery"],
       auditPrefill: values["audit-prefill"],
       expiredPeer: values["expired-peer"],
       expiredAuditOrphan: values["expired-audit-orphan"],
