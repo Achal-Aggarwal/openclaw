@@ -421,6 +421,21 @@ function FramedMessage(props: {
   );
 }
 
+function FramedMessages(props: { frame: MessageGroupFrame }) {
+  const media = createMediaQuerySource(
+    "(max-width: 768px), (max-width: 932px) and (max-height: 500px) and (orientation: landscape)",
+  );
+  const [mobile, setMobile] = createSignal(media.read());
+  onSettled(() => media.subscribe(setMobile));
+  return (
+    <For each={props.frame.group.messages} keyed={(item) => item.key}>
+      {(item, index) => (
+        <FramedMessage frame={props.frame} item={item()} index={index()} mobile={mobile()} />
+      )}
+    </For>
+  );
+}
+
 function FramedMessageGroup(props: {
   group: MessageGroupData;
   options: NativeMessageGroupOptions;
@@ -428,11 +443,6 @@ function FramedMessageGroup(props: {
   const replyElements: ReplyConnectorElements = {};
   const frame = createMemo(() => prepareMessageGroupFrame(props.group, props.options));
   const options = () => frame().options;
-  const media = createMediaQuerySource(
-    "(max-width: 768px), (max-width: 932px) and (max-height: 500px) and (orientation: landscape)",
-  );
-  const [mobile, setMobile] = createSignal(media.read());
-  onSettled(() => media.subscribe(setMobile));
   return (
     <div
       ref={(element) => (replyElements.group = element)}
@@ -452,13 +462,7 @@ function FramedMessageGroup(props: {
         <ReplyLineView line={frame().replyLine} actions={options()} elements={replyElements} />
         <Show
           when={options().frameContent !== undefined}
-          fallback={
-            <For each={props.group.messages} keyed={(item) => item.key}>
-              {(item, index) => (
-                <FramedMessage frame={frame()} item={item()} index={index()} mobile={mobile()} />
-              )}
-            </For>
-          }
+          fallback={<FramedMessages frame={frame()} />}
         >
           {options().frameContent}
         </Show>

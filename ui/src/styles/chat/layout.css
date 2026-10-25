@@ -649,6 +649,18 @@ openclaw-pending-session-create {
   content-visibility: auto;
 }
 
+/* Retain prepared DOM without making it participate in its neighbors' layout. */
+.chat-virtual-row[data-prepared-row] {
+  position: absolute;
+  content-visibility: hidden;
+}
+
+/* One incoming row gets real geometry before it becomes a cached row. */
+.chat-virtual-row[data-preparing-row] {
+  visibility: hidden;
+  content-visibility: visible;
+}
+
 .chat-virtual-row:focus-within {
   /* Footer controls use a -4px block margin. Paint containment must clear
      that overhang plus the 2px focus outline and its 3px offset. */
@@ -657,7 +669,7 @@ openclaw-pending-session-create {
 
 /* Message jumps need real mounted-row sizes before their target settles.
    Native reader takeover restores ordinary overscan layout skipping. */
-.chat-thread-inner[data-measuring-rows] .chat-virtual-row {
+.chat-thread-inner[data-measuring-rows] .chat-virtual-row:not([data-prepared-row]) {
   content-visibility: visible;
 }
 

@@ -19,7 +19,7 @@ import {
   setTranscriptViewport,
   transcriptContainer,
 } from "./chat-transcript-fixture.test-support.tsx";
-import { readConnectedTranscriptRows } from "./chat-transcript-geometry.ts";
+import { measureTranscriptRow, readConnectedTranscriptRows } from "./chat-transcript-geometry.ts";
 import { TranscriptRowRefs } from "./chat-transcript-row-refs.ts";
 import {
   flushDeferredRowPrune,
@@ -53,14 +53,21 @@ afterEach(resetTranscriptTestDom);
 it("measures newly committed rows before observer registration using fractional layout height", () => {
   const container = transcriptContainer();
   container.innerHTML =
-    '<div class="chat-virtual-row" data-index="0" data-virtual-row-key="fractional" style="height: 100.375px"></div>';
+    '<div class="chat-virtual-row" data-index="0" data-virtual-row-key="fractional" style="height: 100.375px"></div>' +
+    '<div class="chat-virtual-row" data-index="1" data-virtual-row-key="prepared" data-prepared-row="true" style="height: 999px"></div>';
   const row = requireElement(container, ".chat-virtual-row");
+  const prepared = requireElement(container, '[data-virtual-row-key="prepared"]');
+  const getStyle = globalThis.getComputedStyle;
+  vi.spyOn(globalThis, "getComputedStyle").mockImplementation((element, pseudo) => {
+    expect(element).not.toBe(prepared);
+    return getStyle(element, pseudo);
+  });
   vi.spyOn(row, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 0, 400, 50.1875));
   const virtualizer = new Virtualizer<HTMLDivElement, HTMLElement>({
-    count: 1,
+    count: 2,
     estimateSize: () => 100,
     getScrollElement: () => container,
-    getItemKey: () => "fractional",
+    getItemKey: (index) => (index === 0 ? "fractional" : "prepared"),
     measureElement: () => 100,
     observeElementRect: (_, callback) => {
       callback({ width: 800, height: 600 });
@@ -77,16 +84,30 @@ it("measures newly committed rows before observer registration using fractional 
   // eslint-disable-next-line no-underscore-dangle -- TanStack requires adapter updates to bind observed elements.
   virtualizer._willUpdate();
   virtualizer.getVirtualItems();
+  virtualizer.resizeItem(1, 87.625);
   const rowRefs = new TranscriptRowRefs(virtualizer, {
     isCurrentRow: () => true,
     onMount: () => {},
   });
   try {
     rowRefs.forKey("fractional")(row);
+    rowRefs.forKey("prepared")(prepared);
     const commit = readConnectedTranscriptRows(container, virtualizer, rowRefs.elements);
     expect(virtualizer.elementsCache.size).toBe(0);
     expect(virtualizer.itemSizeCache.has("fractional")).toBe(false);
     expect([commit?.(), virtualizer.itemSizeCache.get("fractional")]).toEqual([true, 100.375]);
+    expect(virtualizer.itemSizeCache.get("prepared")).toBe(87.625);
+    const box = { blockSize: 120.375, inlineSize: 800 };
+    const receipt: ResizeObserverEntry = {
+      target: prepared,
+      borderBoxSize: [box],
+      contentBoxSize: [box],
+      devicePixelContentBoxSize: [box],
+      contentRect: new DOMRect(0, 0, 800, 120.375),
+    };
+    expect(measureTranscriptRow(prepared, receipt, virtualizer)).toBe(87.625);
+    prepared.dataset.preparingRow = "true";
+    expect(measureTranscriptRow(prepared, receipt, virtualizer)).toBe(120.375);
     expect(readConnectedTranscriptRows(container, virtualizer, rowRefs.elements)?.()).toBe(false);
   } finally {
     rowRefs.clear();

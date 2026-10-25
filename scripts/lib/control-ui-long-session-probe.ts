@@ -33,7 +33,10 @@ async function sampleTranscriptScrollFrames(
     const now = await new Promise<number>(requestAnimationFrame);
     const viewport = element.getBoundingClientRect();
     const rows = [...element.querySelectorAll<HTMLElement>(".chat-virtual-row")];
+    // Retained preparation rows are outside the active range. Measuring their
+    // skipped descendants here would turn the coverage probe into scroll work.
     const segments = rows
+      .filter((row) => row.dataset.preparedRow !== "true")
       .map((row) => row.getBoundingClientRect())
       .map(
         (rect) =>

@@ -13,6 +13,7 @@ import {
   resolveCollapsedToolArgumentPreview as toolArgumentPreview,
   resolveToolCardOutcome,
 } from "../../../lib/chat/tool-cards.ts";
+import { resolveToolDisplayIdentity } from "../../../lib/chat/tool-display-identity.ts";
 import { resolveToolDisplay } from "../../../lib/chat/tool-display.ts";
 import { formatDurationCompact } from "../../../lib/format-duration.ts";
 import { pathDisplayName } from "../../../lib/path-display.ts";
@@ -122,7 +123,7 @@ function ToolRowContent(props: {
       : props.outcome === "running" && (props.view.kind === "edit" || props.view.kind === "write")
         ? props.card.liveDiffStat
         : undefined;
-  const summary = createMemo(() => resolveCollapsedToolSummaryParts(props.card));
+  const summary = createMemo(() => resolveCollapsedToolSummaryParts(props.card), { lazy: true });
   const displayLabel = () => formatCollapsedToolSummaryText(summary().label) ?? summary().label;
   const displayName = () => distinctSummaryText(summary().name, displayLabel());
   return (
@@ -216,9 +217,7 @@ export function ToolCardRow(props: ToolCardProps) {
   const view = createMemo(() =>
     resolveToolCallView({ name: card().name, args: card().args, details: card().details }),
   );
-  const display = createMemo(() =>
-    resolveToolDisplay({ name: card().name, args: card().args, detailMode: "explain" }),
-  );
+  const display = createMemo(() => resolveToolDisplayIdentity(card().name));
   const activityCards = () => props.options.activityCards ?? [card()];
   const running = () =>
     activityCards().some(

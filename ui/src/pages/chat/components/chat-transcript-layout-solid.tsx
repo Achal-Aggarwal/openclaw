@@ -14,7 +14,11 @@ import {
 } from "../solid-render-lifecycle.ts";
 import { ChatHistoryBoundary } from "./chat-history-boundary.tsx";
 import { ChatLazyBoundary } from "./chat-lazy-boundary.tsx";
-import type { TranscriptContent, TranscriptLayoutProps } from "./chat-transcript-layout.ts";
+import type {
+  TranscriptContent,
+  TranscriptLayoutProps,
+  TranscriptRow,
+} from "./chat-transcript-layout.ts";
 import { TranscriptMediaDisconnect } from "./chat-transcript-media-lifecycle.ts";
 import { transcriptArraysEqual } from "./chat-transcript-memo.ts";
 import { TranscriptMessageElementsContext } from "./chat-transcript-message-elements.ts";
@@ -70,6 +74,24 @@ function TranscriptRows(props: {
   const virtualRows = createMemo(() => {
     return props.snapshot.virtualizer.getVirtualItems();
   });
+  const getContent = createMemo(() => props.snapshot.getContent);
+  const activeRows = createMemo(() =>
+    virtualRows().filter((row) => props.snapshot.activeRowKeys.has(String(row.key))),
+  );
+  const blockStart = () =>
+    activeRows()[0]?.start ?? props.snapshot.virtualizer.options.scrollMargin;
+  const gaps = createMemo(
+    () =>
+      new Map(
+        activeRows().map((row, index, rows) => {
+          const previous = rows[index - 1];
+          return [
+            row.key,
+            previous && row.index > previous.index + 1 ? row.start - previous.end : 0,
+          ];
+        }),
+      ),
+  );
   const rowRef = (key: string) => {
     const measureRef = props.measureRowRefFor(key);
     return elementRef((element: HTMLDivElement) => {
@@ -85,20 +107,19 @@ function TranscriptRows(props: {
         <div
           class="chat-virtual-block"
           style={{
-            transform: `translateY(${(virtualRows()[0]?.start ?? props.snapshot.virtualizer.options.scrollMargin) - props.snapshot.virtualizer.options.scrollMargin}px)`,
+            transform: `translateY(${blockStart() - props.snapshot.virtualizer.options.scrollMargin}px)`,
           }}
         >
           <For each={virtualRows()} keyed={(row) => row.key}>
-            {(virtualRow, renderedIndex) => {
-              const index = () => virtualRow().index;
-              const row = () => props.snapshot.rows[index()];
-              const content = createMemo(() => props.snapshot.getContent(index()));
-              const gap = () => {
-                const previous = virtualRows()[renderedIndex() - 1];
-                return previous && virtualRow().index > previous.index + 1
-                  ? virtualRow().start - previous.end
-                  : 0;
-              };
+            {(virtualRow) => {
+              const index = createMemo(() => virtualRow().index);
+              const row = createMemo(() => props.snapshot.rows[index()]);
+              const content = createMemo(() => {
+                row();
+                return getContent()(index());
+              });
+              const active = () => props.snapshot.activeRowKeys.has(row()?.key ?? "");
+              const gap = () => gaps().get(virtualRow().key) ?? 0;
               return (
                 <>
                   <Show when={gap() > 0}>
@@ -110,9 +131,18 @@ function TranscriptRows(props: {
                       "chat-virtual-row",
                       { "chat-virtual-row--first": virtualRow().index === 0 },
                     ]}
-                    style={{ "contain-intrinsic-block-size": `${virtualRow().size}px` }}
+                    style={{
+                      "contain-intrinsic-block-size": `${virtualRow().size}px`,
+                      top: active() ? undefined : `${virtualRow().start - blockStart()}px`,
+                    }}
                     data-index={String(virtualRow().index)}
                     data-virtual-row-key={row()?.key}
+                    data-prepared-row={active() ? undefined : "true"}
+                    data-preparing-row={
+                      !active() && props.snapshot.preparingRowKey === row()?.key
+                        ? "true"
+                        : undefined
+                    }
                   >
                     <RowContent value={content()} />
                   </div>
@@ -128,6 +158,11 @@ function TranscriptRows(props: {
 
 /** One Solid root per session, independent of the caller's render computation. */
 export class ChatTranscriptRenderer {
+  private contentSource?: {
+    rows: readonly TranscriptRow[];
+    renderer: unknown;
+    getContent: (index: number) => TranscriptContent;
+  };
   private element?: HTMLDivElement;
   private column?: HTMLDivElement;
   private accepted?: TranscriptLayoutProps;
@@ -143,6 +178,17 @@ export class ChatTranscriptRenderer {
   private publish?: () => void;
   private readonly presentationChanged = () => this.publishPresentation?.();
 
+  contentFor<T>(
+    rows: readonly TranscriptRow<T>[],
+    renderer: (row: TranscriptRow<T>) => TranscriptContent,
+  ) {
+    // Geometry commits reuse content; a replaced row or renderer still refreshes it.
+    if (this.contentSource?.rows !== rows || this.contentSource.renderer !== renderer) {
+      this.contentSource = { rows, renderer, getContent: (index) => renderer(rows[index]!) };
+    }
+    return this.contentSource.getContent;
+  }
+
   get columnElement(): HTMLDivElement | undefined {
     return this.column;
   }
@@ -154,7 +200,7 @@ export class ChatTranscriptRenderer {
     };
   }
 
-  private isPresented(): boolean {
+  isPresented(): boolean {
     const presented = this.accepted?.presented ?? false;
     return (
       this.element?.isConnected === true &&
@@ -321,6 +367,7 @@ export class ChatTranscriptRenderer {
     this.publishPresentation = undefined;
     this.lifecycle = undefined;
     this.accepted = undefined;
+    this.contentSource = undefined;
     this.committed = undefined;
     this.commitQueued = false;
     this.layoutEffects.clear();

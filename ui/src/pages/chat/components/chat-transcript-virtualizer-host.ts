@@ -55,7 +55,6 @@ import {
 } from "./chat-transcript-scroll-restore.ts";
 import {
   CHAT_TRANSCRIPT_ESTIMATED_ROW_PX,
-  CHAT_TRANSCRIPT_OVERSCAN,
   createTranscriptPresentation,
   type ChatTranscriptSession,
   type TranscriptCallbacks,
@@ -157,7 +156,6 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
   };
   private rowKeys: readonly string[] = [];
   private acceptedRows: readonly TranscriptRow[] | null = null;
-  private rowIndexesByKey = new Map<string, number>();
   private messageRowKeysById: ReadonlyMap<string, string> = new Map();
   private readonly prependAnchor = new TranscriptPrependAnchor(
     this.messageElements.elements,
@@ -180,8 +178,10 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
     this.initialRange = new TranscriptInitialRange(
       initialOffset,
       () => this.virtualizer,
-      (range) => this.prependAnchor.extractRange(range, this.rowIndexesByKey, this.focusedRowKey),
+      (range, indexes) => this.prependAnchor.extractRange(range, indexes, this.focusedRowKey),
       invalidate,
+      () => this.connected && this.renderer.isPresented(),
+      (element, entry) => this.presentation.measureElement(element, entry),
     );
     this.mcpAppUnmountGate = createMcpAppUnmountGate(invalidate);
     this.positionRail = createPositionRailGutter(
@@ -240,13 +240,13 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
           instance,
           callback,
         ),
-      measureElement: (element, entry) => this.presentation.measureElement(element, entry),
+      measureElement: this.initialRange.measureElement,
       rangeExtractor: (range) => this.initialRange.extract(range),
       // Virtual distance omits real padding, pinning readers ~80px up past scroll.ts's follow-lock.
       // scheduleCommittedChatScroll owns end-follow on content changes and source: "resize".
       // Disable isAtEnd()'s default too; callers must supply an explicit threshold.
       scrollEndThreshold: -1,
-      overscan: CHAT_TRANSCRIPT_OVERSCAN,
+      overscan: this.initialRange.overscan,
     });
     // Initial placement owns compensation; an estimated end is not a native scroll target.
     this.virtualizer.shouldAdjustScrollPositionOnItemSizeChange = () => false;
@@ -259,7 +259,8 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
     );
     this.rowRefs = new TranscriptRowRefs(this.virtualizer, {
       isCurrentRow: (element, key) =>
-        this.threadInnerElement?.contains(element) === true && this.rowIndexesByKey.has(key),
+        this.threadInnerElement?.contains(element) === true &&
+        this.initialRange.rowIndexes.has(key),
       onMount: () => this.queueLayout(),
     });
     this.scrollRestoreHost = {
@@ -369,6 +370,7 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
       }
     }
     this.queueLayout();
+    this.initialRange.didCommit();
     // Disclosure measurement owns this commit; its sizer lands on the next update.
     if (interactionResizePending) {
       this.endAnchor.cancelReconcile();
@@ -410,7 +412,7 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
     this.rowRefs.clear();
     this.rowKeys = [];
     this.acceptedRows = null;
-    this.rowIndexesByKey.clear();
+    this.initialRange.rowIndexes.clear();
     this.messageRowKeysById = new Map();
     this.prependAnchor.reset();
     this.focusedRowKey = null;
@@ -470,9 +472,6 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
         rows.some((row, index) => row.key !== this.rowKeys[index]));
     const nextKeys = rowModelChanged ? rows.map((row) => row.key) : this.rowKeys;
     const virtualizer = this.virtualizer;
-    // Rich fragments need one offscreen row; ordinary transcripts keep their window.
-    const hasFragments = rowModelChanged && rows.some((row) => row.estimatedSize !== undefined);
-    const nextOverscan = hasFragments ? 1 : CHAT_TRANSCRIPT_OVERSCAN;
     const nextRowKeys = rowModelChanged
       ? nextKeys
       : virtualizer.getVirtualItems().map(({ index }) => rows[index]!.key);
@@ -509,7 +508,7 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
         }
         this.headerHeight = header?.height ?? 0;
         if (rowModelChanged) {
-          this.syncRows(nextKeys, nextOverscan);
+          this.syncRows(nextKeys);
         } else {
           this.appliedHeaderHeight = reconcileTranscriptHeaderMargin(
             virtualizer,
@@ -527,7 +526,8 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
           initialPositionPending: () => this.initialRange.pending,
           onCommit: () => this.connected && this.didCommit(),
           rows,
-          getContent: (index) => renderRow(rows[index]!),
+          getContent: this.renderer.contentFor(rows, renderRow),
+          ...this.initialRange.presentation(rows),
           virtualizer,
           overlay,
           header: header?.props ?? null,
@@ -545,7 +545,7 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
       () =>
         leavingTranscriptMcpAppRows(this.threadInnerElement, () =>
           rowModelChanged
-            ? previewTranscriptRowKeys(virtualizer, rows, this.focusedRowKey, nextOverscan)
+            ? previewTranscriptRowKeys(virtualizer, rows, this.focusedRowKey)
             : new Set(nextRowKeys),
         ),
       {
@@ -639,7 +639,7 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
       this.virtualizer,
       messageIds,
       this.messageRowKeysById,
-      this.rowIndexesByKey,
+      this.initialRange.rowIndexes,
     );
   }
 
@@ -657,7 +657,7 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
       target: "message",
       messageId,
     };
-    const rowIndex = this.rowIndexesByKey.get(rowKey);
+    const rowIndex = this.initialRange.rowIndexes.get(rowKey);
     if (rowIndex !== undefined) {
       this.virtualizer.scrollToIndex(rowIndex, { align: "center" });
     }
@@ -703,9 +703,9 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
     }
   }
 
-  private syncRows(nextKeys: readonly string[], overscan: number): void {
+  private syncRows(nextKeys: readonly string[]): void {
     this.rowKeys = nextKeys;
-    this.rowIndexesByKey = new Map(this.rowKeys.map((key, index) => [key, index]));
+    this.initialRange.updateRows(this.acceptedRows ?? []);
     // The header margin must land in the same setOptions as the key change:
     // the edge-key re-anchor uses absolute offsets, so a prepend that also
     // removes the header (exhausted history) compensates in one adjustment.
@@ -717,7 +717,8 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
       count: nextKeys.length,
       getItemKey: (index) => nextKeys[index]!,
       rangeExtractor: (range) => this.initialRange.extract(range),
-      overscan,
+      // Fragment overscan is prepared incrementally, outside the scroll commit.
+      overscan: this.initialRange.overscan,
       scrollMargin,
     });
   }
@@ -740,7 +741,7 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
       this.offsetState,
       this.virtualizer,
       this.messageRowKeysById,
-      this.rowIndexesByKey,
+      this.initialRange.rowIndexes,
     );
     if (!this.initialRange.pending || !this.rowKeys.length || !this.scrollElement?.clientHeight) {
       return;

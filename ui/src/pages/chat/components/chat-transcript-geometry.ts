@@ -153,7 +153,7 @@ export function readConnectedTranscriptRows(
   const measurements: Array<{ index: number; height: number }> = [];
   // Refs can arrive out of order during prepends; preserve DOM-order corrections.
   const rows = [...rowElements]
-    .filter((row) => scrollElement.contains(row))
+    .filter((row) => scrollElement.contains(row) && row.dataset.preparedRow !== "true")
     .toSorted(
       (left, right) => virtualizer.indexFromElement(left) - virtualizer.indexFromElement(right),
     );
@@ -181,6 +181,13 @@ export function measureTranscriptRow(
   entry: ResizeObserverEntry | undefined,
   virtualizer: Virtualizer<HTMLDivElement, HTMLElement>,
 ): number {
+  if (element.dataset.preparedRow === "true" && element.dataset.preparingRow !== "true") {
+    const index = virtualizer.indexFromElement(element);
+    return (
+      virtualizer.itemSizeCache.get(virtualizer.options.getItemKey(index)) ??
+      virtualizer.options.estimateSize(index)
+    );
+  }
   if (entry || !virtualizer.targetWindow?.ResizeObserver) {
     // Rounded row heights accumulate when skipped overscan uses those measurements.
     const size =

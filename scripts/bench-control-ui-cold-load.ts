@@ -15,6 +15,7 @@
 // --gateway-url uses real Gateway HTTP serving with synthetic bootstrap/RPC fixtures.
 // --gateway-http serves paired bundles through the Gateway HTTP owner on loopback.
 // --first-load skips warm-up and clears client state; external Gateway URL runs stay single-sample.
+// --skip-long-session-heap-snapshots separates timing from heap-profiler conditioning.
 // --sidebar-persistent-children keeps expanded rows outside root windows for staggered handoff proof.
 // --critical-path captures usable-screen readiness and first Sessions/Settings/Cron/Agents visits.
 // Repeat --critical-path-route to narrow/order visits; HTTP throttling and RPC latency are separate.
@@ -265,6 +266,7 @@ const { values } = parseArgs({
     "latency-profile": { type: "string" },
     "transcript-messages": { type: "string" },
     "long-session": { type: "boolean", default: false },
+    "skip-long-session-heap-snapshots": { type: "boolean", default: false },
     "long-session-scenario": { type: "string", default: "mixed" },
     "overlay-probe": { type: "boolean", default: false },
     untraced: { type: "boolean", default: false },
@@ -2573,7 +2575,8 @@ try {
           otherSessionKey: fixture.pinnedKeys[1]!,
           messageCount: fixture.counts.transcriptMessages,
           workload: fixture.longSessionWorkload,
-          captureHeap: run < bundleSlots.length && !cpuProfile,
+          captureHeap:
+            run < bundleSlots.length && !cpuProfile && !values["skip-long-session-heap-snapshots"],
         })
       : undefined;
     if (values["long-session"] && cpuProfile) {
@@ -2907,6 +2910,11 @@ try {
         comparisonBundleDirs,
         fixture: fixture.counts,
         longSessionScenario: values["long-session"] ? longSessionScenario : undefined,
+        longSessionHeapSnapshots: values["long-session"]
+          ? !cpuProfile && !values["skip-long-session-heap-snapshots"]
+            ? "first-cycle"
+            : "disabled"
+          : undefined,
         sidebarView,
         sidebarAvatars: values["sidebar-avatars"],
         sidebarExpanded: values["sidebar-expanded"],

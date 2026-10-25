@@ -40,6 +40,15 @@ it("shares the mobile layout query while preserving initial and updated message 
       { key: "second", message: { ...message, content: "Second message", timestamp: 1001 } },
     ],
   });
+  const frame = mountSolid(() => (
+    <MessageGroup
+      group={group}
+      options={{ showReasoning: false, frameContent: <span>Completed fragment</span> }}
+    />
+  ));
+  flush();
+  expect(matchMedia.mock.calls.filter(([value]) => value === query)).toHaveLength(0);
+  frame.unmount();
   const view = mountSolid(() => (
     <>
       <MessageGroup group={group} options={{ showReasoning: false, onReply: vi.fn() }} />

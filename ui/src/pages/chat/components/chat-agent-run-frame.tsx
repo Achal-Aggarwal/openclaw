@@ -69,12 +69,24 @@ type PartRange = {
   dispose: () => void;
 };
 
-/** Completion can reorder the reply after a live widget has moved into it. */
-function FrameBody(props: {
+type FrameBodyProps = {
   parts: readonly BodyPart[];
   options: AgentRunFrameOptions;
   children: (input: Accessor<PartInput>) => JSX.Element;
-}): JSX.Element {
+};
+
+function FrameBody(props: FrameBodyProps & { completedFragment: boolean }): JSX.Element {
+  return (
+    <Show when={props.completedFragment} fallback={<RetainedFrameBody {...props} />}>
+      <For each={props.parts} keyed={(part) => `${part.kind}:${part.key}`}>
+        {(part) => props.children(() => ({ part: part(), options: props.options }))}
+      </For>
+    </Show>
+  );
+}
+
+/** Completion can reorder the reply after a live widget has moved into it. */
+function RetainedFrameBody(props: FrameBodyProps): JSX.Element {
   // Canvas widgets move between these foreign-DOM ranges without disconnecting.
   // Mount new ranges under the frame's owner, not the transient reconciliation effect.
   const owner = getOwner();
@@ -280,7 +292,13 @@ function RunFrame(props: FrameProps) {
     return durationMs > 0 ? { ...work, durationMs } : undefined;
   });
   const frameContent = [
-    <FrameBody parts={state().bodyParts} options={props.options}>
+    <FrameBody
+      parts={state().bodyParts}
+      options={props.options}
+      // Completed nonfinal fragments cannot contain widgets. Keep the final
+      // reply's owner unchanged as it transitions from active to completed.
+      completedFragment={Boolean(props.frame.fragment && !props.frame.fragment.last)}
+    >
       {(input) => {
         const part = () => input().part;
         const options = () => input().options;

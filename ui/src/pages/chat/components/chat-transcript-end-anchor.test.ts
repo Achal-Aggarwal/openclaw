@@ -21,7 +21,7 @@ function fixture(offset = 600) {
   });
   element.scrollTop = offset;
   const anchor = new TranscriptEndAnchor(() => {});
-  anchor.reconcile(element, false, false, vi.fn());
+  anchor.recordViewport(element);
   const commit = (changed: boolean, canFollow: boolean) =>
     anchor.commitComposerResize(element, changed, canFollow, false);
   readHeight.mockClear();
@@ -35,6 +35,21 @@ function fixture(offset = 600) {
     resize: (next: number) => (height = next),
   };
 }
+
+it.each(["reader", "uncaptured", "suspended"] as const)(
+  "does not force row layout when end anchoring cannot act: %s",
+  (reason) => {
+    const { element, anchor, readHeight, readContent } = fixture();
+    if (reason !== "uncaptured") {
+      anchor.capture(element);
+      readHeight.mockClear();
+      readContent.mockClear();
+    }
+    anchor.reconcile(element, reason !== "reader", reason === "suspended", vi.fn());
+    expect(readHeight).not.toHaveBeenCalled();
+    expect(readContent).not.toHaveBeenCalled();
+  },
+);
 
 it.each([
   ["unchanged viewport", 600, 600, 400, true, 600, false],
