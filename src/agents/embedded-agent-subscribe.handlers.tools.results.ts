@@ -42,9 +42,9 @@ const execApprovalReplyModuleLoader = createLazyImportLoader<ExecApprovalReplyMo
   () => import("../infra/exec-approval-reply.js"),
 );
 
-const hookRunnerGlobalModuleLoader = createLazyImportLoader<HookRunnerGlobalModule>(
+export const loadHookRunnerGlobal = createLazyImportLoader<HookRunnerGlobalModule>(
   () => import("../plugins/hook-runner-global.js"),
-);
+).load;
 
 const fallbackToolTerminalObservers = new WeakMap<
   ToolHandlerContext["state"],
@@ -137,10 +137,6 @@ export function buildProcessTerminalDiagnostic(
     sessionId,
     reason,
   };
-}
-
-export function loadHookRunnerGlobal(): Promise<HookRunnerGlobalModule> {
-  return hookRunnerGlobalModuleLoader.load();
 }
 
 export function applyCurrentMessageProvider(
