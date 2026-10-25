@@ -68,18 +68,6 @@ function normalizeQwenThinkingLevel(raw: unknown, fallback?: QwenThinkingLevel):
   }
 }
 
-function isQwenProviderId(providerId: string): boolean {
-  const normalized = normalizeProviderId(providerId);
-  return (
-    normalized === "qwen" ||
-    normalized === QWEN_TOKEN_PLAN_PROVIDER_ID ||
-    normalized === QWEN_TOKEN_PLAN_LEGACY_PROVIDER_ID ||
-    normalized === "modelstudio" ||
-    normalized === "qwencloud" ||
-    normalized === "dashscope"
-  );
-}
-
 function isQwenTokenPlanProviderId(providerId: string): boolean {
   const normalized = normalizeProviderId(providerId);
   return (
@@ -88,7 +76,15 @@ function isQwenTokenPlanProviderId(providerId: string): boolean {
 }
 
 function resolveQwenStreamProviderId(ctx: ProviderWrapStreamFnContext): string | undefined {
-  if (isQwenProviderId(ctx.provider)) {
+  const normalized = normalizeProviderId(ctx.provider);
+  if (
+    normalized === "qwen" ||
+    normalized === QWEN_TOKEN_PLAN_PROVIDER_ID ||
+    normalized === QWEN_TOKEN_PLAN_LEGACY_PROVIDER_ID ||
+    normalized === "modelstudio" ||
+    normalized === "qwencloud" ||
+    normalized === "dashscope"
+  ) {
     return ctx.provider;
   }
   const endpoint = resolveProviderEndpoint(ctx.model?.baseUrl);
