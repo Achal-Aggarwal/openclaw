@@ -60,13 +60,16 @@ const publications = resolveGlobalSingleton(
   },
 );
 
-/** Native pairing writers retire the node projection after their transaction commits. */
-export function invalidateDevicePairingNodeSnapshot(path: string): void {
+/** Runtime writers preserve unrelated bindings; startup migration retires all authority. */
+export function invalidateDevicePairingPublication(path: string, retireBindings = false): void {
   const publication = publications.get(path);
   if (publication) {
     publication.epoch++;
     publication.nodes = undefined;
     publication.devices.clear();
+    if (retireBindings) {
+      publication.rows.clear();
+    }
     publication.complete = false;
   }
 }

@@ -1,4 +1,6 @@
+import { channel } from "node:diagnostics_channel";
 import { DatabaseSync } from "node:sqlite";
+import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import { expect, it, vi } from "vitest";
 import { withinTest } from "../../test/helpers/promise.js";
 import { createDeferredCore } from "../shared/deferred.js";
@@ -93,6 +95,18 @@ it.for([
       }),
     );
   const { startGatewayServer } = await import("./server.js");
+  let mainDesktopMigrationReads = 0;
+  const statements = channel("openclaw.database.statement");
+  const observe = (message: unknown) => {
+    if (
+      isRecord(message) &&
+      typeof message.sql === "string" &&
+      /^select "status" from "migration_runs" where "id" =/i.test(message.sql)
+    ) {
+      mainDesktopMigrationReads += 1;
+    }
+  };
+  statements.subscribe(observe);
   const starting = startClaimedGateway(claim, () =>
     startGatewayServer(claim.port, gatewayStartupOptions("worker-recovery-test-token")),
   )
@@ -128,6 +142,7 @@ it.for([
       expect((await fetch(`http://127.0.0.1:${claim.port}/readyz`)).status).toBe(200);
       expect(attempts).toBe(2);
       expect(warnings).toHaveLength(1);
+      expect(mainDesktopMigrationReads).toBe(0);
     } else {
       if (!("error" in result)) {
         throw new Error("Gateway unexpectedly started before recovery completed");
@@ -147,6 +162,7 @@ it.for([
       }
     }
   } finally {
+    statements.unsubscribe(observe);
     if (blocker?.isOpen) {
       if (blocker.isTransaction) {
         blocker.exec("ROLLBACK");

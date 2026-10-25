@@ -1,6 +1,8 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { Buffer } from "node:buffer";
 import { isRecord } from "@openclaw/normalization-core/record-coerce";
+import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import { invalidateDevicePairingPublication } from "../../infra/device-pairing-publication.js";
 import { publishSqliteCommittedState } from "../../infra/sqlite-post-commit.js";
 import {
   createSqliteWorkerOperationAdmission,
@@ -72,8 +74,11 @@ registerOpenClawStateDatabaseLifecycleListener((event) => {
   }
 });
 
-export async function createWorkerEnvironmentStore(
-  options: { database?: OpenClawStateDatabase; now?: () => number } = {},
+type WorkerEnvironmentStoreOptions = { database?: OpenClawStateDatabase; now?: () => number };
+
+async function initializeWorkerEnvironmentStore(
+  options: WorkerEnvironmentStoreOptions,
+  gatewayStartupConfig?: OpenClawConfig,
 ) {
   const inCreationScope = AsyncLocalStorage.snapshot();
   let context = captureOpenClawStateWorkerContext(
@@ -302,8 +307,16 @@ export async function createWorkerEnvironmentStore(
       }
     },
   });
+  let retiredDesktopApprovals: number;
   try {
-    await mutate("workerEnvironments.initialize", {});
+    retiredDesktopApprovals = await mutate("workerEnvironments.initialize", {
+      gatewayStartupConfig: gatewayStartupConfig
+        ? { gateway: { nodes: { commands: gatewayStartupConfig.gateway?.nodes?.commands } } }
+        : undefined,
+    });
+    if (retiredDesktopApprovals > 0) {
+      invalidateDevicePairingPublication(pathname, true);
+    }
     // First creation publishes its physical identity through the captured admission.
     workerEnvironmentProjections.get(context.admission.identity);
     // Hydration joins the inventory writer queue.
@@ -583,6 +596,18 @@ export async function createWorkerEnvironmentStore(
       return deleted;
     },
   };
-  return store;
+  return { store, retiredDesktopApprovals };
 }
+
+export async function createWorkerEnvironmentStore(options: WorkerEnvironmentStoreOptions = {}) {
+  return (await initializeWorkerEnvironmentStore(options)).store;
+}
+
+export function createGatewayWorkerEnvironmentStore(
+  cfg: OpenClawConfig,
+  options: WorkerEnvironmentStoreOptions = {},
+) {
+  return initializeWorkerEnvironmentStore(options, cfg);
+}
+
 export type WorkerEnvironmentStore = Awaited<ReturnType<typeof createWorkerEnvironmentStore>>;

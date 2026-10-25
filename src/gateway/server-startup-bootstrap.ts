@@ -479,13 +479,15 @@ async function prepareGatewayServerBootstrapSelected(input: {
       startupConfigLoad.pluginMetadataSnapshot?.manifestRegistry,
     );
   }
-  const preparations = [
+  const workerEnvironmentPreparation =
     minimalTestGateway || opts.updateCanary
       ? Promise.resolve(undefined)
       : startupTrace.measure("worker-environments.store-import", async () => {
           const workerModule = await loadWorkerEnvironmentStartupModule();
-          return await workerModule.loadGatewayWorkerEnvironmentStartupState();
-        }),
+          return await workerModule.loadGatewayWorkerEnvironmentStartupState(cfgAtStart);
+        });
+  const preparations = [
+    workerEnvironmentPreparation,
     (async () => {
       if (opts.updateCanary) {
         log.warn("candidate gateway: session catalogs and maintenance deferred until activation");
@@ -494,9 +496,7 @@ async function prepareGatewayServerBootstrapSelected(input: {
         return [];
       }
       await startupTrace.measure("state.desktop-approval-admission", async () => {
-        const { migrateLegacyDesktopStreamOptOuts } =
-          await import("../infra/device-pairing-node-desktop-migration.js");
-        const retired = await migrateLegacyDesktopStreamOptOuts(cfgAtStart);
+        const retired = (await workerEnvironmentPreparation)?.retiredDesktopApprovals ?? 0;
         if (retired > 0) {
           log.warn(
             `Preserved disabled desktop access for ${retired} paired node(s); approve their updated desktop capability to enable sharing.`,
@@ -514,8 +514,8 @@ async function prepareGatewayServerBootstrapSelected(input: {
       resolveCronJobsStorePathFromConfigAsync(cfgAtStart),
     ),
   ] as const;
-  // These owners share admitted state, but no preparation consumes another's result.
-  // Join every owner before startup failure can close their database resources.
+  // Session admission waits for the startup envelope; drain all preparations before
+  // startup failure can close their shared database resources.
   await Promise.allSettled(preparations);
   const [
     workerEnvironmentStartup,

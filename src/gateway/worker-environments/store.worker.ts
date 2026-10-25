@@ -1,3 +1,5 @@
+import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import { migrateLegacyDesktopStreamOptOuts } from "../../infra/device-pairing-node-desktop-migration.js";
 import {
   deferSqliteWorkerCommitReceipt,
   requestSqliteWorkerOperationAdmission,
@@ -105,12 +107,22 @@ function environmentMutation<Name extends EnvironmentMethod, Result>(
 }
 
 export const workerEnvironmentOperations = {
-  "workerEnvironments.initialize": mutation("initialize", (_input, { db, now, touch }) => {
-    for (const id of reconcileAttachedSessionOwners(db, now())) {
-      touch(id);
-    }
-    return undefined;
-  }),
+  "workerEnvironments.initialize": (
+    input: Input<"initialize"> & { gatewayStartupConfig?: OpenClawConfig },
+    context: WorkerOperationContext,
+  ) => {
+    // Startup completes pairing admission before sessions or nodes can use it.
+    // Reuse the admitted connection, keeping the two owners' transactions separate.
+    const retired = input.gatewayStartupConfig
+      ? migrateLegacyDesktopStreamOptOuts(input.gatewayStartupConfig, context.open())
+      : 0;
+    return mutation("initialize", (_input, { db, now, touch }) => {
+      for (const id of reconcileAttachedSessionOwners(db, now())) {
+        touch(id);
+      }
+      return retired;
+    })(input, context);
+  },
   "workerEnvironments.createIntent": environmentMutation("createIntent", (input, store) =>
     store.createIntent(input),
   ),

@@ -3,12 +3,12 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { expectDefined } from "@openclaw/normalization-core";
 import { beforeEach, expect, it } from "vitest";
-import { createDeferred } from "../../test/helpers/promise.js";
+import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { reconcileNodePairingOnConnect as reconcile } from "../gateway/node-connect-reconcile.js";
 import { withArtifactPreservingStateReads } from "../state/artifact-preserving-state-reads.js";
 import { closeOpenClawStateDatabaseByPathAsync as closeDatabase } from "../state/openclaw-state-db-cache.js";
 import { openOpenClawStateDatabase as openDatabase } from "../state/openclaw-state-db.js";
-import { migrateLegacyDesktopStreamOptOuts as migrateDesktop } from "./device-pairing-node-desktop-migration.js";
+import { migrateLegacyDesktopStreamOptOuts } from "./device-pairing-node-desktop-migration.js";
 import {
   approveNodePairing as approveNode,
   listNodePairing,
@@ -46,6 +46,10 @@ function database() {
   return openDatabase({ env: state.env });
 }
 
+async function migrateDesktop(cfg: OpenClawConfig) {
+  return migrateLegacyDesktopStreamOptOuts(cfg, database());
+}
+
 async function approveDesktopNode() {
   await seedNodeDevice(baseDir, nodeId);
   const { request } = await requestNodePairing(desktop, baseDir);
@@ -72,7 +76,7 @@ it.each(["desktop", "unrelated"] as const)(
       legacy.silent = true;
       return { value: undefined, persist: true };
     });
-    expect(await migrateDesktop({}, baseDir)).toBe(1);
+    expect(await migrateDesktop({})).toBe(1);
     const after = expectDefined(await getDevice(nodeId, baseDir), "migrated device");
     expect(after.nodeSurface?.commands).toEqual(["system.run"]);
     expect([after.nodeSurface?.caps, after.tokens, after.roles]).toEqual([
@@ -113,8 +117,14 @@ it.each(["desktop", "unrelated"] as const)(
     expect(reapproval.request.silent).not.toBe(true);
     await approveNode(reapproval.request.requestId, approval, baseDir);
     await closeDatabase(database().path);
+    const reopened = database();
     await expect(
-      withArtifactPreservingStateReads(() => migrateDesktop({}, baseDir), { agentDatabases: true }),
+      withArtifactPreservingStateReads(
+        async () => migrateLegacyDesktopStreamOptOuts({}, reopened),
+        {
+          agentDatabases: true,
+        },
+      ),
     ).rejects.toThrow("shared-state write during artifact-preserving inspection");
     const statements: string[] = [];
     const observation = channel("openclaw.database.statement");
@@ -130,7 +140,7 @@ it.each(["desktop", "unrelated"] as const)(
     };
     observation.subscribe(observe);
     try {
-      expect(await migrateDesktop({}, baseDir)).toBe(0);
+      expect(await migrateDesktop({})).toBe(0);
     } finally {
       observation.unsubscribe(observe);
     }
@@ -140,48 +150,22 @@ it.each(["desktop", "unrelated"] as const)(
   },
 );
 
-it("serializes with an already-loaded pairing writer before retiring desktop access", async () => {
-  await approveDesktopNode();
-  const loaded = createDeferred();
-  const release = createDeferred();
-  const writer = withDevices(baseDir, async (devices) => {
-    loaded.resolve();
-    await release.promise;
-    const device = expectDefined(devices[nodeId], "pending writer's device");
-    device.displayName = "Renamed while updating";
-    return { value: undefined, persist: true };
-  });
-  await loaded.promise;
-  const migration = migrateDesktop({}, baseDir);
-  release.resolve();
-  await writer;
-  expect(await migration).toBe(1);
-  const after = expectDefined(await getDevice(nodeId, baseDir), "migrated device");
-  expect(after).toMatchObject({
-    displayName: "Renamed while updating",
-    nodeSurface: { commands: ["system.run"] },
-  });
-  expect(after.pendingNodeSurface).toBeUndefined();
-});
-
 it.each([undefined, { allow: [" desktop.stream "] }, { deny: ["desktop.stream"] }])(
   "records unchanged approvals for an empty startup or explicit policy %j",
   async (commands) => {
     if (!commands) {
-      expect(await migrateDesktop({}, baseDir)).toBe(0);
+      expect(await migrateDesktop({})).toBe(0);
       await closeDatabase(database().path);
     }
     const before = await approveDesktopNode();
-    expect(
-      await migrateDesktop(commands ? { gateway: { nodes: { commands } } } : {}, baseDir),
-    ).toBe(0);
+    expect(await migrateDesktop(commands ? { gateway: { nodes: { commands } } } : {})).toBe(0);
     expect(await getDevice(nodeId, baseDir)).toEqual(before);
-    expect(await migrateDesktop({}, baseDir)).toBe(0);
+    expect(await migrateDesktop({})).toBe(0);
     expect(await getDevice(nodeId, baseDir)).toEqual(before);
   },
 );
 
-it.each(["receipt failure", "malformed approval"] as const)(
+it.each(["receipt failure", "malformed approval", "incomplete receipt"] as const)(
   "preserves approval data without a completion receipt after %s",
   async (failure) => {
     const before = await approveDesktopNode();
@@ -191,18 +175,24 @@ it.each(["receipt failure", "malformed approval"] as const)(
       db.exec(
         "CREATE TRIGGER reject_migration_receipt BEFORE INSERT ON migration_runs BEGIN SELECT RAISE(ABORT, 'synthetic receipt failure'); END",
       );
-    } else {
+    } else if (failure === "malformed approval") {
       db.prepare("UPDATE device_pairing_paired SET node_surface_json = ? WHERE device_id = ?").run(
         malformed,
         nodeId,
       );
+    } else {
+      db.prepare(
+        "INSERT INTO migration_runs (id, started_at, status, report_json) VALUES (?, ?, ?, ?)",
+      ).run("node-desktop-stream-pairing-defaults-v1", Date.now(), "running", "{}");
     }
-    await expect(migrateDesktop({}, baseDir)).rejects.toThrow(
+    await expect(migrateDesktop({})).rejects.toThrow(
       failure === "receipt failure"
         ? "synthetic receipt failure"
-        : "Cannot migrate malformed desktop approval",
+        : failure === "malformed approval"
+          ? "Cannot migrate malformed desktop approval"
+          : "Desktop approval migration receipt is incomplete",
     );
-    if (failure === "receipt failure") {
+    if (failure !== "malformed approval") {
       expect(await getDevice(nodeId, baseDir)).toEqual(before);
     } else {
       expect(
@@ -211,14 +201,17 @@ it.each(["receipt failure", "malformed approval"] as const)(
           .get(nodeId),
       ).toMatchObject({ node_surface_json: malformed });
     }
-    expect(
-      db
-        .prepare("SELECT id FROM migration_runs WHERE id = ?")
-        .get("node-desktop-stream-pairing-defaults-v1"),
-    ).toBeUndefined();
+    const receipt = db
+      .prepare("SELECT status FROM migration_runs WHERE id = ?")
+      .get("node-desktop-stream-pairing-defaults-v1");
+    if (failure === "incomplete receipt") {
+      expect(receipt).toMatchObject({ status: "running" });
+    } else {
+      expect(receipt).toBeUndefined();
+    }
     if (failure === "receipt failure") {
       db.exec("DROP TRIGGER reject_migration_receipt");
-      expect(await migrateDesktop({}, baseDir)).toBe(1);
+      expect(await migrateDesktop({})).toBe(1);
     }
   },
 );
@@ -226,7 +219,7 @@ it.each(["receipt failure", "malformed approval"] as const)(
 it.each(["devices", "nodes"])(
   "preserves opt-outs in later Doctor imports from %s",
   async (kind) => {
-    await migrateDesktop({}, baseDir);
+    await migrateDesktop({});
     const device = legacyNodeDevice(nodeId, {
       nodeSurface: { commands: desktop.commands, caps: ["screen"], ...timestamps },
     });
@@ -241,6 +234,6 @@ it.each(["devices", "nodes"])(
     );
     await migrateDoctorPairingStores({ stateDir: baseDir, env: state.env, cfg: {} });
     expect((await getDevice(nodeId, baseDir))?.nodeSurface?.commands).toEqual(["system.run"]);
-    expect(await migrateDesktop({}, baseDir)).toBe(0);
+    expect(await migrateDesktop({})).toBe(0);
   },
 );

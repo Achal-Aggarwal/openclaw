@@ -22,7 +22,7 @@ import { sha256Base64Url } from "./crypto-digest.js";
 import { resolveDeviceBootstrapTokenExpiresAtMs } from "./device-bootstrap.worker-types.js";
 import { bindCloudWorkerSetupCompletion } from "./device-pairing-cloud-worker.js";
 import type { PairedDeviceMetadataPatch } from "./device-pairing-core.types.js";
-import { invalidateDevicePairingNodeSnapshot } from "./device-pairing-publication.js";
+import { invalidateDevicePairingPublication } from "./device-pairing-publication.js";
 import type { CloudWorkerSetupCompletionPublication } from "./device-pairing-read.types.js";
 import {
   toJsonColumn,
@@ -129,7 +129,7 @@ function runDevicePairingStoreMutation<T>(
       stageSqliteTransactionState(transactionDatabase.db, {
         commit: () => {
           invalidateDevicePairingStoreCache(transactionDatabase);
-          invalidateDevicePairingNodeSnapshot(transactionDatabase.path);
+          invalidateDevicePairingPublication(transactionDatabase.path);
         },
       });
     }

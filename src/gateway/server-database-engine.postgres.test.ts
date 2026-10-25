@@ -7,7 +7,6 @@ import { runCliProcessChild } from "../cli/cli-process-child.test-helpers.js";
 import { runStartupConfigPreflight } from "../commands/startup-config-preflight.js";
 import { resetConfigRuntimeState } from "../config/runtime-snapshot.js";
 import { resetDatabaseEngineSelectionForTest } from "../infra/database-engine/context.test-support.js";
-import { migrateLegacyDesktopStreamOptOuts } from "../infra/device-pairing-node-desktop-migration.js";
 import { acquireGatewayLock } from "../infra/gateway-lock.js";
 import { openNodeSqliteDatabase } from "../infra/node-sqlite.js";
 import { resolveRuntimeWorkerArgv, resolveRuntimeWorkerUrl } from "../infra/runtime-worker-url.js";
@@ -253,7 +252,8 @@ describe.skipIf(!connection)("Gateway PostgreSQL shared-state bootstrap", () => 
       expect(completion).toEqual([{ value_json: "true" }]);
 
       await installGatewayDatabaseEngine(snapshot);
-      expect(await migrateLegacyDesktopStreamOptOuts({}, current.stateDir)).toBe(0);
+      const workers = await loadGatewayWorkerEnvironmentStartupState({});
+      expect(workers.retiredDesktopApprovals).toBe(0);
       expect(
         await queryRows(
           `SELECT status, report_json FROM ${quoteIdentifier(anchor.namespace)}.migration_runs WHERE id = $1`,
@@ -262,8 +262,7 @@ describe.skipIf(!connection)("Gateway PostgreSQL shared-state bootstrap", () => 
       ).toEqual([
         { status: "completed", report_json: JSON.stringify({ retiredDesktopApprovals: 0 }) },
       ]);
-      expect(await migrateLegacyDesktopStreamOptOuts({}, current.stateDir)).toBe(0);
-      const workers = await loadGatewayWorkerEnvironmentStartupState();
+
       try {
         expect(workers.store.list()).toEqual([]);
         expect(await workers.placementStore.listAsync()).toEqual([]);

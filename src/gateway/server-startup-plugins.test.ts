@@ -164,10 +164,6 @@ vi.mock("../infra/openclaw-root.js", () => ({
   resolveOpenClawPackageRootSync: (params: unknown) => resolveOpenClawPackageRootSync(params),
 }));
 
-vi.mock("../infra/device-pairing-node-desktop-migration.js", () => ({
-  migrateLegacyDesktopStreamOptOuts: async () => 0,
-}));
-
 vi.mock("../infra/pairing-files.js", () => ({
   listLegacyPairingStoreFiles: () => listLegacyPairingStoreFiles(),
 }));

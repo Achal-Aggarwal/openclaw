@@ -2,9 +2,9 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { useAutoCleanupTempDirTracker } from "../../test/helpers/temp-dir.js";
-import { migrateLegacyDesktopStreamOptOuts } from "../infra/device-pairing-node-desktop-migration.js";
 import { approveNodePairing, requestNodePairing } from "../infra/device-pairing-node.js";
 import { seedNodeDevice } from "../infra/device-pairing-node.test-support.js";
+import { getPublishedPairedDeviceBinding } from "../infra/device-pairing-publication.js";
 import { getPairedDevice, listDevicePairing } from "../infra/device-pairing.js";
 import { autoMigrateLegacyState } from "../infra/state-migrations.doctor.js";
 import { EMPTY_LEGACY_SESSION_SURFACES } from "../plugins/legacy-session-surfaces.types.js";
@@ -15,6 +15,7 @@ import {
   closeOpenClawStateDatabaseForTest,
 } from "../state/openclaw-state-db.js";
 import { runGatewayPostReadyStartupMaintenance } from "./server-startup-plugins.js";
+import { loadGatewayWorkerEnvironmentStartupState } from "./server-worker-environment-startup.js";
 
 vi.mock("../channels/plugins/lifecycle-startup.js", () => ({
   runChannelPluginStartupMaintenance: async () => {},
@@ -92,14 +93,22 @@ it.each([false, true])("keeps legacy files and desktop opt-outs (desktop: %s)", 
       stateDir,
     );
     await approveNodePairing(request.requestId, { callerScopes }, stateDir);
+    expect(getPublishedPairedDeviceBinding("desktop-node", stateDir)).not.toBeNull();
   }
-  const retired = await migrateLegacyDesktopStreamOptOuts(cfg, stateDir);
+  const workers = await loadGatewayWorkerEnvironmentStartupState(cfg);
+  const retired = workers.retiredDesktopApprovals;
+  if (desktop) {
+    expect(() => getPublishedPairedDeviceBinding("desktop-node", stateDir)).toThrow(
+      "current worker publication",
+    );
+  }
+  await workers.store.close();
   await startup();
   if (desktop) {
+    expect(retired).toBe(1);
     expect((await getPairedDevice("desktop-node", stateDir))?.nodeSurface?.commands).toEqual([
       "system.run",
     ]);
-    expect(retired).toBe(1);
   } else {
     await expectSources();
     expect(await getPairedDevice("synthetic", stateDir)).toBeNull();
