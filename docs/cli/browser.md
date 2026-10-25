@@ -26,6 +26,10 @@ Related: [Browser tool](/tools/browser)
   `openclaw browser status --json` also works when the selected child command does not
   define its own `--json`.
 
+With `--json`, invalid tab indexes use the standard structured CLI error envelope
+(`ok: false`, `error.type: "cli_error"`) and exit with status 1 before any browser
+action is sent. Without `--json`, the diagnostic remains on stderr.
+
 The CLI reserves 10 additional seconds beyond the request timeout for node and
 Gateway transport, allowing browser timeout diagnostics to reach the caller.
 
