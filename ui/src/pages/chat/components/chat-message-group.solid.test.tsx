@@ -1,6 +1,6 @@
 /* @vitest-environment jsdom */
 
-import { createSignal } from "solid-js";
+import { createSignal, onSettled } from "solid-js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ControlUiReplacement } from "../../../../../src/plugin-sdk/control-ui.js";
 import type { ApplicationContext } from "../../../app/context.ts";
@@ -11,7 +11,9 @@ import "../../../plugins/control-ui-view.solid.tsx";
 import { mountSolid } from "../../../test-helpers/mount-solid.ts";
 import { createSolidApplicationContextProvider } from "../../../test-helpers/solid-application-context.tsx";
 import { flush, waitForSolid } from "../../../test-helpers/solid-settle.ts";
+import type { AgentRunFrameRenderItem } from "../chat-agent-run-grouping.ts";
 import { buildLocalUserMessage } from "../user-message-content.ts";
+import { AgentRunFrame } from "./chat-agent-run-frame.tsx";
 import { GroupedMessage } from "./chat-message-bubble-view.tsx";
 import { dismissConfirmedActionPopovers } from "./chat-message-confirmation-view.tsx";
 import { prepareGroupMessage } from "./chat-message-group-frame.ts";
@@ -65,6 +67,58 @@ it("shares the mobile layout query while preserving initial and updated message 
     view.unmount();
     vi.unstubAllGlobals();
   }
+});
+
+it("commits a saved frame's body with its shell and retains ranges through reordering", () => {
+  const first = createMessageGroup(
+    { role: "assistant", content: "First saved answer", timestamp: 1 },
+    "assistant",
+  );
+  const second = createMessageGroup(
+    { role: "assistant", content: "Second saved answer", timestamp: 2 },
+    "assistant",
+  );
+  const initial: AgentRunFrameRenderItem = {
+    kind: "agent-run-frame",
+    key: "saved-frame",
+    runId: "saved-run",
+    boundaryId: "saved-turn",
+    outcome: { kind: "completed", actionOwner: second.messages[0]! },
+    parts: [first, second],
+  };
+  const [frame, setFrame] = createSignal(initial);
+  let firstCommit: Element[] | undefined;
+  const view = mountSolid(() => {
+    let row!: HTMLDivElement;
+    const content = (
+      <AgentRunFrame
+        frame={frame()}
+        options={{
+          streamOptions: { showReasoning: false },
+          renderGroupOptions: () => ({ showReasoning: false }),
+          isWorkExpanded: () => false,
+          onToggleWork() {},
+        }}
+      />
+    );
+    onSettled(() => {
+      firstCommit = [...row.querySelectorAll(".chat-text")];
+    });
+    return <div ref={(element) => (row = element)}>{content}</div>;
+  });
+  flush();
+  const [firstBody, secondBody] = view.container.querySelectorAll(".chat-text");
+  expect(firstCommit).toHaveLength(2);
+  expect(firstCommit).toEqual([firstBody, secondBody]);
+  setFrame({ ...initial, parts: [second, first] });
+  flush();
+  expect([...view.container.querySelectorAll(".chat-text")]).toEqual([secondBody, firstBody]);
+  setFrame({ ...initial, parts: [first] });
+  flush();
+  expect(secondBody?.isConnected).toBe(false);
+  expect(view.container.querySelector(".chat-text")).toBe(firstBody);
+  view.unmount();
+  expect(firstBody?.isConnected).toBe(false);
 });
 
 it.each([false, true])(
