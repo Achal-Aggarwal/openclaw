@@ -10,7 +10,9 @@ import * as systemdExec from "../../daemon/systemd-exec.js";
 import { startSystemdService, stopSystemdService } from "../../daemon/systemd-lifecycle.js";
 import * as systemdScope from "../../daemon/systemd-scope.js";
 import * as systemdTransport from "../../daemon/systemd-user-transport.js";
+import * as portInspection from "../../infra/ports-inspect.js";
 import { createDoctorServiceInspectionBudget } from "../../infra/update-doctor-deadline.js";
+import * as updateGitRuntime from "../../infra/update-git-runtime.js";
 import * as processExec from "../../process/exec.js";
 import { mockProcessPlatform } from "../../test-utils/vitest-spies.js";
 import { maybeStopManagedServiceBeforeMutableUpdate } from "./update-command-service-maintenance.js";
@@ -35,6 +37,17 @@ async function nativeStopFixture(
   };
   vi.spyOn(performance, "now").mockImplementation(() => elapsedMs);
   vi.spyOn(Date, "now").mockImplementation(() => wallNow);
+  // Exercise predecessor discovery even without dist/build-info.json. Its read-only
+  // listener probe must not borrow the expiry fault reserved for the native stop.
+  vi.spyOn(updateGitRuntime, "readBuiltGatewayBuildId").mockResolvedValue("deadline-fixture");
+  const inspectPort = vi
+    .spyOn(portInspection, "inspectPortUsage")
+    .mockImplementation(async (port) => ({
+      port,
+      status: "free",
+      listeners: [],
+      hints: [],
+    }));
   vi.spyOn(systemdScope, "findInstalledSystemdGatewayScope").mockResolvedValue(null);
   vi.spyOn(systemdExec, "assertSystemdAvailable").mockResolvedValue(undefined);
   vi.spyOn(systemdScope, "assertNoSystemGatewayOwnershipForActivation").mockResolvedValue(
@@ -49,6 +62,9 @@ async function nativeStopFixture(
     return undefined;
   });
   const dispatch = vi.spyOn(processExec, "runCommandWithTimeout").mockImplementation(async () => {
+    if (expireDuring === "transport") {
+      throw new Error("Unexpected native dispatch after transport deadline");
+    }
     expireDeadline();
     return { stdout: "", stderr: "", code: 0, termination: "exit", signal: null, killed: false };
   });
@@ -81,14 +97,22 @@ async function nativeStopFixture(
     phase: "inspect",
   });
   const remaining = createDoctorServiceInspectionBudget(deadlineAtMs);
-  return { service, dispatch, expectedService, remaining, expireDeadline, transportPhases };
+  return {
+    service,
+    dispatch,
+    expectedService,
+    remaining,
+    expireDeadline,
+    transportPhases,
+    inspectPort,
+  };
 }
 
 it.each([-90_000, 90_000])(
   "refuses the Doctor native stop when transport preparation consumes the deadline (wall correction %s)",
   (wallCorrection) =>
     withServiceHome(async (home) => {
-      const { service, dispatch, transportPhases } = await nativeStopFixture(
+      const { service, dispatch, transportPhases, inspectPort } = await nativeStopFixture(
         home,
         "transport",
         wallCorrection,
@@ -106,6 +130,8 @@ it.each([-90_000, 90_000])(
           serviceInspectionDeadlineAtMs: deadlineAtMs,
         }),
       ).rejects.toThrow("Doctor service-inspection deadline has expired.");
+      expect(inspectPort).toHaveBeenCalledOnce();
+      expect(inspectPort).toHaveBeenCalledWith(18789, expect.any(Object));
       expect(service.stop).toHaveBeenCalledOnce();
       expect(transportPhases).toContain("inspection");
       expect(transportPhases).toContain("native-stop");
