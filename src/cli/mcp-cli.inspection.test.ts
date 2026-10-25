@@ -7,6 +7,7 @@ import {
   cleanupMcpCliTestState,
   createWorkspace,
   lastLogLine,
+  lastErrorLine,
   mockLog,
   resetMcpCliTestState,
   runMcpCommand,
@@ -85,5 +86,73 @@ it("redacts MCP registry inspection without changing saved credentials", async (
       await runMcpCommand(["mcp", "set", name, lastLogLine()]);
     }
     expect(JSON.parse(await fs.readFile(configPath, "utf8")).mcp.servers).toEqual(servers);
+  });
+});
+
+it.each(["\u001b[31mred\u001b[0m", "\u001b]0;title\u0007", "line\r\n\tend", "nul\u0000c1\u0085Ω"])(
+  "escapes untrusted registry text in human output but preserves structured data: %j",
+  async (control) => {
+    await withMcpHome(async (home) => {
+      const name = "server-" + control;
+      const configPath = path.join(home, ".openclaw", "openclaw.json");
+      const servers = { [name]: { command: "binary-" + control, args: ["--region", "Ω"] } };
+      const original = JSON.stringify({ mcp: { servers } });
+      await fs.writeFile(configPath, original);
+      for (const args of [["list"], ["status", "--verbose"], ["show", name]]) {
+        mockLog.mockClear();
+        await runMcpCommand(["mcp", ...args]);
+        // Show emits a human heading followed by deliberately unmodified structured JSON.
+        const humanCalls =
+          args[0] === "show" ? mockLog.mock.calls.slice(0, -1) : mockLog.mock.calls;
+        expect(humanCalls.length).toBeGreaterThan(0);
+        for (const call of humanCalls) {
+          expect(String(call[0])).not.toMatch(/\p{Cc}/u);
+        }
+      }
+      for (const args of [
+        ["list", "--json"],
+        ["show", name, "--json"],
+      ]) {
+        mockLog.mockClear();
+        await runMcpCommand(["mcp", ...args]);
+        const shown = JSON.parse(lastLogLine());
+        expect(args[0] === "list" ? shown[name] : shown).toEqual(servers[name]);
+      }
+      expect(await fs.readFile(configPath, "utf8")).toBe(original);
+      await expect(runMcpCommand(["mcp", "show", "missing-" + control])).rejects.toMatchObject({
+        code: 1,
+      });
+      expect(lastErrorLine()).not.toMatch(/\p{Cc}/u);
+    });
+  },
+);
+
+it("escapes registry mutation acknowledgments without changing stored names", async () => {
+  await withMcpHome(async (home) => {
+    const name = "owned\u001b[31m\r\n\tΩ";
+    const configPath = path.join(home, ".openclaw", "openclaw.json");
+    const server = { url: "https://mcp.example.test/mcp" };
+    for (const args of [
+      ["add", name, "--url", server.url, "--no-probe"],
+      ["set", name, JSON.stringify(server)],
+      ["configure", name, "--disable"],
+      ["configure", name, "--enable"],
+      ["logout", name],
+      ["reload"],
+      ["unset", name],
+    ]) {
+      mockLog.mockClear();
+      await runMcpCommand(["mcp", ...args]);
+      expect(mockLog).toHaveBeenCalled();
+      for (const call of mockLog.mock.calls) {
+        expect(String(call[0])).not.toMatch(/\p{Cc}/u);
+      }
+      const saved = JSON.parse(await fs.readFile(configPath, "utf8"));
+      if (args[0] !== "unset") {
+        expect(Object.keys(saved.mcp.servers)).toContain(name);
+      } else {
+        expect(saved.mcp?.servers?.[name]).toBeUndefined();
+      }
+    }
   });
 });

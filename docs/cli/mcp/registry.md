@@ -263,3 +263,5 @@ These examples save server definitions only. Run `openclaw mcp doctor --probe` a
 Quoted --client-cert and --client-key values preserve leading and trailing whitespace in paths. Whitespace-only values are treated as absent.
 
 CLI list/show output redacts credentials, including environment values, headers and secret argv values. Saved configuration and runtime inputs retain their original values; use the existing redacted-sentinel restoration for edit/set round trips.
+
+Human-readable registry output escapes terminal control characters in server names, launch details, diagnostics and acknowledgments. JSON output preserves structured values and is not display-sanitized.
