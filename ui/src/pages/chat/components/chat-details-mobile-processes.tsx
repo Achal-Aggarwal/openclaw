@@ -6,6 +6,7 @@ import { registerSessionOrganizationEnglish } from "../../../i18n/locales/en-ses
 import { registerEnglishCatalog, t } from "../../../lib/reactive/i18n.ts";
 import { createKeyedListMotion } from "../../../lib/reactive/keyed-list-motion.ts";
 import type { ProcessesPanelData } from "../processes-panel-data.ts";
+import "./chat-details-processes.css";
 import { ChatLazyBoundary } from "./chat-lazy-boundary.tsx";
 import type { createProcessesPresentation } from "./chat-processes-presentation.ts";
 

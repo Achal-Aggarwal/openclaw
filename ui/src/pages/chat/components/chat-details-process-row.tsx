@@ -4,7 +4,6 @@ import { ElapsedTime } from "../../../components/elapsed-time.tsx";
 import { Icon } from "../../../components/solid/icon.tsx";
 import { createTextOverflow } from "../../../components/solid/text-overflow.ts";
 import { t } from "../../../lib/reactive/i18n.ts";
-import "./chat-details-processes.css";
 import type { createProcessesPresentation } from "./chat-processes-presentation.ts";
 
 /** Shared compact row; callers retain navigation and presentation policy. */

@@ -116,7 +116,7 @@ export function controlUiStableChunkName(id: string): string | undefined {
     case "ui/src/pages/chat/components/chat-details-process-row.tsx":
     case "ui/src/pages/chat/components/chat-details-subagent-rows.tsx":
       // Preload common follow-up rows without evaluating absent variants at boot.
-      return "chat-followup-rows-runtime";
+      return "chat-interaction-runtime";
     case "ui/src/pages/chat/chat-provider-review-controller.tsx":
       return "chat-provider-review";
     // Keep optional compression groups separate from code evaluated by text-only Chat.
