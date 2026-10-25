@@ -494,16 +494,20 @@ describe("config observe recovery", () => {
     await expect(readObserveEvents(auditPath)).resolves.toEqual([]);
   });
 
-  it("recovery uses canonical metadata fingerprints", async () => {
-    const { deps, configPath } = makeDeps(home);
+  it("keeps a valid reseeded config that lacks meta", async () => {
+    const { deps, configPath, auditPath } = makeDeps(home);
     const backup = { meta: { authoredBy: "operator" }, gateway: { mode: "local" } };
     await seedConfigBackup(configPath, backup);
-    const clobbered = await writeConfigRaw(configPath, { gateway: { mode: "local" } });
-    const input = { deps, configPath, ...clobbered, prepareBackup: approveRecoveryCandidate };
+    const reseeded = await writeConfigRaw(configPath, { gateway: { mode: "local" } });
+    const prepareBackup = vi.fn(approveRecoveryCandidate);
+    const input = { deps, configPath, ...reseeded, prepareBackup };
 
     const recovered = await maybeRecoverSuspiciousConfigRead(input);
 
-    expect(recovered.parsed).toEqual(backup);
+    expect(prepareBackup).not.toHaveBeenCalled();
+    expect(recovered).toEqual(reseeded);
+    await expect(fsp.readFile(configPath, "utf-8")).resolves.toBe(reseeded.raw);
+    await expect(readObserveEvents(auditPath)).resolves.toEqual([]);
   });
 
   it.each([
