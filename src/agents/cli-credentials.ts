@@ -464,26 +464,14 @@ function createCachedCliFileReader<T>(relativePath: string, read: (pathname: str
   };
 }
 
-const readCachedMiniMax = createCachedCliFileReader(
+export const readMiniMaxCliCredentialsCached = createCachedCliFileReader(
   MINIMAX_CLI_CREDENTIALS_RELATIVE_PATH,
   readMiniMaxCliCredentials,
 );
-const readCachedGemini = createCachedCliFileReader(
+export const readGeminiCliCredentialsCached = createCachedCliFileReader(
   GEMINI_CLI_CREDENTIALS_RELATIVE_PATH,
   readGeminiCliCredentials,
 );
-
-export function readMiniMaxCliCredentialsCached(
-  options?: CliFileCredentialOptions,
-): MiniMaxCliCredential | null {
-  return readCachedMiniMax(options);
-}
-
-export function readGeminiCliCredentialsCached(
-  options?: CliFileCredentialOptions,
-): GeminiCliCredential | null {
-  return readCachedGemini(options);
-}
 
 /** Native login owner attested at a boundary that may wait on the network. */
 export type NativeCliLoginAttestation = {
