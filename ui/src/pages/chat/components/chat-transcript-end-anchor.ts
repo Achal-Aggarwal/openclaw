@@ -7,6 +7,7 @@ export class TranscriptEndAnchor {
   private offset: number | null = null;
   private frame: number | null = null;
   private pendingReconcile: (() => void) | null = null;
+  private lastObservedContentSize: number | null = null;
 
   constructor(private readonly afterCommit: (effect: () => void) => void) {}
 
@@ -35,7 +36,14 @@ export class TranscriptEndAnchor {
     }
   }
 
-  scheduleReconcile(reconcile: () => void): void {
+  scheduleReconcile(reconcile: () => void, contentSize?: number): void {
+    // Native offsets already record geometry; unchanged content needs no deferred read.
+    if (contentSize !== undefined) {
+      if (contentSize === this.lastObservedContentSize) {
+        return;
+      }
+      this.lastObservedContentSize = contentSize;
+    }
     if (this.frame !== null) {
       return;
     }
@@ -56,6 +64,7 @@ export class TranscriptEndAnchor {
   disconnect(): void {
     this.cancelComposerResize();
     this.cancelReconcile();
+    this.lastObservedContentSize = null;
   }
 
   private maxOffset: number | null = null;
