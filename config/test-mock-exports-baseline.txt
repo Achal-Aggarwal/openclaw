@@ -5479,7 +5479,6 @@
 ["src/gateway/server-startup-plugins.test.ts","../agents/workspace-state-dirs.js","fcc5ee2d61d3a4ea3f519212f8b368509aab7b72e679e18e170d163cd66c3706",1]
 ["src/gateway/server-startup-plugins.test.ts","../channels/plugins/lifecycle-startup.js","9272b321106893ac34b62e97b11a536cddc1f9dcb034c33b222b14d650a09d20",1]
 ["src/gateway/server-startup-plugins.test.ts","../config/plugin-auto-enable.js","04ea7acdf4e8161877a621e0ef4d9b5854bbf42f0706f6d13276039ce9aaff8e",1]
-["src/gateway/server-startup-plugins.test.ts","../infra/device-pairing-node-desktop-migration.js","1a28c087c10d2386a7b05335b5a63a3508ddde190c4bc994f7d499206d7982d7",1]
 ["src/gateway/server-startup-plugins.test.ts","../infra/openclaw-root.js","74e1c99d78b9f964d35abe37d1d212779b3761da7c20f7b820ddd98bd1598d5e",1]
 ["src/gateway/server-startup-plugins.test.ts","../infra/pairing-files.js","c07c8fa4d044811237df7b80e321f7036d7ab26f513044ffaecbf1f380700404",1]
 ["src/gateway/server-startup-plugins.test.ts","../plugins/channel-presence-policy.js","94bbe4008cde92478aee5b8bb511c06250c6e258e6df0a546238508ff8a0fb29",1]

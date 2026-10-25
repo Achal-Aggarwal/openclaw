@@ -3,7 +3,6 @@ import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import { uniqueStrings } from "@openclaw/normalization-core/string-normalization";
 import { resolveDefaultAgentId } from "../agents/agent-scope.js";
 import { getRuntimeConfig } from "../config/config.js";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { racePromiseWithAbortSignal } from "../infra/abort-signal.js";
 import { loadOrCreateProcessDeviceIdentityAsync } from "../infra/device-identity-async.js";
 import { getPairedDevice } from "../infra/device-pairing.js";
@@ -93,9 +92,7 @@ const loadWorkerSessionToolExecutorModule = createLazyRuntimeModule(
   () => import("./worker-environments/worker-session-tool-executor.js"),
 );
 
-export async function loadGatewayWorkerEnvironmentStartupState(
-  cfg: OpenClawConfig = getRuntimeConfig(),
-) {
+export async function loadGatewayWorkerEnvironmentStartupState(cfg = getRuntimeConfig()) {
   const [{ createGatewayWorkerEnvironmentStore }, { createWorkerSessionPlacementStore }] =
     await Promise.all([
       import("./worker-environments/store.js"),

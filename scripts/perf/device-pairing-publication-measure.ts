@@ -141,7 +141,7 @@ async function run(count: number, latencies?: number[]) {
   for (let index = 0; index < count; index++) {
     const started = performance.now();
     // Native committed writes use this invalidation; force the publication miss without disk churn.
-    publication.invalidateDevicePairingNodeSnapshot(db.path);
+    publication.invalidateDevicePairingPublication(db.path);
     const snapshot = await reads.readDevicePairingNodeSnapshot(stateDir);
     latencies?.push(performance.now() - started);
     assert.equal(snapshot.paired.length, deviceCount);
