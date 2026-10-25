@@ -1,6 +1,6 @@
 import type { ProgressCardStep } from "@openclaw/gateway-protocol";
 import { asNullableRecord } from "@openclaw/normalization-core/record-coerce";
-import { For, Show, createMemo } from "solid-js";
+import { For, Show, createMemo, lazy } from "solid-js";
 import { readNodePermissionRequest } from "../../../../../packages/gateway-protocol/src/node-permissions.js";
 import { unwrapToolCallForDisplay } from "../../../../../src/agents/tool-display-call.js";
 import { Icon } from "../../../components/solid/icon.tsx";
@@ -21,14 +21,15 @@ import { DiffStatChips } from "./chat-diff-stat.solid.tsx";
 import { ChatImportBoundary } from "./chat-import-boundary.tsx";
 import { ChatPermissionCard } from "./chat-permission-card.tsx";
 import { ToolIcon } from "./chat-tool-card-chrome.tsx";
-import { ToolCardRow } from "./chat-tool-card-row.solid.tsx";
 import type { ToolCardProps } from "./chat-tool-card-types.ts";
-import { ExpandedToolCardContent } from "./chat-tool-expanded.solid.tsx";
+import { ExpandedToolCardContent } from "./chat-tool-content.solid.tsx";
 import { ToolOutcomeSummary } from "./chat-tool-outcome-summary.solid.tsx";
 import { toolResultSurfaceProps } from "./chat-tool-render-model.ts";
 import { resolveToolRowVerb } from "./chat-tool-row-presentation.ts";
 
 registerEnglishCatalog(registerChatToolLabelsEnglish);
+
+const ToolCardRow = lazy(() => import("./chat-tool-card-row.solid.tsx"), { export: "ToolCardRow" });
 
 function progressReceiptSteps(value: unknown): ProgressCardStep[] {
   if (!Array.isArray(value)) {

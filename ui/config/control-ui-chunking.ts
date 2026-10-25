@@ -79,23 +79,18 @@ export function controlUiStableChunkName(id: string): string | undefined {
     case "ui/src/lib/chat/source-previews.ts":
     case "ui/src/pages/chat/components/chat-tool-cards.runtime.ts":
     case "ui/src/pages/chat/components/chat-tool-render-model.ts":
-      return "chat-tool-data";
+    case "ui/src/lib/chat/tool-call-diff.ts":
+    case "src/agents/agent-activity-presentation.ts":
     case "ui/src/pages/chat/chat-tool-presentation.runtime.ts":
-    case "ui/src/pages/chat/components/chat-tool-card-row.solid.tsx":
     case "ui/src/pages/chat/components/chat-tool-outcome-summary.solid.tsx":
     case "ui/src/pages/chat/components/chat-permission-card.tsx":
     case "ui/src/pages/chat/components/chat-tool-content.solid.tsx":
-    case "ui/src/pages/chat/components/chat-tool-expanded.solid.tsx":
     case "ui/src/pages/chat/components/chat-tool-cards.solid.tsx":
     case "ui/src/pages/chat/components/chat-message-activity-operation.tsx":
-    case "ui/src/pages/chat/components/chat-message-activity-view.tsx":
     case "ui/src/pages/chat/components/chat-tool-row-presentation.ts":
     case "ui/src/pages/chat/components/chat-work-group-summary.tsx":
-      // Tool messages prepare this family before projection; plain chat never requests it.
+      // Fetch common facts and collapsed chrome together; module initialization stays separate.
       return "chat-tool-runtime";
-    case "ui/src/pages/chat/components/chat-agent-run-frame.tsx":
-      // Text-only runs also use this shell, independently of tool presentation.
-      return "chat-run-frame";
     case "ui/src/pages/chat/components/chat-details-people.css":
     case "ui/src/pages/chat/components/chat-outputs.css":
     case "ui/src/pages/chat/components/chat-details-environment-desktop.css":

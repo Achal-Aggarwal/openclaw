@@ -4,7 +4,6 @@ import { personActivityLink } from "../../../components/person-activity-link.ts"
 import type { MessageGroup as MessageGroupData } from "../../../lib/chat/chat-types.ts";
 import { messageClientSourcesLabel } from "../../../lib/chat/message-client-source.ts";
 import { normalizeRoleForGrouping } from "../../../lib/chat/message-normalizer.ts";
-import { loadChatToolPresentation } from "../../../lib/chat/tool-family.ts";
 import { listen } from "../../../lib/reactive/listener.ts";
 import { ChatAvatar, ForwardedAvatar } from "../chat-avatar.ts";
 import { persistedMessageEntryId } from "../chat-thread-items.ts";
@@ -49,7 +48,7 @@ import { selectBrowserTabPreviews } from "./chat-tool-cards.ts";
 import { ChatToolFamilyBoundary, useChatToolReadiness } from "./chat-tool-family-boundary.tsx";
 import { TurnRecapRow } from "./chat-turn-recap-view.tsx";
 
-const ActivityGroupContent = lazy(() => loadChatToolPresentation(), {
+const ActivityGroupContent = lazy(() => import("./chat-message-activity-view.tsx"), {
   export: "ActivityGroupContent",
 });
 

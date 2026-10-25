@@ -2,6 +2,7 @@ import { lazy } from "solid-js";
 import "../../../styles/chat/skill-learned-notice.css";
 import "../../../styles/session-menu.css";
 import { loadChatToolPresentation } from "../../../lib/chat/tool-family.ts";
+import { AgentRunFrame } from "./chat-agent-run-frame.tsx";
 import { ActivityGroup, MessageGroup } from "./chat-message-group-view.tsx";
 import { StreamGroup, UnplacedSubagentWait } from "./chat-message-stream-view.tsx";
 import { RealtimeTalkConversation } from "./chat-realtime-controls.tsx";
@@ -14,7 +15,7 @@ export const nativeRows = {
   activity: ActivityGroup,
   stream: StreamGroup,
   work: lazy(() => loadChatToolPresentation(), { export: "WorkGroupSummary" }),
-  frame: lazy(() => import("./chat-agent-run-frame.tsx"), { export: "AgentRunFrame" }),
+  frame: AgentRunFrame,
   wait: UnplacedSubagentWait,
   divider: lazy(() => import("./chat-divider.tsx"), { export: "ChatDivider" }),
   notice: lazy(() => import("./chat-divider.tsx"), { export: "ChatNotice" }),

@@ -28,7 +28,9 @@ const ExpandedToolCardContent = lazy(() => loadChatToolPresentation(), {
   export: "ExpandedToolCardContent",
 });
 const ToolOutcome = lazy(() => loadChatToolPresentation(), { export: "ToolOutcome" });
-const ToolMessageSummary = lazy(() => loadChatToolPresentation(), { export: "ToolMessageSummary" });
+const ToolMessageSummary = lazy(() => import("./chat-tool-card-row.solid.tsx"), {
+  export: "ToolMessageSummary",
+});
 
 type ToolMessageProps = ContentProps & { renderContents: () => JSX.Element };
 

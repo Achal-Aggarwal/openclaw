@@ -1,8 +1,26 @@
+import { lazy } from "solid-js";
 import { registerChatToolLabelsEnglish } from "../../../i18n/locales/en-chat-tool-labels.ts";
-import type { ToolCardOutcome } from "../../../lib/chat/chat-types.ts";
+import type { ToolCard, ToolCardOutcome } from "../../../lib/chat/chat-types.ts";
 import { t, registerEnglishCatalog } from "../../../lib/reactive/i18n.ts";
+import { ChatImportBoundary } from "./chat-import-boundary.tsx";
+import type { ToolRenderOptions } from "./chat-tool-render-model.ts";
 
 registerEnglishCatalog(registerChatToolLabelsEnglish);
+
+const ExpandedContent = lazy(() => import("./chat-tool-expanded.solid.tsx"), {
+  export: "ExpandedToolCardContent",
+});
+
+export function ExpandedToolCardContent(props: { card: ToolCard; options: ToolRenderOptions }) {
+  return (
+    <ChatImportBoundary
+      identity={[props.options.sessionKey, props.options.messageKey, props.card.id]}
+      fallback={() => undefined}
+    >
+      <ExpandedContent {...props} />
+    </ChatImportBoundary>
+  );
+}
 
 export function ToolOutcome(props: { outcome: ToolCardOutcome; exitCode?: number }) {
   const label = () =>
