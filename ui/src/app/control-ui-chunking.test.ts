@@ -119,6 +119,11 @@ describe("Control UI build chunking", () => {
     const payloads = modulePath("../pages/chat/outbox-payloads.runtime.ts");
     const live = modulePath("../pages/chat/chat-live-events.runtime.ts");
     const tools = modulePath("../pages/chat/chat-tool-family-runtime.ts");
+    const reset = modulePath("../pages/chat/chat-board-reset-confirmation.tsx");
+    const modal = modulePath("../components/modal-dialog.tsx");
+    const modalView = modulePath("../components/solid/modal-dialog.tsx");
+    const modalStyle = `${modulePath("../components/solid/modal-dialog.css")}?inline`;
+    const modalScrollStyle = `${modulePath("../components/solid/modal-scroll-lock.css")}?inline`;
     const diff = modulePath("../lib/chat/tool-call-diff.ts");
     const preamble = modulePath("../../../src/agents/agent-activity-presentation.ts");
     const sharedStyle = modulePath("../styles/select-picker.css");
@@ -134,12 +139,20 @@ describe("Control UI build chunking", () => {
       ],
       [
         chat,
-        `import ${JSON.stringify(sharedStyle)}; import ${JSON.stringify(transcriptStyle)}; import { label } from ${JSON.stringify(sharedUi)}; import { action } from ${JSON.stringify(pluginActions)}; import { patch } from ${JSON.stringify(mutations)}; export { version } from ${JSON.stringify(inlineView)}; export { skeleton } from ${JSON.stringify(skeleton)}; export class Chat { label = patch(action(label)); } export const openPanel = () => import(${JSON.stringify(optional)});`,
+        `import ${JSON.stringify(sharedStyle)}; import ${JSON.stringify(transcriptStyle)}; import { label } from ${JSON.stringify(sharedUi)}; import { action } from ${JSON.stringify(pluginActions)}; import { patch } from ${JSON.stringify(mutations)}; export { version } from ${JSON.stringify(inlineView)}; export { skeleton } from ${JSON.stringify(skeleton)}; export class Chat { label = patch(action(label)); } export const openPanel = () => import(${JSON.stringify(optional)}); export const reset = () => import(${JSON.stringify(reset)});`,
       ],
       [
         newSession,
-        `import ${JSON.stringify(sidebarStyle)}; import ${JSON.stringify(transcriptStyle)}; import { label } from ${JSON.stringify(sharedUi)}; export class NewSession { label = label; }`,
+        `import ${JSON.stringify(sidebarStyle)}; import ${JSON.stringify(transcriptStyle)}; import { label } from ${JSON.stringify(sharedUi)}; export { modal } from ${JSON.stringify(modal)}; export class NewSession { label = label; }`,
       ],
+      [reset, `export { modal } from ${JSON.stringify(modal)};`],
+      [modal, `export { modal } from ${JSON.stringify(modalView)};`],
+      [
+        modalView,
+        `import css from ${JSON.stringify(modalStyle)}; import scroll from ${JSON.stringify(modalScrollStyle)}; export const modal = css + scroll;`,
+      ],
+      [modalStyle, ".modal-fixture { color: purple; }"],
+      [modalScrollStyle, ".modal-scroll-fixture { overflow: hidden; }"],
       [optional, `import ${JSON.stringify(optionalStyle)}; export const panel = "optional-panel";`],
       [devices, 'export const page = "devices-page";'],
       [talk, `export { skeleton } from ${JSON.stringify(skeleton)};`],
@@ -256,6 +269,13 @@ describe("Control UI build chunking", () => {
     };
     expect(staticImports(chatChunk.fileName)).not.toContain(newSessionChunk.fileName);
     expect(staticImports(newSessionChunk.fileName)).not.toContain(chatChunk.fileName);
+    const modalChunk = chunks.find((chunk) => modalView in chunk.modules)!;
+    const resetChunk = chunks.find((chunk) => reset in chunk.modules)!;
+    expect(modalChunk.fileName).toContain("modal-runtime");
+    expect(Object.keys(modalChunk.modules)).toContain(modalStyle);
+    expect(Object.keys(modalChunk.modules)).toContain(modalScrollStyle);
+    expect(staticImports(chatChunk.fileName)).not.toContain(modalChunk.fileName);
+    expect(staticImports(resetChunk.fileName)).not.toContain(newSessionChunk.fileName);
     const pluginChunk = chunks.find((chunk) => pluginLoader in chunk.modules)!;
     const actionChunk = chunks.find((chunk) => pluginActions in chunk.modules)!;
     const sharedChunk = chunks.find((chunk) => sharedUi in chunk.modules)!;
@@ -281,6 +301,8 @@ describe("Control UI build chunking", () => {
     expect(boot.new).toContain(copyChunk.fileName);
     expect(boot.chat).toContain(liveChunk.fileName);
     expect(boot.new).not.toContain(liveChunk.fileName);
+    expect(boot.chat).toContain(modalChunk.fileName);
+    expect(boot.chat).not.toContain(newSessionChunk.fileName);
     expect(boot.initial).not.toContain(copyChunk.fileName);
     expect(boot.initial).not.toContain(liveChunk.fileName);
     const payloadChunk = chunks.find((chunk) => payloads in chunk.modules)!;
