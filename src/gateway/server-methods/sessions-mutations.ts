@@ -40,7 +40,7 @@ import {
   createSessionListEntryFilter,
   SessionMutationAuthorizationChangedError,
 } from "../session-sharing.js";
-import { resolveStoredSessionKeyForAgentStore } from "../session-store-key.js";
+import { resolveRequestedStoredSessionTarget } from "../session-store-key.js";
 import type { SessionActorProfileIdentity } from "../session-utils-contracts.js";
 import { projectSessionPatchResult } from "../session-utils-model.js";
 import { gatewayClientSessionCreator } from "./gateway-client-identity.js";
@@ -543,7 +543,7 @@ export const sessionMutationHandlers: GatewayRequestHandlers = {
         );
         return;
       }
-      const requestedAgent = resolveRequestedSessionAgentId(
+      const requestedAgent = resolveRequestedStoredSessionTarget(
         context.getRuntimeConfig(),
         key,
         params.agentId,
@@ -552,15 +552,11 @@ export const sessionMutationHandlers: GatewayRequestHandlers = {
         respond(false, undefined, requestedAgent.error);
         return;
       }
-      const canonicalKey = resolveStoredSessionKeyForAgentStore({
-        cfg: context.getRuntimeConfig(),
-        agentId: requestedAgent.agentId,
-        sessionKey: key,
-      });
+      const { sessionKey: canonicalKey, agentId } = requestedAgent.value;
       const patched = await patchPluginSessionExtension({
         cfg: context.getRuntimeConfig(),
         sessionKey: canonicalKey,
-        agentId: requestedAgent.agentId,
+        agentId,
         pluginId,
         namespace,
         value: params.value,
@@ -574,7 +570,7 @@ export const sessionMutationHandlers: GatewayRequestHandlers = {
       respond(true, { ok: true, key: patched.key, value: patched.value }, undefined);
       emitSessionsChanged(context, {
         sessionKey: patched.key,
-        agentId: requestedAgent.agentId,
+        agentId,
         reason: "plugin-patch",
       });
     },

@@ -67,7 +67,7 @@ import {
   prepareProjectedSessionSharing,
   prepareSessionSharingProfiles,
 } from "./session-sharing-read.js";
-import { resolveStoredSessionKeyForAgentStore } from "./session-store-key.js";
+import { resolveRequestedStoredSessionTarget } from "./session-store-key.js";
 import { loadGatewaySessionEntryReadOnlyInWorker } from "./session-utils-store-worker.js";
 import { resolveGatewayScopedTools } from "./tool-resolution.js";
 import {
@@ -131,23 +131,12 @@ type ToolsInvokeOutcome =
 
 function resolveSessionTarget(params: { cfg: OpenClawConfig; input: ToolsInvokeInput }) {
   const rawSessionKey = normalizeOptionalString(params.input.sessionKey) ?? "main";
-  const resolved = resolveRequestedSessionAgentId(
+  const resolved = resolveRequestedStoredSessionTarget(
     params.cfg,
     rawSessionKey,
     normalizeOptionalString(params.input.agentId),
   );
-  if (!resolved.ok) {
-    return resolved;
-  }
-  return {
-    ok: true as const,
-    agentId: resolved.agentId,
-    sessionKey: resolveStoredSessionKeyForAgentStore({
-      cfg: params.cfg,
-      agentId: resolved.agentId,
-      sessionKey: rawSessionKey,
-    }),
-  };
+  return resolved.ok ? { ok: true as const, ...resolved.value } : resolved;
 }
 
 function resolveMemoryToolDisableReasons(cfg: OpenClawConfig): string[] {

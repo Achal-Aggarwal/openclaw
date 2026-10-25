@@ -27,8 +27,7 @@ import { mergeProcessEnv } from "../../infra/process-env.js";
 import type { TerminalUploadFile } from "../../infra/terminal-file-upload.js";
 import type { SessionCatalogTerminalPlan } from "../../plugins/session-catalog.js";
 import { applyPluginNodeInvokePolicy } from "../node-invoke-plugin-policy.js";
-import { resolveRequestedSessionAgentId } from "../session-request-agent.js";
-import { resolveStoredSessionKeyForAgentStore } from "../session-store-key.js";
+import { resolveRequestedStoredSessionTarget } from "../session-store-key.js";
 import { loadGatewaySessionEntryReadOnlyInWorker } from "../session-utils-store-worker.js";
 import type { GatewaySessionEntryRead } from "../session-utils.js";
 import { buildTerminalEnv, type TerminalLaunchResolution } from "../terminal/launch.js";
@@ -343,7 +342,7 @@ async function openTerminalSessionWithSource(
   let agentOwner: AgentTerminalOwner | undefined;
   if (request.sessionKey) {
     const runtimeConfig = context.getRuntimeConfig();
-    const requestedOwner = resolveRequestedSessionAgentId(
+    const requestedOwner = resolveRequestedStoredSessionTarget(
       runtimeConfig,
       request.sessionKey,
       launch.plan.agentId,
@@ -352,18 +351,14 @@ async function openTerminalSessionWithSource(
       respond(false, undefined, requestedOwner.error);
       return;
     }
-    const agentSessionKey = resolveStoredSessionKeyForAgentStore({
-      cfg: runtimeConfig,
-      agentId: requestedOwner.agentId,
-      sessionKey: request.sessionKey,
-    });
+    const { sessionKey: agentSessionKey, agentId } = requestedOwner.value;
     source?.assertCurrent();
     const { entry } =
       source ??
       (await loadGatewaySessionEntryReadOnlyInWorker({
         cfg: runtimeConfig,
         key: agentSessionKey,
-        agentId: requestedOwner.agentId,
+        agentId,
       }));
     const agentSessionId = entry?.sessionId?.trim();
     if (!agentSessionId) {
@@ -379,7 +374,7 @@ async function openTerminalSessionWithSource(
       kind: "agent",
       agentSessionKey,
       agentSessionId,
-      agentId: requestedOwner.agentId,
+      agentId,
     };
   }
   if (context.isConnectionActive?.(connId) === false) {

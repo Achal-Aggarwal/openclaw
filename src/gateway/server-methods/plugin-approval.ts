@@ -29,8 +29,7 @@ import {
   truncatePluginApprovalDetail,
 } from "../../infra/plugin-approvals.js";
 import type { ExecApprovalManager } from "../exec-approval-manager.js";
-import { resolveRequestedSessionAgentId } from "../session-request-agent.js";
-import { resolveStoredSessionKeyForAgentStore } from "../session-store-key.js";
+import { resolveRequestedStoredSessionTarget } from "../session-store-key.js";
 import {
   captureApprovalWorkerOwner,
   registerPendingApprovalRequestWithDelivery,
@@ -116,25 +115,18 @@ export function createPluginApprovalHandlers(
         const rawSessionKey = normalizeOptionalString(
           trustedAgentRuntime?.sessionKey ?? p.sessionKey,
         );
-        const sessionOwner = rawSessionKey
-          ? resolveRequestedSessionAgentId(
+        const sessionTarget = rawSessionKey
+          ? resolveRequestedStoredSessionTarget(
               context.getRuntimeConfig(),
               rawSessionKey,
               normalizeOptionalString(trustedAgentRuntime?.agentId ?? p.agentId),
             )
           : undefined;
-        if (sessionOwner && !sessionOwner.ok) {
-          respond(false, undefined, sessionOwner.error);
+        if (sessionTarget && !sessionTarget.ok) {
+          respond(false, undefined, sessionTarget.error);
           return;
         }
-        const sessionKey =
-          rawSessionKey && sessionOwner?.ok
-            ? resolveStoredSessionKeyForAgentStore({
-                cfg: context.getRuntimeConfig(),
-                agentId: sessionOwner.agentId,
-                sessionKey: rawSessionKey,
-              })
-            : null;
+        const sessionKey = sessionTarget?.ok ? sessionTarget.value.sessionKey : null;
 
         // Sanitize once at the creation boundary, like exec command text: the
         // raw record otherwise reaches channel messages, iOS push, and the web
@@ -187,7 +179,7 @@ export function createPluginApprovalHandlers(
             : {}),
           agentId:
             trustedAgentRuntime?.agentId ??
-            (sessionOwner?.ok ? sessionOwner.agentId : sanitizeMeta(p.agentId)),
+            (sessionTarget?.ok ? sessionTarget.value.agentId : sanitizeMeta(p.agentId)),
           sessionKey,
           runId: trustedAgentRuntime?.operationalRunInstance.runId ?? null,
           turnSourceChannel: normalizeNullableString(turnSource.turnSourceChannel),
