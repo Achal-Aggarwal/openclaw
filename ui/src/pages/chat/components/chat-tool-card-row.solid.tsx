@@ -12,7 +12,7 @@ import {
   formatCollapsedToolSummaryText,
   resolveCollapsedToolArgumentPreview as toolArgumentPreview,
   resolveToolCardOutcome,
-} from "../../../lib/chat/tool-cards.ts";
+} from "../../../lib/chat/tool-cards.runtime.ts";
 import { resolveToolDisplay } from "../../../lib/chat/tool-display.ts";
 import { formatDurationCompact } from "../../../lib/format-duration.ts";
 import { pathDisplayName } from "../../../lib/path-display.ts";

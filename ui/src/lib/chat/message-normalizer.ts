@@ -12,11 +12,7 @@ import {
   isCanvasBoardWidgetName,
 } from "../../../../src/chat/canvas-render.js";
 import { readMessageClientSources } from "../../../../src/chat/message-client-source.js";
-import {
-  isToolCallContentType,
-  isToolResultContentType,
-  resolveToolBlockArgs,
-} from "../../../../src/chat/tool-content.js";
+import { resolveToolBlockArgs } from "../../../../src/chat/tool-content.js";
 import { projectChatWorkContextForDisplay } from "../../../../src/chat/work-context.js";
 import { splitMediaFromOutput } from "../../../../src/media/parse.js";
 import { readClawHubRecommendation } from "../../../../src/shared/clawhub-recommendations.js";
@@ -24,8 +20,15 @@ import { readPluginInlineViewBlock } from "../../../../src/shared/plugin-inline-
 import { getMediaFileExtension } from "../media-file-extension.ts";
 import type { NormalizedMessage, MessageContentItem, MessageImageSource } from "./chat-types.ts";
 import { projectImportedMessageForDisplay } from "./imported-message-display.ts";
+import { resolveMessageRole } from "./message-metadata.ts";
 import { normalizeAttachmentContentBlock } from "./message-normalizer-attachments.ts";
 import { resolveMessageSender, resolveMessageSenderLabel } from "./sender-label.ts";
+
+export {
+  normalizeRoleForGrouping,
+  resolveMessageRole,
+  isStandaloneToolMessageForDisplay,
+} from "./message-metadata.ts";
 
 function imageDataUrl(data: unknown, mimeType: unknown): string | undefined {
   return typeof data === "string"
@@ -145,53 +148,6 @@ export function readMessageSenderSession(value: unknown): NormalizedMessage["sen
         ...(label ? { label } : {}),
       }
     : undefined;
-}
-
-export function normalizeRoleForGrouping(role: string): string {
-  const lower = role.toLowerCase();
-  if (["user", "assistant", "system"].includes(lower)) {
-    return lower;
-  }
-  if (["toolresult", "tool_result", "tool", "function"].includes(lower)) {
-    return "tool";
-  }
-  return role;
-}
-
-function hasToolMessageEnvelope(message: Record<string, unknown> | undefined): boolean {
-  return (
-    typeof message?.toolCallId === "string" ||
-    typeof message?.tool_call_id === "string" ||
-    typeof message?.toolUseId === "string" ||
-    typeof message?.tool_use_id === "string" ||
-    typeof message?.toolName === "string" ||
-    typeof message?.tool_name === "string"
-  );
-}
-
-export function resolveMessageRole(message: unknown): string {
-  const m = asOptionalRecord(message);
-  const content = m?.content;
-  const hasToolContent =
-    Array.isArray(content) &&
-    content.some((value) => {
-      const type = asOptionalRecord(value)?.type;
-      return isToolResultContentType(type) || isToolCallContentType(type);
-    });
-  return hasToolContent || hasToolMessageEnvelope(m)
-    ? "toolResult"
-    : (readStringField(m, "role") ?? "unknown");
-}
-
-export function isToolResultMessage(message: unknown): boolean {
-  return isToolResultContentType(asOptionalRecord(message)?.role);
-}
-
-export function isStandaloneToolMessageForDisplay(message: unknown): boolean {
-  // Tool classification needs envelope fields, not parsed content or media.
-  const m = asOptionalRecord(message);
-  const role = typeof m?.role === "string" ? normalizeRoleForGrouping(m.role) : "unknown";
-  return role === "tool" || hasToolMessageEnvelope(m);
 }
 
 export function readCanvasContentPreview(content: unknown): CanvasPreview | null {

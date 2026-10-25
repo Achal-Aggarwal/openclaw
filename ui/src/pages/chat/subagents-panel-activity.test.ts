@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 import type { AgentActivityItem } from "../../../../packages/gateway-protocol/src/schema/logs-chat.js";
+import { prepareChatToolFamily } from "../../lib/chat/tool-family.ts";
 import type { ChatHistoryResult } from "./chat-history-snapshot.ts";
 import { readSubagentActivitySnapshot, subagentToolCallCount } from "./subagents-panel-activity.ts";
 import type { AgentEventPayload } from "./tool-stream-contract.ts";
@@ -47,6 +48,10 @@ const preparedCall = (extra: Partial<AgentActivityItem>) => ({
   ...toolCall(),
   content: [],
   activity: [activity(extra)],
+});
+
+beforeAll(async () => {
+  await prepareChatToolFamily([toolCall(), toolResult()]);
 });
 
 describe("subagent panel call counts", () => {

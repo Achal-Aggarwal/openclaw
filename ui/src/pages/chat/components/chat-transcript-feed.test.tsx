@@ -1,5 +1,6 @@
 import { createSignal } from "solid-js";
-import { afterEach, expect, it } from "vitest";
+import { afterEach, beforeAll, expect, it } from "vitest";
+import { prepareChatToolPresentation } from "../../../lib/chat/tool-family.ts";
 import { cleanupSolid, mountSolid } from "../../../test-helpers/mount-solid.ts";
 import { flush } from "../../../test-helpers/solid-settle.ts";
 import { ChatTranscriptFeed } from "./chat-transcript-feed-view.tsx";
@@ -65,6 +66,10 @@ function toolResult(toolCallId: string, isError = false) {
     content: [text("Result body must not appear")],
   };
 }
+
+beforeAll(async () => {
+  await prepareChatToolPresentation([toolResult("prepared-corpus")]);
+});
 
 it("preserves forwarded attribution beside ordinary user and assistant messages", () => {
   const container = mount([

@@ -4,6 +4,7 @@ import { CopyButton } from "../../../components/solid/copy-button.tsx";
 import { registerChatToolContentEnglish } from "../../../i18n/locales/en-chat-tool-content.ts";
 import type { ToolCard } from "../../../lib/chat/chat-types.ts";
 import { extractToolCardsCached } from "../../../lib/chat/tool-cards.ts";
+import { prepareChatToolFamily } from "../../../lib/chat/tool-family.ts";
 import {
   isLegacyToolOutputUnavailable,
   toolOutputSourceLabel,
@@ -15,7 +16,7 @@ import type {
   SidebarFullMessageLoader,
   ToolOutputSidebarContent,
 } from "./chat-sidebar-content-types.ts";
-import { RawOutputToggle } from "./chat-tool-content.solid.tsx";
+import { RawOutputToggle } from "./chat-tool-raw.solid.tsx";
 
 registerEnglishCatalog(registerChatToolContentEnglish);
 
@@ -140,6 +141,9 @@ export function ChatToolOutput(props: Props) {
         messageId,
         maxChars: card.outputTruncated ? CHAT_MESSAGE_MAX_CHARS : 2_000_000,
       });
+      if (result?.ok && result.message) {
+        await prepareChatToolFamily([result.message]);
+      }
       const matches =
         result?.ok && result.message
           ? extractToolCardsCached(result.message).filter(

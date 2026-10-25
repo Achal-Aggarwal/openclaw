@@ -1,12 +1,18 @@
 // @vitest-environment node
-import { describe, expect, it, vi } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 import { normalizeMessage } from "../../lib/chat/message-normalizer.ts";
 import { extractToolCardsCached } from "../../lib/chat/tool-cards.ts";
+import { prepareChatToolFamily } from "../../lib/chat/tool-family.ts";
 import * as displayText from "../../lib/strip-thinking-tags.ts";
 import { buildChatItems, type BuildChatItemsProps } from "./chat-thread-build.ts";
 import * as duplicatePreparation from "./chat-thread-duplicates.ts";
 import { createProps } from "./chat-thread.test-support.ts";
 import { buildCachedChatItems, resetChatThreadState } from "./chat-thread.ts";
+
+beforeAll(async () => {
+  const { props, older } = fixture();
+  await prepareChatToolFamily(props.messages, props.toolMessages, older);
+});
 
 function deepFreeze(value: unknown): void {
   if (value && typeof value === "object" && !Object.isFrozen(value)) {

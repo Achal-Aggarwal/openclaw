@@ -19,7 +19,7 @@ import { buildToolStreamIdentity } from "../../pages/chat/tool-stream-identity.t
 import type { MessageGroup, ToolCard } from "./chat-types.ts";
 import { extractTextCached } from "./message-extract.ts";
 import { normalizeRoleForGrouping } from "./message-normalizer.ts";
-import { extractToolCardsCached, resolveToolCardOutcome } from "./tool-cards.ts";
+import { extractToolCardsCached, resolveToolCardOutcome } from "./tool-cards.runtime.ts";
 
 export type ChatSourcePreview = {
   url: string;

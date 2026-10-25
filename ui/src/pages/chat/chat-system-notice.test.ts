@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { afterEach, describe, expect, it } from "vitest";
 import type { ChatPendingInputsPage } from "../../../../packages/gateway-protocol/src/schema/logs-chat.js";
+import { prepareChatToolFamily } from "../../lib/chat/tool-family.ts";
 import { coalesceAgentRunFrames } from "./chat-agent-run-grouping.ts";
 import { projectChatSystemNotice } from "./chat-system-notice.ts";
 import { createProps } from "./chat-thread.test-support.ts";
@@ -169,21 +170,20 @@ describe("system notices through pending-to-history promotion", () => {
 
   it.each(["cli_harness_context", "claude_cli_task_notification", "plugin:review-helper"])(
     "keeps %s between tool groups without starting a turn",
-    (sourceTool) => {
+    async (sourceTool) => {
       const call = (id: string) => ({
         role: "assistant",
         content: [{ type: "toolCall", id, name: "read", arguments: { path: `${id}.ts` } }],
         timestamp: 999,
         __openclaw: { runId: "same-run" },
       });
-      const items = render(
-        [
-          call("before"),
-          { ...baseMessage, provenance: { kind: "internal_system", sourceTool } },
-          call("after"),
-        ],
-        [],
-      );
+      const messages = [
+        call("before"),
+        { ...baseMessage, provenance: { kind: "internal_system", sourceTool } },
+        call("after"),
+      ];
+      await prepareChatToolFamily(messages);
+      const items = render(messages, []);
       expect(items).toMatchObject([
         { kind: "group", role: "tool" },
         { kind: "notice", collapsedBody: true },

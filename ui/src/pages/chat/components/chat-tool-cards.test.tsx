@@ -13,7 +13,7 @@ import type { ToolCard } from "../../../lib/chat/chat-types.ts";
 import {
   resolveCollapsedToolArgumentPreview,
   extractToolCardsCached,
-} from "../../../lib/chat/tool-cards.ts";
+} from "../../../lib/chat/tool-cards.runtime.ts";
 import { waitForSolid } from "../../../test-helpers/solid-settle.ts";
 import { attachHistoryActivity } from "../chat-history-request.ts";
 import { agentEvent, createHost } from "../tool-stream.test-helpers.ts";

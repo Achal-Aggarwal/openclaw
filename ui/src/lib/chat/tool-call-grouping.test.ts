@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { summarizeToolGroup } from "./tool-call-grouping.ts";
+import { summarizeToolGroup } from "./tool-call-grouping.runtime.ts";
 
 type ToolGroupSummaryInput = Parameters<typeof summarizeToolGroup>[0][number];
 

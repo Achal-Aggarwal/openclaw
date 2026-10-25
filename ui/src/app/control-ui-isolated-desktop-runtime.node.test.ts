@@ -221,6 +221,11 @@ it("prioritizes signing and route dependencies over unevaluated interaction hint
     creator: modulePath("../pages/claws/creator-review-view.tsx"),
     signer: modulePath("../lib/nodes/device-signing.runtime.ts"),
     chat: modulePath("../pages/chat/route-entry.ts"),
+    toolFamily: modulePath("../pages/chat/chat-tool-family-runtime.ts"),
+    toolPresentation: modulePath("../pages/chat/chat-tool-presentation.runtime.ts"),
+    liveEvents: modulePath("../pages/chat/chat-live-events.runtime.ts"),
+    runFrame: modulePath("../pages/chat/components/chat-agent-run-frame.tsx"),
+    sourcePreview: modulePath("../pages/chat/components/chat-source-previews.tsx"),
   };
   const aliases: Record<string, string> = {
     "fixture:common": commonDependency,
@@ -307,13 +312,17 @@ it("prioritizes signing and route dependencies over unevaluated interaction hint
   expect(chunkFor(entries.draftWrite).fileName).toBe(chunkFor(entries.composerMenu).fileName);
   const signerChunk = chunkFor(entries.signer).fileName;
   const chatChunk = chunkFor(entries.chat).fileName;
+  const toolChunks = [entries.toolFamily, entries.toolPresentation].map(
+    (id) => chunkFor(id).fileName,
+  );
+  expect(chunkFor(entries.liveEvents).fileName).toBe(chunkFor(entries.toolFamily).fileName);
   const placementChunks = [entries.placement, placementDependency].map(
     (id) => chunkFor(id).fileName,
   );
   const html = await fs.readFile(local("dist/index.html"), "utf8");
   const chatPreloads = routePreloads(html, "chat");
   expect(chatPreloads.toSorted()).toEqual(
-    [...new Set([signerChunk, chatChunk, ...commonChunks])].toSorted(),
+    [...new Set([signerChunk, chatChunk, ...commonChunks, ...toolChunks])].toSorted(),
   );
   expect(routePreloads(html, "new").toSorted()).toEqual(
     [...new Set([signerChunk, ...commonChunks, ...placementChunks])].toSorted(),
@@ -327,6 +336,9 @@ it("prioritizes signing and route dependencies over unevaluated interaction hint
   expect(linkFor(chunkFor(entries.online).fileName)).toContain('fetchpriority="low"');
   expect(linkFor(chunkFor(entries.draftWrite).fileName)).toContain('fetchpriority="low"');
   expect(linkFor(payloadChunk)).toBeUndefined();
+  for (const file of toolChunks) {
+    expect(linkFor(file)).toContain('fetchpriority="low"');
+  }
   expect(linkFor(chunkFor(commonDependency).fileName)).not.toContain("fetchpriority");
   expect(linkFor(signerChunk)).not.toContain("fetchpriority");
   expect(html).not.toContain(chunkFor(signingFallback).fileName);
@@ -334,7 +346,12 @@ it("prioritizes signing and route dependencies over unevaluated interaction hint
     signerChunk,
   );
   expect(html).not.toContain(chunkFor(entries.creator).fileName);
-  for (const entry of [entries.catalog, entries.resources, entries.context]) {
+  for (const entry of [
+    entries.catalog,
+    entries.resources,
+    entries.context,
+    entries.sourcePreview,
+  ]) {
     expect(html).not.toContain(chunkFor(entry).fileName);
   }
 
@@ -361,5 +378,31 @@ it("prioritizes signing and route dependencies over unevaluated interaction hint
     "outboxPayload",
     "placement-dependency",
     "placement",
+  ]);
+  expect((await fixture.load.liveEvents!()).value).toBe("common");
+  expect(fixture.events).toEqual([
+    "common",
+    "online",
+    "draftWrite",
+    "outboxPayload",
+    "placement-dependency",
+    "placement",
+    "liveEvents",
+  ]);
+  expect((await fixture.load.toolFamily!()).value).toBe("common");
+  expect(fixture.events).not.toContain("toolPresentation");
+  expect((await fixture.load.toolPresentation!()).value).toBe("common");
+  expect((await fixture.load.runFrame!()).value).toBe("common");
+  expect(fixture.events).toEqual([
+    "common",
+    "online",
+    "draftWrite",
+    "outboxPayload",
+    "placement-dependency",
+    "placement",
+    "liveEvents",
+    "toolFamily",
+    "toolPresentation",
+    "runFrame",
   ]);
 });

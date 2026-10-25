@@ -64,6 +64,7 @@ export function projectChatTranscript(
   search = getTranscriptState(props.paneId).search.snapshot,
 ) {
   const state = getTranscriptState(props.paneId);
+  const latestBrowserTabs = props.readLatestBrowserTabs?.();
   const { asyncQuestions, selectedSession: activeSession } = props;
   const { showOwnSenderName, replyPeople } = resolveTranscriptParticipants(props);
   const mediaPolicyKey = assistantMediaPolicyKey(activeSession, props.mediaPolicyEpoch);
@@ -181,7 +182,7 @@ export function projectChatTranscript(
   const workPreviews = projectTranscriptWorkPreviews(transcriptChain.workGroups, {
     sessionKey: props.sessionKey,
     expanded: expandedToolCards,
-    latestBrowserTabs: props.latestBrowserTabs,
+    latestBrowserTabs: latestBrowserTabs,
     bubbleMode: props.chatBubbleMode,
   });
   const questionPrompts = props.questionPrompts
@@ -335,7 +336,7 @@ export function projectChatTranscript(
       ...sharedMessageRenderOptions,
       messageReactions: props.messageReactions,
       onReact: props.onReact,
-      latestBrowserTabs: props.latestBrowserTabs,
+      latestBrowserTabs: latestBrowserTabs,
       showReasoning,
       showToolCalls: props.showToolCalls,
       activityRunId,
@@ -575,7 +576,7 @@ export function projectChatTranscript(
     getExpansionStateVersion(expandedAssistantMessages),
     // The host minute poll requests an update; this key crosses row guard() memoization.
     Math.floor(Date.now() / 60_000),
-    props.latestBrowserTabs,
+    latestBrowserTabs,
     props.sessionKey,
     // Invalidate settled rows when spawn metadata arrives, not on activity/title patches.
     avatarPlacement,

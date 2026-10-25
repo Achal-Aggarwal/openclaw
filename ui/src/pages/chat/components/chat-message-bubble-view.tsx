@@ -59,6 +59,7 @@ import {
 import { MarkdownText, MessageJson, MessageMarkdown } from "./chat-message-text-view.tsx";
 import { ReplyLineView } from "./chat-reply-attribution.tsx";
 import type { SidebarContent } from "./chat-sidebar-content-types.ts";
+import { ChatToolFamilyBoundary, useChatToolReadiness } from "./chat-tool-family-boundary.tsx";
 import { TranscriptMessageElementsContext } from "./chat-transcript-message-elements.ts";
 import { WorkspaceConflictTranscriptMessage } from "./chat-workspace-conflict.tsx";
 
@@ -82,10 +83,31 @@ export type GroupedMessageProps = {
 
 /** Message identity owns text/media DOM; option refreshes only publish new facts. */
 export function GroupedMessage(props: GroupedMessageProps) {
-  const refreshMedia = () => void refresh(state);
-  const state = createMemo(() =>
-    prepareGroupedMessage(props.preparation, props.messageKey, props.options, props.onOpenSidebar),
+  const message = () => {
+    const disclosure = props.options.assistantMessageDisclosure;
+    return disclosure?.expanded && disclosure.message
+      ? disclosure.message
+      : props.preparation.message;
+  };
+  return (
+    <ChatToolFamilyBoundary sources={[[message()]]}>
+      <PreparedGroupedMessage {...props} />
+    </ChatToolFamilyBoundary>
   );
+}
+
+function PreparedGroupedMessage(props: GroupedMessageProps) {
+  const toolsReady = useChatToolReadiness();
+  const refreshMedia = () => void refresh(state);
+  const state = createMemo(() => {
+    toolsReady();
+    return prepareGroupedMessage(
+      props.preparation,
+      props.messageKey,
+      props.options,
+      props.onOpenSidebar,
+    );
+  });
   const messageElements = useContext(TranscriptMessageElementsContext);
   // The keyed message owns this DOM registration through acknowledgement and option refreshes.
   const initialMessageKey = untrack(() => props.messageKey);

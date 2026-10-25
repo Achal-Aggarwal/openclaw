@@ -1,11 +1,16 @@
 // @vitest-environment node
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, expect, it, vi } from "vitest";
 import type { AgentActivityItem } from "../../../../packages/gateway-protocol/src/schema/logs-chat.js";
 import * as canvas from "../../../../src/chat/canvas-render.js";
 import type { ChatItem } from "../../lib/chat/chat-types.ts";
 import { readPreparedActivity } from "../../lib/chat/tool-call-grouping.ts";
 import { extractToolCardsCached } from "../../lib/chat/tool-cards.ts";
+import { prepareChatToolFamily } from "../../lib/chat/tool-family.ts";
 import { coalesceToolActivityMessages } from "./chat-tool-activity-coalesce.ts";
+
+beforeAll(async () => {
+  await prepareChatToolFamily([assistant([toolCall("prepared-corpus")])]);
+});
 
 afterEach(() => vi.restoreAllMocks());
 type Fields = Record<string, unknown>;

@@ -1,7 +1,8 @@
 // @vitest-environment node
 import assert from "node:assert/strict";
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 import type { MessageGroup } from "../../lib/chat/chat-types.ts";
+import { prepareChatToolFamily } from "../../lib/chat/tool-family.ts";
 import { message as chatMessage } from "./chat-thread-fixtures.test-support.ts";
 import { groupMessages } from "./chat-thread-grouping.ts";
 import { coalesceActivityRuns } from "./chat-turn-presentation.ts";
@@ -86,6 +87,9 @@ describe("coalesceActivityRuns", () => {
   const assistantToolContent = [
     { type: "toolCall", id: "boundary-tool", name: "read", arguments: {} },
   ];
+  beforeAll(async () => {
+    await prepareChatToolFamily([chatMessage("assistant", assistantToolContent, 1_000)]);
+  });
   it.each([
     { name: "commentary", content: "Checking", phase: "commentary" },
     { name: "visible reply", content: "Done." },

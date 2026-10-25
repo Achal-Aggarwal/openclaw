@@ -209,7 +209,9 @@ it("preserves live ordering across one shared import and retires superseded pane
   expect(foreground.state.chatRunId).toBeNull();
 
   pendingImport.release();
-  await boundary.loadChatLiveEvents();
+  await vi.waitFor(() =>
+    expect(JSON.stringify(foreground.state.chatMessages)).toContain("Complete answer"),
+  );
   await loadingHistory;
   await Promise.all(cutHistories.map(({ loading }) => loading));
   expect(streamWrites).toHaveBeenCalledWith("First token");

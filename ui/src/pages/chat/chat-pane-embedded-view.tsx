@@ -1,5 +1,5 @@
 import { dynamic, type JSX as SolidJSX } from "@solidjs/web";
-import { Match, Show, Switch, createSignal, lazy } from "solid-js";
+import { Match, Show, Switch, createMemo, createSignal, lazy } from "solid-js";
 import { resolveControlUiAuthToken } from "../../app/control-ui-auth.ts";
 import { isBrowserPanelAvailable } from "../../app/panel-availability.ts";
 import { EMPTY_LINK_READERS } from "../../components/link-reader-target.ts";
@@ -29,6 +29,10 @@ import type {
   SidebarPanelDefinition,
   SidebarPanelHostRegistration,
 } from "./components/chat-sidebar-region-types.ts";
+import {
+  ChatToolFamilyBoundary,
+  useChatToolReadiness,
+} from "./components/chat-tool-family-boundary.tsx";
 import { resolveChatLinkFaviconFetcher } from "./link-favicon-loader.ts";
 import type { SidebarSlotId } from "./sidebar-layout-types.ts";
 import { sidebarMainPanel } from "./sidebar-layout.ts";
@@ -89,6 +93,19 @@ function TerminalPanel(props: Props) {
 }
 
 function BrowserPanel(props: Props) {
+  return (
+    <ChatToolFamilyBoundary sources={props.browserTabMessages}>
+      <PreparedBrowserPanel {...props} />
+    </ChatToolFamilyBoundary>
+  );
+}
+
+function PreparedBrowserPanel(props: Props) {
+  const toolsReady = useChatToolReadiness();
+  const browserTabs = createMemo(() => {
+    toolsReady();
+    return [...props.readBrowserTabs().values()];
+  });
   const presented = usePanePresentation(() => props.browserPresented);
   return (
     <Browser
@@ -108,8 +125,8 @@ function BrowserPanel(props: Props) {
       fetchFavicon={resolveChatLinkFaviconFetcher(props.state)}
       refreshOnPresentation={props.browserRefreshOnPresentation}
       sessionKey={props.state.sessionKey}
-      preferredTab={props.preferredBrowserTab}
-      sessionTabs={props.sessionBrowserTabs ?? []}
+      preferredTab={browserTabs().at(-1)}
+      sessionTabs={browserTabs().map((selection) => selection.tab)}
       resourceBasePath={props.state.resourceBasePath}
       authToken={resolveControlUiAuthToken(props.state)}
     />

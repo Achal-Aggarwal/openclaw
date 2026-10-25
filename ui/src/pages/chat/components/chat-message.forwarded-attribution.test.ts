@@ -2,7 +2,7 @@
 
 import { expectDefined } from "@openclaw/normalization-core";
 import { createComponent } from "solid-js";
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, expect, it, vi } from "vitest";
 import { GatewayBrowserClient } from "../../../api/gateway.ts";
 import {
   markdownFileLinkFromEvent,
@@ -11,6 +11,7 @@ import {
 import { SessionLinkTitler } from "../../../components/session-link-titling.ts";
 import { SESSION_TITLE_TARGET_SELECTOR } from "../../../components/session-progress-hovercard-target.ts";
 import type { MessageGroup } from "../../../lib/chat/chat-types.ts";
+import { prepareChatToolPresentation } from "../../../lib/chat/tool-family.ts";
 import { gatewayHelloForMethods } from "../../../test-helpers/gateway-methods.ts";
 import { cleanupSolid, mountSolid } from "../../../test-helpers/mount-solid.ts";
 import {
@@ -152,6 +153,12 @@ function readCall(id: string, path: string, parentToolCallId?: string) {
     ...(parentToolCallId ? { parentToolCallId } : {}),
   };
 }
+
+beforeAll(async () => {
+  await prepareChatToolPresentation([
+    createAssistantMessage([readCall("prepared-corpus", "reports/example.md")]),
+  ]);
+});
 
 function narration(content: unknown, timestamp: number, overrides: Record<string, unknown> = {}) {
   return {

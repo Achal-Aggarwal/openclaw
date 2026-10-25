@@ -7,7 +7,8 @@ import { describe, expect, it, onTestFinished, vi } from "vitest";
 import { resolveMessageDisplayMarkdown } from "../../../lib/chat/message-display.ts";
 import { extractText } from "../../../lib/chat/message-extract.ts";
 import { normalizeMessage } from "../../../lib/chat/message-normalizer.ts";
-import * as toolCards from "../../../lib/chat/tool-cards.ts";
+import * as toolCards from "../../../lib/chat/tool-cards.runtime.ts";
+import { prepareChatToolPresentation } from "../../../lib/chat/tool-family.ts";
 import { ContentPresentation } from "../../../lib/solid/presentation.ts";
 import * as thinking from "../../../lib/strip-thinking-tags.ts";
 import { restorePropertyDescriptor } from "../../../test-helpers/property-descriptor.ts";
@@ -75,6 +76,7 @@ describe("message action projections", () => {
       });
     prepare("assistant", "A streaming reply");
     expect(preview).not.toHaveBeenCalled();
+    await prepareChatToolPresentation([{ role: "toolResult", content: "First line\nSecond line" }]);
     prepare("toolResult", "First line\nSecond line");
     expect(preview).not.toHaveBeenCalled();
     const container = document.createElement("div");

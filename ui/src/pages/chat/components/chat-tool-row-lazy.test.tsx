@@ -3,6 +3,7 @@ import { For, createSignal } from "solid-js";
 import { expect, it, onTestFinished, vi } from "vitest";
 import { createDeferred } from "../../../../../test/helpers/promise.js";
 import type { ToolCard } from "../../../lib/chat/chat-types.ts";
+import { prepareChatToolPresentation } from "../../../lib/chat/tool-family.ts";
 import { mountSolid } from "../../../test-helpers/mount-solid.ts";
 import { flush, waitForSolid } from "../../../test-helpers/solid-settle.ts";
 import { GroupedMessage } from "./chat-message-bubble-view.tsx";
@@ -42,6 +43,7 @@ it("keeps card chrome through import recovery and retains the current resolved r
     recovery.resolve(false);
     vi.doUnmock("./chat-tool-card-row.solid.tsx");
   });
+  await prepareChatToolPresentation([{ role: "toolResult", content: "Example output" }]);
   const toggle = vi.fn();
   const initialCard: ToolCard = {
     id: "exec",

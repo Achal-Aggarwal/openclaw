@@ -33,6 +33,7 @@ import { buildMessageItems, rawMessageTimestamp } from "../chat-thread-items.ts"
 import { coalesceToolActivityMessages } from "../chat-tool-activity-coalesce.ts";
 import { ChatLazyBoundary } from "./chat-lazy-boundary.tsx";
 import { MessageMarkdown } from "./chat-message-text-view.tsx";
+import { ChatToolFamilyBoundary, useChatToolReadiness } from "./chat-tool-family-boundary.tsx";
 
 const ForwardedAttribution = lazy(() => import("./chat-forwarded-attribution.tsx"), {
   export: "ForwardedAttribution",
@@ -323,7 +324,19 @@ function FeedEntry(props: { entry: Entry }) {
 }
 
 export function ChatTranscriptFeed(props: { messages: unknown[] }) {
-  const feed = createMemo(() => entries(props.messages));
+  return (
+    <ChatToolFamilyBoundary sources={[props.messages]}>
+      <PreparedTranscriptFeed {...props} />
+    </ChatToolFamilyBoundary>
+  );
+}
+
+function PreparedTranscriptFeed(props: { messages: unknown[] }) {
+  const toolsReady = useChatToolReadiness();
+  const feed = createMemo(() => {
+    toolsReady();
+    return entries(props.messages);
+  });
   return (
     <div class="chat-task-feed">
       <For each={feed()} keyed={(entry) => entry.key}>

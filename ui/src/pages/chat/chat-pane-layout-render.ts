@@ -198,7 +198,8 @@ export abstract class ChatPaneLayoutRender extends ChatPaneHeaderLayout {
               this.chatState.composerPersistence.persistChangedState();
             },
           };
-    const latestBrowserTabs = latestBrowserTabCards(chatProps.messages, chatProps.toolMessages);
+    const readLatestBrowserTabs = () =>
+      latestBrowserTabCards(chatProps.messages, chatProps.toolMessages);
     const panePresentation = { owner: this.element, isPresented: () => this.presented };
     const connectionGeneration = this.connectionGeneration;
     const headerPresentation = {
@@ -298,7 +299,7 @@ export abstract class ChatPaneLayoutRender extends ChatPaneHeaderLayout {
       },
       progressCardVisibility: panePresentation,
       transcriptVisible: slotPresentation("conversation"),
-      latestBrowserTabs: this.active && this.presented ? latestBrowserTabs : undefined,
+      readLatestBrowserTabs: this.active && this.presented ? readLatestBrowserTabs : undefined,
       historyState: catalog ? undefined : state,
     } satisfies Partial<ChatProps>);
     sessionWorkspace.transcriptAttachments = this.attachmentCatalog.read({
@@ -437,8 +438,8 @@ export abstract class ChatPaneLayoutRender extends ChatPaneHeaderLayout {
       terminalTabsInHeader: sidebarMainPanel(sidebarLayout)?.slot !== "terminal",
       onCloseTerminal: () => closePanelSlot("terminal"),
       browserRefreshOnPresentation: !this.pendingPanelToggles.requests.has("browser"),
-      preferredBrowserTab: [...latestBrowserTabs.values()].at(-1),
-      sessionBrowserTabs: [...latestBrowserTabs.values()].map((selection) => selection.tab),
+      readBrowserTabs: readLatestBrowserTabs,
+      browserTabMessages: [chatProps.messages, chatProps.toolMessages],
       desktopPresented,
       desktopExpanded,
       onToggleDesktopExpanded: () => {

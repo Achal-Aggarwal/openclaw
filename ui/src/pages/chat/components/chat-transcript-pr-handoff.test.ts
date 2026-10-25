@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
+import { prepareChatToolFamily } from "../../../lib/chat/tool-family.ts";
 import { chatItemGroups } from "../chat-agent-run-grouping.ts";
 import { pendingSessionsYield } from "../chat-sessions-yield.ts";
 import { buildChatItems, type BuildChatItemsProps } from "../chat-thread-build.ts";
@@ -84,6 +85,10 @@ describe("PR preparation handoff", () => {
       content: "Your PR is ready for work.",
     },
   ];
+
+  beforeAll(async () => {
+    await prepareChatToolFamily(messages);
+  });
 
   it.each(
     [false, true].flatMap((showToolCalls) =>

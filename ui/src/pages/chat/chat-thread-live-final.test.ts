@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { extractTextCached } from "../../lib/chat/message-extract.ts";
+import { prepareChatToolFamily } from "../../lib/chat/tool-family.ts";
 import { coalesceAgentRunFrames } from "./chat-agent-run-grouping.ts";
 import { buildChatItems, type BuildChatItemsProps } from "./chat-thread-build.ts";
 import {
@@ -273,7 +274,7 @@ describe("live terminal continuity with pending collaborators", () => {
       }
     },
   );
-  it("keeps standalone activity messages addressable for replies and anchors", () => {
+  it("keeps standalone activity messages addressable for replies and anchors", async () => {
     const message = nativeMessage(
       "toolResult",
       "Stored tool result",
@@ -281,6 +282,7 @@ describe("live terminal continuity with pending collaborators", () => {
       { id: "activity-message", seq: 1 },
       { toolCallId: "standalone-call" },
     );
+    await prepareChatToolFamily([message]);
     const groups = groupsOf(
       build({
         messages: [message],

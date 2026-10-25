@@ -1,8 +1,9 @@
 /* @vitest-environment jsdom */
 
 import { createComponent, createSignal, merge } from "solid-js";
-import { beforeEach, expect, it, onTestFinished, vi } from "vitest";
+import { beforeAll, beforeEach, expect, it, onTestFinished, vi } from "vitest";
 import { createNestedToolActivity } from "../../../../../src/sessions/nested-tool-activity.ts";
+import { prepareChatToolPresentation } from "../../../lib/chat/tool-family.ts";
 import { prepareChatHistoryFixture } from "../../../test-helpers/chat-activity-fixtures.ts";
 import { mountSolid } from "../../../test-helpers/mount-solid.ts";
 import { flush } from "../../../test-helpers/solid-settle.ts";
@@ -46,6 +47,10 @@ function read(id: string, overrides: Record<string, unknown> = {}) {
 function readResult(id: string, isError = true, overrides: Record<string, unknown> = {}) {
   return createToolResultMessage(id, "read", "Result", { isError, ...overrides });
 }
+
+beforeAll(async () => {
+  await prepareChatToolPresentation([readResult("prepared-corpus")]);
+});
 
 function mountGroup(messages: Record<string, unknown>[]) {
   const group = buildChatItems(createProps({ messages })).find((item) => item.kind === "group");

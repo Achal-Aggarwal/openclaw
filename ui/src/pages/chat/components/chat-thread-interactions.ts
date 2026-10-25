@@ -119,7 +119,7 @@ export type ChatThreadProps = Omit<
     historyPagination?: ChatHistoryBoundaryProps;
     messages: unknown[];
     toolMessages: unknown[];
-    latestBrowserTabs?: ReadonlyMap<string, BrowserTabSelection>;
+    readLatestBrowserTabs?: () => ReadonlyMap<string, BrowserTabSelection>;
     guardianNotices?: ChatGuardianNotice[];
     streamSegments: ChatStreamSegment[];
     reasoning?: import("../tool-stream-contract.ts").ChatReasoning | null;

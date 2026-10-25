@@ -129,6 +129,8 @@ export function sidebarPanelFixtureParams(
     browserTabsInHeader: true,
     terminalTabsInHeader: true,
     browserRefreshOnPresentation: false,
+    readBrowserTabs: () => new Map(),
+    browserTabMessages: [],
     desktopPresented: false,
     desktopRefreshOnPresentation: false,
     desktopAvailable: false,

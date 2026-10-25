@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from "vitest";
 import { extractText } from "../../lib/chat/message-extract.ts";
+import { prepareChatToolFamily } from "../../lib/chat/tool-family.ts";
 import { chatItemGroups } from "./chat-agent-run-grouping.ts";
 import { handleChatGatewayEvent } from "./chat-gateway.ts";
 import { activeHistory, createState } from "./chat-history.inflight.test-support.ts";
@@ -70,6 +71,7 @@ it.each(["tool", "item"] as const)(
     await vi.runOnlyPendingTimersAsync();
     vi.setSystemTime(1_000);
     emitReply("Already visible answer.");
+    await prepareChatToolFamily(state.chatMessages, state.chatToolMessages);
     const rows = () =>
       projectTranscriptChain(
         buildChatItems({

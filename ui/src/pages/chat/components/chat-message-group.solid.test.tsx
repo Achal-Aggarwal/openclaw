@@ -1,12 +1,13 @@
 /* @vitest-environment jsdom */
 
 import { createSignal } from "solid-js";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
   ControlUiHost,
   ControlUiReplacement,
 } from "../../../../../src/plugin-sdk/control-ui.js";
 import type { ApplicationContext } from "../../../app/context.ts";
+import { prepareChatToolPresentation } from "../../../lib/chat/tool-family.ts";
 import { ContentPresentation } from "../../../lib/solid/presentation.ts";
 import type { ControlUiPluginCapability } from "../../../plugins/control-ui-capability.ts";
 import "../../../plugins/control-ui-view.solid.tsx";
@@ -24,6 +25,12 @@ import {
 } from "./chat-message-group-view.tsx";
 import { prepareChatMessageRender } from "./chat-message-markdown-view.tsx";
 import { createMessageGroup, createToolResultMessage } from "./chat-message.test-support.ts";
+
+beforeAll(async () => {
+  await prepareChatToolPresentation([
+    createToolResultMessage("prepared-corpus", "read", "Evidence"),
+  ]);
+});
 
 it.each([false, true])(
   "does not present a partial response group as complete usage (unavailable: %s)",

@@ -1,8 +1,13 @@
 // @vitest-environment node
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 import { extractToolCardsCached, resolveToolCardOutcome } from "../../lib/chat/tool-cards.ts";
+import { prepareChatToolFamily } from "../../lib/chat/tool-family.ts";
 import { buildChatItems } from "./chat-thread-build.ts";
 import { createProps } from "./chat-thread.test-support.ts";
+
+beforeAll(async () => {
+  await prepareChatToolFamily([{ role: "toolResult", toolName: "exec", content: "" }]);
+});
 
 it("preserves result references and provenance when two calls share a transcript message", () => {
   const messages = [

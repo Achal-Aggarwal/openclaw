@@ -20,15 +20,8 @@ const controlUiBootModules = JSON.parse(
 
 const chatVisibleModules = new Set([
   "ui/src/pages/chat/components/chat-tool-card-chrome.tsx",
-  "ui/src/pages/chat/components/chat-tool-outcome-summary.solid.tsx",
-  "ui/src/pages/chat/components/chat-tool-render-model.ts",
   "ui/src/pages/chat/components/chat-message-bubble-tools.tsx",
-  "ui/src/pages/chat/components/chat-permission-card.tsx",
-  "ui/src/pages/chat/components/chat-tool-content.solid.tsx",
-  "ui/src/pages/chat/components/chat-tool-cards.solid.tsx",
-  "ui/src/pages/chat/components/chat-message-activity-operation.tsx",
   "ui/src/pages/chat/components/chat-diff-stat.solid.tsx",
-  "ui/src/pages/chat/components/chat-tool-row-presentation.ts",
   "ui/src/lib/chat/tool-display-identity.ts",
   "ui/src/lib/chat/tool-call-input.ts",
   "src/agents/tool-display-name.ts",
@@ -85,6 +78,25 @@ export function controlUiStableChunkName(id: string): string | undefined {
     case "ui/src/pages/chat/chat-outbox-recovery-rows.tsx":
     case "ui/src/pages/chat/chat-outbox-recovery-actions.ts":
       return "chat-outbox-recovery-runtime";
+    case "ui/src/pages/chat/chat-tool-family-runtime.ts":
+    case "ui/src/pages/chat/chat-tool-activity-coalesce.runtime.ts":
+    case "ui/src/pages/chat/chat-sessions-yield.runtime.ts":
+    case "ui/src/lib/chat/tool-cards.runtime.ts":
+    case "ui/src/lib/chat/tool-call-grouping.runtime.ts":
+    case "ui/src/lib/chat/browser-tab-selection.runtime.ts":
+    case "ui/src/lib/chat/source-previews.ts":
+    case "ui/src/pages/chat/components/chat-tool-cards.runtime.ts":
+    case "ui/src/pages/chat/components/chat-tool-render-model.ts":
+    case "ui/src/pages/chat/chat-tool-presentation.runtime.ts":
+    case "ui/src/pages/chat/components/chat-tool-outcome-summary.solid.tsx":
+    case "ui/src/pages/chat/components/chat-permission-card.tsx":
+    case "ui/src/pages/chat/components/chat-tool-content.solid.tsx":
+    case "ui/src/pages/chat/components/chat-tool-cards.solid.tsx":
+    case "ui/src/pages/chat/components/chat-message-activity-operation.tsx":
+    case "ui/src/pages/chat/components/chat-tool-row-presentation.ts":
+    case "ui/src/pages/chat/components/chat-work-group-summary.tsx":
+      // Chat preloads these interactions together; each module still initializes on use.
+      return "chat-interaction-runtime";
     case "ui/src/pages/chat/components/chat-details-people.css":
     case "ui/src/pages/chat/components/chat-outputs.css":
     case "ui/src/pages/chat/components/chat-details-environment-desktop.css":
@@ -139,6 +151,14 @@ export function controlUiStableChunkName(id: string): string | undefined {
     case "ui/src/pages/chat/chat-pane-session-metadata-patch.ts":
     case "ui/src/pages/chat/chat-pane-session-operations.ts":
     case "ui/src/pages/chat/chat-pane-session-operations.runtime.ts":
+    case "ui/src/pages/chat/chat-live-events.runtime.ts":
+    case "ui/src/pages/chat/chat-gateway.ts":
+    case "ui/src/pages/chat/tool-stream.ts":
+    case "ui/src/pages/chat/tool-stream-status.ts":
+    case "ui/src/pages/chat/tool-stream-preamble.ts":
+    case "ui/src/lib/chat/tool-call-diff.ts":
+    case "src/agents/agent-activity-presentation.ts":
+      // Chat already preloads both families; their initializers still run only on use.
       return "chat-interaction-runtime";
     case "ui/src/pages/chat/components/chat-context-breakdown.tsx":
     case "ui/src/pages/chat/components/chat-context-breakdown-model.ts":
@@ -155,12 +175,6 @@ export function controlUiStableChunkName(id: string): string | undefined {
       return "chat-details-people-list";
     case "ui/src/lib/nodes/device-signing.runtime.ts":
       return "device-signing-runtime";
-    case "ui/src/pages/chat/chat-live-events.runtime.ts":
-    case "ui/src/pages/chat/chat-gateway.ts":
-    case "ui/src/pages/chat/tool-stream.ts":
-    case "ui/src/pages/chat/tool-stream-status.ts":
-    case "ui/src/pages/chat/tool-stream-preamble.ts":
-      return "chat-live-events-runtime";
     case "ui/src/pages/chat/chat-mobile-host.runtime.tsx":
     case "ui/src/pages/chat/chat-mobile-scroll-fades.runtime.ts":
     case "ui/src/pages/chat/components/chat-mobile-people-grid.tsx":
@@ -232,6 +246,8 @@ export function controlUiStableChunkName(id: string): string | undefined {
       return "plugin-contracts-runtime";
     case "ui/src/components/solid/copy-button.tsx":
     case "ui/src/components/copy-button-state.ts":
+    case "ui/src/components/app-sidebar-online.tsx":
+      // Both routes preload these; standalone copy surfaces also download the small Online view.
       // Login recovery also copies commands, before any Chat route can load.
       return "copy-button-runtime";
     case "ui/src/components/login-gate-solid.tsx":

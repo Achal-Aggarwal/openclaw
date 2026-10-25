@@ -1,12 +1,13 @@
 import { reduceSessionProjection } from "@openclaw/gateway-client/browser";
 // @vitest-environment node
-import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { missingScopeErrorShape } from "../../../../packages/gateway-protocol/src/schema/error-codes.js";
 import { createDeferred } from "../../../../test/helpers/promise.js";
 import { createRequireRecord } from "../../../../test/helpers/record.js";
 import { GatewayRequestError } from "../../api/gateway.ts";
 import type { SessionsListResult } from "../../api/types.ts";
 import { extractText } from "../../lib/chat/message-extract.ts";
+import { prepareChatToolFamily } from "../../lib/chat/tool-family.ts";
 import { createTestSessionCapability } from "../../lib/sessions/session-capability.test-support.ts";
 import { createState } from "./chat-gateway.test-support.ts";
 import { handleChatGatewayEvent, type ChatEventPayload } from "./chat-gateway.ts";
@@ -427,6 +428,9 @@ const toolCall = (toolCallId: string) => ({
   toolCallId,
   runId: "run-1",
   content: [{ type: "toolcall", name: "shell", arguments: {} }],
+});
+beforeAll(async () => {
+  await prepareChatToolFamily([toolCall("prepared-corpus")]);
 });
 const pendingSend = (sendRunId: string) => ({
   id: "pending",

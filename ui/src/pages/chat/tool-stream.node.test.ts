@@ -1,8 +1,10 @@
 // @vitest-environment node
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { readToolApprovalReviews } from "../../lib/chat/tool-approval-reviews.ts";
-import { readPreparedActivity, summarizeToolGroup } from "../../lib/chat/tool-call-grouping.ts";
+import { summarizeToolGroup } from "../../lib/chat/tool-call-grouping.runtime.ts";
+import { readPreparedActivity } from "../../lib/chat/tool-call-grouping.ts";
 import { extractToolCardsCached, resolveToolCardOutcome } from "../../lib/chat/tool-cards.ts";
+import { prepareChatToolFamily } from "../../lib/chat/tool-family.ts";
 import { chatRunPresentation } from "./chat-run-presentation.ts";
 import { activeChatRunStartupStatus, chatStartupStatusLabel } from "./chat-run-startup.ts";
 import { coalesceToolActivityMessages } from "./chat-tool-activity-coalesce.ts";
@@ -58,11 +60,12 @@ const globalWithWindow = globalThis as typeof globalThis & {
 };
 let installedTestWindow = false;
 
-beforeAll(() => {
+beforeAll(async () => {
   if (!globalWithWindow.window) {
     globalWithWindow.window = globalThis as unknown as Window & typeof globalThis;
     installedTestWindow = true;
   }
+  await prepareChatToolFamily([{ role: "toolResult", content: "" }]);
 });
 
 afterAll(() => {

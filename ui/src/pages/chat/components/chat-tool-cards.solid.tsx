@@ -8,12 +8,15 @@ import { registerChatToolLabelsEnglish } from "../../../i18n/locales/en-chat-too
 import type { ToolCard, ToolCardOutcome } from "../../../lib/chat/chat-types.ts";
 import { readToolApprovalReviews } from "../../../lib/chat/tool-approval-reviews.ts";
 import { resolveToolCallInput } from "../../../lib/chat/tool-call-input.ts";
-import { resolveToolCardDisplay, resolveToolCardOutcome } from "../../../lib/chat/tool-cards.ts";
+import {
+  resolveToolCardDisplay,
+  resolveToolCardOutcome,
+} from "../../../lib/chat/tool-cards.runtime.ts";
 import { resolveToolDisplayIdentity } from "../../../lib/chat/tool-display-identity.ts";
 import { pathDisplayName } from "../../../lib/path-display.ts";
 import { t, registerEnglishCatalog } from "../../../lib/reactive/i18n.ts";
-import { PluginSurface } from "../../../plugins/control-ui-view.solid.tsx";
 import "./browser-tab-card.css";
+import { PluginSurface } from "../../../plugins/control-ui-view.solid.tsx";
 import { DiffStatChips } from "./chat-diff-stat.solid.tsx";
 import { ChatImportBoundary } from "./chat-import-boundary.tsx";
 import { ChatPermissionCard } from "./chat-permission-card.tsx";

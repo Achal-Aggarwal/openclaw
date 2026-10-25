@@ -11,9 +11,9 @@ import {
 import {
   describeToolGroup,
   summarizeToolGroup,
-  readPreparedActivity,
-} from "../../../lib/chat/tool-call-grouping.ts";
-import { extractToolCardsCached } from "../../../lib/chat/tool-cards.ts";
+} from "../../../lib/chat/tool-call-grouping.runtime.ts";
+import { readPreparedActivity } from "../../../lib/chat/tool-call-grouping.ts";
+import { extractToolCardsCached } from "../../../lib/chat/tool-cards.runtime.ts";
 import { fnv1aUtf16 } from "../../../lib/fnv1a.ts";
 import { t } from "../../../lib/reactive/i18n.ts";
 import { ownSessionLaunchCalls } from "../chat-spawned-subagent.ts";
@@ -25,7 +25,7 @@ import { descendantCards } from "./chat-message-activity-operation.tsx";
 import type { ActivityOperationProps } from "./chat-message-bubble-options.ts";
 import type { NativeMessageGroupOptions } from "./chat-message-group-frame.ts";
 import { syncToolDisclosureOverflow } from "./chat-tool-card-chrome.tsx";
-import { selectBrowserTabPreviews } from "./chat-tool-cards.ts";
+import { selectBrowserTabPreviews } from "./chat-tool-cards.runtime.ts";
 import { ToolOutcomeSummary, ToolReviewOutcome } from "./chat-tool-outcome-summary.solid.tsx";
 
 function prepareActivityGroup(

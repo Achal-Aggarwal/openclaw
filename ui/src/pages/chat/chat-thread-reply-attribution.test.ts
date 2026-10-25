@@ -4,6 +4,7 @@ import {
   localParticipantIdentityKey,
   sessionParticipantIdentityKey,
 } from "../../lib/chat/sender-label.ts";
+import { prepareChatToolFamily } from "../../lib/chat/tool-family.ts";
 import { groupMessages } from "./chat-thread-grouping.ts";
 import { createProps } from "./chat-thread.test-support.ts";
 import { buildCachedChatItems, resetChatThreadState } from "./chat-thread.ts";
@@ -157,7 +158,7 @@ it.each([
 
 it.each(["human", "forwarded", "projected source"] as const)(
   "keeps tool results across a hidden %s boundary",
-  (kind) => {
+  async (kind) => {
     const invocation = assistantMessage(
       [
         { type: "text", text: "Rollout started" },
@@ -173,6 +174,7 @@ it.each(["human", "forwarded", "projected source"] as const)(
       toolCallId: "reused",
       toolName: "custom",
     });
+    await prepareChatToolFamily([invocation, separator, result]);
     const sources = messageGroups({
       messages: [invocation, separator, result],
       searchOpen: true,

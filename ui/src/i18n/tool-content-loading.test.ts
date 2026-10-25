@@ -39,7 +39,10 @@ it.each([
 
 it.each([
   { surface: "tool output owner", load: () => import("../lib/chat/tool-output.ts") },
-  { surface: "tool grouping owner", load: () => import("../lib/chat/tool-call-grouping.ts") },
+  {
+    surface: "tool grouping owner",
+    load: () => import("../lib/chat/tool-call-grouping.runtime.ts"),
+  },
   {
     surface: "tool row presentation",
     load: () => import("../pages/chat/components/chat-tool-row-presentation.ts"),

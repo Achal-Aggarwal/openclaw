@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createDeferred } from "../../../../test/helpers/promise.js";
 import type { GatewayBrowserClient } from "../../api/gateway.ts";
-import { latestBrowserTabCards, loadBrowserTabThumbnail } from "./browser-tab-preview.ts";
-import { extractToolCardsCached } from "./tool-cards.ts";
+import { loadBrowserTabThumbnail } from "./browser-tab-preview.ts";
+import { latestBrowserTabCards } from "./browser-tab-selection.runtime.ts";
+import { extractToolCardsCached } from "./tool-cards.runtime.ts";
 
 afterEach(() => {
   vi.useRealTimers();

@@ -7,6 +7,7 @@ import {
 import { prepareChatStreamRender } from "./chat-message-markdown-view.tsx";
 import type { StreamGroupOptions } from "./chat-message-stream-view.tsx";
 import { isVisibleChatStream } from "./chat-position-projection.ts";
+import { useChatToolReadiness } from "./chat-tool-family-boundary.tsx";
 import { projectTurnVideoMessages } from "./chat-turn-video-gallery.ts";
 
 /** Keep row membership separate from the live text consumed by the bubble and open previews. */
@@ -14,7 +15,9 @@ export function createTranscriptStreamSource(
   input: Parameters<typeof buildCachedChatItems>[0],
   searchFiltering: boolean,
 ) {
+  const toolsReady = useChatToolReadiness();
   const source = createMemo(() => {
+    toolsReady();
     const currentInput = { ...input };
     const items = buildCachedChatItems(currentInput);
     // The gallery retains this map; refresh its live slot without rebuilding rows.

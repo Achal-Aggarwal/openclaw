@@ -1,10 +1,7 @@
 // @vitest-environment node
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-  isStandaloneToolMessageForDisplay,
-  isToolResultMessage,
-  normalizeMessage,
-} from "./message-normalizer.ts";
+import { isToolResultMessage } from "./message-metadata.ts";
+import { isStandaloneToolMessageForDisplay, normalizeMessage } from "./message-normalizer.ts";
 
 const canvasPreview = { kind: "canvas", surface: "assistant_message", render: "url" };
 

@@ -1,5 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
+import { prepareChatToolFamily } from "../../lib/chat/tool-family.ts";
 import { collectGarbageForTest } from "../../test-helpers/garbage-collection.ts";
 import { buildItems } from "./chat-thread.test-support.ts";
 import {
@@ -20,6 +21,7 @@ describe("tool expansion state", () => {
       role = "assistant";
       content = [{ type: "toolcall", id: "released-call", name: "read" }];
     }
+    await prepareChatToolFamily([new TranscriptMessage()]);
     const paneId = "released-pane";
     const sessionKey = "released-session";
     const populatePane = () => {

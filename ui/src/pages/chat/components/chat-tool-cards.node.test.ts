@@ -7,7 +7,7 @@ import {
   extractToolCardsCached as extractToolCards,
   isToolCardError,
   resolveToolCardOutcome,
-} from "../../../lib/chat/tool-cards.ts";
+} from "../../../lib/chat/tool-cards.runtime.ts";
 
 const assistantCards = (content: unknown[], metadata: Record<string, unknown> = {}) =>
   extractToolCards({ role: "assistant", content, ...metadata });

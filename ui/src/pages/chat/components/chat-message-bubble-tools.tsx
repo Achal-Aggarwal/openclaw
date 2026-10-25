@@ -6,25 +6,28 @@ import { unwrapToolCallForDisplay } from "../../../../../src/agents/tool-display
 import { Icon } from "../../../components/solid/icon.tsx";
 import type { ToolCard } from "../../../lib/chat/chat-types.ts";
 import { resolveToolDisplayIdentity } from "../../../lib/chat/tool-display-identity.ts";
+import { loadChatToolPresentation, readChatToolFamily } from "../../../lib/chat/tool-family.ts";
 import { t } from "../../../lib/reactive/i18n.ts";
 import { PluginSurface } from "../../../plugins/control-ui-view.solid.tsx";
 import { ChatImportBoundary } from "./chat-import-boundary.tsx";
-import { ActivityOperation } from "./chat-message-activity-operation.tsx";
 import { OmittedMedia } from "./chat-message-attachment-status-solid.tsx";
 import type { ActivityOperationProps } from "./chat-message-bubble-options.ts";
 import type { MessageContentProps as ContentProps } from "./chat-message-bubble-presentation.ts";
 import { ToolPreview } from "./chat-message-deferred.tsx";
-import { ChatPermissionCard } from "./chat-permission-card.tsx";
 import { ChatToolIcon } from "./chat-tool-card-chrome.tsx";
 import type { ToolCardOptions } from "./chat-tool-card-types.ts";
-import { ChatToolCard, ToolApprovalReviews } from "./chat-tool-cards.solid.tsx";
-import {
-  ExpandedToolCardContent,
-  RawOutputToggle,
-  ToolOutcome,
-} from "./chat-tool-content.solid.tsx";
-import { toolResultSurfaceProps } from "./chat-tool-render-model.ts";
+import { RawOutputToggle } from "./chat-tool-raw.solid.tsx";
 
+const ActivityOperation = lazy(() => loadChatToolPresentation(), { export: "ActivityOperation" });
+const ChatPermissionCard = lazy(() => loadChatToolPresentation(), { export: "ChatPermissionCard" });
+const ChatToolCard = lazy(() => loadChatToolPresentation(), { export: "ChatToolCard" });
+const ToolApprovalReviews = lazy(() => loadChatToolPresentation(), {
+  export: "ToolApprovalReviews",
+});
+const ExpandedToolCardContent = lazy(() => loadChatToolPresentation(), {
+  export: "ExpandedToolCardContent",
+});
+const ToolOutcome = lazy(() => loadChatToolPresentation(), { export: "ToolOutcome" });
 const ToolMessageSummary = lazy(() => import("./chat-tool-card-row.solid.tsx"), {
   export: "ToolMessageSummary",
 });
@@ -241,7 +244,7 @@ export function ToolMessage(props: ToolMessageProps) {
           {(card) => (
             <PluginSurface
               surface="tool-result"
-              props={toolResultSurfaceProps(card(), {
+              props={readChatToolFamily().toolResultSurfaceProps(card(), {
                 ...props.state().toolRenderOptions,
                 expanded: props.state().toolMessageExpanded,
               })}

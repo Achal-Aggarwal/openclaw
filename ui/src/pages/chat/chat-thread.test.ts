@@ -1,12 +1,14 @@
 // @vitest-environment node
 import { expectDefined } from "@openclaw/normalization-core";
-import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { markInboundContextLabel } from "../../../../src/auto-reply/reply/inbound-context-marker.js";
 import { createRequireRecord } from "../../../../test/helpers/record.js";
+import * as canvasPreview from "../../lib/chat/canvas-tool-preview.ts";
 import type { MessageGroup } from "../../lib/chat/chat-types.ts";
 import { prependUniqueNativeMessages } from "../../lib/chat/history-message-identity.ts";
 import { normalizeMessage } from "../../lib/chat/message-normalizer.ts";
 import * as toolCards from "../../lib/chat/tool-cards.ts";
+import { prepareChatToolFamily } from "../../lib/chat/tool-family.ts";
 import { coalesceAgentRunFrames } from "./chat-agent-run-grouping.ts";
 import { buildChatItems } from "./chat-thread-build.ts";
 import {
@@ -40,6 +42,10 @@ import { publishChatSessionProjectionMessages } from "./history-merge.ts";
 import { readLiveTerminalRevision, rememberLiveTerminalRun } from "./terminal-message-identity.ts";
 
 const { extractToolCardsCached: extractToolCards } = toolCards;
+
+beforeAll(async () => {
+  await prepareChatToolFamily([{ role: "toolResult", content: "" }]);
+});
 
 beforeEach(() => resetChatThreadState());
 afterEach(() => vi.restoreAllMocks());
@@ -663,7 +669,7 @@ describe("buildCachedChatItems", () => {
       __openclaw: { id: "older" },
     });
     const owner = { sessionKey: "preview-pages", chatMessages: [current] as unknown[] };
-    const prepare = vi.spyOn(toolCards, "extractToolPreview");
+    const prepare = vi.spyOn(canvasPreview, "extractToolPreview");
     const rebuild = () =>
       buildItems({ paneId: "preview-pages", messages: [...owner.chatMessages] });
     rebuild();

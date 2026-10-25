@@ -2,6 +2,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ChatQueueItem } from "../../lib/chat/chat-types.ts";
+import { prepareChatToolPresentation } from "../../lib/chat/tool-family.ts";
 import { createComposerContainer } from "./chat-composer.test-support.ts";
 import * as chatThread from "./chat-thread.ts";
 import { resetChatViewState } from "./chat-view-state.test-support.ts";
@@ -80,7 +81,7 @@ describe("chat transcript cache", () => {
     expect(historyBuildReads).toBeGreaterThan(0);
   });
 
-  it("keeps multi-part run usage current when only output tokens change", () => {
+  it("keeps multi-part run usage current when only output tokens change", async () => {
     const runId = "run-composed";
     const group = (id: string, role: string, timestamp: number, content: string) => ({
       kind: "group",
@@ -105,6 +106,7 @@ describe("chat transcript cache", () => {
     const user = group("user:run-composed", "user", 0, "Start the work.");
     const assistant = group("assistant:run-start", "assistant", 1, "Starting the work.");
     const tool = { ...group("tool:run-work", "toolResult", 2, "Tool complete."), role: "tool" };
+    await prepareChatToolPresentation(tool.messages.map((entry) => entry.message));
     const reading = {
       kind: "reading-indicator",
       key: "reading:run-composed",

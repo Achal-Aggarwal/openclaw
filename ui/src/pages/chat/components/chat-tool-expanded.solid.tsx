@@ -13,7 +13,7 @@ import {
   isToolCardError,
   resolveToolCardDisplay,
   resolveToolCardOutcome,
-} from "../../../lib/chat/tool-cards.ts";
+} from "../../../lib/chat/tool-cards.runtime.ts";
 import { formatToolDetail, resolveToolDisplay } from "../../../lib/chat/tool-display.ts";
 import {
   isLegacyToolOutputUnavailable,
@@ -24,7 +24,8 @@ import { registerEnglishCatalog, t } from "../../../lib/reactive/i18n.ts";
 import { HighlightedCommand } from "./chat-command-highlight.solid.tsx";
 import { DiffBlock } from "./chat-diff-render.solid.tsx";
 import type { SidebarContent } from "./chat-sidebar-content-types.ts";
-import { RawOutputToggle, ToolDataBlock, ToolOutcome } from "./chat-tool-content.solid.tsx";
+import { ToolOutcome } from "./chat-tool-content.solid.tsx";
+import { RawOutputToggle, ToolDataBlock } from "./chat-tool-raw.solid.tsx";
 import { toolWorkspacePath, type ToolRenderOptions } from "./chat-tool-render-model.ts";
 
 registerEnglishCatalog(registerChatToolContentEnglish);

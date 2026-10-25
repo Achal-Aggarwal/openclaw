@@ -6,7 +6,7 @@ import "../../../styles.css";
 import "../../../styles/chat.ts";
 import { ActivityGroup, MessageGroup } from "./chat-message-group-view.tsx";
 import { ChatToolCard } from "./chat-tool-cards.solid.tsx";
-import { RawOutputToggle } from "./chat-tool-content.solid.tsx";
+import { RawOutputToggle } from "./chat-tool-raw.solid.tsx";
 import { settleToolBridges } from "./chat-tool-render.test-support.ts";
 import { WorkGroupSummary } from "./chat-work-group-summary.tsx";
 
