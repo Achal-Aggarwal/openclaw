@@ -87,6 +87,7 @@ async function captureContext(params: {
   modelProvider?: string;
   authProfileId?: string;
   promptSuppressed?: boolean;
+  promptIdentity?: string;
 }) {
   mocks.readHistory.mockImplementation(
     (_target, read: (messages: Iterable<AgentMessage>) => unknown) => read(params.historyMessages),
@@ -101,6 +102,7 @@ async function captureContext(params: {
     modelProvider: params.modelProvider,
     authProfileId: params.authProfileId,
     promptSuppressed: params.promptSuppressed,
+    promptIdentity: params.promptIdentity,
   });
 }
 
@@ -241,6 +243,39 @@ describe("captureCodexSettledTurnFinalizationContext", () => {
       { type: "function_call", call_id: "call-2", name: "message", arguments: "{}" },
       { type: "function_call_output", call_id: "call-2", output: "sent" },
     ]);
+  });
+
+  it("captures a continuation against its persisted prompt from an earlier native turn", async () => {
+    const persistedPrompt = message({ role: "user", content: "Send it." }, "turn-1:prompt");
+    const settledMessages = [persistedPrompt, ...settledTurn().slice(1)];
+    const history = [
+      message({ role: "user", content: "Older context." }, "older:prompt"),
+      ...settledMessages,
+    ];
+    const base = { mirroredMessages: settledMessages, settledMessages };
+    const context = await captureContext({
+      ...base,
+      historyMessages: history,
+      promptIdentity: "turn-1:prompt",
+    });
+    expect(context?.data).toEqual([
+      { type: "message", role: "user", content: [{ type: "input_text", text: "Older context." }] },
+      { type: "message", role: "user", content: [{ type: "input_text", text: "Send it." }] },
+      { type: "function_call", call_id: "call-2", name: "message", arguments: "{}" },
+      { type: "function_call_output", call_id: "call-2", output: "sent" },
+    ]);
+    const warn = vi.spyOn(embeddedAgentLog, "warn").mockImplementation(() => {});
+    try {
+      await expect(
+        captureContext({
+          ...base,
+          historyMessages: history.slice(2),
+          promptIdentity: "turn-1:prompt",
+        }),
+      ).resolves.toBeUndefined();
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   it("still rejects a suppressed-prompt turn whose evidence carries a prompt row", async () => {
