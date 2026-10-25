@@ -8,7 +8,6 @@ import { createDocumentVisibility } from "../lib/reactive/platform.ts";
 import { defineSolidBridge, type SolidBridgeElement } from "../lib/solid-bridge.ts";
 import { CanvasWidgetFrame, resolveCanvasWidgetFrameSource } from "./canvas-widget-frame.tsx";
 import { createCanvasWidget, type CanvasWidgetViewProps } from "./canvas-widget-view-owner.ts";
-export type { CanvasWidgetViewState } from "./canvas-widget-view-owner.ts";
 
 registerEnglishCatalog(registerBoardEnglish);
 

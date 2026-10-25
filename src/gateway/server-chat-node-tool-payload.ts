@@ -1,7 +1,7 @@
 import type { VerboseLevel } from "../auto-reply/thinking.shared.js";
 import type { AgentEventPayload, AgentEventRuntimePayload } from "../infra/agent-events.js";
 import type { createSessionLifecyclePublisher } from "./server-chat-lifecycle-publication.js";
-import type { AgentEventHandlerOptions } from "./server-chat.js";
+import type { GatewayRequestContext } from "./server-methods/shared-types.js";
 
 export function createNodeToolPayloadSender({
   resolveSessionDeliveryKeys,
@@ -9,7 +9,9 @@ export function createNodeToolPayloadSender({
   resolveToolVerboseLevel,
   buildSessionEventSnapshot,
   nodeSendToSession,
-}: Pick<AgentEventHandlerOptions, "nodeHasSessionSubscribers" | "nodeSendToSession"> & {
+}: {
+  nodeHasSessionSubscribers: (sessionKey: string) => boolean;
+  nodeSendToSession: GatewayRequestContext["nodeSendToSession"];
   resolveSessionDeliveryKeys: (sessionKey: string, agentId?: string) => string[];
   resolveToolVerboseLevel: (
     event: AgentEventRuntimePayload,

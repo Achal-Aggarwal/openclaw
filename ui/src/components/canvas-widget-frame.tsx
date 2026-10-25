@@ -2,7 +2,7 @@ import type { CanvasDocumentViewResult } from "@openclaw/gateway-protocol";
 import { Show } from "solid-js";
 import { formatUiError } from "../lib/format-error.ts";
 import { t } from "../lib/reactive/i18n.ts";
-import type { CanvasWidgetViewState } from "./canvas-widget-view.tsx";
+import type { CanvasWidgetViewState } from "./canvas-widget-view-owner.ts";
 import { resolveSandboxHostUrl } from "./sandbox-host.ts";
 
 /** Presentation only; the widget owner retains document and sandbox authority. */

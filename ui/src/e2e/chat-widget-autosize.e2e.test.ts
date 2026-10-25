@@ -77,20 +77,15 @@ suite.define(() => {
       });
       await page.goto(`${suite.server.baseUrl}chat`);
       await gateway.waitForRequest("connect");
-      const emit = (eventPhase: string, eventData: Record<string, unknown>, eventSeq: number) =>
-        page.evaluate(
-          ({ phase, data, seq }) => {
-            window.openclawControlUiE2eGateway.emit("agent", {
-              runId: "widget-height",
-              sessionKey: "main",
-              seq,
-              ts: Date.now(),
-              stream: "tool",
-              data: { name: "show_widget", toolCallId: "height-call", phase, ...data },
-            });
-          },
-          { phase: eventPhase, data: eventData, seq: eventSeq },
-        );
+      const emit = (phase: string, data: Record<string, unknown>, seq: number) =>
+        gateway.emitGatewayEvent("agent", {
+          runId: "widget-height",
+          sessionKey: "main",
+          seq,
+          ts: Date.now(),
+          stream: "tool",
+          data: { name: "show_widget", toolCallId: "height-call", phase, ...data },
+        });
       await emit("widget_preview", { preview: { title: "Observations", html } }, 1);
       const preview = page.locator('[data-content-kind="widget-input"] iframe');
       await preview.contentFrame().getByText("Review complete.", { exact: true }).waitFor();

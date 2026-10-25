@@ -53,7 +53,7 @@ it("grows inert HTML/SVG under the Control UI HTTP policy and blocks generated r
     });
     await page.goto(origin);
     await page.locator("iframe").evaluate(
-      (frame, shell) => {
+      (frame: HTMLIFrameElement, shell) => {
         frame.srcdoc = shell;
       },
       buildWidgetInputShell("test-nonce-12345678", `${origin}/runtime.js`),
@@ -67,7 +67,7 @@ it("grows inert HTML/SVG under the Control UI HTTP policy and blocks generated r
       await page
         .locator("iframe")
         .evaluate(
-          (element, nodes) =>
+          (element: HTMLIFrameElement, nodes) =>
             element.contentWindow?.postMessage({ type: "openclaw:widget-input", nodes }, "*"),
           parseWidgetInputDocument(html),
         );
@@ -93,7 +93,9 @@ it("grows inert HTML/SVG under the Control UI HTTP policy and blocks generated r
     expect(await frame.locator("a").getAttribute("href")).toBeNull();
     expect(await frame.locator("button").getAttribute("onclick")).toBeNull();
     expect(await frame.locator("form, img, image, iframe, object").count()).toBe(0);
-    expect(await frame.locator("body > div").evaluate((element) => element.inert)).toBe(true);
+    expect(
+      await frame.locator("body > div").evaluate((element: HTMLDivElement) => element.inert),
+    ).toBe(true);
     expect(
       await frame.evaluate(
         () => Object.hasOwn(globalThis, "widgetRan") || Object.hasOwn(globalThis, "openclaw"),
