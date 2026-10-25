@@ -15,6 +15,7 @@ import { ContentPresentation } from "../../../lib/solid/presentation.ts";
 import { restorePropertyDescriptor } from "../../../test-helpers/property-descriptor.ts";
 import { renderSolidRef } from "../../../test-helpers/render-solid-ref.ts";
 import { mountSolid } from "../../../test-helpers/solid-render.tsx";
+import { waitForSolid } from "../../../test-helpers/solid-settle.ts";
 import { prepareMarkdownMedia, type MarkdownMedia } from "./chat-message-media-markdown.ts";
 import {
   MarkdownContent,
@@ -368,11 +369,12 @@ describe("streaming Markdown DOM", () => {
         value: { writeText: vi.fn().mockReturnValue(pending.promise) },
       });
       const fallback = vi.spyOn(document, "execCommand").mockReturnValue(true);
-      vi.useFakeTimers();
       try {
         draw(initial);
-        // Native refs deliver mutations before the queued enhancement scan.
-        await new Promise<void>(queueMicrotask);
+        await waitForSolid(() =>
+          expect(container.querySelector(".code-block-wrapper")).not.toBeNull(),
+        );
+        vi.useFakeTimers();
         const wrapper = container.querySelector<HTMLElement>(".code-block-wrapper")!;
         const copy = wrapper.querySelector<HTMLButtonElement>(".code-block-copy")!;
         const wrap = wrapper.querySelector<HTMLButtonElement>(".code-block-wrap")!;

@@ -35,7 +35,9 @@ export function resolveChatSessionSharing(input: ChatSessionSharingInput): ChatS
 export function resolvePreparedChatSessionSharing(
   input: PreparedSessionSharingInput,
 ): PreparedChatSessionSharing {
-  if (!("operations" in input)) return input;
+  if (!("operations" in input)) {
+    return input;
+  }
   const { operations: owner, ...presentation } = input;
   return {
     ...presentation,
@@ -46,7 +48,7 @@ export function resolvePreparedChatSessionSharing(
   };
 }
 
-export async function setSessionPublicShare(
+async function setSessionPublicShare(
   owner: ChatSessionSharingOperationSource,
   row: GatewaySessionRow,
   enabled: boolean,
@@ -74,8 +76,8 @@ export async function setSessionPublicShare(
   const pending = { ...previous, loading: true, error: undefined };
   owner.setSessionSharingState(cacheKey, pending);
   try {
-    const { setSessionPublicShare } = await import("./chat-pane-sharing-operations.ts");
-    return await setSessionPublicShare(scope, currentRow, {
+    const { setSessionPublicShare: publish } = await import("./chat-pane-sharing-operations.ts");
+    return await publish(scope, currentRow, {
       enabled,
       expectedSessionId,
       agentId: owner.sessionSharingAgentId(currentRow.key),
@@ -100,7 +102,7 @@ export async function setSessionPublicShare(
   }
 }
 
-export async function mutateSessionSharing(
+async function mutateSessionSharing(
   owner: ChatSessionSharingOperationSource,
   row: GatewaySessionRow,
   change: { visibility: SessionVisibility } | { identityId: string; member: boolean },
@@ -143,8 +145,8 @@ export async function mutateSessionSharing(
   const pending = { ...previous, loading: true, error: undefined };
   owner.setSessionSharingState(cacheKey, pending);
   try {
-    const { mutateSessionSharing } = await import("./chat-pane-sharing-operations.ts");
-    return await mutateSessionSharing(scope, currentRow, method, params, {
+    const { mutateSessionSharing: mutate } = await import("./chat-pane-sharing-operations.ts");
+    return await mutate(scope, currentRow, method, params, {
       agentId,
       visibilityChanged: "visibility" in change,
       isCurrent: () => owner.ownsSessionSharing(scope, currentRow),

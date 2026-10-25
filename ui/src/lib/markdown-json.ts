@@ -37,9 +37,9 @@ export function prepareMarkdownJson(
   return typeof ready === "function" ? ready(text) : ready.then((parse) => parse(text));
 }
 
-/** Every JSON object/array needs one of these characters, including fenced JSON. */
+/** JSON tree controls belong to code blocks; ordinary links must stay synchronous. */
 function prepareMarkdownJsonParser(text: string): MarkdownJsonParser | Promise<MarkdownJsonParser> {
-  return /[\[{]/u.test(text) ? loadMarkdownJsonParser() : noJson;
+  return /[`~\t]| {4}/u.test(text) && /[[{]/u.test(text) ? loadMarkdownJsonParser() : noJson;
 }
 
 /** Prepare once at the view boundary; synchronous Markdown rendering consumes this fact. */

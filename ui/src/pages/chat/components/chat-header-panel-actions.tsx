@@ -38,7 +38,7 @@ import {
   type SidebarSlotId,
 } from "../sidebar-layout.ts";
 import type { HeaderMenuQuickAction } from "./chat-header-session-menu.ts";
-import { type ChatQuickAction } from "./chat-quick-action.tsx";
+import type { ChatQuickAction } from "./chat-quick-action.tsx";
 import type { SidebarPanelDefinition } from "./chat-sidebar-region-types.ts";
 
 registerEnglishCatalog(registerChatSessionEnglish);
@@ -219,7 +219,7 @@ export function ChatPanelHeaderActions(
   );
 }
 
-export type ChatPanelMenuHandlers = {
+type ChatPanelMenuHandlers = {
   items: () => readonly MenuEntry[];
   select: (item: MenuItem, event: CustomEvent<MenuItem>) => void;
 };
@@ -240,7 +240,7 @@ function createPanelMenuFocusHandoff() {
   onSettled(() => () => stopKeyboard?.());
   return {
     read: () => menu,
-    bind(handle: MenuHandle) {
+    bind(this: void, handle: MenuHandle) {
       menu = handle;
       stopKeyboard?.();
       const trigger = handle.overlay.trigger;
@@ -249,33 +249,41 @@ function createPanelMenuFocusHandoff() {
             trigger,
             "keydown",
             (event) => {
-              if (!handle.overlay.open) focusLast = event.key === "ArrowUp";
+              if (!handle.overlay.open) {
+                focusLast = event.key === "ArrowUp";
+              }
             },
             true,
           )
         : undefined;
     },
-    beforeShow() {
+    beforeShow(this: void) {
       openingFocus = menu?.overlay.surface.ownerDocument.activeElement;
     },
-    openChange(open: boolean) {
+    openChange(this: void, open: boolean) {
       if (!open) {
         openingFocus = undefined;
         focusLast = false;
       }
     },
-    focusReady() {
-      if (!menu?.overlay.open) return;
+    focusReady(this: void) {
+      if (!menu?.overlay.open) {
+        return;
+      }
       const active = menu.overlay.surface.ownerDocument.activeElement;
       if (
         active !== openingFocus &&
         active !== menu.overlay.surface &&
         active !== menu.overlay.surface.ownerDocument.body
-      )
+      ) {
         return;
+      }
       const last = focusLast ? menu.itemElements().at(-1) : undefined;
-      if (last) last.focus({ preventScroll: true });
-      else menu.focusFirst();
+      if (last) {
+        last.focus({ preventScroll: true });
+      } else {
+        menu.focusFirst();
+      }
     },
   };
 }
@@ -348,7 +356,9 @@ export function ChatDashboardMenu(
                 readMenu={focus.read}
                 onReady={(next) => {
                   handlers = next;
-                  if (next) onSettled(focus.focusReady);
+                  if (next) {
+                    onSettled(focus.focusReady);
+                  }
                 }}
                 renderItems={renderItems}
               />
@@ -444,7 +454,9 @@ export function ChatPaneLayoutMenu(props: ChatPaneLayoutMenuProps) {
                   readMenu={focus.read}
                   onReady={(next) => {
                     handlers = next;
-                    if (next) onSettled(focus.focusReady);
+                    if (next) {
+                      onSettled(focus.focusReady);
+                    }
                   }}
                   renderItems={renderItems}
                 />

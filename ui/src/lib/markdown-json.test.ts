@@ -17,6 +17,10 @@ describe("JSON rendering preparation", () => {
     });
     expect(plainOptions).not.toBeInstanceOf(Promise);
     expect((await plainOptions).jsonParser?.("No JSON")).toBeNull();
+    for (const prose of ["A reply with [link](https://example.com)", "The result is [1, 2]."]) {
+      const options = prepareMarkdownJsonOptions(prose, { codeBlockInteraction: "interactive" });
+      expect(options).not.toBeInstanceOf(Promise);
+    }
     const literalSource = `${"x".repeat(40_001)}\n\`\`\`json\n{"value":1}\n\`\`\``;
     const literalOptions = prepareMarkdownJsonOptions(literalSource, {
       codeBlockInteraction: "interactive",
@@ -34,10 +38,12 @@ describe("JSON rendering preparation", () => {
     expect(text.slice(lexicalValue.offset, lexicalValue.offset + lexicalValue.length)).toBe("1e2");
     expect(runtime.evaluations).toBe(1);
 
-    const fenced = await prepareMarkdownJsonOptions(`\`\`\`json\n${text}\n\`\`\``, {
-      codeBlockInteraction: "interactive",
-    });
-    expect(fenced.jsonParser?.(text)?.root?.children).toHaveLength(2);
+    for (const source of [`\`\`\`json\n${text}\n\`\`\``, `~~~json\n${text}\n~~~`, `    ${text}`]) {
+      const options = await prepareMarkdownJsonOptions(source, {
+        codeBlockInteraction: "interactive",
+      });
+      expect(options.jsonParser?.(text)?.root?.children).toHaveLength(2);
+    }
     const documentOptions = await prepareMarkdownJsonOptions(literalSource, {
       codeBlockInteraction: "interactive",
       mode: "document",
