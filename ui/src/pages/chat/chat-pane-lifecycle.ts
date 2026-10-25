@@ -79,6 +79,7 @@ import {
 } from "./initial-turn-handoff-admission.ts";
 import { subscribeInitialTurnHandoff } from "./initial-turn-handoff.ts";
 import { applyChatCacheSnapshot, readChatSessionSnapshot } from "./session-message-cache.ts";
+import { resolveChatSnapshotKey } from "./session-snapshot-key.ts";
 import { closeSlot } from "./sidebar-layout.ts";
 
 export abstract class ChatPaneLifecycle extends ChatPaneSessionObservation {
@@ -347,10 +348,12 @@ export abstract class ChatPaneLifecycle extends ChatPaneSessionObservation {
         // claimed before attach starts outbox and transcript hydration.
         pageState.client = this.context.gateway.snapshot.client ?? null;
         const initialRun = readAcknowledgedInitialRun(pageState);
-        const snapshot = readChatSessionSnapshot(pageState.chatMessagesBySession, pageState, {
-          sessionKey: initialSessionKey,
-        });
-        if (snapshot && this.ownsChatSnapshot({ sessionKey: initialSessionKey })) {
+        const cache = pageState.chatMessagesBySession;
+        const target = { sessionKey: initialSessionKey };
+        const snapshot = readChatSessionSnapshot(cache, pageState, target);
+        if (snapshot && this.ownsChatSnapshot(target)) {
+          const key = resolveChatSnapshotKey(pageState, target);
+          pageState.restoredChatSnapshot = { key, sessionId: snapshot.sessionId };
           applyChatCacheSnapshot(pageState, snapshot);
           const target = this.resolveChatReadTarget();
           if (target && snapshot.progressCard !== undefined) {

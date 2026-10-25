@@ -27,6 +27,7 @@ import {
 } from "./components/chat-session-workspace-state.ts";
 import { resolveSessionDiffSidebarContent } from "./components/chat-session-workspace.ts";
 import type { SidebarPanelDefinition } from "./components/chat-sidebar-region-types.ts";
+import { resolveChatSnapshotKey } from "./session-snapshot-key.ts";
 import {
   sidebarActivePanel,
   sidebarMainPanel,
@@ -289,11 +290,17 @@ export abstract class ChatPaneHeaderLayout extends ChatPaneBrowserAnnotationRend
     const detailsProgress = this.detailsProgressCardPresentation;
     const conversationMain =
       (sidebarMainPanel(sidebarLayout)?.slot ?? "conversation") === "conversation";
+    const cached = state.restoredChatSnapshot;
     const headerDetails: ChatDetailsViewProps | undefined = ownsSubagentsPanel
       ? {
           elements,
           chat: merge(paneChatProps, detailsActions, detailsOutputs, {
-            cachePending: chatHistoryRequests(state).initialSnapshotHydration?.titlePending,
+            cachePending:
+              cached?.sessionId &&
+              cached.key === resolveChatSnapshotKey(state, state) &&
+              (!state.currentSessionId || state.currentSessionId === cached.sessionId)
+                ? Boolean(chatHistoryRequests(state).initialSnapshotHydration?.titlePending)
+                : undefined,
             environment,
             outputs: detailsOutputs.outputs
               ? {

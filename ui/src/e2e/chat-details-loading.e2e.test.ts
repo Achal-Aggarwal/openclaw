@@ -14,6 +14,33 @@ import {
 const suite = createControlUiE2eSuite({ name: "Details loading" });
 
 suite.define(() => {
+  it("keeps the cold desktop loader after live history supplies the session identity", async () => {
+    await suite.withPage({ viewport: { width: 1700, height: 900 } }, async ({ page }) => {
+      const sessionKey = "agent:main:cold-details";
+      const module = await holdModuleResponse(
+        page,
+        controlUiE2eBuiltModuleRequest("ui/src/pages/chat/components/chat-details-session.tsx"),
+      );
+      onTestFinished(module.release);
+      await installMockGateway(page, {
+        sessionKey,
+        sessions: [{ key: sessionKey, sessionId: "cold-details", kind: "direct" }],
+        historyMessages: [{ role: "assistant", content: "Live history has arrived." }],
+      });
+      await page.goto(controlUiSessionUrl(suite.server.baseUrl, sessionKey));
+      await page
+        .locator(".chat-thread")
+        .getByText("Live history has arrived.", { exact: true })
+        .waitFor();
+      await module.request;
+      const details = page.locator(".chat-details[data-open]");
+      await details.getByRole("status", { name: "Loading…", exact: true }).waitFor();
+      module.release();
+      await details.locator(".chat-details-session").waitFor({ state: "attached" });
+      expect(await details.getByRole("status", { name: "Loading…", exact: true }).count()).toBe(0);
+    });
+  });
+
   it.each(["ready", "failed"] as const)(
     "keeps warm Details blank until its sections settle (roster=%s)",
     async (roster) => {
@@ -30,7 +57,10 @@ suite.define(() => {
         }));
         const childQuery = { spawnedBy: sessionKey };
         const gateway = await installMockGateway(page, {
+          authMethod: "trusted-proxy",
+          authMode: "trusted-proxy",
           featureMethods: [...defaultControlUiFeatureMethods, "progressCard.get"],
+          heldMethods: ["chat.startup"],
           deferredRequests: [{ method: "sessions.list", match: childQuery }],
           sessions: [
             {
@@ -61,6 +91,8 @@ suite.define(() => {
           ],
         });
         await page.goto(controlUiSessionUrl(suite.server.baseUrl, sessionKey));
+        await gateway.waitForRequest("chat.startup");
+        await gateway.resolveDeferred("chat.startup");
         await gateway.waitForRequest("sessions.list", { match: childQuery });
         await gateway.resolveDeferred("sessions.list", undefined, { match: childQuery });
         const subagents = page.locator('.chat-details [data-details-group="subagents"]');
@@ -75,6 +107,11 @@ suite.define(() => {
           element.closest(".chat-details")!.getBoundingClientRect().top;
         const settledOffset = await progress.evaluate(readOffset);
         await page.locator('aside.sidebar[data-snapshot-saved="true"]').waitFor();
+        await page.waitForFunction(() =>
+          Object.keys(localStorage).some((key) =>
+            key.startsWith("openclaw.control.bootRecord.v1:"),
+          ),
+        );
         const warmInput: Parameters<typeof persistColdLoadWarmState>[0] = {
           sessionKey,
           sidebarView: "sessions",
@@ -127,6 +164,8 @@ suite.define(() => {
         }
         expect(await details.locator("openclaw-panel-loading-skeleton").count()).toBe(0);
         expect(await details.evaluate((panel) => panel.getBoundingClientRect().width)).toBe(width);
+        await gateway.waitForRequest("chat.startup");
+        await gateway.resolveDeferred("chat.startup");
         expect(module.requests()).toBe(1);
       });
     },

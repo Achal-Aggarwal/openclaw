@@ -100,7 +100,8 @@ it("retains cached Details while its descriptor arrives and replaces a new incar
 });
 
 it("keeps unknown and empty desktop Outputs and Progress quiet during slow reads", async () => {
-  const view = mountDetails();
+  const view = mountDetails({ subagentSessionsSettled: false });
+  expect(view.container.querySelector(".chat-details-session")?.hasAttribute("inert")).toBe(false);
   expect(view.group("outputs")).toBeNull();
   expect(view.container.querySelector("openclaw-panel-loading-skeleton")).toBeNull();
   expect(view.container.querySelector('[role="status"]')).toBeNull();

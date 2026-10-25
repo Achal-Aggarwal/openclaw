@@ -57,6 +57,7 @@ export type ChatState = StreamCausalBoundaryState & {
   mediaPolicyEpoch?: number;
   sessionKey: string;
   currentSessionId?: string | null;
+  restoredChatSnapshot?: { key: string; sessionId: string | null };
   reconnectResumeSessionId?: string | null;
   chatLoading: boolean;
   chatHistoryPagination: ChatHistoryPagination;

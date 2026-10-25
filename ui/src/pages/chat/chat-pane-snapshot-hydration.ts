@@ -55,6 +55,9 @@ export abstract class ChatPaneSnapshotHydration extends ChatPaneReplyNavigation 
       connected: this.context.gateway.snapshot.phase === "connected",
       promise: reading
         .then(async (storedSnapshot) => {
+          if (storedSnapshot?.sessionId && isCurrent()) {
+            state.restoredChatSnapshot = { key: cacheKey, sessionId: storedSnapshot.sessionId };
+          }
           // Keep cache rendering out of connect preparation. The subscription can
           // adopt ready rows synchronously after dispatch, before reading their cursor.
           hydration.adoptReadySnapshot = () => {

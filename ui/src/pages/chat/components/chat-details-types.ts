@@ -91,7 +91,7 @@ export type ChatDetailsProps = ChatSessionProgressProps &
     | "personActivity"
     | "onScrollPortRef"
   > & {
-    cachePending?: boolean;
+    cachePending?: boolean; // Undefined when no scoped snapshot was restored.
     desktopPresentation?: ChatDetailsDesktopPresentation;
     desktopDisclosures?: ChatDetailsDesktopDisclosures;
     environment?: ChatDetailsEnvironmentData;

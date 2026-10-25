@@ -545,7 +545,7 @@ export function ChatDetails(props: ChatDetailsViewProps) {
       <Show when={sessionOpened()}>
         <ChatLazyBoundary
           fallback={
-            desktop() && (props.chat?.cachePending || props.chat?.currentSessionId) ? undefined : (
+            desktop() && props.chat?.cachePending !== undefined ? undefined : (
               <PanelLoadingSkeleton variant="file-list" label={t("common.loading")} compact />
             )
           }

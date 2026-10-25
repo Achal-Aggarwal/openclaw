@@ -106,6 +106,7 @@ export const ChatDetailsSession = defineSolidBridge<Props>(
           const [revealed] = createSignal(
             (previous = false) =>
               previous ||
+              props.props?.cachePending === undefined ||
               (!props.props?.cachePending &&
                 props.props?.subagentSessionsSettled !== false &&
                 (!props.props?.onOpenProcesses ||

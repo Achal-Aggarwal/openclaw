@@ -155,6 +155,7 @@ export function createPageState(
     assistantAgentId: context.agentSelection.state.selectedId,
     sessionKey: initialSessionKey,
     currentSessionId: undefined,
+    restoredChatSnapshot: undefined,
     chatLoading: false,
     chatHistoryPagination: { hasMore: false },
     chatSending: false,
