@@ -10,6 +10,7 @@ import { writeChannelPairingStateSnapshot } from "../pairing/pairing-store-sqlit
 import type { PluginCapabilityConsentHandler } from "../plugins/capability-consent.js";
 import { buildPluginCapabilityConsentReview } from "../plugins/capability-summary.js";
 import { loadPluginRegistryHandle } from "../plugins/loader.js";
+import { createEmptyPluginSetupRegistry } from "../plugins/setup-registry.test-support.js";
 import { closeOpenClawStateDatabaseForTest } from "../state/openclaw-state-db.js";
 import { withEnv } from "../test-utils/env.js";
 import { noteDoctorConfigPreflightIssues } from "./doctor-config-analysis.js";
@@ -133,13 +134,7 @@ vi.mock("../plugins/setup-registry.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../plugins/setup-registry.js")>();
   return {
     resolvePluginSetupCliBackend: vi.fn(() => undefined),
-    resolvePluginSetupRegistry: vi.fn(() => ({
-      providers: [],
-      cliBackends: [],
-      configMigrations: [],
-      autoEnableProbes: [],
-      diagnostics: [],
-    })),
+    resolvePluginSetupRegistry: vi.fn(() => createEmptyPluginSetupRegistry()),
     resolvePluginSetupAutoEnableReasons: actual.resolvePluginSetupAutoEnableReasons,
     runPluginSetupConfigMigrations: vi.fn(({ config }: { config: unknown }) => ({
       config,

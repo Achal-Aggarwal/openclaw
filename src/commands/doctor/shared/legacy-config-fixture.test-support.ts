@@ -6,16 +6,11 @@ import type { OpenClawConfig } from "../../../config/types.openclaw.js";
 import * as pluginMetadata from "../../../plugins/plugin-metadata-snapshot.js";
 import { createPluginMetadataSnapshotFixture } from "../../../plugins/plugin-metadata.test-support.js";
 import { resetPluginRuntimeStateForTest } from "../../../plugins/runtime.js";
+import { createEmptyPluginSetupRegistry } from "../../../plugins/setup-registry.test-support.js";
 
 vi.mock("../../../plugins/setup-registry.js", () => ({
   resolvePluginSetupCliBackend: () => undefined,
-  resolvePluginSetupRegistry: () => ({
-    providers: [],
-    cliBackends: [],
-    configMigrations: [],
-    autoEnableProbes: [],
-    diagnostics: [],
-  }),
+  resolvePluginSetupRegistry: () => createEmptyPluginSetupRegistry(),
   runPluginSetupConfigMigrations: ({ config }: { config: OpenClawConfig }) => ({
     config,
     changes: [],
