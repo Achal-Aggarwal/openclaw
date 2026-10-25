@@ -1,5 +1,6 @@
 import {
   createMemo,
+  merge,
   createSignal,
   For,
   isPending,
@@ -15,8 +16,9 @@ import type { MenuControls, MenuEntry, MenuItem } from "../../../components/soli
 import { SessionOwnerChip } from "../../../components/solid/session-owner-chip.tsx";
 import { registerChatSessionEnglish } from "../../../i18n/locales/en-chat-session.ts";
 import { registerEnglishCatalog, t } from "../../../lib/reactive/i18n.ts";
+import { resolveChatSessionSharing } from "../chat-pane-sharing-mutations.ts";
 import {
-  type ChatSessionSharingProps,
+  type ChatSessionSharingInput,
   type ChatSessionSharingOutcome,
   VISIBILITY_LABEL_KEYS,
   ChatSessionSharingModeIcon,
@@ -29,12 +31,13 @@ import {
 registerEnglishCatalog(registerChatSessionEnglish);
 
 export function useChatSessionSharingMenu(
-  props: ChatSessionSharingProps,
+  input: ChatSessionSharingInput,
   controls?: MenuControls,
 ): {
   items: () => readonly MenuEntry[];
   select: (value: string) => Promise<void | ChatSessionSharingOutcome>;
 } {
+  const props = merge(() => resolveChatSessionSharing(input));
   const presentation = createChatSessionSharingPresentation(() => props);
   const busy = () => presentation.busy() || props.state?.loading === true;
   const result = () => props.state?.result;

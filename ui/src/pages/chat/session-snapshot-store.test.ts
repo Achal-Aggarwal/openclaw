@@ -205,8 +205,22 @@ describe("persistent chat session snapshots", () => {
         receivedAtMs: 100,
         snapshot: {
           sessionKey: "s",
+          revision: 1,
+          tabs: [],
           widgets: [
-            { frameUrl: "/widget?bt=ticket", viewTicket: "ticket", viewTicketTtlMs: 1200000 },
+            {
+              name: "cached",
+              tabId: "main",
+              contentKind: "html",
+              sizeW: 6,
+              sizeH: 4,
+              position: 0,
+              grantState: "none",
+              revision: 1,
+              frameUrl: "/widget?bt=ticket",
+              viewTicket: "ticket",
+              viewTicketTtlMs: 1200000,
+            },
           ],
         },
       },
@@ -215,6 +229,40 @@ describe("persistent chat session snapshots", () => {
     expect(await new SessionSnapshotStore().read(sessionKey)).toEqual(value);
     await deleteStoredChatSnapshot(sessionKey);
     expect(await new SessionSnapshotStore().read(sessionKey)).toBeNull();
+  });
+
+  it.each([null, { widgets: [{}] }, { tabs: [{}] }])(
+    "discards malformed persisted board payload %j without losing the transcript",
+    async (board) => {
+      await seed();
+      const retained = snapshot("retained transcript");
+      const storedBoard =
+        board === null ? null : { ...boardSnapshot(sessionKey, "").board.snapshot, ...board };
+      await putRawRecord({
+        ...envelope(sessionKey, retained),
+        snapshot: {
+          ...retained,
+          board: {
+            snapshot: storedBoard,
+            receivedAtMs: 100,
+          },
+        },
+      });
+      expect(await new SessionSnapshotStore().read(sessionKey)).toEqual(retained);
+      expect(await readRawRecord(sessionKey)).toBeDefined();
+    },
+  );
+
+  it("presents a validated board before rejecting malformed persisted history", async () => {
+    const value = boardSnapshot(sessionKey, "retained board");
+    await seed(value);
+    await putRawRecord({
+      ...envelope(sessionKey, value),
+      snapshot: { ...value, historyState: { stateRevision: "invalid" } },
+    });
+    const presentBoard = vi.fn();
+    expect(await new SessionSnapshotStore().read(sessionKey, presentBoard)).toBeNull();
+    expect(presentBoard).toHaveBeenCalledExactlyOnceWith(value.board);
   });
 
   it("does not present a cached board after its pending read is invalidated", async () => {

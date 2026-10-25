@@ -28,7 +28,6 @@ import {
   handleQuestionPromptEvent,
 } from "../../app/question-prompt.ts";
 import { loadSettings } from "../../app/settings.ts";
-import type { SidebarSessionMutationResult } from "../../components/app-sidebar-session-types.ts";
 import { createAgentIdentityCapability } from "../../lib/agents/identity.ts";
 import { createAgentCapability } from "../../lib/agents/index.ts";
 import type { CatalogSessionKey } from "../../lib/sessions/catalog-key.ts";
@@ -46,6 +45,8 @@ import {
   sessionMutationGatewayHello,
 } from "../../test-helpers/gateway-methods.ts";
 import { mountSolid as mountSolidRoot } from "../../test-helpers/mount-solid.ts";
+import { buildChatBoardPanel } from "./chat-pane-board-panel.ts";
+import type { ChatBoardPanelSource } from "./chat-pane-panel-source.ts";
 import type { createChatPaneRails } from "./chat-pane-rails.ts";
 import { ChatPaneRuntime } from "./chat-pane-render.ts";
 import {
@@ -61,7 +62,6 @@ import type { ChatPageHost } from "./chat-state-host.ts";
 import { createPageState } from "./chat-state-page.ts";
 import type { ChatTypingActorState } from "./chat-typing-presence.ts";
 import type { ChatProps } from "./chat-view.tsx";
-import type { HeaderMenuAction } from "./components/chat-header-session-menu.ts";
 import { createSessionWorkspaceProps } from "./components/chat-session-workspace.ts";
 import type {
   ChatTaskSuggestionTrayProps,
@@ -93,10 +93,10 @@ type BoardPanelProps = Parameters<typeof ChatBoardPanel>[0];
 export function mountBoardPanel(
   pane: {
     resolveBoardView: () => ResolvedBoardView;
-    renderBoardPanel: (
+    boardPanelSource: (
       board: ResolvedBoardView,
       layout: ChatPageHost["sidebarLayout"],
-    ) => BoardPanelProps | null;
+    ) => ChatBoardPanelSource | null;
   },
   layout: ChatPageHost["sidebarLayout"],
   container: HTMLElement,
@@ -115,7 +115,8 @@ export function mountBoardPanel(
   return {
     ...view,
     draw: () => {
-      setContent(pane.renderBoardPanel(pane.resolveBoardView(), layout));
+      const source = pane.boardPanelSource(pane.resolveBoardView(), layout);
+      setContent(source && buildChatBoardPanel(source));
       flush();
     },
   };
@@ -233,10 +234,7 @@ export interface TestChatPane extends HTMLElement, PaneTestLifecycle {
   hasOlderMessages: () => boolean;
   olderCursorsSeen: Set<string>;
   beginHeaderRename: (row: GatewaySessionRow) => void;
-  handleHeaderSessionAction: (
-    action: HeaderMenuAction,
-    row: GatewaySessionRow,
-  ) => Promise<SidebarSessionMutationResult | void>;
+  runHeaderSessionMutation: ChatPaneRuntime["runHeaderSessionMutation"];
   onboarding: boolean;
   cancelHeaderRename: () => void;
   commitHeaderRename: () => void;

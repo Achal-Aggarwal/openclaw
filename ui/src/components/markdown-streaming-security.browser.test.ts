@@ -2,12 +2,13 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { MarkdownDomReconciler } from "../lib/markdown-dom-reconciler.ts";
 import { prepareMessageMarkdown } from "../pages/chat/components/chat-message-text-preparation.ts";
 import { waitForSolid } from "../test-helpers/solid-settle.ts";
+import { parseMarkdownJson } from "./markdown-json-parser.runtime.ts";
 import { toStreamingMarkdownDomParts } from "./markdown-live.ts";
-import type { MarkdownRenderOptions } from "./markdown-render-options.ts";
+import type { MarkdownInputOptions, MarkdownRenderOptions } from "./markdown-render-options.ts";
 import transcriptCorpus from "./markdown-transcript-corpus.json" with { type: "json" };
 import { toSanitizedMarkdownHtml } from "./markdown.ts";
 
-type SecurityCase = { name: string; source: string; options?: MarkdownRenderOptions };
+type SecurityCase = { name: string; source: string; options?: MarkdownInputOptions };
 
 // Exact payloads from DOMPurify 3.4.17 (the installed version), covering its
 // historical mutation-XSS, namespace confusion, and URI-obfuscation regressions:
@@ -249,7 +250,7 @@ beforeAll(async () => {
 });
 
 describe("streaming Markdown sanitization at the live DOM boundary", () => {
-  // SAFETY: the checked-in corpus options use the MarkdownRenderOptions schema.
+  // SAFETY: the checked-in corpus options use the MarkdownInputOptions schema.
   const corpusCases = transcriptCorpus as readonly SecurityCase[];
   const cases: SecurityCase[] = [
     ...corpusCases,
@@ -265,8 +266,9 @@ describe("streaming Markdown sanitization at the live DOM boundary", () => {
   ];
 
   it.each(cases)("keeps every delta safe and finalizes byte-identically: $name", (sample) => {
+    const options: MarkdownRenderOptions = { ...sample.options, jsonParser: parseMarkdownJson };
     const reference = document.createElement("div");
-    reference.innerHTML = toSanitizedMarkdownHtml(sample.source, sample.options);
+    reference.innerHTML = toSanitizedMarkdownHtml(sample.source, options);
     const expected = serializedContent(reference);
     expect(unsafeDom(reference)).toEqual([]);
 
@@ -277,7 +279,7 @@ describe("streaming Markdown sanitization at the live DOM boundary", () => {
         sample.source,
         `security:${sample.name}:static`,
         { role: "assistant", isStreaming: false },
-        sample.options ?? {},
+        options,
       );
       expect(settled.parts().every((part) => typeof part === "string")).toBe(true);
       staticReconciler.update(settled.messageKey, settled.source, settled.parts());
@@ -301,7 +303,7 @@ describe("streaming Markdown sanitization at the live DOM boundary", () => {
             reconciler.preview(source);
             expect(unsafeDom(container), `${key}, plain preview ${end}`).toEqual([]);
           }
-          reconciler.update(key, source, toStreamingMarkdownDomParts(source, sample.options, key));
+          reconciler.update(key, source, toStreamingMarkdownDomParts(source, options, key));
           expect(unsafeDom(container), `${key}, offset ${end}`).toEqual([]);
         }
         // Completion changes repair/highlighting semantics. Use the real chat
@@ -310,7 +312,7 @@ describe("streaming Markdown sanitization at the live DOM boundary", () => {
           sample.source,
           key,
           { role: "assistant", isStreaming: false },
-          sample.options ?? {},
+          options,
         );
         reconciler.update(completed.messageKey, completed.source, completed.parts());
         expect(unsafeDom(container), `${key}, completion`).toEqual([]);

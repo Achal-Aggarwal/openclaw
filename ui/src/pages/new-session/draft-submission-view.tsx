@@ -1,10 +1,10 @@
 import { createMemo, Show } from "solid-js";
-import { parseMarkdownJson } from "../../components/markdown-json.ts";
 import { IdentityAvatar } from "../../components/solid/identity-avatar.tsx";
 import { resolveMessageDisplayMarkdown } from "../../lib/chat/message-display.ts";
 import { normalizeMessage } from "../../lib/chat/message-normalizer.ts";
 import { formatSenderLabel } from "../../lib/chat/sender-label.ts";
 import { resolveIdentityHue } from "../../lib/identity-avatar.ts";
+import { prepareMarkdownJson } from "../../lib/markdown-json.ts";
 import { t } from "../../lib/reactive/i18n.ts";
 import { ChatAuthorAvatar, UserAvatarSlot } from "../chat/components/chat-author-avatar.ts";
 import { hasUserFileAttachments } from "../chat/components/chat-message-attachments.ts";
@@ -30,7 +30,7 @@ export function NewSessionSubmission(props: {
   const media = createMemo(() => projectMessageMedia(props.message, normalized().content));
   const hasUserFiles = createMemo(() => hasUserFileAttachments(media().attachments));
   const markdown = createMemo(() => resolveMessageDisplayMarkdown(props.message, normalized()));
-  const json = createMemo(() => parseMarkdownJson(markdown()));
+  const json = createMemo(() => prepareMarkdownJson(markdown()));
   const imageOptions = createMemo(() => ({ onOpenImage: props.onOpenImage }));
   const textOptions = { role: "user", isStreaming: false };
   const markdownOptions = { codeBlockChrome: "none" } as const;

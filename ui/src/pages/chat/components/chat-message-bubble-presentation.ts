@@ -1,8 +1,8 @@
 import { readSessionMessageIdentity } from "@openclaw/gateway-client/browser";
 import type { Accessor } from "solid-js";
 import { CHAT_PENDING_INPUT_MESSAGE_PREFIX } from "../../../../../packages/gateway-protocol/src/schema/chat-history-constants.js";
-import { parseMarkdownJson } from "../../../components/markdown-json.ts";
-import type { MarkdownRenderOptions } from "../../../components/markdown-render-options.ts";
+import type { MarkdownJson } from "../../../components/markdown-json.ts";
+import type { MarkdownInputOptions } from "../../../components/markdown-render-options.ts";
 import { extractThinkingCached } from "../../../lib/chat/message-extract.ts";
 import {
   isStandaloneToolMessageForDisplay,
@@ -135,13 +135,11 @@ export function prepareGroupedMessage(
   preparation: ChatMessageRenderPreparation,
   messageKey: string,
   opts: GroupedMessageOptions,
-  onOpenSidebar?: (content: SidebarContent) => void,
+  onOpenSidebar: ((content: SidebarContent) => void) | undefined,
+  jsonResult: MarkdownJson | null,
 ) {
   const disclosure = opts.assistantMessageDisclosure;
-  const { message, normalizedMessage, displayMarkdown, humanMentions } =
-    disclosure?.expanded && disclosure.message
-      ? prepareChatMessageRender(disclosure.message)
-      : preparation;
+  const { message, normalizedMessage, displayMarkdown, humanMentions } = preparation;
   // SAFETY: The group render boundary supplies transcript message records; fields remain unknown.
   const m = message as Record<string, unknown>;
   const role = typeof m.role === "string" ? m.role : "unknown";
@@ -200,7 +198,7 @@ export function prepareGroupedMessage(
   const markdown =
     (normalizedRole === "user" ? opts.messageActions?.markdown : undefined) ??
     (displayMarkdown || null);
-  const markdownRenderOptions: MarkdownRenderOptions = {
+  const markdownRenderOptions: MarkdownInputOptions = {
     assistantTranscriptRoleHeaders: role === "assistant",
     codeBlockChrome: role === "user" ? "none" : "copy",
     codeBlockInteraction: role === "assistant" ? "interactive" : "static",
@@ -211,9 +209,6 @@ export function prepareGroupedMessage(
     tableInteractions: "enabled",
     linkFavicons: Boolean(opts.fetchLinkFavicon) && !opts.isStreaming,
   };
-
-  // Classify completed bare JSON before Markdown can interpret its literal values.
-  const jsonResult = markdown && !opts.isStreaming ? parseMarkdownJson(markdown) : null;
 
   const inlineComments =
     normalizedRole === "user" &&

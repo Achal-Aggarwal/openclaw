@@ -24,6 +24,12 @@ it("keeps shared session labels eager while lazy renderers extend their retained
     expect(t("chat.activityPills.label")).toBe("chat.activityPills.label");
 
     registerEnglishCatalog(registerChatSessionEnglish);
+    expect(t("chat.activityPills.label")).toBe("chat.activityPills.label");
+    expect(t("chat.sessionDiff.modeUnified")).toBe("chat.sessionDiff.modeUnified");
+    expect(t("chat.workspaceFiles.showFiles")).toBe("Show session files");
+    const { registerChatSessionOptionalEnglish } =
+      await import("../locales/en-chat-session-optional.ts");
+    registerEnglishCatalog(registerChatSessionOptionalEnglish);
     expect(t("chat.activityPills.label")).toBe("Session activity");
     expect(t("chat.sessionDiff.modeUnified")).toBe("Unified");
     expect(en.chat.sessionDetails).toBe(details);

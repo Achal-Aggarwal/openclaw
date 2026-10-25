@@ -2,10 +2,6 @@ import { readSessionMessageSequence } from "@openclaw/gateway-client/browser";
 import { asOptionalRecord } from "@openclaw/normalization-core/record-coerce";
 import { requestResult, transactionComplete } from "../../lib/chat/control-ui-database.runtime.ts";
 import { removePairingQrContent } from "../../lib/chat/pairing-qr.ts";
-import {
-  isChatTranscriptMetadata,
-  isProgressCard,
-} from "../../lib/protocol-validators.generated/transcript.js";
 import { listen } from "../../lib/reactive/listener.ts";
 import * as json from "../../lib/snapshot-json.ts";
 import {
@@ -29,6 +25,7 @@ import {
   resetSessionSnapshotDatabase,
   SIDEBAR_SNAPSHOT_STORE_NAME,
 } from "./session-snapshot-database.ts";
+import type { SessionSnapshotRecord } from "./session-snapshot-decoder.ts";
 import {
   snapshotStoreGeneration,
   sidebarSnapshotInvalidationMatches,
@@ -50,76 +47,6 @@ const parsedPrewarms = new WeakMap<object, Promise<ChatSessionSnapshot | null>>(
 
 const nonnegative = json.refine(json.number, (value) => value >= 0);
 const sessionKeySchema = json.refine(json.text, (value) => value.length > 0);
-const completePaginationSchema = json.object(
-  {
-    completeSnapshot: json.optional(json.literal(true)),
-    hasMore: json.literal(false),
-    totalMessages: json.optional(nonnegative),
-  },
-  true,
-);
-const morePaginationSchema = json.object(
-  {
-    hasMore: json.literal(true),
-    nextOffset: nonnegative,
-    totalMessages: json.optional(nonnegative),
-  },
-  true,
-);
-const paginationSchema = {
-  parse(value: unknown) {
-    return asOptionalRecord(value)?.hasMore === true
-      ? morePaginationSchema.parse(value)
-      : completePaginationSchema.parse(value);
-  },
-};
-const snapshotSchema = json.object(
-  {
-    composer: json.optional(
-      json.nullable(json.object({ id: json.text, provider: json.text, name: json.text })),
-    ),
-    board: json.optional(
-      json.nullable(json.object({ snapshot: json.unknown, receivedAtMs: nonnegative }, true)),
-    ),
-    widgetHeights: json.optional(
-      json.refine(
-        json.record(json.refine(json.number, (height) => height >= 48 && height <= 8000)),
-        (heights) => Object.keys(heights).length <= 100,
-      ),
-    ),
-    transcriptMetadata: json.optional(json.checked(isChatTranscriptMetadata)),
-    progressCard: json.optional(json.nullable(json.checked(isProgressCard))),
-    deltaCursor: json.optional(json.text),
-    // Only persisted warm metadata needs its full validator; read admission loads it below.
-    historyState: json.optional(json.unknown),
-    displayedLeafEntryId: json.optional(json.nullable(json.text)),
-    // Message contents are opaque; only the array boundary needs validation.
-    messages: json.checked<unknown[]>(Array.isArray),
-    pagination: paginationSchema,
-    sessionId: json.nullable(json.text),
-  },
-  true,
-);
-const recordSchema = json.refine(
-  json.object(
-    {
-      projectionVersion: json.refine(
-        json.number,
-        (value) => Number.isSafeInteger(value) && value > 0,
-      ),
-      savedAt: nonnegative,
-      sessionId: json.nullable(json.text),
-      sessionKey: sessionKeySchema,
-      snapshot: snapshotSchema,
-    },
-    true,
-  ),
-  (record) => record.sessionId === record.snapshot.sessionId,
-);
-
-type SessionSnapshotRecord = Omit<json.SnapshotValue<typeof recordSchema>, "snapshot"> & {
-  snapshot: ChatSessionSnapshot;
-};
 const metadataFields = {
   savedAt: nonnegative,
   sessionKey: sessionKeySchema,
@@ -150,28 +77,6 @@ type PendingSessionState = {
 
 const activeStores = new Set<SessionSnapshotStore>();
 
-async function parseSnapshotRecord(
-  value: unknown,
-  sessionKey?: string,
-  onBoard?: (board: ChatSessionSnapshot["board"]) => void,
-): Promise<SessionSnapshotRecord | null> {
-  const parsed = json.parseSnapshot(recordSchema, value);
-  if (!parsed || (sessionKey && parsed.sessionKey !== sessionKey)) {
-    return null;
-  }
-  const historyState = parsed.snapshot.historyState;
-  if (historyState !== undefined) {
-    // Do not hold board restoration behind the lazy transcript validator.
-    onBoard?.(parsed.snapshot.board);
-    const { isChatHistoryState } =
-      await import("../../lib/protocol-validators.generated/history-state.js");
-    if (!isChatHistoryState(historyState)) {
-      return null;
-    }
-  }
-  return { ...parsed, snapshot: { ...parsed.snapshot, historyState } };
-}
-
 async function readSnapshotRecord(
   sessionKey: string,
   value: unknown,
@@ -184,6 +89,10 @@ async function readSnapshotRecord(
     !isPersistableChatSnapshotKey(sessionKey) ||
     asOptionalRecord(value)?.projectionVersion !== CHAT_SNAPSHOT_PROJECTION_VERSION
   ) {
+    return null;
+  }
+  const { parseSnapshotRecord } = await import("./session-snapshot-decoder.ts");
+  if (!isCurrent()) {
     return null;
   }
   const record = await parseSnapshotRecord(value, sessionKey, onBoard);

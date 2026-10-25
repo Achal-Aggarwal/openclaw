@@ -70,6 +70,48 @@ export function controlUiStableChunkName(id: string): string | undefined {
   const normalized = normalizeModuleId(id);
 
   switch (controlUiBootManifestKey(id)) {
+    case "ui/src/pages/chat/session-snapshot-decoder.ts":
+    case "ui/src/lib/protocol-validators.generated/board.js":
+    case "ui/src/lib/protocol-validators.generated/transcript.js":
+      return "chat-snapshot-decoder";
+    case "ui/src/pages/chat/components/chat-context-breakdown.tsx":
+    case "ui/src/pages/chat/components/chat-context-breakdown-model.ts":
+    case "ui/src/pages/chat/components/chat-context-report.tsx":
+    case "ui/src/lib/session-context-report.ts":
+      // Explicit inspection, or the saved Context side-panel's own lazy graph.
+      return "chat-context-runtime";
+    case "ui/src/pages/chat/components/chat-transcript-search-content.tsx":
+      return "chat-search-runtime";
+    case "ui/src/pages/chat/chat-pane-session-operations.ts":
+    case "ui/src/pages/chat/chat-pane-session-operations.runtime.ts":
+      return "chat-session-operations-runtime";
+    case "ui/src/pages/chat/chat-command-dispatch.runtime.ts":
+      return "chat-command-runtime";
+    case "ui/src/pages/chat/chat-composer-capability-host.tsx":
+    case "ui/src/pages/chat/composer-library-session.ts":
+      // The open Chat menu owns these; New Session shares only the catalog.
+      return "chat-interaction-runtime";
+    case "ui/src/pages/chat/components/chat-message-group-rich.tsx":
+    case "ui/src/pages/chat/components/chat-session-activity.solid.tsx":
+      return "chat-interaction-runtime";
+    case "ui/src/pages/chat/components/chat-message-bubble-rich.tsx":
+    case "ui/src/pages/chat/components/chat-bubble-activity-view.tsx":
+    case "ui/src/pages/chat/components/chat-message-bubble-tools.tsx":
+    case "ui/src/pages/chat/components/chat-message-attachment-status-solid.tsx":
+    case "ui/src/pages/chat/components/chat-async-question-summary.tsx":
+    case "ui/src/pages/chat/components/chat-message-context-view.tsx":
+    case "ui/src/pages/chat/components/chat-workspace-conflict.tsx":
+      return "chat-interaction-runtime";
+    case "ui/src/pages/chat/components/chat-agent-run-frame.tsx":
+    case "ui/src/pages/chat/components/chat-message-stream-view.tsx":
+      return "chat-interaction-runtime";
+    case "ui/src/pages/chat/components/chat-working-indicator.tsx":
+    case "ui/src/pages/chat/components/chat-working-indicator-branding.tsx":
+    case "ui/src/components/working-phrase-solid.tsx":
+    case "ui/src/pages/chat/components/chat-retry-status.tsx":
+    case "ui/src/pages/chat/components/chat-working-indicator-surprise.ts":
+      // New Session already fetches these menus; keep the indicator off Chat-only chunks.
+      return "composer-invocation-menus";
     case "ui/src/lib/chat/composer-draft-write.runtime.ts":
       // Both routes prefetch this file; distinct module initializers still wait for use.
       return "composer-invocation-menus";
@@ -78,6 +120,13 @@ export function controlUiStableChunkName(id: string): string | undefined {
     case "ui/src/pages/chat/chat-outbox-recovery-rows.tsx":
     case "ui/src/pages/chat/chat-outbox-recovery-actions.ts":
       return "chat-outbox-recovery-runtime";
+    case "ui/src/pages/chat/components/chat-pane-mobile-runtime.tsx":
+    case "ui/src/pages/chat/components/chat-pane-mobile-chrome.runtime.tsx":
+    case "ui/src/pages/chat/components/chat-pane-mobile-header.tsx":
+    case "ui/src/pages/chat/components/chat-session-sharing-mobile-adapter.tsx":
+    case "ui/src/pages/chat/components/chat-session-sharing-options.tsx":
+      // Download the mobile renderer with Chat, but evaluate it on the first mobile layout.
+      return "chat-mobile-header-runtime";
     case "ui/src/pages/chat/chat-tool-family-runtime.ts":
     case "ui/src/pages/chat/chat-tool-activity-coalesce.runtime.ts":
     case "ui/src/pages/chat/chat-sessions-yield.runtime.ts":
@@ -134,8 +183,6 @@ export function controlUiStableChunkName(id: string): string | undefined {
       return "chat-saved-annotations-runtime";
     case "ui/src/pages/chat/components/chat-forwarded-attribution.tsx":
       return "chat-forwarded-attribution-runtime";
-    case "ui/src/pages/chat/components/chat-transcript-search-content.tsx":
-      return "chat-interaction-runtime";
     case "ui/src/pages/chat/components/chat-details-desktop-process-row.tsx":
     case "ui/src/pages/chat/components/chat-details-process-row.tsx":
     case "ui/src/pages/chat/components/chat-details-subagent-rows.tsx":
@@ -149,9 +196,6 @@ export function controlUiStableChunkName(id: string): string | undefined {
     case "ui/src/pages/chat/chat-send-support.runtime.ts":
     case "ui/src/pages/chat/chat-send-queue-runtime.ts":
     case "ui/src/pages/chat/chat-model-recovery.runtime.ts":
-    case "ui/src/pages/chat/chat-command-dispatch.runtime.ts":
-    case "ui/src/pages/chat/chat-pane-session-operations.ts":
-    case "ui/src/pages/chat/chat-pane-session-operations.runtime.ts":
     case "ui/src/pages/chat/chat-live-events.runtime.ts":
     case "ui/src/pages/chat/chat-gateway.ts":
     case "ui/src/pages/chat/tool-stream.ts":
@@ -160,11 +204,6 @@ export function controlUiStableChunkName(id: string): string | undefined {
     case "ui/src/lib/chat/tool-call-diff.ts":
     case "src/agents/agent-activity-presentation.ts":
       // Chat already preloads both families; their initializers still run only on use.
-      return "chat-interaction-runtime";
-    case "ui/src/pages/chat/components/chat-context-breakdown.tsx":
-    case "ui/src/pages/chat/components/chat-context-breakdown-model.ts":
-    case "ui/src/pages/chat/components/chat-context-report.tsx":
-    case "ui/src/lib/session-context-report.ts":
       return "chat-interaction-runtime";
     case "node_modules/@solidjs/signals/dist/prod/deferred.js":
       // Route readers share this hook below without adding it to eager Solid code.
@@ -199,6 +238,11 @@ export function controlUiStableChunkName(id: string): string | undefined {
     case "ui/src/lib/sessions/session-delete-operation.ts":
       // Session actions must not import whole route chunks through earlier boot captures.
       return "session-mutation-runtime";
+    case "ui/src/pages/chat/components/chat-composer-mention-menu-engine.ts":
+      return "composer-mention-runtime";
+    case "ui/src/pages/chat/components/chat-composer-emoji-engine.ts":
+    case "ui/src/components/textarea-token-anchor.ts":
+      return "composer-emoji-runtime";
     case "ui/src/lib/chat/emoji.ts":
     case "node_modules/markdown-it-emoji/lib/data/full.mjs":
       // Shortcode input owns the catalog; earlier boot captures must not keep it eager.

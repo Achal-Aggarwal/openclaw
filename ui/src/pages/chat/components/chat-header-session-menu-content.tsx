@@ -12,6 +12,8 @@ import type { MenuControls, MenuEntry, MenuItem } from "../../../components/soli
 import { t } from "../../../lib/reactive/i18n.ts";
 import { listen } from "../../../lib/reactive/listener.ts";
 import { isChatBubbleMode, setChatBubbleMode } from "../chat-bubble-mode.ts";
+import { ChatPaneNativeSessionActions } from "../chat-pane-native-session-actions.ts";
+import { runChatHeaderSessionAction } from "../chat-pane-session-menu-actions.ts";
 import { createMobileHeaderSessionMenu } from "./chat-header-session-menu-mobile.tsx";
 import type {
   HeaderMenuAction,
@@ -42,7 +44,33 @@ export function ChatHeaderSessionMenuContent(inputs: HeaderMenuContentProps) {
     ref: () => inputs.controls.ref(),
   };
   const presented = () => inputs.presented;
-  const quickActions = useChatQuickActionEntries(() => props.sessionActions, false, "quick:");
+  const onAction = (action: HeaderMenuAction) => {
+    if (props.onAction && props.onAction(action) !== false) {
+      return;
+    }
+    const source = props.actionSource;
+    if (source) {
+      const row = source.readRow();
+      if (row) void runChatHeaderSessionAction(source.owner, action, row);
+    }
+  };
+  const nativeActions = new ChatPaneNativeSessionActions();
+  const sessionActions = createMemo(() => {
+    const source = props.actionSource;
+    const actions = source
+      ? [
+          ...nativeActions.read(
+            source.owner.context,
+            source.readRow(),
+            source.stopDisabledReason,
+            onAction,
+          ),
+          ...props.sessionActions,
+        ]
+      : props.sessionActions;
+    return props.composeSessionActions?.(actions) ?? actions;
+  });
+  const quickActions = useChatQuickActionEntries(sessionActions, false, "quick:");
   const viewActions = useChatQuickActionEntries(() => props.viewActions ?? [], true, "layout:");
   const mobile = () => props.mobile === true && Boolean(props.mobileHost) && !props.boardWidgetMenu;
   const state = merge(props, () => ({
@@ -55,7 +83,6 @@ export function ChatHeaderSessionMenuContent(inputs: HeaderMenuContentProps) {
   const close = () => {
     inputs.readMenu()?.close();
   };
-  const onAction = (action: HeaderMenuAction) => props.onAction(action);
   const actions = new SessionMenuActions(
     () => {
       void inputs.host.updateComplete.then(() => {
@@ -393,7 +420,7 @@ export function ChatHeaderSessionMenuContent(inputs: HeaderMenuContentProps) {
       return;
     }
     if (value.startsWith("quick:")) {
-      const action = props.sessionActions.find(
+      const action = sessionActions().find(
         (candidate) => candidate.id === value.slice("quick:".length),
       );
       if (action && !action.disabled) {
@@ -447,7 +474,7 @@ export function ChatHeaderSessionMenuContent(inputs: HeaderMenuContentProps) {
     }
     if (value === "continue-in-terminal" && !props.actionDisabledReasons[value]) {
       close();
-      props.onAction({ kind: value });
+      onAction({ kind: value });
     }
   }
   return (

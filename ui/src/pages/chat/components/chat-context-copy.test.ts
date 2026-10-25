@@ -1,6 +1,7 @@
 /* @vitest-environment jsdom */
 import { createComponent, createSignal, flush } from "solid-js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { parseMarkdownJson } from "../../../components/markdown-json-parser.runtime.ts";
 import { toSanitizedMarkdownHtml } from "../../../components/markdown.ts";
 import { cleanupSolid, mountSolid } from "../../../test-helpers/mount-solid.ts";
 import { AttachmentStateCard, CompactAttachmentCard } from "./chat-attachment-card-solid.tsx";
@@ -57,6 +58,7 @@ describe("chat content context copy", () => {
     const code = "  <tag>\n\tline\n" + "more\n".repeat(8);
     owner.innerHTML = toSanitizedMarkdownHtml("```xml\n" + code + "```", {
       codeBlockInteraction: "interactive",
+      jsonParser: parseMarkdownJson,
     });
     expect(open(owner.querySelector("code")!).defaultPrevented).toBe(true);
     await copy("Copy code", code.slice(0, -1));

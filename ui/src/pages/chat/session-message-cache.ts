@@ -3,7 +3,7 @@ import {
   readSessionMessageSequence,
   reduceSessionProjection,
 } from "@openclaw/gateway-client/browser";
-import type { ProgressCard } from "@openclaw/gateway-protocol";
+import type { BoardSnapshot, ProgressCard } from "@openclaw/gateway-protocol";
 import type { GatewaySessionRow } from "../../api/types.ts";
 import { readPairingQrContent } from "../../lib/chat/pairing-qr.ts";
 import type { ChatHistoryCursor, ChatHistoryPagination } from "./chat-history-pagination.ts";
@@ -54,8 +54,8 @@ export type ChatComposerSnapshot = { id: string; provider: string; name: string 
 
 export type ChatSessionSnapshot = {
   composer?: ChatComposerSnapshot | null;
-  // The board provider validates cached payloads before they can reach a view.
-  board?: { snapshot: unknown; receivedAtMs: number } | null;
+  // Disk decoding validates cached payloads; memory snapshots come from the provider.
+  board?: { snapshot: BoardSnapshot; receivedAtMs: number } | null;
   widgetHeights?: Record<string, number>;
   transcriptMetadata?: ChatTranscriptMetadata;
   progressCard?: ProgressCard | null;

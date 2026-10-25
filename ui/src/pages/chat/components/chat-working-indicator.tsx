@@ -7,7 +7,7 @@ import type {
 import { ElapsedTime } from "../../../components/elapsed-time.tsx";
 import { Icon } from "../../../components/solid/icon.tsx";
 import "../../../components/working-phrase-solid.tsx";
-import { registerChatSessionEnglish } from "../../../i18n/locales/en-chat-session.ts";
+import { registerChatComposerEnglish } from "../../../i18n/locales/en-chat-composer.ts";
 import type { ChatItem } from "../../../lib/chat/chat-types.ts";
 import { registerEnglishCatalog, t } from "../../../lib/reactive/i18n.ts";
 import type { ChatSubagentWait } from "../chat-subagent-wait.ts";
@@ -19,7 +19,7 @@ import {
 } from "./chat-working-indicator-branding.tsx";
 import { selectWorkingClawSurprise } from "./chat-working-indicator-surprise.ts";
 
-registerEnglishCatalog(registerChatSessionEnglish);
+registerEnglishCatalog(registerChatComposerEnglish);
 
 type ReadingIndicator = Extract<ChatItem, { kind: "reading-indicator" }>;
 type ChatWorkingIndicatorOptions = {

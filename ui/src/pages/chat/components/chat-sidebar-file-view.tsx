@@ -8,6 +8,7 @@ import { PanelLoadingSkeleton } from "../../../components/solid/panel-loading-sk
 import { registerCodeBlocksEnglish } from "../../../i18n/locales/en-code-blocks.ts";
 import "../../../components/tooltip.ts";
 import { registerFilePreviewEnglish } from "../../../i18n/locales/en-file-preview.ts";
+import { prepareMarkdownJsonOptions } from "../../../lib/markdown-json.ts";
 import { t } from "../../../lib/reactive/i18n.ts";
 import { createLayoutMeasurement } from "../../../lib/reactive/layout-measurement.ts";
 import { getSafeLocalStorage } from "../../../local-storage.ts";
@@ -72,12 +73,15 @@ function FileMarkdown(props: { controls: FileViewControls; onSelect: (event: Eve
       releaseArticle?.();
     };
   });
-  const markdownRef = createMarkdownRef(() => ({
-    incremental: true,
-    content: toSanitizedMarkdownHtml(
+  const options = createMemo(() =>
+    prepareMarkdownJsonOptions(
       props.controls.markdown?.content ?? "",
       props.controls.markdown?.options,
     ),
+  );
+  const markdownRef = createMarkdownRef(() => ({
+    incremental: true,
+    content: toSanitizedMarkdownHtml(props.controls.markdown?.content ?? "", options()),
   }));
   const schedule = createLayoutMeasurement(
     () => [props.controls.presentation, props.controls.markdown],

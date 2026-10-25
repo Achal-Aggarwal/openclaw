@@ -6,6 +6,7 @@ import { decodeResumeHandoff } from "../../../../src/shared/resume-handoff.js";
 import type { GatewaySessionRow } from "../../api/types.ts";
 import { gatewayHelloForMethods as desktopHello } from "../../test-helpers/gateway-methods.ts";
 import { waitForSolid } from "../../test-helpers/solid-settle.ts";
+import { runChatHeaderSessionAction } from "./chat-pane-session-menu-actions.ts";
 import {
   activePlacementSession,
   createPaneHeaderWorkspaceFixture,
@@ -79,7 +80,11 @@ it.each(["session", "owner", "target", "client", "reconnect"] as const)(
     const { pane, container, paint } = createTerminalPane(client);
     const row = directSession("bare-session", "row-agent");
 
-    await pane.handleHeaderSessionAction({ kind: "continue-in-terminal" }, row);
+    await runChatHeaderSessionAction(
+      getPaneTestRuntime(pane),
+      { kind: "continue-in-terminal" },
+      row,
+    );
     paint(row);
     const command = await waitForSolid(() => {
       const text =

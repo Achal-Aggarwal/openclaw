@@ -1,4 +1,5 @@
 /* @vitest-environment jsdom */
+
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SessionMoveTarget } from "../../../../packages/gateway-protocol/src/index.js";
 import type { GatewaySessionRow } from "../../api/types.ts";
@@ -13,6 +14,8 @@ import {
   createModalDialogTestFixture,
   waitForConfirmDialogActions,
 } from "../../test-helpers/modal-dialog.ts";
+import { getPaneTestRuntime } from "./chat-pane-runtime.test-support.ts";
+import { runChatHeaderSessionAction } from "./chat-pane-session-menu-actions.ts";
 import {
   activePlacementSession,
   createTestChatPane,
@@ -58,7 +61,9 @@ function fixture(target: SessionMoveTarget = { kind: "gateway" }, abandonSource?
   state.currentSessionId = session.sessionId;
   state.sessionsResult = { ...createSessionsListResult(), sessions: [session] };
   const run = () =>
-    dialogs.track(pane.handleHeaderSessionAction({ kind: "move-session" }, session));
+    dialogs.track(
+      runChatHeaderSessionAction(getPaneTestRuntime(pane), { kind: "move-session" }, session),
+    );
   return { pane, state, session, request, reconcileMutation, run };
 }
 

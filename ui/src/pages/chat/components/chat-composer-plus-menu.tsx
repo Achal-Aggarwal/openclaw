@@ -23,14 +23,13 @@ import { listen } from "../../../lib/reactive/listener.ts";
 import { countSessionToolOverrides } from "../../../lib/sessions/tool-overrides.ts";
 import { uploadsEnabled } from "../../../lib/uploads.ts";
 import type {
-  ChatComposerPlusMenuContentProps,
   ChatComposerPlusMenuHandlers,
   ChatComposerPlusMenuProps,
 } from "./chat-composer-plus-menu.types.ts";
 
 registerEnglishCatalog(registerChatComposerEnglish);
 
-function PlusMenuSurface(props: { menu: ChatComposerPlusMenuContentProps }) {
+function PlusMenuSurface(props: { menu: ChatComposerPlusMenuProps }) {
   const Content = lazy(() => import("./chat-composer-plus-menu-content.tsx"), {
     export: "ChatComposerPlusMenuContent",
   });
@@ -90,7 +89,7 @@ function PlusMenuSurface(props: { menu: ChatComposerPlusMenuContentProps }) {
       releaseAnchor();
     };
   });
-  const view = createMemo(() => (props.menu.showCapabilities ? props.menu.view : "root"));
+  const view = createMemo(() => (props.menu.capabilityMenu ? props.menu.view : "root"));
   const items: MenuEntry[] = [
     {
       kind: "group",
@@ -120,18 +119,20 @@ function PlusMenuSurface(props: { menu: ChatComposerPlusMenuContentProps }) {
               { id: "plus-menu-loading", label: t("common.loading"), disabled: true },
             ])}
           >
-            <Content
-              menu={props.menu}
-              view={view()}
-              readMenu={() => handle}
-              onReady={(next) => {
-                setHandlers(next);
-                if (next) {
-                  onSettled(focusLoadedItems);
-                }
-              }}
-              renderItems={renderItems}
-            />
+            <Show when={props.menu.open}>
+              <Content
+                menu={props.menu}
+                view={view()}
+                readMenu={() => handle}
+                onReady={(next) => {
+                  setHandlers(next);
+                  if (next) {
+                    onSettled(focusLoadedItems);
+                  }
+                }}
+                renderItems={renderItems}
+              />
+            </Show>
           </Loading>
         </Errored>
       ),
@@ -171,17 +172,13 @@ function PlusMenuSurface(props: { menu: ChatComposerPlusMenuContentProps }) {
           releaseAnchor = props.menu.inputHandle.bindAnchor(next.overlay.trigger);
         }}
         onSelect={(item, event) => handlers()?.select(item, event)}
-        onNavigate={({ value }) =>
-          props.menu.onNavigate(value === "manage-skills" ? "skills" : "plugins")
-        }
+        onNavigate={({ value }) => handlers()?.navigate(value)}
         onBeforeShow={() => {
           openingFocus = host.ownerDocument.activeElement;
         }}
         onOpenChange={(open) => {
           host.toggleAttribute("open", open);
-          if (open) {
-            props.menu.onLoadSkills();
-          } else {
+          if (!open) {
             focusOnReady = false;
             openingFocus = undefined;
           }
@@ -195,49 +192,28 @@ function PlusMenuSurface(props: { menu: ChatComposerPlusMenuContentProps }) {
 }
 
 export function ChatComposerPlusMenu(props: { menu: ChatComposerPlusMenuProps }) {
-  // Reconnects can replace the capability owner while this menu stays open.
   createEffect(
     () => ({
       open: props.menu.open,
       view: props.menu.view,
-      load: props.menu.capabilityMenu?.onLoadView,
+      source: props.menu.capabilityMenu,
     }),
-    ({ open, view, load }) => {
+    ({ open, view, source }) => {
       if (open) {
-        load?.(view);
+        source?.read()?.onLoadView?.(view);
       }
     },
   );
-  const resolved = createMemo(() => {
-    const current = props.menu;
-    const capabilityMenu = current.capabilityMenu;
-    if (
-      !capabilityMenu &&
-      !current.rootToggles?.length &&
-      !uploadsEnabled(current.attachments.uploadConfig)
-    ) {
-      return null;
-    }
-    return {
-      ...current,
-      ...capabilityMenu,
-      showCapabilities: capabilityMenu !== undefined,
-      basePath: capabilityMenu?.basePath ?? "",
-      skills: capabilityMenu?.skills ?? null,
-      skillsRead: capabilityMenu?.skillsRead ?? null,
-      mcpServers: capabilityMenu?.mcpServers ?? [],
-      toolsEffectiveResult: capabilityMenu?.toolsEffectiveResult ?? null,
-      toolsEffectiveLoading: capabilityMenu?.toolsEffectiveLoading ?? false,
-      toolsEffectiveError: capabilityMenu?.toolsEffectiveError ?? false,
-      toolAccessMutationBlockedReason: capabilityMenu?.toolAccessMutationBlockedReason ?? null,
-      webSearchBaseEnabled: capabilityMenu?.webSearchBaseEnabled ?? true,
-      mutationBlockedReason: capabilityMenu?.mutationBlockedReason ?? null,
-      canAdmin: capabilityMenu?.canAdmin ?? false,
-      adminBlockedReason: capabilityMenu?.adminBlockedReason ?? null,
-      onLoadSkills: capabilityMenu?.onLoadSkills ?? (() => {}),
-      onPatchToolOverrides: capabilityMenu?.onPatchToolOverrides ?? (() => {}),
-      onNavigate: capabilityMenu?.onNavigate ?? (() => {}),
-    };
-  });
-  return <Show when={resolved()}>{(menu) => <PlusMenuSurface menu={menu()} />}</Show>;
+  const available = createMemo(() =>
+    Boolean(
+      props.menu.capabilityMenu ||
+      props.menu.rootToggles?.length ||
+      uploadsEnabled(props.menu.attachments.uploadConfig),
+    ),
+  );
+  return (
+    <Show when={available()}>
+      <PlusMenuSurface menu={props.menu} />
+    </Show>
+  );
 }

@@ -17,7 +17,6 @@ import {
   createNullBoardProvider,
   type BoardCommandEvent,
   type BoardProvider,
-  type BoardViewCallbacks,
 } from "../../lib/board/provider.ts";
 import { updateBoardSessionView } from "../../lib/board/settings.ts";
 import { currentDisplayConfig } from "../../lib/config/config-state-model.ts";
@@ -39,8 +38,8 @@ import {
 import { showToast } from "../../lib/toast.ts";
 import { cacheChatBoardSnapshotAfterHydration } from "./chat-board-snapshot.ts";
 import { ChatPaneHistory } from "./chat-pane-history.ts";
+import type { ChatBoardPanelSource } from "./chat-pane-panel-source.ts";
 import type { ResolvedBoardView } from "./chat-pane-shared.ts";
-import type { ChatBoardPanel } from "./chat-pane-surfaces.tsx";
 import type { ChatPageHost } from "./chat-state-host.ts";
 import { selectedChatSessionRow } from "./chat-state-route.ts";
 import { readChatSessionSnapshot } from "./session-message-cache.ts";
@@ -57,7 +56,7 @@ import {
 } from "./sidebar-layout.ts";
 
 export abstract class ChatPaneBoard extends ChatPaneHistory {
-  private boardView: HTMLElementTagNameMap["openclaw-board-view"] | null = null;
+  boardView: HTMLElementTagNameMap["openclaw-board-view"] | null = null;
   private nullBoardProvider: { cacheKey: string; provider: BoardProvider } | undefined;
   readonly dashboardPresentation: { defaultWrite: { owner: string } | undefined } = {
     defaultWrite: undefined,
@@ -564,7 +563,7 @@ export abstract class ChatPaneBoard extends ChatPaneHistory {
     };
   }
 
-  private selectBoardTab(activeTabId: string): void {
+  selectBoardTab(activeTabId: string): void {
     const board = this.resolveBoardView();
     const sessionKey = this.resolveBoardSessionKey(board.snapshot.sessionKey);
     if (!sessionKey) {
@@ -583,7 +582,7 @@ export abstract class ChatPaneBoard extends ChatPaneHistory {
     return board.available && Boolean(this.resolveBoardSessionKey(board.snapshot.sessionKey));
   }
 
-  private pageBoardWidget(layout: SidebarLayout | undefined, board: ResolvedBoardView) {
+  protected pageBoardWidget(layout: SidebarLayout | undefined, board: ResolvedBoardView) {
     // Eligibility belongs to the loaded snapshot, not the lazy renderer registration.
     if (
       !layout ||
@@ -636,56 +635,20 @@ export abstract class ChatPaneBoard extends ChatPaneHistory {
     };
   }
 
-  protected renderBoardPanel(
+  protected boardPanelSource(
     board: ResolvedBoardView,
     layout: SidebarLayout,
-  ): Parameters<typeof ChatBoardPanel>[0] | null {
-    const session = this.resolveBoardConversation();
+  ): ChatBoardPanelSource | null {
     if (!this.isBoardPanelAvailable(board)) {
       return null;
     }
-    const error = !board.provider.hasLoadedSnapshot && board.provider.loadError$.value;
-    // Only the loaded board acknowledgment supplies a missing owner; its display key
-    // must not replace the original session target (notably global versus a literal key).
-    session.agentId ??= parseAgentSessionKey(board.snapshot.sessionKey)?.agentId;
-    const connectionGeneration = this.connectionGeneration;
     return {
-      error: error || undefined,
-      surface: {
-        onViewRef: (element) => {
-          this.boardView = element;
-          return () => {
-            if (this.boardView === element) {
-              this.boardView = null;
-            }
-          };
-        },
-        active: {
-          owner: this.element,
-          isPresented: () => isSidebarSlotVisible(layout, "dashboard") && this.visuallyPresented,
-          preview: () => !this.presented && this.connectionGeneration === connectionGeneration,
-        },
-        session,
-        snapshot: board.provider.hasLoadedSnapshot ? board.snapshot : undefined,
-        activeTabId: board.activeTabId,
-        pageWidgetName: this.pageBoardWidget(layout, board)?.name,
-        canMutate: board.provider.canMutate,
-        canGrant: board.provider.canGrant,
-        callbacks: {
-          appViewGeneration: board.provider.appViewGeneration,
-          applyOps: (ops) => board.provider.applyOps(ops),
-          grant: (name, decision) => board.provider.grant(name, decision),
-          selectTab: (tabId) => {
-            this.onFaceChange?.(this.paneId, this.sessionKey, "dashboard");
-            this.selectBoardTab(tabId);
-          },
-          frameLoadFailed: (name) => board.provider.refreshWidgetFrame(name),
-          widgetAppView: (name, revision) => board.provider.widgetAppView(name, revision),
-          refreshWidgetAppView: (name, revision) =>
-            board.provider.refreshWidgetAppView(name, revision),
-        } satisfies BoardViewCallbacks,
-        widgetFrameUrl: (name, revision) => board.provider.widgetFrameUrl(name, revision),
-      },
+      owner: this,
+      board,
+      layout,
+      session: this.resolveBoardConversation(),
+      connectionGeneration: this.connectionGeneration,
+      pageWidgetName: this.pageBoardWidget(layout, board)?.name,
     };
   }
 

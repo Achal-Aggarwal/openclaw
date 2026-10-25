@@ -18,10 +18,11 @@ import { Icon } from "../../../components/solid/icon.tsx";
 import { createTextOverflow } from "../../../components/solid/text-overflow.ts";
 import { registerChatComposerEnglish } from "../../../i18n/locales/en-chat-composer.ts";
 import { registerChatMediaEnglish } from "../../../i18n/locales/en-chat-media.ts";
-import { registerChatSessionEnglish } from "../../../i18n/locales/en-chat-session.ts";
+import { registerChatSessionOptionalEnglish } from "../../../i18n/locales/en-chat-session-optional.ts";
 import { registerFilePreviewEnglish } from "../../../i18n/locales/en-file-preview.ts";
 import { formatBytes } from "../../../lib/agents/display.ts";
 import type { EmbedSandboxMode } from "../../../lib/chat/canvas-embed-policy.ts";
+import { prepareMarkdownJsonOptions } from "../../../lib/markdown-json.ts";
 import { registerEnglishCatalog, t } from "../../../lib/reactive/i18n.ts";
 import { defineSolidBridge, type SolidBridgeElement } from "../../../lib/solid-bridge.ts";
 import { detectTextDirection } from "../../../lib/text-direction.ts";
@@ -34,19 +35,22 @@ registerEnglishCatalog(registerChatComposerEnglish);
 
 registerEnglishCatalog(registerChatMediaEnglish);
 
-registerEnglishCatalog(registerChatSessionEnglish);
+registerEnglishCatalog(registerChatSessionOptionalEnglish);
 
 registerEnglishCatalog(registerFilePreviewEnglish);
 
 function MarkdownAttachment(props: { text: string; label: string }) {
   let article!: HTMLElement;
-  const markdown = createMarkdownRef(() => ({
-    incremental: true,
-    content: toSanitizedMarkdownHtml(props.text, {
+  const options = createMemo(() =>
+    prepareMarkdownJsonOptions(props.text, {
       mode: "document",
       remoteImages: false,
       codeBlockInteraction: "interactive",
     }),
+  );
+  const markdown = createMarkdownRef(() => ({
+    incremental: true,
+    content: toSanitizedMarkdownHtml(props.text, options()),
   }));
   onSettled(() => {
     const blocks = new MarkdownBlocks(article);

@@ -328,7 +328,7 @@ export abstract class ChatPaneLayoutRender extends ChatPaneHeaderLayout {
       panePresentation,
       conversationVisible,
     });
-    const discussion = this.buildSessionDiscussionPanel(state, state.sessionKey.trim());
+    const discussion = this.sessionDiscussionSource(state, state.sessionKey.trim());
     const discussionState = this.sessionDiscussion.snapshot.states.get(state.sessionKey.trim());
     const discussionAvailable = discussionState === "available" || discussionState === "open";
     const desktopAvailable = isDesktopPanelAvailable(this.context.gateway.snapshot);
@@ -471,7 +471,7 @@ export abstract class ChatPaneLayoutRender extends ChatPaneHeaderLayout {
           this.desktopFocus = { ...this.desktopFocus, href };
         }
       },
-      dashboard: !this.compact ? this.renderBoardPanel(board, sidebarLayout) : null,
+      dashboard: !this.compact ? this.boardPanelSource(board, sidebarLayout) : null,
       workspace: headerWorkspace,
       workspacePresented: slotPresentation("workspace"),
       detail: {
@@ -515,7 +515,8 @@ export abstract class ChatPaneLayoutRender extends ChatPaneHeaderLayout {
       onClearCompanion: this.clearSessionCompanion,
       discussion,
       discussionAvailable,
-      discussionOpenUrl: discussion?.openUrl ?? null,
+      discussionOpenUrl:
+        this.sessionDiscussion.snapshot.openUrls.get(state.sessionKey.trim()) ?? null,
       discussionSourceGeneration: this.connectionGeneration,
       pluginPanels: this.context.plugins.registrations("panels"),
       isPluginPanelPresented: (slot) => slotPresentation(slot, "active"),

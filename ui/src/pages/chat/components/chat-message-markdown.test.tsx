@@ -15,6 +15,7 @@ import { restorePropertyDescriptor } from "../../../test-helpers/property-descri
 import { mountSolid } from "../../../test-helpers/solid-render.tsx";
 import { waitForSolid } from "../../../test-helpers/solid-settle.ts";
 import { persistedMessageEntryId } from "../chat-thread-items.ts";
+import { ChatLazyBoundary } from "./chat-lazy-boundary.tsx";
 import { prepareGroupedMessage } from "./chat-message-bubble-presentation.ts";
 import { GroupedMessage } from "./chat-message-bubble-view.tsx";
 import {
@@ -70,10 +71,13 @@ describe("message action projections", () => {
     const preview = vi.spyOn(toolCards, "formatCollapsedToolPreviewText");
     onTestFinished(() => preview.mockRestore());
     const prepare = (role: string, content: string) =>
-      prepareGroupedMessage(prepareChatMessageRender({ role, content }), "message", {
-        isStreaming: true,
-        showReasoning: false,
-      });
+      prepareGroupedMessage(
+        prepareChatMessageRender({ role, content }),
+        "message",
+        { isStreaming: true, showReasoning: false },
+        undefined,
+        null,
+      );
     prepare("assistant", "A streaming reply");
     expect(preview).not.toHaveBeenCalled();
     await prepareChatToolPresentation([{ role: "toolResult", content: "First line\nSecond line" }]);
@@ -407,6 +411,34 @@ describe("streaming message Markdown", () => {
 });
 
 describe("message Markdown source preservation", () => {
+  it("keeps JSON trees in oversized recovered assistant messages", async () => {
+    const markdown = `${"Recovered text. ".repeat(3_000)}\n\n\`\`\`json\n{"value":1}\n\`\`\``;
+    const container = document.createElement("div");
+    const view = mountSolid(
+      (props: Parameters<typeof MessageMarkdown>[0]) => (
+        <ChatLazyBoundary>
+          <MessageMarkdown {...props} />
+        </ChatLazyBoundary>
+      ),
+      {
+        markdown: "Display-capped preview",
+        messageKey: "recovered-json",
+        options: {
+          role: "assistant",
+          isStreaming: false,
+          assistantMessageDisclosure: { expanded: true, markdown },
+        },
+        markdownOptions: { codeBlockInteraction: "interactive" },
+      },
+      container,
+    );
+    onTestFinished(view.dispose);
+    await waitForSolid(() =>
+      expect(container.querySelector(".code-block-json-tree")?.textContent).toContain("value"),
+    );
+    expect(container.textContent).toContain("Recovered text.");
+  });
+
   it.each(["user", "assistant"])("preserves initial code for %s messages", (role) => {
     for (const source of ["    *literal*", "\t*literal*", "\n\n    *literal*"]) {
       const message = { role, content: [{ type: "text", text: source }] };

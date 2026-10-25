@@ -10,7 +10,7 @@ import { formatWebUiIconErrorText } from "../../components/error-presentation.ts
 import { CopyButton } from "../../components/solid/copy-button.tsx";
 import { Icon } from "../../components/solid/icon.tsx";
 import { registerChatComposerEnglish } from "../../i18n/locales/en-chat-composer.ts";
-import { registerChatSessionEnglish } from "../../i18n/locales/en-chat-session.ts";
+import { registerChatSessionOptionalEnglish } from "../../i18n/locales/en-chat-session-optional.ts";
 import { registerNewSessionRuntimeEnglish } from "../../i18n/locales/en-new-session-runtime.ts";
 import { formatBytes } from "../../lib/agents/display.ts";
 import { findChatSubmissionMessage } from "../../lib/chat/history-message-identity.ts";
@@ -23,7 +23,7 @@ import { ChatSendStatus } from "./components/chat-message-send-status-view.tsx";
 import { WorkspaceConflictNotice } from "./components/chat-workspace-conflict.tsx";
 import type { ProviderPolicyNotice } from "./tool-stream-contract.ts";
 
-registerEnglishCatalog(registerChatSessionEnglish);
+registerEnglishCatalog(registerChatSessionOptionalEnglish);
 registerEnglishCatalog(registerChatComposerEnglish);
 
 registerNewSessionRuntimeEnglish();

@@ -292,17 +292,6 @@ describe("board leases", () => {
   });
 });
 describe("board snapshots and refreshes", () => {
-  it.each([null, { widgets: [{}] }, { tabs: [{}] }])(
-    "ignores malformed cache %j but permits a valid restore",
-    (raw) => {
-      const f = fixture(snapshot(), false);
-      f.p.restoreSnapshot(raw === null ? null : { ...f.initial, ...raw }, Date.now());
-      expect(f.p.hasLoadedSnapshot).toBe(false);
-      expect(f.p.snapshot$.value.widgets).toEqual([]);
-      f.p.restoreSnapshot(f.initial, Date.now());
-      expect(f.p.snapshot$.value).toEqual(f.initial);
-    },
-  );
   it("rejects foreign cache and retains only confirmed MCP apps", () => {
     const cached = snapshot(1, {
       widgets: (["pending", "rejected", "granted"] as const).map((grantState) =>

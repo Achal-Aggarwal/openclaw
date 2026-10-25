@@ -8,7 +8,7 @@ import {
 } from "../../../components/markdown-code-blocks.ts";
 import { markdownBlocksRef } from "../../../components/markdown-element-refs-solid.ts";
 import { loadStreamingMarkdown } from "../../../components/markdown-live-loader.ts";
-import type { MarkdownRenderOptions } from "../../../components/markdown-render-options.ts";
+import type { MarkdownInputOptions } from "../../../components/markdown-render-options.ts";
 import { releaseMarkdownTables } from "../../../components/markdown-tables.ts";
 import { toSanitizedMarkdownHtml } from "../../../components/markdown.ts";
 import { ContentPresentation } from "../../../lib/solid/presentation.ts";
@@ -68,7 +68,7 @@ function draw(
     streaming?: boolean;
     key?: string;
     media?: MarkdownMedia;
-    options?: MarkdownRenderOptions;
+    options?: MarkdownInputOptions;
   } = {},
 ) {
   rawView?.dispose();

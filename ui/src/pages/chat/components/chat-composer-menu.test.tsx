@@ -182,12 +182,12 @@ it("retains the focused capability row and management link through catalog refre
   const checkbox = (name: string) => view.getByRole("menuitemcheckbox", { name, hidden: true });
   const update = (
     changes: Partial<Menu>,
-    capability: Partial<NonNullable<Menu["capabilityMenu"]>> = {},
+    capability: Partial<NonNullable<ReturnType<NonNullable<Menu["capabilityMenu"]>["read"]>>> = {},
   ) =>
     setMenu((previous) => ({
       ...previous,
       ...changes,
-      capabilityMenu: { ...previous.capabilityMenu!, ...capability },
+      capabilityMenu: makeCapabilities({ ...previous.capabilityMenu!.read()!, ...capability }),
     }));
   await waitForSolid(() => expect(checkbox("Focused skill")).toBeTruthy());
   for (const name of ["Broken deps missing", "Private not available for this agent"]) {

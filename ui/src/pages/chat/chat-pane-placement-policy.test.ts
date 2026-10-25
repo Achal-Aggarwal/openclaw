@@ -1,4 +1,5 @@
 /* @vitest-environment jsdom */
+
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { GatewaySessionRow } from "../../api/types.ts";
 import { createSessionsListResult } from "../../test-helpers/chat-model.ts";
@@ -9,6 +10,8 @@ import {
   waitForConfirmDialogActions,
 } from "../../test-helpers/modal-dialog.ts";
 import { flush } from "../../test-helpers/solid-settle.ts";
+import { getPaneTestRuntime } from "./chat-pane-runtime.test-support.ts";
+import { runChatHeaderSessionAction } from "./chat-pane-session-menu-actions.ts";
 import {
   activePlacementSession,
   createGatewayBrowserClientFixture,
@@ -76,7 +79,10 @@ function fixture(row: GatewaySessionRow, fallbackAgentId = "main") {
     request,
     reconcileMutation,
     requireProfile,
-    run: () => dialogs.track(pane.handleHeaderSessionAction({ kind: "move-session" }, row)),
+    run: () =>
+      dialogs.track(
+        runChatHeaderSessionAction(getPaneTestRuntime(pane), { kind: "move-session" }, row),
+      ),
   };
 }
 it("waits for workspace settlement before offering a move", async () => {
@@ -232,7 +238,13 @@ it.each(["dispatch", "move", "retry", "stop"] as const)(
       const { pane, run, request, reconcileMutation } = fixture(row, "writer");
       const operation =
         mode === "stop"
-          ? dialogs.track(pane.handleHeaderSessionAction({ kind: "stop-cloud-worker" }, row))
+          ? dialogs.track(
+              runChatHeaderSessionAction(
+                getPaneTestRuntime(pane),
+                { kind: "stop-cloud-worker" },
+                row,
+              ),
+            )
           : run();
       if (mode === "stop") {
         answerConfirmDialog(await waitForConfirmDialogActions(), "confirm");

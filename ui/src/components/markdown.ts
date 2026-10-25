@@ -21,6 +21,7 @@ import { stripProgressCardRawContentBlocks } from "./markdown-raw-content.ts";
 import {
   MARKDOWN_PARSE_LIMIT,
   normalizeMarkdownRenderOptions,
+  type MarkdownInputOptions,
   type MarkdownRenderEnv,
   type MarkdownRenderOptions,
 } from "./markdown-render-options.ts";
@@ -190,7 +191,7 @@ export function renderSanitizedMarkdown(
 
 // Bare JSON bypasses Markdown normalization, which can alter literal Unicode separators.
 // Both inputs still use the same code-block renderer and sanitizer boundary.
-export function toSanitizedJsonHtml(json: MarkdownJson, options: MarkdownRenderOptions): string {
+export function toSanitizedJsonHtml(json: MarkdownJson, options: MarkdownInputOptions): string {
   return markdownSanitizer(decorateMarkdownAnchor)
     .sanitize(
       // HTML parsing normalizes literal CRs; character references survive both

@@ -12,8 +12,8 @@ import type { ChatDetailsViewProps } from "./chat-details.tsx";
 import type { ChatDashboardMenu, ChatPaneLayoutMenuProps } from "./chat-header-panel-actions.tsx";
 import type { ChatPanePlacement } from "./chat-pane-placement.tsx";
 import type {
-  ChatSessionSharingProps,
-  PreparedChatSessionSharing,
+  ChatSessionSharingInput,
+  PreparedSessionSharingInput,
 } from "./chat-session-sharing-shared.tsx";
 import type { ChatSessionVersionsMobileProps } from "./chat-session-versions-mobile.tsx";
 import type { ContinueInTerminalDialogProps } from "./continue-in-terminal-dialog.tsx";
@@ -73,13 +73,13 @@ export type ChatPaneHeaderProps = ChatPaneLayoutMenuProps & {
   onToggleConversation?: () => void;
   runAction?: Parameters<typeof PaneSubagentStop>[0];
   presence?: Parameters<typeof PaneHeaderPresence>[0];
-  sharingControl?: ChatSessionSharingProps;
-  mobileSharing?: PreparedChatSessionSharing;
+  sharingControl?: ChatSessionSharingInput;
+  mobileSharing?: PreparedSessionSharingInput;
   mobileVersions?: ChatSessionVersionsMobileProps;
   mobilePeople?: ChatMobilePeople;
   mobilePeopleMentions?: ChatMobilePeopleMentions;
   onOpenDashboard?: (source: HTMLElement) => void;
-  publicAccessIndicator?: ChatSessionSharingProps;
+  publicAccessIndicator?: ChatSessionSharingInput;
   readMachineName?: () => Promise<string | undefined>;
   onMobilePlacementStop?: (machineName?: string) => Promise<void>;
   onMobilePlacementMove?: (presentation: SessionPlacementPresentation) => Promise<void>;

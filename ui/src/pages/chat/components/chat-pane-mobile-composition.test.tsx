@@ -7,7 +7,11 @@ import { waitForSolid } from "../../../test-helpers/solid-settle.ts";
 import { createChatMobileHostFixture } from "../chat-mobile-host.test-support.ts";
 import type { ChatMobileHost } from "../chat-mobile-host.ts";
 import { offlineDeviceSession } from "../chat-pane.test-support.ts";
-import { mountChatPaneHeader } from "./chat-pane-header.test-support.ts";
+import {
+  chatPaneHeaderSessionMenu,
+  mountChatPaneHeader,
+  selectNativeMenu,
+} from "./chat-pane-header.test-support.ts";
 import type { ChatPaneHeaderProps } from "./chat-pane-header.types.ts";
 
 const containers: HTMLElement[] = [];
@@ -20,6 +24,67 @@ afterEach(() => {
 function mountHeader(patch: Partial<ChatPaneHeaderProps> = {}) {
   return mountChatPaneHeader(containers, patch);
 }
+
+it("adopts mobile chrome on first use without replacing shared Details or native menu owners", async () => {
+  const mobileHost = createChatMobileHostFixture("desktop-first-header");
+  const onOpenDetails = vi.fn();
+  const onAbort = vi.fn();
+  const mounted = mountHeader({
+    sessionMenuAction: chatPaneHeaderSessionMenu(),
+    runAction: { onAbort },
+    onOpenDetails,
+    detailsControl: {
+      chat: undefined,
+      elements: {},
+      mobile: true,
+      mobileHost,
+      presentation: true,
+      setRef: vi.fn(),
+    },
+  });
+  const details = mounted.container.querySelector("openclaw-chat-details");
+  const menu = mounted.container.querySelector("openclaw-chat-header-session-menu")!;
+  expect(details).not.toBeNull();
+  expect(menu).not.toBeNull();
+  expect(mounted.container.querySelector(".agent-chat__header--mobile")).toBeNull();
+
+  mounted.update({ mergedChrome: true });
+  await waitForSolid(() =>
+    expect(mounted.container.querySelector(".mobile-header__title")).not.toBeNull(),
+  );
+  const title = mounted.container.querySelector<HTMLButtonElement>(".mobile-header__title")!;
+  expect(mounted.container.querySelector("openclaw-chat-details")).toBe(details);
+  expect(mounted.container.querySelector("openclaw-chat-header-session-menu")).toBe(menu);
+  title.click();
+  expect(onOpenDetails).toHaveBeenCalledExactlyOnceWith(title);
+  await selectNativeMenu(menu, "quick:stop-running-subagent");
+  expect(onAbort).toHaveBeenCalledOnce();
+  await selectNativeMenu(menu, "mobile-advanced");
+  expect(mobileHost.navigate).toHaveBeenCalledWith(
+    expect.objectContaining({
+      area: "details",
+      page: expect.objectContaining({ key: "session-advanced" }),
+    }),
+    menu.querySelector(".oc-menu-trigger"),
+  );
+
+  mounted.update({ mergedChrome: false });
+  expect(mounted.container.querySelector("openclaw-chat-details")).toBe(details);
+  expect(mounted.container.querySelector("openclaw-chat-header-session-menu")).toBe(menu);
+  const currentAbort = vi.fn();
+  const currentDetails = vi.fn();
+  mounted.update({ runAction: { onAbort: currentAbort }, onOpenDetails: currentDetails });
+  mounted.update({ mergedChrome: true });
+  expect(mounted.container.querySelector(".mobile-header__title")).toBe(title);
+  expect(mounted.container.querySelector("openclaw-chat-details")).toBe(details);
+  expect(mounted.container.querySelector("openclaw-chat-header-session-menu")).toBe(menu);
+  title.click();
+  expect(currentDetails).toHaveBeenCalledExactlyOnceWith(title);
+  expect(onOpenDetails).toHaveBeenCalledOnce();
+  await selectNativeMenu(menu, "quick:stop-running-subagent");
+  expect(currentAbort).toHaveBeenCalledOnce();
+  expect(onAbort).toHaveBeenCalledOnce();
+});
 
 it("clears the device name while replacing its request and ignores retired results", async () => {
   const first = createDeferred<string | undefined>();

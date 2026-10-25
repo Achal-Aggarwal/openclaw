@@ -11,6 +11,7 @@ import type {
   ApplicationGateway,
   ApplicationGatewaySnapshot,
 } from "../../app/context.ts";
+import type { ChannelCapability } from "../../lib/channels/index.ts";
 import { createApplicationGatewaySnapshot } from "../../test-helpers/application-context-fixtures.ts";
 import {
   createApplicationContextProvider,
@@ -97,8 +98,8 @@ export function createContext(
     },
   } as unknown as ApplicationGateway;
   const agentListeners = new Set<() => void>();
-  const channelListeners = new Set<(state: ApplicationContext["channels"]["state"]) => void>();
-  const channelState: ApplicationContext["channels"]["state"] = {
+  const channelListeners = new Set<(state: ChannelCapability["state"]) => void>();
+  const channelState: ChannelCapability["state"] = {
     client,
     connected: true,
     channelsLoading: false,
@@ -170,6 +171,14 @@ export function createContext(
       return () => overlayListeners.delete(listener);
     },
   } satisfies Pick<ApplicationContext["overlays"], "snapshot" | "subscribe">;
+  const channels = {
+    state: channelState,
+    refresh: refreshChannels,
+    subscribe: (listener: (state: ChannelCapability["state"]) => void) => {
+      channelListeners.add(listener);
+      return () => channelListeners.delete(listener);
+    },
+  };
   const context = {
     gateway,
     runtimeConfig: {
@@ -201,14 +210,7 @@ export function createContext(
       refreshList: vi.fn(),
     },
     agentSelection: { state: { selectedId: "main" }, subscribe: () => () => {} },
-    channels: {
-      state: channelState,
-      refresh: refreshChannels,
-      subscribe: (listener: (state: ApplicationContext["channels"]["state"]) => void) => {
-        channelListeners.add(listener);
-        return () => channelListeners.delete(listener);
-      },
-    },
+    getChannels: () => channels,
     overlays,
     basePath: "",
     navigate: vi.fn(),

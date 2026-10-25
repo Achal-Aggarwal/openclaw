@@ -4,14 +4,12 @@
 import { asOptionalRecord } from "@openclaw/normalization-core/record-coerce";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createDeferred } from "../../../../test/helpers/promise.js";
-import type {
-  GatewaySessionRow,
-  SessionMembersListEvidenceResult,
-  SessionVisibility,
-} from "../../api/types.ts";
+import type { GatewaySessionRow, SessionMembersListEvidenceResult } from "../../api/types.ts";
 import { sessionsResult } from "../../lib/sessions/session-capability.test-support.ts";
 import type { SessionRefreshOutcome } from "../../lib/sessions/session-capability.ts";
 import type { GatewayRequestHandler } from "../../test-helpers/gateway-client.ts";
+import { getPaneTestRuntime } from "./chat-pane-runtime.test-support.ts";
+import { mutateSessionSharing, setSessionPublicShare } from "./chat-pane-sharing-mutations.ts";
 import {
   createGatewayBrowserClientFixture,
   createSessionCapabilityFixture,
@@ -40,14 +38,6 @@ type SharingPane = TestChatPane & {
   loadSessionSharing: (row: GatewaySessionRow, force?: boolean) => Promise<void>;
   syncSelectedSessionSharing: (row: GatewaySessionRow | undefined) => void;
   sessionSharingCacheKey: (sessionKey: string) => string;
-  mutateSessionSharing: (
-    row: GatewaySessionRow,
-    change: { visibility: SessionVisibility } | { identityId: string; member: boolean },
-  ) => Promise<ChatSessionSharingOutcome>;
-  setSessionPublicShare: (
-    row: GatewaySessionRow,
-    enabled: boolean,
-  ) => Promise<ChatSessionSharingOutcome>;
   copySessionPublicLink: (row: GatewaySessionRow) => Promise<ChatSessionSharingOutcome>;
 };
 
@@ -181,13 +171,16 @@ const mutations = [
     name: "visibility",
     method: "session.visibility.set",
     invoke: (pane: SharingPane, row: GatewaySessionRow) =>
-      pane.mutateSessionSharing(row, { visibility: "shared" }),
+      mutateSessionSharing(getPaneTestRuntime(pane), row, { visibility: "shared" }),
   },
   {
     name: "member",
     method: "session.members.add",
     invoke: (pane: SharingPane, row: GatewaySessionRow) =>
-      pane.mutateSessionSharing(row, { identityId: "identity-alice", member: true }),
+      mutateSessionSharing(getPaneTestRuntime(pane), row, {
+        identityId: "identity-alice",
+        member: true,
+      }),
   },
 ] as const;
 
@@ -216,7 +209,9 @@ describe("public session sharing", () => {
         : undefined;
       confirmPublicShare.mockResolvedValue(true);
       copyPublicShare.mockResolvedValue(true);
-      expect(await pane.setSessionPublicShare(row, true)).toEqual({ status: "success" });
+      expect(await setSessionPublicShare(getPaneTestRuntime(pane), row, true)).toEqual({
+        status: "success",
+      });
       expect(request).toHaveBeenCalledWith("session.publicShare.set", {
         sessionKey: row.key,
         agentId: "main",
@@ -231,7 +226,7 @@ describe("public session sharing", () => {
         "https://example.test/control/chat/main/current",
         expect.any(Function),
       );
-      await pane.setSessionPublicShare(row, false);
+      await setSessionPublicShare(getPaneTestRuntime(pane), row, false);
       expect(request).toHaveBeenCalledWith("session.publicShare.set", {
         sessionKey: row.key,
         agentId: "main",
@@ -289,7 +284,7 @@ describe("public session sharing", () => {
     });
 
     confirmPublicShare.mockResolvedValue(true);
-    const pending = pane.setSessionPublicShare(row, true);
+    const pending = setSessionPublicShare(getPaneTestRuntime(pane), row, true);
     if (holdRefresh) {
       await vi.waitFor(() => expect(listCount).toBe(2));
     } else {
@@ -322,7 +317,7 @@ describe("public session sharing", () => {
       const request = vi.fn();
       const { pane, state } = sharingPane(request);
       const row = sessionRow();
-      const pending = pane.setSessionPublicShare(row, true);
+      const pending = setSessionPublicShare(getPaneTestRuntime(pane), row, true);
       await vi.waitFor(() => expect(confirmPublicShare).toHaveBeenCalledOnce());
       if (change === "session") {
         state.sessionsResult = sharingSessionsResult({ ...row, sessionId: "replacement" });
@@ -400,8 +395,11 @@ describe("chat pane sharing authorization", () => {
         state.sessionsResult = sharingSessionsResult({ ...sessionRow(), ...current });
       }
       await pane.loadSessionSharing(row);
-      await pane.mutateSessionSharing(row, { visibility: "shared" });
-      await pane.mutateSessionSharing(row, { identityId: "identity-alice", member: true });
+      await mutateSessionSharing(getPaneTestRuntime(pane), row, { visibility: "shared" });
+      await mutateSessionSharing(getPaneTestRuntime(pane), row, {
+        identityId: "identity-alice",
+        member: true,
+      });
       if (readable) {
         expect(request).toHaveBeenCalledExactlyOnceWith("session.members.listEvidence", {
           sessionKey: row.key,
@@ -473,9 +471,11 @@ describe("sharing operation code loading", () => {
       const request = vi.fn(async () => ({}));
       const { pane, state } = sharingPane(request);
       const row = sessionRow();
-      const pending = pane.mutateSessionSharing(row, { visibility: "shared" });
+      const pending = mutateSessionSharing(getPaneTestRuntime(pane), row, { visibility: "shared" });
       expect(sharingState(pane, row)?.loading).toBe(true);
-      const duplicate = pane.mutateSessionSharing(row, { visibility: "shared" });
+      const duplicate = mutateSessionSharing(getPaneTestRuntime(pane), row, {
+        visibility: "shared",
+      });
       if (change === "scope") {
         setSharingAuthorization(pane, { scopes: ["operator.read"] });
       } else if (change === "connection") {
@@ -597,7 +597,10 @@ it("preserves a member sharing refresh failure in the current connection", async
   });
   const { pane, state } = sharingPane(request, sessions);
 
-  await pane.mutateSessionSharing(row, { identityId: "identity-alice", member: true });
+  await mutateSessionSharing(getPaneTestRuntime(pane), row, {
+    identityId: "identity-alice",
+    member: true,
+  });
 
   expect(sharingState(pane, row)).toMatchObject({
     loading: false,

@@ -1,6 +1,6 @@
 import { children, onSettled, Show, type Element } from "solid-js";
 import { NAV_DRAWER_TOGGLE_REGISTRATION } from "../../../app/navigation-surface.ts";
-import { createRouteElementRef } from "../../../app/route-element-ref.ts";
+import { registerRouteElement } from "../../../app/route-elements.ts";
 import { Icon } from "../../../components/solid/icon.tsx";
 import { useScrollState } from "../../../components/solid/scroll-state.ts";
 import { SessionTitlePlaceholder } from "../../../components/solid/session-title-placeholder.tsx";
@@ -108,7 +108,7 @@ function MobileHeaderNotice(props: { notice: ChatPaneMobileHeaderNotice }) {
 
 export function ChatPaneMobileHeader(props: ChatPaneMobileHeaderProps) {
   let header!: HTMLDivElement;
-  const drawerRef = createRouteElementRef(NAV_DRAWER_TOGGLE_REGISTRATION);
+  let drawer!: HTMLButtonElement;
   const project = children(() => props.project);
   const people = children(() => props.people);
   const titleOverflow = useScrollState(true, false);
@@ -128,8 +128,14 @@ export function ChatPaneMobileHeader(props: ChatPaneMobileHeaderProps) {
           return undefined;
         }}
       </Show>
+      <Show when={props.active}>
+        {(_active) => {
+          onSettled(() => registerRouteElement(drawer, NAV_DRAWER_TOGGLE_REGISTRATION));
+          return undefined;
+        }}
+      </Show>
       <button
-        ref={drawerRef}
+        ref={(element) => (drawer = element)}
         type="button"
         class="mobile-header__control mobile-header__navigation"
         aria-label={drawerLabel()}

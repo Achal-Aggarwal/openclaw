@@ -36,7 +36,6 @@ import {
 } from "./chat-pane-header-identity.ts";
 import { ChatPaneHeaderMemo } from "./chat-pane-header-memo.ts";
 import { ChatPaneHeaderPeople } from "./chat-pane-header-people.ts";
-import { ChatPaneNativeSessionActions } from "./chat-pane-native-session-actions.ts";
 import { resolveChatPaneDesktopTarget, resolveChatPanePlacement } from "./chat-pane-placement.ts";
 import type { createChatPaneRails } from "./chat-pane-rails.ts";
 import { isChatRunWorking } from "./chat-run-working.ts";
@@ -46,7 +45,6 @@ import { countRunningSubagents } from "./chat-subagent-wait.ts";
 import type { ChatDetails, ChatDetailsViewProps } from "./components/chat-details.tsx";
 import type { HeaderPanelAction } from "./components/chat-header-panel-actions.tsx";
 import type {
-  HeaderMenuAction,
   HeaderMenuActionKind,
   HeaderMenuQuickAction,
 } from "./components/chat-header-session-menu.ts";
@@ -82,7 +80,6 @@ export abstract class ChatPaneHeader extends ChatPaneDiscussion {
   private headerPanelControls?: PaneControls;
   private headerBoardMenu?: BoardWidgetPageMenu;
   private readonly headerPanelsMemo = new ChatPaneHeaderMemo<HeaderPanelAction[]>();
-  private readonly headerSessionActions = new ChatPaneNativeSessionActions();
   private readonly headerReasonsMemo = new ChatPaneHeaderMemo<
     Partial<Record<HeaderMenuActionKind, string>>
   >();
@@ -118,11 +115,6 @@ export abstract class ChatPaneHeader extends ChatPaneDiscussion {
     window.dispatchEvent(new Event(COMMAND_PALETTE_OPEN_EVENT));
   private readonly onHeaderSettingsChange = (patch: Partial<UiSettings>) =>
     this.state?.applySettings(patch);
-  private readonly onHeaderAction = (action: HeaderMenuAction) => {
-    if (this.headerMenuRow) {
-      void this.handleHeaderSessionAction(action, this.headerMenuRow);
-    }
-  };
   private readonly headerPanelCallbacks = {
     terminal: () => this.headerWorkspace?.onToggleTerminal?.(),
     browser: () => this.headerWorkspace?.onToggleBrowser?.(),
@@ -624,12 +616,12 @@ export abstract class ChatPaneHeader extends ChatPaneDiscussion {
                 this.sessionPresentation === "desktop" && !this.compact && !this.onBackToSubagents
                   ? undefined
                   : boardWidgetMenu,
-              sessionActions: this.headerSessionActions.read(
-                this.context,
-                row,
-                placement.reclaimDisabledReason,
-                this.onHeaderAction,
-              ),
+              sessionActions: [],
+              actionSource: {
+                owner: this,
+                readRow: () => this.headerMenuRow,
+                stopDisabledReason: placement.reclaimDisabledReason,
+              },
               sharing: sharing ?? null,
               groups: knownGroups,
               currentOwner: row.owner?.actor ?? null,
@@ -643,7 +635,6 @@ export abstract class ChatPaneHeader extends ChatPaneDiscussion {
               onOpenCommandPalette: this.onHeaderCommandPalette,
               onOpenDetails: detailsControl === undefined ? undefined : this.onHeaderDetails,
               onSettingsChange: this.onHeaderSettingsChange,
-              onAction: this.onHeaderAction,
             }
           : undefined,
       onBeginRename: () => row && this.beginHeaderRename(row),

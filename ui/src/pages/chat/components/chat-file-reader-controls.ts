@@ -1,4 +1,4 @@
-import type { MarkdownRenderOptions } from "../../../components/markdown-render-options.ts";
+import type { MarkdownInputOptions } from "../../../components/markdown-render-options.ts";
 import type { EditorId } from "../../../lib/editor-links.ts";
 import type { FileCopyAction, FileCopyFeedback } from "./chat-file-copy.ts";
 import type { FileHtmlPreviewControls } from "./chat-html-preview.ts";
@@ -29,7 +29,7 @@ export type FileViewControls = {
   onCloseSearch?: (reason: MobileFileFindCloseReason) => void;
   readingMode?: FileReadingMode;
   imagePreview?: { content: string };
-  markdown?: { content: string; options: MarkdownRenderOptions };
+  markdown?: { content: string; options: MarkdownInputOptions };
   onReadingModeChange?: (mode: FileReadingMode) => void;
   onSelectContent?: () => void;
   htmlPreview?: FileHtmlPreviewControls;

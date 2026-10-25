@@ -1,3 +1,4 @@
+import type { BoardSnapshot } from "@openclaw/gateway-protocol";
 import { chatHistoryRequests } from "./chat-history-state.ts";
 import {
   cacheChatSessionSnapshot,
@@ -13,7 +14,7 @@ function cacheChatBoardSnapshot(
   cache: ChatMessageCache,
   host: ChatMessageCacheHost,
   target: ChatMessageCacheTarget,
-  snapshot: unknown,
+  snapshot: BoardSnapshot | null,
   receivedAtMs: number,
 ): void {
   const existing = readChatSessionSnapshot(cache, host, target);
@@ -29,7 +30,7 @@ function cacheChatBoardSnapshot(
 export function cacheChatBoardSnapshotAfterHydration(
   host: ChatMessageCacheHost & { chatMessagesBySession: ChatMessageCache },
   target: ChatMessageCacheTarget,
-  snapshot: unknown,
+  snapshot: BoardSnapshot | null,
   receivedAtMs: number,
   isCurrent: () => boolean,
 ): void {

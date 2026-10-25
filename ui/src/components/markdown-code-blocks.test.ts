@@ -7,13 +7,16 @@ import {
   handleMarkdownCodeBlockClick,
   readMarkdownCodeBlockCopyText,
 } from "./markdown-code-blocks.ts";
-import { parseMarkdownJson } from "./markdown-json.ts";
-import type { MarkdownRenderOptions } from "./markdown-render-options.ts";
+import { parseMarkdownJson } from "./markdown-json-parser.runtime.ts";
+import { createMarkdownParser } from "./markdown-parser.ts";
+import type { MarkdownInputOptions } from "./markdown-render-options.ts";
 import { htmlFragment, toStreamingMarkdownParts } from "./markdown.test-support.ts";
 import { toSanitizedJsonHtml, toSanitizedMarkdownHtml } from "./markdown.ts";
 
-function render(source: string, options?: MarkdownRenderOptions) {
-  return interactiveHtml(toSanitizedMarkdownHtml(source, options));
+function render(source: string, options?: MarkdownInputOptions) {
+  return interactiveHtml(
+    toSanitizedMarkdownHtml(source, { ...options, jsonParser: parseMarkdownJson }),
+  );
 }
 
 function interactiveHtml(html: string) {
@@ -50,7 +53,11 @@ function mountBlocks() {
   section.className = "chat-text";
   section.innerHTML = toSanitizedMarkdownHtml(
     "```ts\nconst answer = 42;\n```\n\n| Name | Value |\n| --- | --- |\n| Alpha | One |",
-    { codeBlockInteraction: "interactive", tableInteractions: "enabled" },
+    {
+      codeBlockInteraction: "interactive",
+      tableInteractions: "enabled",
+      jsonParser: parseMarkdownJson,
+    },
   );
   return { container: section, section, blocks: ownBlocks(section) };
 }
@@ -229,6 +236,20 @@ const interactive = (lines = 41) => {
   return render(`\`\`\`json\n${json}\n\`\`\``, { codeBlockInteraction: "interactive" });
 };
 
+it("requires a prepared JSON parser for interactive Markdown code blocks", () => {
+  const parser = createMarkdownParser();
+  const source = '```json\n{"answer":42}\n```';
+
+  expect(() => parser.render(source, { codeBlockInteraction: "interactive" })).toThrow(
+    "interactive rendering requires a prepared JSON parser",
+  );
+
+  const fragment = htmlFragment(
+    parser.render(source, { codeBlockInteraction: "interactive", jsonParser: parseMarkdownJson }),
+  );
+  expect(fragment.querySelector(".code-block-json-tree")).not.toBeNull();
+});
+
 it.each([true, false])("keeps code literal without HTML children (block art=%s)", (blockArt) => {
   const fragment = render(
     blockArt ? "  ▀▀▀▀  \u2028  ▄▄▄▄  \u2029  ████  " : "```html\n<script>alert(1)</script>\n```",
@@ -311,7 +332,10 @@ it("localizes the hidden-line count and the language fallback", async () => {
 });
 
 describe("source-preserving JSON tree", () => {
-  const jsonOptions = { codeBlockInteraction: "interactive" } as const;
+  const jsonOptions = {
+    codeBlockInteraction: "interactive",
+    jsonParser: parseMarkdownJson,
+  } as const;
   const find = (selector: string) => document.body.querySelector<HTMLElement>(selector);
   const texts = (selector: string) =>
     [...document.body.querySelectorAll(selector)].map((node) => node.textContent);

@@ -5,12 +5,16 @@ import { controlUiBootEntryRoute, controlUiBootManifestKey } from "./control-ui-
 // These common interactions download beside the route, but evaluate only on use.
 // Include the nested option entries too: opening a menu must not start a second RTT.
 const sharedInteractionEntries = new Set([
+  "ui/src/components/markdown-json-parser.runtime.ts",
   // First edit downloads in parallel, without running the writer.
   "ui/src/lib/chat/composer-draft-write.runtime.ts",
   "ui/src/pages/chat/components/chat-composer-slash-menu.tsx",
   "ui/src/pages/chat/components/chat-composer-slash-menu-options.tsx",
   "ui/src/pages/chat/components/chat-composer-skill-menu.tsx",
   "ui/src/pages/chat/components/chat-composer-skill-menu-options.tsx",
+  "ui/src/pages/chat/components/chat-composer-mention-menu-engine.ts",
+  "ui/src/pages/chat/components/chat-composer-emoji-engine.ts",
+  "ui/src/lib/chat/emoji.ts",
   "ui/src/pages/chat/components/chat-composer-mention-menu.tsx",
   "ui/src/pages/chat/components/chat-composer-mention-menu-options.tsx",
   "ui/src/pages/chat/components/chat-composer-emoji.tsx",
@@ -18,25 +22,27 @@ const sharedInteractionEntries = new Set([
   "ui/src/components/app-sidebar-online.tsx",
 ]);
 const chatInteractionEntries = new Set([
+  // Warm disk records decode without another round trip; empty storage stays unevaluated.
+  "ui/src/pages/chat/session-snapshot-decoder.ts",
+  // Viewport transitions use cached bytes while desktop boot skips mobile evaluation.
+  "ui/src/pages/chat/components/chat-pane-mobile-runtime.tsx",
+  // A saved Context panel can render on the first screen.
   "ui/src/pages/chat/components/chat-context-breakdown.tsx",
-  "ui/src/pages/chat/components/chat-transcript-search-content.tsx",
   "ui/src/pages/chat/components/chat-details-desktop-process-row.tsx",
   "ui/src/pages/chat/components/chat-details-process-row.tsx",
   "ui/src/pages/chat/components/chat-details-subagent-rows.tsx",
   "ui/src/components/markdown-live.ts",
   // Cached environment facts reveal without another network round trip.
   "ui/src/pages/chat/components/chat-details-environment-body.tsx",
-  "ui/src/pages/chat/chat-pane-session-operations.ts",
   "ui/src/pages/chat/chat-send-delivery.runtime.ts",
   // Keep the first live reply and common actions to one network round trip.
+  "ui/src/pages/chat/chat-composer-capability-host.tsx",
   "ui/src/pages/chat/chat-live-events.runtime.ts",
   "ui/src/pages/chat/tool-stream.ts",
-  "ui/src/pages/chat/chat-command-dispatch.runtime.ts",
-  "ui/src/pages/chat/chat-pane-session-operations.runtime.ts",
   // Download common tool facts and collapsed chrome without evaluating them for plain transcripts.
   "ui/src/pages/chat/chat-tool-family-runtime.ts",
   "ui/src/pages/chat/chat-tool-presentation.runtime.ts",
-  // Image viewers and provider-review dialogs load only when their own UI is needed.
+  // Search, session actions, commands and viewers load on explicit demand.
 ]);
 
 export function collectControlUiStaticAssets(
@@ -90,6 +96,14 @@ export function collectControlUiBootAssets(
   }
   for (const [route, entry] of [
     ["chat", "ui/src/pages/chat/route-entry.ts"],
+    // First-screen content may need these renderers after history arrives.
+    // Fetch their whole static graph beside the route without evaluating it.
+    ["chat", "ui/src/pages/chat/components/chat-agent-run-frame.tsx"],
+    ["chat", "ui/src/pages/chat/components/chat-message-stream-view.tsx"],
+    ["chat", "ui/src/pages/chat/components/chat-message-group-rich.tsx"],
+    ["chat", "ui/src/pages/chat/components/chat-message-bubble-rich.tsx"],
+    ["chat", "ui/src/pages/chat/components/chat-message-context-view.tsx"],
+    ["chat", "ui/src/pages/chat/components/chat-workspace-conflict.tsx"],
     ["new", "ui/src/pages/new-session/new-session-page-entry.ts"],
   ] as const) {
     const chunk = chunks.find((candidate) =>

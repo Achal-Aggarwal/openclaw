@@ -30,7 +30,7 @@ import {
 import { chatPullRequestId, retainedPublication } from "./components/chat-pull-requests.ts";
 import { syncSessionPanelInputs, useSessionPanel } from "./components/chat-session-panel.tsx";
 import { createChatSessionSharingMobileAdapter } from "./components/chat-session-sharing-mobile-adapter.tsx";
-import type { PreparedChatSessionSharing } from "./components/chat-session-sharing-shared.tsx";
+import type { PreparedSessionSharingInput } from "./components/chat-session-sharing-shared.tsx";
 import type { ChatSessionVersionsMobileProps } from "./components/chat-session-versions-mobile.tsx";
 import { createSessionAutomationInventory } from "./components/chat-summary-automations.tsx";
 import { ProcessesPanelData } from "./processes-panel-data.ts";
@@ -39,7 +39,7 @@ registerEnglishCatalog(registerChatSessionEnglish);
 registerEnglishCatalog(registerChatDetailsEnglish);
 
 export type MobileDetailsBindings = {
-  sharing?: PreparedChatSessionSharing;
+  sharing?: PreparedSessionSharingInput;
   people?: ChatMobilePeople;
   peopleMentions?: ChatMobilePeopleMentions;
   goal: Omit<ChatDetailsGoalProps, "goal" | "presented">;

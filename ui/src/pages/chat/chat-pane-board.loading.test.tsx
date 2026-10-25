@@ -7,10 +7,11 @@ import { createDeferred } from "../../../../test/helpers/promise.js";
 import type { GatewayBrowserClient } from "../../api/gateway.ts";
 import type { ApplicationContext } from "../../app/context.ts";
 import type { BoardProvider } from "../../lib/board/provider.ts";
+import { transactionComplete } from "../../lib/chat/control-ui-database.runtime.ts";
 import { waitForSolid } from "../../test-helpers/solid-settle.ts";
 import { chatHistoryRequests } from "./chat-history-state.ts";
+import type { ChatBoardPanelSource } from "./chat-pane-panel-source.ts";
 import type { ResolvedBoardView } from "./chat-pane-shared.ts";
-import type { ChatBoardPanel } from "./chat-pane-surfaces.tsx";
 import {
   createSessionCapabilityFixture,
   createTestChatPane,
@@ -22,6 +23,10 @@ import {
   readChatSessionSnapshot,
   type ChatSessionSnapshot,
 } from "./session-message-cache.ts";
+import {
+  CHAT_SNAPSHOT_STORE_NAME,
+  openSessionSnapshotDatabase,
+} from "./session-snapshot-database.ts";
 import { clearStoredChatSnapshots } from "./session-snapshot-invalidation.ts";
 import { resolveChatSnapshotKey } from "./session-snapshot-key.ts";
 import { SessionSnapshotStore } from "./session-snapshot-store.ts";
@@ -35,10 +40,10 @@ type BoardTestPane = HTMLElement & {
   hydrateStoredChatSnapshot: (state: ChatPageHost, sessionKey: string) => void;
   resolveBoardProvider: () => BoardProvider;
   resolveBoardView: () => ResolvedBoardView;
-  renderBoardPanel: (
+  boardPanelSource: (
     board: ResolvedBoardView,
     layout: ChatPageHost["sidebarLayout"],
-  ) => Parameters<typeof ChatBoardPanel>[0] | null;
+  ) => ChatBoardPanelSource | null;
   releaseBoardProviderLease: () => void;
 };
 
@@ -99,7 +104,7 @@ function admitCache(pane: BoardTestPane, gatewayUrl = pane.context.gateway.conne
   });
 }
 
-async function persistBoard(pane: BoardTestPane, snapshot: unknown, cleanup: Cleanup) {
+async function persistBoard(pane: BoardTestPane, snapshot: BoardSnapshot, cleanup: Cleanup) {
   admitCache(pane);
   Reflect.set(pane, "sessionKey", pane.state.sessionKey);
   vi.stubGlobal("indexedDB", new IDBFactory());
@@ -162,7 +167,35 @@ it("hydrates the transcript without mounting an invalid persisted board", async 
   const { pane, request, container, draw, cleanup } = createGatewayBoardPane(sessionKey);
   const response = createDeferred<BoardSnapshot>();
   request.mockReturnValue(response.promise);
-  await persistBoard(pane, { sessionKey, revision: 1, tabs: [], widgets: [{}] }, cleanup);
+  admitCache(pane);
+  Reflect.set(pane, "sessionKey", sessionKey);
+  vi.stubGlobal("indexedDB", new IDBFactory());
+  cleanup.after = async () => {
+    await clearStoredChatSnapshots();
+    vi.unstubAllGlobals();
+  };
+  pane.sessionSnapshotStore = new SessionSnapshotStore(pane.state.chatMessagesBySession);
+  const database = expectDefined(await openSessionSnapshotDatabase(), "snapshot database");
+  try {
+    const transaction = database.transaction(CHAT_SNAPSHOT_STORE_NAME, "readwrite");
+    const completed = transactionComplete(transaction);
+    transaction.objectStore(CHAT_SNAPSHOT_STORE_NAME).put({
+      projectionVersion: 3,
+      sessionKey: resolveChatSnapshotKey(pane.state, { sessionKey }),
+      savedAt: Date.now(),
+      sessionId: transcript.sessionId,
+      snapshot: {
+        ...transcript,
+        board: {
+          snapshot: { sessionKey, revision: 1, tabs: [], widgets: [{}] },
+          receivedAtMs: Date.now(),
+        },
+      },
+    });
+    await completed;
+  } finally {
+    database.close();
+  }
   const provider = pane.resolveBoardProvider();
   pane.hydrateStoredChatSnapshot(pane.state, sessionKey);
   await chatHistoryRequests(pane.state).initialSnapshotHydration?.promise;

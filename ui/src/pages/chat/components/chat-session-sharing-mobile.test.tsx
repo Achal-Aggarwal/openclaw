@@ -1,4 +1,5 @@
 /* @vitest-environment jsdom */
+
 import { createSignal, flush } from "solid-js";
 import { expect, it, vi } from "vitest";
 import { createDeferred } from "../../../../../test/helpers/promise.js";
@@ -6,11 +7,13 @@ import type { GatewaySessionRow, SessionMembersListEvidenceResult } from "../../
 import { mountSolid } from "../../../test-helpers/mount-solid.ts";
 import { waitForSolid } from "../../../test-helpers/solid-settle.ts";
 import { createMountedPanes, refreshPane } from "../chat-pane-mounted.test-support.ts";
+import { resolvePreparedChatSessionSharing } from "../chat-pane-sharing-mutations.ts";
 import { createChatSessionSharingMobileAdapter } from "./chat-session-sharing-mobile-adapter.tsx";
 import {
   ChatSessionAccessMobile,
   ChatSessionSharingMobile,
 } from "./chat-session-sharing-mobile.tsx";
+import type { PreparedPaneSessionSharing } from "./chat-session-sharing-shared.tsx";
 import type {
   PreparedChatSessionSharing,
   ChatSessionSharingOutcome,
@@ -102,7 +105,7 @@ it("keeps sharing busy through refresh and retires it for a same-key successor",
   const rows: GatewaySessionRow[] = [previous];
   const fixture = createMountedPanes(rows);
   const pane = fixture.mount(previous.key) as ReturnType<typeof fixture.mount> & {
-    prepareSessionSharing: (row: GatewaySessionRow) => PreparedChatSessionSharing;
+    prepareSessionSharing: (row: GatewaySessionRow) => PreparedPaneSessionSharing;
     syncSelectedSessionSharing: (row: GatewaySessionRow) => void;
   };
   const response = createDeferred<unknown>();
@@ -144,10 +147,11 @@ it("keeps sharing busy through refresh and retires it for a same-key successor",
   await waitForSolid(() =>
     expect(pane.prepareSessionSharing(previous)?.state?.loading).toBe(false),
   );
-  const source = pane.prepareSessionSharing(previous);
+  const source = resolvePreparedChatSessionSharing(pane.prepareSessionSharing(previous));
   const operation = vi.spyOn(source, "onVisibilityChange");
   const view = accessFixture(source);
   view.button(/Shared/).click();
+  expect(pane.prepareSessionSharing(previous).state?.loading).toBe(true);
   await view.expectDisabled(/Shared/, true);
   // A delayed header render may check hydration while the write is pending.
   pane.syncSelectedSessionSharing(previous);
@@ -172,11 +176,12 @@ it("keeps sharing busy through refresh and retires it for a same-key successor",
   await waitForSolid(() =>
     expect(pane.prepareSessionSharing(replacement)?.state?.loading).toBe(false),
   );
-  view.setSource(pane.prepareSessionSharing(replacement));
+  view.setSource(resolvePreparedChatSessionSharing(pane.prepareSessionSharing(replacement)));
   await waitForSolid(() =>
     expect(view.button(/Read-only/).getAttribute("aria-pressed")).toBe("true"),
   );
   expect(view.button(/Shared/).hasAttribute("disabled")).toBe(false);
+  view.unmount();
   refresh.resolve(initial.state!.result!);
   await operation.mock.results[0]!.value;
   flush();

@@ -1,4 +1,5 @@
 /* @vitest-environment jsdom */
+
 import { createRoot, createSignal } from "solid-js";
 import { afterEach, expect, it, onTestFinished, vi } from "vitest";
 import { createDeferred } from "../../../../test/helpers/promise.ts";
@@ -10,6 +11,8 @@ import { sessionsResult } from "../../lib/sessions/session-capability.test-suppo
 import { showToast } from "../../lib/toast.ts";
 import { mountSolid } from "../../test-helpers/mount-solid.ts";
 import { waitForSolid } from "../../test-helpers/solid-settle.ts";
+import { getPaneTestRuntime } from "./chat-pane-runtime.test-support.ts";
+import { runChatHeaderSessionAction } from "./chat-pane-session-menu-actions.ts";
 import {
   activePlacementSession,
   createGatewayBrowserClientFixture,
@@ -73,7 +76,11 @@ it.each([false, true])("scopes a new-group preparation failure (retired=%s)", as
   const { pane, state } = paneFor(row);
   const preparation = createDeferred<string | null>();
   const dialog = vi.spyOn(inputDialog, "showInputDialog").mockReturnValueOnce(preparation.promise);
-  const operation = pane.handleHeaderSessionAction({ kind: "new-group" }, row);
+  const operation = runChatHeaderSessionAction(
+    getPaneTestRuntime(pane),
+    { kind: "new-group" },
+    row,
+  );
   await waitForSolid(() => expect(dialog).toHaveBeenCalledOnce());
   if (retired) {
     pane.presented = false;

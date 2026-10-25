@@ -107,6 +107,7 @@ async function mount(
   };
   const search = async (text = "@") => {
     await append(text);
+    await vi.dynamicImportSettled();
     await vi.advanceTimersByTimeAsync(150);
     await palette.updateComplete;
   };
@@ -298,6 +299,7 @@ describe("command palette people mentions", () => {
     expect(f.menu()?.querySelector('[aria-busy="true"]')).toBeTruthy();
     await f.key("Enter");
     expect(f.context.sessions.createResult).not.toHaveBeenCalled();
+    await vi.dynamicImportSettled();
     await vi.advanceTimersByTimeAsync(150);
     expect(f.menu()?.textContent).toContain("No people found");
     await f.key("Tab");

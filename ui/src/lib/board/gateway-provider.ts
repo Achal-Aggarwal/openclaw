@@ -11,7 +11,6 @@ import { truncateCodePoints } from "@openclaw/normalization-core/code-points";
 import { sleepWithAbort } from "@openclaw/retry";
 import type { GatewayBrowserClient } from "../../api/gateway.ts";
 import { formatUiError } from "../format-error.ts";
-import { isBoardSnapshot } from "../protocol-validators.generated/board.js";
 import {
   normalizeSessionKeyForUiComparison,
   parseAgentSessionKey,
@@ -144,12 +143,11 @@ export class GatewayBoardProvider implements BoardProvider {
     return () => this.cacheListeners.delete(notify);
   }
 
-  restoreSnapshot(snapshot: unknown, receivedAtMs: number): void {
+  restoreSnapshot(snapshot: BoardSnapshot, receivedAtMs: number): void {
     if (
       this.disposed ||
       this.snapshotLoaded ||
       this.snapshotRevalidated ||
-      !isBoardSnapshot(snapshot) ||
       !this.matchesSession(snapshot.sessionKey)
     ) {
       return;

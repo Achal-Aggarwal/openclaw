@@ -1,7 +1,7 @@
 import { safeParseJson } from "@openclaw/normalization-core";
 import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import { applyEdits, format } from "jsonc-parser";
-import { parseMarkdownJson } from "../../components/markdown-json.ts";
+import { parseMarkdownJson } from "../../components/markdown-json-parser.runtime.ts";
 import { t } from "../../i18n/index.ts";
 import { registerChatToolLabelsEnglish } from "../../i18n/locales/en-chat-tool-labels.ts";
 import type { ToolCard } from "./chat-types.ts";

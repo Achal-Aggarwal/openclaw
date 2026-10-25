@@ -2,9 +2,11 @@ import { stripUnsupportedCitationControlMarkers } from "../../../src/shared/text
 import { truncateText } from "../lib/format.ts";
 import { markdownContentHtml, type MarkdownContent } from "../lib/markdown-content.ts";
 import { markdownHighlightingPending } from "./markdown-code-blocks.ts";
+import { parseMarkdownJson } from "./markdown-json-parser.runtime.ts";
 import {
   MARKDOWN_PARSE_LIMIT,
   normalizeMarkdownRenderOptions,
+  type MarkdownInputOptions,
   type MarkdownRenderOptions,
 } from "./markdown-render-options.ts";
 import { streamingMarkdownState } from "./markdown-streaming-state.ts";
@@ -48,13 +50,20 @@ function normalizeStreamingMarkdownInput(markdownLocal: string, streamKey?: stri
 
 export function toStreamingMarkdownDomParts(
   markdownLocal: string,
-  options: MarkdownRenderOptions = {},
+  options: MarkdownInputOptions = {},
   streamKey?: string,
 ): [MarkdownContent, MarkdownContent] {
-  const renderOptions = normalizeMarkdownRenderOptions(options);
+  const preparedOptions: MarkdownRenderOptions = {
+    ...options,
+    jsonParser: parseMarkdownJson,
+  };
+  const renderOptions = normalizeMarkdownRenderOptions(preparedOptions);
   // Explicit selections are complete user input, not incremental assistant text.
   if (renderOptions.humanMentions.length) {
-    return partitionMarkdownHtml(toSanitizedMarkdownHtml(markdownLocal, options), streamKey);
+    return partitionMarkdownHtml(
+      toSanitizedMarkdownHtml(markdownLocal, preparedOptions),
+      streamKey,
+    );
   }
   const rawInput = normalizeStreamingMarkdownInput(markdownLocal, streamKey);
   if (isMarkdownBlockArtText(rawInput)) {

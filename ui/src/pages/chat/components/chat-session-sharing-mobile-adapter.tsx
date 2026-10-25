@@ -2,6 +2,7 @@ import { createMemo } from "solid-js";
 import type { SessionVisibility } from "../../../api/types.ts";
 import { registerChatSessionEnglish } from "../../../i18n/locales/en-chat-session.ts";
 import { registerEnglishCatalog, t } from "../../../lib/reactive/i18n.ts";
+import { resolvePreparedChatSessionSharing } from "../chat-pane-sharing-mutations.ts";
 import type {
   ChatSessionAccessMobileProps,
   ChatSessionSharingMobileLabels,
@@ -9,7 +10,7 @@ import type {
   ChatSessionSharingModePresentation,
 } from "./chat-session-sharing-mobile.tsx";
 import type { ChatSessionSharingOptionsProps } from "./chat-session-sharing-options.tsx";
-import type { PreparedChatSessionSharing } from "./chat-session-sharing-shared.tsx";
+import type { PreparedSessionSharingInput } from "./chat-session-sharing-shared.tsx";
 import {
   canManageChatSessionSharing,
   CHAT_SESSION_SHARING_DESCRIPTION_KEYS,
@@ -39,10 +40,13 @@ export type ChatSessionSharingMobileAdapter = {
 
 /** Create once under the retained session owner; read must expose live native Sharing props. */
 export function createChatSessionSharingMobileAdapter(
-  read: () => PreparedChatSessionSharing | null | undefined,
+  read: () => PreparedSessionSharingInput | null | undefined,
   navigation: ChatSessionSharingMobileNavigation,
 ): ChatSessionSharingMobileAdapter {
-  const source = createMemo(read);
+  const source = createMemo(() => {
+    const input = read();
+    return input && resolvePreparedChatSessionSharing(input);
+  });
   const presentation = createChatSessionSharingPresentation(source);
   const visibility = () => source()?.session?.visibility ?? "shared";
   const pending = () => presentation.busy() || source()?.state?.loading === true;

@@ -114,6 +114,14 @@ it.each(["keyboard", "last", "pointer", "external", "closed", "reopened"] as con
     }
     ready.resolve();
     await imported.promise;
+    if (mode === "closed") {
+      expect(view.panel.matches(":popover-open")).toBe(false);
+      expect(
+        view.queryByRole("menuitemcheckbox", { name: "Updated toggle", hidden: true }),
+      ).toBeNull();
+      expect(document.activeElement).toBe(view.trigger);
+      return;
+    }
     await waitForSolid(() =>
       expect(
         view.getByRole("menuitemcheckbox", { name: "Updated toggle", hidden: true }),
