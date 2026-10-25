@@ -6,15 +6,13 @@ import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import type { RuntimeEnv } from "../../runtime.js";
 import type { ChannelSetupAdapter } from "./setup-adapter.types.js";
 
-type ChannelSetupCliOption = {
-  flags: string;
-  negatedFlags?: string;
-  description: string;
-  defaultValue?: boolean | string;
-};
-
 type ChannelSetupField = {
-  cli: ChannelSetupCliOption;
+  cli: {
+    flags: string;
+    negatedFlags?: string;
+    description: string;
+    defaultValue?: boolean | string;
+  };
 } & (
   | { kind: "string"; sensitive?: boolean }
   | { kind: "boolean"; envVars?: readonly string[]; envVarMode?: "all" | "any" }
