@@ -1049,7 +1049,6 @@
   "ui/src/components/solid/connect-command.tsx",
   "ui/src/i18n/locales/en-new-session-setup.ts",
   "ui/src/lib/chat/composer-draft-write.runtime.ts",
-  "ui/src/lib/chat/outbox-payload-store.runtime.ts",
   "ui/src/lib/mac-form-factor.ts",
   "ui/src/lib/model-catalog-reader.ts",
   "ui/src/lib/page-request.ts",
