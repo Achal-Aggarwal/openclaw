@@ -82,7 +82,10 @@ export function iconRequests(fetchMock: ReturnType<typeof mockIcon>) {
     .filter((url) => url.includes("/__openclaw__/plugin-icon/"));
 }
 
-export const sources: Array<Pick<ApplicationContext, "runtimeConfig" | "channels">> = [];
+export const sources: Array<{
+  runtimeConfig: ApplicationContext["runtimeConfig"];
+  channels: ReturnType<ApplicationContext["getChannels"]>;
+}> = [];
 
 export function catalogFixture(plugins: object[], initial = channelSnapshot(), scopes?: string[]) {
   let refreshed: ReturnType<typeof channelSnapshot> | undefined;
@@ -167,7 +170,7 @@ export function createContext(gateway: ApplicationContext["gateway"]) {
     basePath: "",
     resourceBasePath: "",
     gateway,
-    channels,
+    getChannels: () => channels,
     runtimeConfig,
     router,
     navigate: vi.fn(),

@@ -276,7 +276,6 @@ export function createContext(
       setScope: () => undefined,
       subscribe,
     },
-    channels: { subscribe },
     runtimeConfig: { state: { configSnapshot: null }, subscribe },
     plugins: {
       registrations: vi.fn(() => []),

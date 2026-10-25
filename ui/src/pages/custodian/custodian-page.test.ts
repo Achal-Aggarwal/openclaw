@@ -556,7 +556,7 @@ describe("custodian page", () => {
     setChannelsSnapshot(null);
     setChannelsConnected(false);
     setChannelsConnected(true);
-    expect(context.channels.refresh).not.toHaveBeenCalled();
+    expect(context.getChannels(createChannelCapability).refresh).not.toHaveBeenCalled();
     expect(context.replace).toHaveBeenCalledWith("custodian");
     expect(page.querySelector(".custodian__nudge--channel-onboarding")).toBeNull();
   });
@@ -595,7 +595,7 @@ describe("custodian page", () => {
     });
     const { context, setGatewaySnapshot } = createContext(request);
     const channels = createChannelCapability(context.gateway);
-    Object.assign(context, { channels });
+    Object.assign(context, { getChannels: () => channels });
     await channels.refresh();
     await channels.refresh();
     const previousSnapshot = channels.state.channelsSnapshot;
@@ -637,7 +637,7 @@ describe("custodian page", () => {
     );
     const { context } = createContext(request);
     const channels = createChannelCapability(context.gateway);
-    Object.assign(context, { channels });
+    Object.assign(context, { getChannels: () => channels });
     void channels.refresh();
     const { page } = await mountPage(context, { onboarding: true });
     expect(page.querySelector(".custodian__nudge--channel-onboarding")).toBeNull();
