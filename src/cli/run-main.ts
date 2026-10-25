@@ -1076,11 +1076,10 @@ async function runCliWithPreparedOutputMode(
     }
 
     if (shouldUseSetupOnboardConfigureHelpFastPath(normalizedArgv)) {
-      const { tryOutputSetupOnboardConfigureHelp } =
+      const { outputSetupOnboardConfigureHelp } =
         await import("./setup-onboard-configure-help-fast-path.js");
-      if (await tryOutputSetupOnboardConfigureHelp(normalizedArgv)) {
-        return;
-      }
+      await outputSetupOnboardConfigureHelp(normalizedArgv);
+      return;
     }
 
     // Genuine help fast paths have returned. Any remaining help/version-shaped

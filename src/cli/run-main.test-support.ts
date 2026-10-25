@@ -60,7 +60,7 @@ const outputPrecomputedCommandHelpTextMock = vi.hoisted(() => vi.fn(() => false)
 const loadRootHelpRenderOptionsForConfigSensitivePluginsMock = vi.hoisted(() =>
   vi.fn<() => Promise<RootHelpRenderOptions | null>>(async () => null),
 );
-const tryOutputSetupOnboardConfigureHelpMock = vi.hoisted(() => vi.fn(async () => true));
+const outputSetupOnboardConfigureHelpMock = vi.hoisted(() => vi.fn(async () => {}));
 const buildProgramMock = vi.hoisted(() => vi.fn());
 const parkCurrentLaunchAgentForMaintenanceMock = vi.hoisted(() => vi.fn(async () => true));
 const getProgramContextMock = vi.hoisted(() => vi.fn(() => null));
@@ -330,8 +330,9 @@ vi.mock("./root-help-live-config.js", () => ({
     loadRootHelpRenderOptionsForConfigSensitivePluginsMock,
 }));
 
-vi.mock("./setup-onboard-configure-help-fast-path.js", () => ({
-  tryOutputSetupOnboardConfigureHelp: tryOutputSetupOnboardConfigureHelpMock,
+vi.mock("./setup-onboard-configure-help-fast-path.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./setup-onboard-configure-help-fast-path.js")>()),
+  outputSetupOnboardConfigureHelp: outputSetupOnboardConfigureHelpMock,
 }));
 
 // mock-isolation: Exercise dispatch without constructing the real Commander program.
@@ -489,7 +490,7 @@ export {
   outputPrecomputedRootHelpTextMock,
   outputPrecomputedCommandHelpTextMock,
   loadRootHelpRenderOptionsForConfigSensitivePluginsMock,
-  tryOutputSetupOnboardConfigureHelpMock,
+  outputSetupOnboardConfigureHelpMock,
   buildProgramMock,
   parkCurrentLaunchAgentForMaintenanceMock,
   getProgramContextMock,
@@ -577,7 +578,7 @@ export function installRunMainTestHooks(): void {
     outputPrecomputedCommandHelpTextMock.mockReset().mockReturnValue(false);
     outputPrecomputedRootHelpTextMock.mockReturnValue(false);
     loadRootHelpRenderOptionsForConfigSensitivePluginsMock.mockResolvedValue(null);
-    tryOutputSetupOnboardConfigureHelpMock.mockResolvedValue(true);
+    outputSetupOnboardConfigureHelpMock.mockResolvedValue(undefined);
     hasEnvHttpProxyAgentConfiguredMock.mockReturnValue(false);
     loadConfigMock.mockReturnValue({});
     startProxyMock.mockResolvedValue(null);

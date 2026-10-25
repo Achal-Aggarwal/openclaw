@@ -3357,7 +3357,6 @@
 ["src/cli/run-main.test-support.ts","./progress.js","17ba4a7be08710a321b04e62410cb022c03d6e71def50aad7ef183592e22ad75",1]
 ["src/cli/run-main.test-support.ts","./root-help-live-config.js","688aaab649e3c33dbc3906f3dd42506ecdaf6145663e918203159b841e8a9584",1]
 ["src/cli/run-main.test-support.ts","./route.js","8e39cd125b2ff6b2fb1359ecdd8f4afafea1611bd9f9ee49adbc0cedc7032db2",1]
-["src/cli/run-main.test-support.ts","./setup-onboard-configure-help-fast-path.js","052f5589627d7d1b3c722e0f5a70c0d80b6a175263d82acac798f7348bfae953",1]
 ["src/cli/run-main.test-support.ts","./tui-cli.js","9e90ca4869626801487b93334cd044793f72b0f716b8b734785f409324f24263",1]
 ["src/cli/run-main.test.ts","../state/agent-database-startup.js","1722f1e698d1a18e08ccd0c0f82665ceed435dbf742ff0eafbda0d5ccf2dfe69",1]
 ["src/cli/run-main.test.ts","./command-execution-startup.js","f42a634cf4ca162bf955cfb7a5869a881288cd93396d3602d42dc023eb72a4bd",1]

@@ -1,17 +1,11 @@
 // Fast help renderer for setup/onboard/configure without loading full CLI startup.
 import { Command, CommanderError } from "commander";
 import { VERSION } from "../version.js";
-import { getCommandPathWithRootOptions, isSimpleCommandHelpInvocation } from "./argv.js";
+import { getCommandPathWithRootOptions } from "./argv.js";
 import { configureProgramHelp } from "./program/help.js";
 
-const SETUP_ONBOARD_CONFIGURE_HELP_COMMANDS = new Set(["setup", "onboard", "configure"]);
-
-export async function tryOutputSetupOnboardConfigureHelp(argv: string[]): Promise<boolean> {
+export async function outputSetupOnboardConfigureHelp(argv: string[]): Promise<void> {
   // Register only the requested command so help stays quick and avoids config/plugin startup.
-  if (!isSimpleCommandHelpInvocation(argv, SETUP_ONBOARD_CONFIGURE_HELP_COMMANDS)) {
-    return false;
-  }
-
   const program = new Command();
   program.enablePositionalOptions();
   program.exitOverride();
@@ -36,5 +30,4 @@ export async function tryOutputSetupOnboardConfigureHelp(argv: string[]): Promis
     }
     process.exitCode = error.exitCode;
   }
-  return true;
 }

@@ -12,7 +12,7 @@ import {
   outputPrecomputedRootHelpTextMock,
   outputPrecomputedCommandHelpTextMock,
   loadRootHelpRenderOptionsForConfigSensitivePluginsMock,
-  tryOutputSetupOnboardConfigureHelpMock,
+  outputSetupOnboardConfigureHelpMock,
   buildProgramMock,
   getProgramContextMock,
   registerCoreCliByNameMock,
@@ -126,7 +126,7 @@ describe("runCli exit behavior", () => {
   it("renders setup/onboard/configure help without building the full program", async () => {
     await runCli(cliArgs("setup", "--help"));
 
-    expect(tryOutputSetupOnboardConfigureHelpMock).toHaveBeenCalledWith(cliArgs("setup", "--help"));
+    expect(outputSetupOnboardConfigureHelpMock).toHaveBeenCalledWith(cliArgs("setup", "--help"));
     expect(tryRouteCliMock).not.toHaveBeenCalled();
     expect(buildProgramMock).not.toHaveBeenCalled();
     expect(registerPluginCliCommandsFromValidatedConfigMock).not.toHaveBeenCalled();
