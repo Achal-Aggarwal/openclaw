@@ -10,6 +10,7 @@ import {
   PluginsCatalogBrowseResultSchema,
   PluginsCatalogCategoriesResultSchema,
 } from "../../../packages/gateway-protocol/src/schema/plugins.ts";
+import { createControlUiCoreBootFixture } from "./control-ui-core-boot-fixture.ts";
 import type { MockGatewayWindow } from "./control-ui-e2e-contract.ts";
 import {
   createControlUiMockGatewayInitScript,
@@ -19,6 +20,90 @@ import { flushMockTimers, mockGatewayTest as it } from "./mock-gateway-page.test
 
 const getGateway = (window: MockGatewayWindow) =>
   expectDefined(window.openclawControlUiE2eGateway, "Mock Gateway was not installed");
+
+it("fails an unmodeled strict fixture request through the page error boundary", async ({
+  gatewayPage,
+}) => {
+  gatewayPage.execute(createControlUiMockGatewayInitScript({ rejectUnhandledMethods: true }));
+  const errors: string[] = [];
+  gatewayPage.window.addEventListener("error", (event) => {
+    errors.push(event.message);
+    event.preventDefault();
+  });
+  const socket = gatewayPage.connect();
+  await flushMockTimers();
+  socket.send("unmodeled", "fixture.unmodeled", {});
+  await flushMockTimers();
+  expect(errors).toEqual(["Unhandled mock Gateway method: fixture.unmodeled"]);
+  expect(socket.frames.some((frame) => frame.id === "unmodeled")).toBe(false);
+});
+
+it("acknowledges core PR replacement sets before socket-scoped snapshots", async ({
+  gatewayPage,
+}) => {
+  const fixture = createControlUiCoreBootFixture("selected", "fixture-boot");
+  gatewayPage.execute(createControlUiMockGatewayInitScript());
+  gatewayPage.execute(fixture.initScript);
+  const first = gatewayPage.connect();
+  await flushMockTimers();
+  first.send("initial", "controlUi.sessionPullRequests.subscribe", {
+    sessionKeys: ["selected", "active"],
+    passiveSessionKeys: ["selected", "passive"],
+  });
+  await flushMockTimers();
+  expect(first.frames.filter((frame) => frame.event !== "connect.challenge")).toEqual([
+    { type: "res", id: "initial", ok: true, payload: { subscribed: true } },
+    expect.objectContaining({
+      type: "event",
+      event: "controlUi.sessionPullRequests.changed",
+      payload: {
+        sessions: {
+          selected: {
+            status: "ready",
+            pullRequests: [],
+            rateLimited: false,
+            repository: { owner: "example", repo: "boot-fixture" },
+            branch: { owner: "example", repo: "boot-fixture", branch: "fixture/core-boot" },
+          },
+          active: { status: "ready", pullRequests: [], rateLimited: false },
+          passive: { status: "ready", pullRequests: [], rateLimited: false },
+        },
+      },
+    }),
+  ]);
+  let offset = first.frames.length;
+  first.send("replacement", "controlUi.sessionPullRequests.subscribe", { sessionKeys: ["next"] });
+  await flushMockTimers();
+  expect(first.frames.slice(offset)).toEqual([
+    { type: "res", id: "replacement", ok: true, payload: { subscribed: true } },
+    expect.objectContaining({
+      type: "event",
+      payload: { sessions: { next: { status: "ready", pullRequests: [], rateLimited: false } } },
+    }),
+  ]);
+  offset = first.frames.length;
+  first.send("unsubscribe", "controlUi.sessionPullRequests.subscribe", { sessionKeys: [] });
+  await flushMockTimers();
+  expect(first.frames.slice(offset)).toEqual([
+    { type: "res", id: "unsubscribe", ok: true, payload: { subscribed: false } },
+  ]);
+  offset = first.frames.length;
+  const second = gatewayPage.connect();
+  await flushMockTimers();
+  second.send("reconnect", "controlUi.sessionPullRequests.subscribe", {
+    sessionKeys: ["selected"],
+  });
+  await flushMockTimers();
+  expect(first.frames).toHaveLength(offset);
+  expect(second.frames.filter((frame) => frame.event !== "connect.challenge")).toEqual([
+    { type: "res", id: "reconnect", ok: true, payload: { subscribed: true } },
+    expect.objectContaining({
+      type: "event",
+      event: "controlUi.sessionPullRequests.changed",
+      payload: { sessions: { selected: expect.objectContaining({ status: "ready" }) } },
+    }),
+  ]);
+});
 
 it("serves protocol-valid empty Custodian history without method advertisement", async ({
   gatewayPage,

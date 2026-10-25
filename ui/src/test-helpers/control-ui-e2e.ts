@@ -253,6 +253,8 @@ export type ControlUiMockGatewayScenario = {
   authMode?: HelloOk["snapshot"]["authMode"] | null;
   featureEvents?: string[];
   featureMethods?: string[];
+  /** Fail opt-in benchmark fixtures instead of acknowledging an unmodeled RPC. */
+  rejectUnhandledMethods?: boolean;
   /** Simulate a legacy Gateway that predates the advertised method catalog. */
   omitFeatureMethods?: boolean;
   historyMessages?: unknown[];
@@ -808,6 +810,7 @@ function normalizeScenario(
     // Baseline scenarios represent a current Gateway. Tests for unsupported or
     // mixed-version methods provide an explicit narrower catalog.
     featureMethods: scenario.featureMethods ?? [...defaultControlUiFeatureMethods],
+    rejectUnhandledMethods: scenario.rejectUnhandledMethods ?? false,
     omitFeatureMethods: scenario.omitFeatureMethods ?? false,
     historyMessages: scenario.historyMessages ?? [],
     sessionReactions: scenario.sessionReactions ?? {},
@@ -2178,6 +2181,11 @@ function installControlUiMockGateway(
         return { ok: true };
       }
       default:
+        if (scenario.rejectUnhandledMethods) {
+          // The scheduled request handler makes this a fatal page error, even if
+          // application code would otherwise catch a failed or timed-out RPC.
+          throw new Error(`Unhandled mock Gateway method: ${method}`);
+        }
         return {};
     }
   }

@@ -1,6 +1,13 @@
 import { Value } from "typebox/value";
 import { describe, expect, it } from "vitest";
 import { CronJobSchema } from "../../../packages/gateway-protocol/src/schema/cron.ts";
+import { MentionsListResultSchema } from "../../../packages/gateway-protocol/src/schema/human-mentions.ts";
+import { SessionDiscussionInfoResultSchema } from "../../../packages/gateway-protocol/src/schema/session-discussion.ts";
+import { SessionGitHubOptionsResultSchema } from "../../../packages/gateway-protocol/src/schema/session-github-publication.ts";
+import { SessionSuggestionsListResultSchema } from "../../../packages/gateway-protocol/src/schema/sessions-suggestions.ts";
+import { SessionsObserverVisibilityResultSchema } from "../../../packages/gateway-protocol/src/schema/sessions.ts";
+import { TaskSuggestionsListResultSchema } from "../../../packages/gateway-protocol/src/schema/task-suggestions.ts";
+import { listCoreAdvertisedGatewayMethodNames } from "../../../src/gateway/methods/core-method-policy.ts";
 import { GatewaySessionRowEvents } from "../api/gateway-session-row-events.ts";
 import type { GatewaySessionRow } from "../api/types.ts";
 import { canApplySessionListSnapshot } from "../lib/sessions/session-list-query.ts";
@@ -27,6 +34,56 @@ function expectAbsent(value: unknown, fields: string) {
 }
 
 describe("Team-scale Gateway fixture", () => {
+  it("preserves the original workload unless the core profile is selected", () => {
+    const fixture = createControlUiTeamScaleFixture({ now });
+    expect(fixture.scenario.featureMethods).not.toContain("sessions.github.publish");
+    expect(fixture.scenario).not.toHaveProperty("rejectUnhandledMethods");
+    expect(fixture).not.toHaveProperty("coreBootInitScript");
+    expect(
+      fixture.scenario.sessions?.find((row) => row.key === fixture.selectedSessionKey),
+    ).not.toHaveProperty("worktree");
+    expect(fixture.scenario.methodResponses).not.toHaveProperty("sessions.github.options");
+  });
+
+  it("models protocol-valid core discovery and recovered publication without writes", () => {
+    const fixture = createControlUiTeamScaleFixture({
+      now,
+      coreBoot: { methods: listCoreAdvertisedGatewayMethodNames() },
+    });
+    expect(fixture.scenario.featureMethods).toContain("sessions.github.publish");
+    expect(
+      fixture.scenario.featureMethods?.filter((method) => method === "config.get"),
+    ).toHaveLength(1);
+    expect(fixture.scenario.rejectUnhandledMethods).toBe(true);
+    expect(fixture.coreBootInitScript).toBeTruthy();
+    expect(
+      fixture.scenario.sessions?.find((row) => row.key === fixture.selectedSessionKey),
+    ).toMatchObject({ worktree: { branch: "fixture/core-boot" } });
+    const responses = fixture.scenario.methodResponses!;
+    for (const [method, schema] of [
+      ["sessions.github.options", SessionGitHubOptionsResultSchema],
+      ["session.discussion.info", SessionDiscussionInfoResultSchema],
+      ["sessions.observer.visibility", SessionsObserverVisibilityResultSchema],
+      ["taskSuggestions.list", TaskSuggestionsListResultSchema],
+      ["session.suggestions.list", SessionSuggestionsListResultSchema],
+      ["mentions.list", MentionsListResultSchema],
+    ] as const) {
+      expect(Value.Check(schema, responses[method]), method).toBe(true);
+    }
+    expect(responses["sessions.github.options"]).toMatchObject({
+      latestShared: { result: { status: "published", repository: "example/boot-fixture" } },
+    });
+    expect(responses).not.toHaveProperty("sessions.github.publish");
+    expect(responses).not.toHaveProperty("sessions.github.confirm");
+    expect(() =>
+      createControlUiTeamScaleFixture({
+        now,
+        coreBoot: { methods: listCoreAdvertisedGatewayMethodNames() },
+        duplicateBootReads: true,
+      }),
+    ).toThrow("different workspace fixtures");
+  });
+
   it("seeds scoped display preferences independently of the full editable config", () => {
     const { scenario } = createControlUiTeamScaleFixture({ now });
     expect(scenario.bootstrapPreferences).toMatchObject({

@@ -7,6 +7,7 @@ import type { AgentsListResult, PresenceEntry } from "../api/types.ts";
 import type { PresencePayload } from "../app/user-profile.ts";
 import type { BoardSnapshot } from "../lib/board/types.ts";
 import { createBoardWidget } from "../lib/board/widget.test-support.ts";
+import { createControlUiCoreBootFixture } from "./control-ui-core-boot-fixture.ts";
 import { createTeamScaleDuplicateReadFixture } from "./control-ui-duplicate-read-fixture.ts";
 import { defaultControlUiFeatureMethods } from "./control-ui-e2e-defaults.ts";
 import {
@@ -62,6 +63,8 @@ type FixtureOptions = {
   sessionEventDurationMs?: number;
   sessionEventAncestorRefs?: boolean;
   duplicateBootReads?: boolean;
+  /** Opt into the canonical core descriptor catalog supplied by the benchmark. */
+  coreBoot?: { methods: readonly string[] };
   closedMenuMembers?: boolean;
   largeSnapshot?: boolean;
   offRosterSession?: boolean;
@@ -75,6 +78,9 @@ type FixtureOptions = {
 
 /** One deterministic inventory shared by browser benchmarks and focused UI proofs. */
 export function createControlUiTeamScaleFixture(options: FixtureOptions = {}) {
+  if (options.coreBoot && options.duplicateBootReads) {
+    throw new Error("Core boot and duplicate boot reads use different workspace fixtures");
+  }
   const counts = {
     ...TEAM_SCALE_COUNTS,
     transcriptMessages:
@@ -114,11 +120,17 @@ export function createControlUiTeamScaleFixture(options: FixtureOptions = {}) {
   const duplicateReads = options.duplicateBootReads
     ? createTeamScaleDuplicateReadFixture(selectedSessionKey, now)
     : undefined;
+  const coreBoot = options.coreBoot
+    ? createControlUiCoreBootFixture(selectedSessionKey, "e2e-gateway-boot")
+    : undefined;
   pinnedRows[0]!.sharingRole = "admin";
   pinnedRows[0]!.visibility = "shared";
   if (duplicateReads) {
     assets.set(duplicateReads.mediaPath, duplicateReads.asset);
     pinnedRows[0]!.worktree = duplicateReads.worktree;
+  }
+  if (coreBoot) {
+    pinnedRows[0]!.worktree = coreBoot.worktree;
   }
   if (options.liveRun) {
     Object.assign(pinnedRows[0]!, {
@@ -293,6 +305,12 @@ export function createControlUiTeamScaleFixture(options: FixtureOptions = {}) {
     });
   }
   const sandbox = { sandboxUrl: options.sandboxUrl, sandboxPort: options.sandboxPort };
+  const canvasDocumentView = {
+    cases: Array.from({ length: counts.inlineWidgets }, (_, index) => ({
+      match: { docId: `team-scale-chart-${index + 1}` },
+      response: { html: widgetHtml(index), ...sandbox },
+    })),
+  };
   const dashboardAssetPath = "/__openclaw__/fixture-dashboard";
   const dashboardAssetOrigin = options.sandboxPort
     ? `http://127.0.0.1:${options.sandboxPort}`
@@ -457,12 +475,7 @@ export function createControlUiTeamScaleFixture(options: FixtureOptions = {}) {
             },
           }
         : {}),
-      "canvas.document.view": {
-        cases: Array.from({ length: counts.inlineWidgets }, (_, index) => ({
-          match: { docId: `team-scale-chart-${index + 1}` },
-          response: { html: widgetHtml(index), ...sandbox },
-        })),
-      },
+      "canvas.document.view": canvasDocumentView,
       "progressCard.get": {
         cases: [
           {
@@ -484,8 +497,15 @@ export function createControlUiTeamScaleFixture(options: FixtureOptions = {}) {
           { response: { card: null } },
         ],
       },
+      ...coreBoot?.methodResponses,
     },
   });
+  if (options.coreBoot) {
+    // Replace the fixture catalog, including the config wrapper's additions,
+    // with exactly the canonical descriptor list supplied for this capture.
+    scenario.featureMethods = [...options.coreBoot.methods];
+    scenario.rejectUnhandledMethods = true;
+  }
   // 125 frames over 20 seconds: streaming is mixed with unrelated Team activity.
   const liveKinds = [
     ...Array<string>(5).fill("presence.offscreen"),
@@ -670,7 +690,9 @@ export function createControlUiTeamScaleFixture(options: FixtureOptions = {}) {
   }
   return {
     scenario,
+    ...(coreBoot ? { coreBootInitScript: coreBoot.initScript } : {}),
     board,
+    canvasDocumentView,
     selectedSessionKey,
     sidebarPersistentChildren,
     pinnedKeys,

@@ -251,6 +251,59 @@ changes execution cost. Source maps and the exact saved bundle allow attribution
 of the unused ranges; preload transfer budgets remain the performance checker's
 authority, including assets that have not executed.
 
+### Opt-in core method discovery
+
+The default `--gateway-method-profile fixture` preserves the original Team-scale
+workload. Its method catalog is deliberately narrower than the core Gateway's;
+for example, it does not advertise `sessions.github.publish`. Do not interpret
+that workload's unused publication/discovery code as unused on every chat load.
+
+Use `--gateway-method-profile core` for a second, explicitly synthetic workload
+advertising `listCoreAdvertisedGatewayMethodNames()` from the benchmark's pinned
+source. This is the **core descriptor catalog, not a live configured Gateway**:
+plugin additions, worker filtering, authorization, and deployment configuration
+are not modeled by that catalog. The selected shared/admin session has a
+synthetic worktree and recovered published result, so initial discovery includes
+publication options, PR subscription, discussion, observer visibility, and task
+and session suggestions. Mentions reads are recorded when their owner loads.
+The PR subscription acknowledges its current active/passive replacement set,
+then emits ready snapshots only for those keys on that request's socket. An
+empty unsubscribe emits no snapshot. No publish or confirm operation is driven.
+
+```sh
+NODE_DISABLE_COMPILE_CACHE=1 node --import ./scripts/tsx.mjs scripts/bench-control-ui-cold-load.ts \
+  --bundle-dir /absolute/base/control-ui --compare-bundle-dir /absolute/head/control-ui \
+  --gateway-http --gateway-method-profile core --face chat \
+  --fixture-now-ms 1800000000000 --first-load --cold-http-cache \
+  --untraced --thread-cpu-time --runs 20 --output /absolute/proof/core-boot
+```
+
+Drive both built variants with this **same benchmark revision and fixture**;
+do not run an older baseline CLI that lacks this option. Bundle build identities
+remain independent of the workload source head. `gateway-methods.json` and
+`summary.json.gatewayMethodProfile` retain the complete actual prepared method
+list, workload source head/dirty inventory, and serialized fixture SHA-256.
+Keep `--fixture-now-ms`, flags, source revision, and serialized fixture hash fixed
+across separate localhost/100 ms RTT or coverage cohorts. For an external
+`--gateway-url` server, pin and record its Gateway/build identity separately;
+this catalog never claims to describe that server's live configured methods.
+
+The core profile fails immediately through the page-error boundary for an RPC
+not modeled by the fixture. It also rejects a chat capture that misses the named
+discovery reads or selected-session subscription, or that invokes publish/confirm.
+Desktop chat additionally requires the visible branch and recovered PR link;
+mobile keeps those details inside a closed sheet at boot. Each result records these
+observations in `coreBootContract`; a contract failure retains a separate JSON
+diagnostic. Do not replace missing responses with generic success or benchmark
+the resulting timeout loop. `--duplicate-boot-reads` uses a different workspace
+fixture and cannot be combined with this profile.
+
+Collect coverage with the same profile in a separate single-run invocation,
+omitting `--compare-bundle-dir` and using `--coverage --runs 1`. For the remote
+cohort add `--network-latency-ms 100 --download-kbps 10000`; use the same options
+for the A/A control and candidate. These remain renderer measurements with
+synthetic RPC; they do not establish real-Gateway discovery behavior or cost.
+
 On a noisy host, run an A/A control before interpreting candidate differences.
 First copy the baseline bundle to a separate directory (`cp -R <base> <control>`):
 the runner temporarily swaps comparison bundles, so both slots cannot use the same
