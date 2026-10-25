@@ -166,6 +166,13 @@ export async function probeLongSession(options: {
     workload = { scenario: "mixed" },
   } = options;
   const pane = page.locator(paneSelector);
+  const movePointerToTranscript = async () => {
+    const bounds = await pane.locator(".chat-thread").boundingBox();
+    if (!bounds) {
+      throw new Error("Transcript is not visible for wheel input");
+    }
+    await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
+  };
   const composer = pane.locator(".agent-chat__composer-combobox textarea");
   const metrics = async () =>
     Object.fromEntries(
@@ -286,7 +293,7 @@ export async function probeLongSession(options: {
     const thread = pane.locator(".chat-thread");
     const { value, longTasks, maxLongTaskMs, ...timing } = await measureRendered(
       async () => {
-        await thread.hover();
+        await movePointerToTranscript();
         // Reader input retires initial placement and follow commands before the trajectory.
         await page.mouse.wheel(0, direction === "top" ? -1 : 1);
         return thread.evaluate(async (element, destination) => {
@@ -451,8 +458,7 @@ export async function probeLongSession(options: {
     }
     const stages = [];
     for (const expectedPage of workload.pages) {
-      const thread = pane.locator(".chat-thread");
-      await thread.hover();
+      await movePointerToTranscript();
       await page.mouse.wheel(0, -1_000_000);
       const request = await page.waitForFunction(
         ({ key, offset }) => {
@@ -544,7 +550,7 @@ export async function probeLongSession(options: {
         path: path.join(artifactDir, `${prefix}.history-${expectedPage.offset}.png`),
       });
     }
-    await pane.locator(".chat-thread").hover();
+    await movePointerToTranscript();
     await page.mouse.wheel(0, -1_000_000);
     await entry(workload.firstEntryId).waitFor({ state: "visible" });
     await pane.locator(".chat-history-sentinel").waitFor({ state: "detached" });

@@ -1,5 +1,5 @@
 {
-  "startupJsGzipBytes": 272924,
-  "reason": "Measured integrated long-session startup: 272924 B gzip versus same-machine base 272851 B (+73 B), with unchanged 7 JS and 1 CSS requests. Ratchet to the actual integrated head.",
+  "startupJsGzipBytes": 273120,
+  "reason": "Measured long-session window: 273120 B startup gzip versus same-machine base 272851 B (+269 B); 2000-message local open Task CPU falls 87% and open-plus-scroll CPU 76%, with unchanged 7 JS and 1 CSS requests. Record the measured head under the approved CPU/bytes tradeoff.",
   "updatedAt": "2026-10-25"
 }
