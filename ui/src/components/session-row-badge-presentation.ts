@@ -9,6 +9,8 @@ import type { SessionCatalogPullRequestSummary } from "../../../packages/gateway
 import type { GatewaySessionRow } from "../api/types.ts";
 import { t } from "../i18n/index.ts";
 import { sessionPullRequestStateIcons } from "../lib/session-pull-request-presentation.ts";
+import type { SessionListHost } from "./app-sidebar-session-render-types.ts";
+import type { SidebarRecentSession } from "./app-sidebar-session-types.ts";
 import { sessionMachineParts } from "./session-machine.ts";
 
 export type SessionPlacementState = NonNullable<GatewaySessionRow["placement"]>["state"];
@@ -49,6 +51,24 @@ export type SessionRowBadge = {
   diskSpaceStatus?: SessionPlacementDiskSpace["status"];
   workspaceConflictCount?: number;
 };
+
+export function sidebarSessionBadgeFacts(
+  host: SessionListHost,
+  row: SidebarRecentSession,
+  initial = row.pullRequest,
+) {
+  const attention = row.ownAttention ?? row.attention;
+  return (
+    row.snapshot ?? {
+      pullRequest: host.sessionPullRequests.summary(row.key, row.worktreeId ?? "", initial),
+      pullRequestCount: host.sessionPullRequests.count(row.key),
+      hasApproval:
+        (attention.kind === "question"
+          ? attention.requests.some((request) => request.kind === "approval")
+          : host.sidebarAgentsMode !== "roster" && attention.kind === "approval") || undefined,
+    }
+  );
+}
 
 export function resolveSessionRowBadges(
   params: SessionRowBadgesParams,

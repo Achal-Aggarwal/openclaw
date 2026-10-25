@@ -33,9 +33,9 @@ import {
 import { sessionAttentionSubtitle } from "./session-attention-presentation.ts";
 import { areSessionCatalogsSettled, type SessionDataInputs } from "./session-data-catalog.ts";
 import type { SessionDataOwner } from "./session-data.ts";
+import { summarizeTeamSessionSlots } from "./session-leading-indicator.ts";
 import { resolveSidebarSessionSubtitle } from "./session-row-subtitle.ts";
 import { SidebarProjectionMemo, sameSidebarPresentation } from "./sidebar-projection-cache.ts";
-import { summarizeTeamSessionSlots } from "./solid/session-presentation.tsx";
 
 const SIDEBAR_CREATED_ORDER_CAP = 1_000;
 // Ambient subtitle sources (observer digest, narration, work path) race at

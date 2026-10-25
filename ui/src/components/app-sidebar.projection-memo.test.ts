@@ -60,7 +60,6 @@ async function mount(rows: GatewaySessionRow[]) {
   sessions.publishList({
     result: {
       ...sessions.sessions.state.result!,
-      sessions: rows,
       count: rows.length,
       owners: [ada, bob],
     },
@@ -141,7 +140,6 @@ describe("sidebar projection memo", () => {
     owner.restoreSidebarSnapshot({
       ...sidebarBootSnapshot(captureBootRoster(sessions.sessions.state)),
       mode: "chip",
-      sessions: rows,
       entries: [],
       sections: [
         {

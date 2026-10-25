@@ -1,3 +1,4 @@
+import { isSessionParticipantIdentity } from "../../../packages/gateway-protocol/src/compiled/sender-identity.js";
 import { isIncognitoSessionKey } from "../../../src/shared/incognito-session-key.js";
 import type { SidebarSessionSection } from "../lib/sessions/grouping.ts";
 import { bootRosterSchema } from "../lib/sessions/session-boot-roster-schema.ts";
@@ -15,9 +16,50 @@ const userFields = {
 };
 const user = json.object(userFields);
 const sessionKey = json.refine(text, (key) => !isIncognitoSessionKey(key));
+const participantIdentity = json.checked(isSessionParticipantIdentity);
+const avatar = json.object({
+  id: text,
+  identity: json.optional(participantIdentity),
+  avatarUrl: json.optional(json.refine(text, (value) => !value.startsWith("data:"))),
+});
+const glyph = json.pair(
+  json.enumeration(["agent", "error", "question", "approval"]),
+  json.enumeration(["hand", "key", "alertTriangle", "flag", "lock", "circle", "shieldQuestion"]),
+);
+const facts = json.object({
+  unread: json.optional(json.boolean),
+  run: json.optional(json.enumeration(["active", "queued", "subagents"])),
+  glyph: json.optional(glyph),
+  tone: json.optional(json.enumeration(["none", "agent", "error", "question", "approval"])),
+  team: json.optional(
+    json.object({
+      glyph: json.optional(glyph),
+      run: json.optional(json.enumeration(["active", "queued"])),
+      unread: json.optional(json.number),
+      failed: json.optional(json.literal(true)),
+    }),
+  ),
+  status: json.optional(
+    json.enumeration(["queued", "running", "done", "failed", "interrupted", "killed", "timeout"]),
+  ),
+  hasAutomation: json.optional(json.boolean),
+  pullRequest: json.optional(
+    json.object({
+      numbers: json.array(json.number, 20),
+      state: json.enumeration(["open", "draft", "merged", "closed"]),
+    }),
+  ),
+  pullRequestCount: json.optional(json.number),
+  hasApproval: json.optional(json.literal(true)),
+  ownerGlyph: json.optional(json.enumeration(["circle", "pair"])),
+  owner: json.optional(avatar),
+  participants: json.optional(json.array(avatar, 1)),
+  viewers: json.optional(json.array(avatar, 3)),
+});
+export type SidebarSnapshotFacts = json.SnapshotValue<typeof facts>;
 const sessionFields = {
   key: sessionKey,
-  label: text,
+  label: optionalText,
   agentId: optionalText,
   subtitle: optionalText,
   snapshotSubtitle: json.optional(
@@ -29,21 +71,19 @@ const sessionFields = {
   childLoadParentKeys: json.optional(json.array(sessionKey)),
   icon: optionalText,
   color: optionalText,
-  pinned: json.boolean,
+  pinned: json.optional(json.boolean),
   archived: json.optional(json.boolean),
-  isChild: json.boolean,
+  isChild: json.optional(json.boolean),
   category: optionalText,
   boardFace: json.optional(json.enumeration(["chat", "dashboard"])),
   incognito: json.optional(json.literal(false)),
+  facts: json.optional(facts),
 };
 export type SidebarSnapshotSession = json.SnapshotObject<typeof sessionFields> & {
   children: SidebarSnapshotSession[];
 };
 const session: json.SnapshotReader<SidebarSnapshotSession> = json.refine(
-  json.object({
-    ...sessionFields,
-    children: json.lazy(() => json.array(session)),
-  }),
+  json.object({ ...sessionFields, children: json.lazy(() => json.array(session)) }),
   (row) => row.children.length === 0 || row.childLoadParentKeys !== undefined,
 );
 const sectionId = json.checked(
@@ -69,7 +109,6 @@ export const sidebarSnapshotSchema = json.object({
         !entry.startsWith("session:") || !isIncognitoSessionKey(entry.slice("session:".length)),
     ),
   ),
-  sessions: json.array(session),
   sections: json.array(
     json.object({
       id: sectionId,

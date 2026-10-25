@@ -4,11 +4,24 @@ import type { ApplicationContext } from "../app/context.ts";
 import { loadSettings } from "../app/settings.ts";
 import type { AuthenticatedUser } from "../app/user-profile.ts";
 import { rosterActivityStore } from "../lib/agents/roster-activity-store.ts";
-import { presenceViewerLastActivity, profilePresenceViewer } from "../lib/presence-users.ts";
+import { agentRosterCards } from "../lib/agents/roster-activity.ts";
+import type { IdentityAvatarInput } from "../lib/identity-avatar.ts";
+import {
+  presenceViewerLastActivity,
+  profilePresenceViewer,
+  projectPresenceViewers,
+} from "../lib/presence-users.ts";
+import { profileDirectory } from "../lib/profile-directory.ts";
 import { readSidebarBrandPresentation, type AppSidebarRenderHost } from "./app-sidebar-render.tsx";
 import type { SidebarVisibleSections } from "./app-sidebar-session-projection.ts";
 import type { SidebarRecentSession } from "./app-sidebar-session-types.ts";
 import { hasSidebarListFilter } from "./session-data-events.ts";
+import {
+  sessionLeadingState,
+  sidebarSessionOwner,
+  summarizeTeamSessionSlots,
+} from "./session-leading-indicator.ts";
+import { sidebarSessionBadgeFacts } from "./session-row-badge-presentation.ts";
 import { resolveSidebarSessionRowSubtitle } from "./session-row-subtitle.ts";
 import { resolveSidebarOnline, sidebarOnlineOrder } from "./sidebar-online-state.ts";
 import {
@@ -16,6 +29,7 @@ import {
   snapshotSections,
   snapshotSessions,
   type SidebarSnapshotModel,
+  type SidebarSnapshotSession,
 } from "./sidebar-snapshot-model.ts";
 
 function displayUser(user: AuthenticatedUser | null | undefined) {
@@ -117,11 +131,51 @@ export function captureSidebarSnapshotModel(
   for (const { key, pluginId, value } of host.pluginNavigation()) {
     plugins.push({ key, pluginId, id: value.page.id, label: value.label, icon: value.icon });
   }
-  const presentation = (row: SidebarRecentSession) => ({
-    childrenDisplayMode: host.sessionProjection.children.capture(row.key),
-    snapshotSubtitle: resolveSidebarSessionRowSubtitle(host, row),
+  const avatar = (
+    source: Pick<IdentityAvatarInput, "id" | "identity"> & { avatarUrl?: string },
+  ) => ({
+    id: source.id ?? source.identity?.id ?? "",
+    identity: source.identity,
+    avatarUrl: profileDirectory(context.gateway).avatarIdentity({
+      identity: source.identity,
+      profileAvatarUrl: source.avatarUrl,
+    }).profileAvatarUrl,
   });
-  const sessions = snapshotSessions(rows, presentation);
+  const presentation = (row: SidebarRecentSession): Partial<SidebarSnapshotSession> => {
+    const owner = sidebarSessionOwner(host, row);
+    const team = host.sidebarAgentsMode === "roster";
+    const attention = row.ownAttention ?? row.attention;
+    const tone = (team ? attention : row.attention).kind;
+    const slots = summarizeTeamSessionSlots([row], !host.isSessionChildrenExpanded(row));
+    const { run, glyph, ownerGlyph, identities } = sessionLeadingState(row, owner.owner, team);
+    const viewers = projectPresenceViewers(
+      host.sessionData.presencePayload,
+      context.gateway.snapshot.selfUser,
+      host.sessionData.presenceInstanceId,
+      row.key,
+      identities,
+    );
+    return {
+      childrenDisplayMode: host.sessionProjection.children.capture(row.key),
+      snapshotSubtitle: resolveSidebarSessionRowSubtitle(host, row),
+      facts: {
+        run,
+        glyph,
+        tone: tone === row.attention.kind ? undefined : tone,
+        team: slots.slots,
+        ownerGlyph,
+        owner: owner.owner?.id ? avatar(owner.owner) : undefined,
+        participants:
+          (row.participantCount ?? row.participants?.length) === 1
+            ? row.participants?.slice(0, 1).map((person) => avatar(person))
+            : undefined,
+        viewers: viewers.slice(0, 3).map((user) => avatar(user)),
+        ...sidebarSessionBadgeFacts(host, row),
+      },
+    };
+  };
+  const capture = (rows: readonly SidebarRecentSession[]) =>
+    snapshotSessions(rows, presentation, bootRoster);
   return parseSidebarSnapshot({
     routingDefaults: {
       mainKey: agents.mainKey,
@@ -130,28 +184,34 @@ export function captureSidebarSnapshotModel(
     roster: bootRoster,
     mode: host.sidebarAgentsMode,
     navigationView: host.navigationView,
-    pages: snapshotSessions(
-      (host.navigationCatalog.dashboards?.result?.sessions ?? []).map((row) =>
-        host.getSessionNavigationState().toSidebarSession(row),
-      ),
-      presentation,
+    pages: capture(
+      (host.navigationView === "pages"
+        ? (host.navigationCatalog.dashboards?.result?.sessions ?? [])
+        : []
+      ).map((row) => host.getSessionNavigationState().toSidebarSession(row)),
     ),
     pageScopeId: context.agentSelection.state.scopeId,
-    pinnedSessions: snapshotSessions(
-      zone.sidebarEntries.flatMap((value) => {
+    pinnedSessions: capture(
+      (host.navigationView === "pages" ? [] : zone.sidebarEntries).flatMap((value) => {
         const entry = parseSidebarEntry(value);
         const row = entry?.type === "session" ? zone.sessionRows.get(entry.key) : undefined;
         return row ? [row] : [];
       }),
-      presentation,
     ),
     entries: zone.sidebarEntries.filter((value) => {
       const entry = parseSidebarEntry(value);
       return entry?.type !== "session" || !isIncognitoSessionKey(entry.key);
     }),
-    sessions,
-    ...snapshotSections(sections, host.collapsedSessionSections, presentation),
-    cards: roster.cards,
+    ...snapshotSections(
+      host.navigationView === "pages" ? [] : sections,
+      host.collapsedSessionSections,
+      presentation,
+      bootRoster,
+    ),
+    cards:
+      host.sidebarAgentsMode === "roster"
+        ? roster.cards
+        : agentRosterCards(agents, [], (id) => context.agentIdentity.get(id)),
     collapsedAgentIds:
       loadSettings(context.gateway.connection.gatewayUrl).sidebarCollapsedAgentIds ?? [],
     plugins,

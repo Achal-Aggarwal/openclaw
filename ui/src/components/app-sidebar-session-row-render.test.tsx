@@ -6,6 +6,8 @@ import { expect, it, onTestFinished, vi } from "vitest";
 import { createDeferred } from "../../../test/helpers/promise.ts";
 import type { GatewaySessionRow, SessionsListResult } from "../api/types.ts";
 import { makeBootRoster } from "../app/bootstrap.test-support.ts";
+import { i18n } from "../i18n/index.ts";
+import { captureI18nStateForTesting } from "../i18n/lib/translate.test-support.ts";
 import { rosterActivityStore } from "../lib/agents/roster-activity-store.ts";
 import { createTestSessionCapability } from "../lib/sessions/session-capability.test-support.ts";
 import {
@@ -220,7 +222,6 @@ it("keeps cached agent rows while the live roster settles", async () => {
   host.restoreSidebarSnapshot({
     ...emptySnapshot,
     mode: "roster",
-    sessions: saved,
     sections: [
       {
         id: "agent:main:recent",
@@ -310,6 +311,21 @@ it.each([false, null, undefined])(
     expect(glyph?.querySelector(".session-glyph__icon") !== null).toBe(icon !== false);
   },
 );
+
+it("updates a mounted subagent ring label when the locale changes", async () => {
+  const restoreI18n = captureI18nStateForTesting();
+  onTestFinished(restoreI18n);
+  await i18n.setLocale("en");
+  const { dom } = mountRow({}, { runningChildCount: 1 });
+  const ring = dom.query(".session-glyph__ring")!;
+  const label = ring.getAttribute("aria-label");
+  expect(label).toBe(i18n.t("sessionsView.subagentsWorking"));
+  await i18n.setLocale("de");
+  flush();
+  expect(dom.query(".session-glyph__ring")).toBe(ring);
+  expect(ring.getAttribute("aria-label")).toBe(i18n.t("sessionsView.subagentsWorking"));
+  expect(ring.getAttribute("aria-label")).not.toBe(label);
+});
 
 it.each(["owner", "icon"] as const)(
   "retains %s artwork and actions when live rows republish unchanged presentation",
@@ -448,9 +464,9 @@ it("keeps the rendered preview slot after caching without restoring live run aut
   const [cached] = snapshotSessions([session], (row) => ({
     snapshotSubtitle: resolveSidebarSessionRowSubtitle(host, row),
   }));
-  host.sidebarSnapshot = parseSidebarSnapshot({ ...emptySnapshot, sessions: [cached] });
+  host.sidebarSnapshot = parseSidebarSnapshot(emptySnapshot);
   expect(host.sidebarSnapshot).not.toBeNull();
-  const restored = restoreSnapshotSession(host.sidebarSnapshot!.sessions[0]!, session.key);
+  const restored = restoreSnapshotSession(host.sidebarSnapshot!, cached!, session.key);
   setCurrent(restored);
   update();
   expect(dom.text(".sidebar-recent-session__subtitle")).toBe("The report is ready for review.");

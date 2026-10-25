@@ -32,6 +32,7 @@ import type { SessionCapability } from "../lib/sessions/index.ts";
 import { getSafeLocalStorage } from "../local-storage.ts";
 import type { CloudWorkerStopAction } from "./cloud-worker-stop.ts";
 import type { SessionPlacementState } from "./session-row-badge-presentation.ts";
+import type { SidebarSnapshotFacts } from "./sidebar-snapshot-data.ts";
 
 type SidebarAttentionRequest = {
   kind: "question" | "approval";
@@ -114,6 +115,7 @@ export type SidebarRecentSession = Readonly<{
   subtitle?: string;
   /** Admitted display slot used only while restoring a sidebar snapshot. */
   snapshotSubtitle?: { subtitle?: string; narration?: string; toolName?: string };
+  snapshot?: SidebarSnapshotFacts;
   workContext?: SessionWorkContext;
   active: boolean;
   visuallyActive: boolean;
@@ -245,19 +247,21 @@ export function rowDemandsVisibility(
   row: SidebarRecentSession,
   reason: RowVisibilityReason = RowVisibilityReason.Any,
 ) {
+  const active = row.hasActiveRun || Boolean(row.snapshot?.run);
+  const attention = row.attention.kind !== "none" || Boolean(row.snapshot?.glyph);
   return reason === RowVisibilityReason.ActiveRun
-    ? row.hasActiveRun
+    ? active
     : reason === RowVisibilityReason.Attention
-      ? row.attention.kind !== "none"
+      ? attention
       : row.visuallyActive ||
         row.containsActiveDescendant ||
-        row.hasActiveRun ||
+        active ||
         row.runningChildCount > 0 ||
         row.failedChildCount > 0 ||
         (row.workspaceConflictCount ?? 0) > 0 ||
         row.unread ||
         (row.unreadChildCount ?? 0) > 0 ||
-        row.attention.kind !== "none";
+        attention;
 }
 
 const SIDEBAR_VISIBLE_CHILD_SESSION_LIMIT = 4;

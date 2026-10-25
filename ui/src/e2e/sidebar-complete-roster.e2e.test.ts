@@ -3,6 +3,10 @@ import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import { asRecord } from "@openclaw/normalization-core/record-coerce";
 import { expect, it } from "vitest";
+import {
+  persistColdLoadWarmState,
+  restoreColdLoadWarmState,
+} from "../../../scripts/lib/control-ui-bench-warm-state.ts";
 import { warmReloadProbe } from "../../../scripts/lib/control-ui-warm-reload-probe.ts";
 import type { GatewaySessionRow } from "../api/types.ts";
 import { evaluateControlUiContext } from "../test-helpers/control-ui-e2e-context.ts";
@@ -14,8 +18,10 @@ import {
   controlUiSessionUrl,
   installMockGateway,
   pauseVirtualClock,
+  type MockGatewayControls,
 } from "../test-helpers/control-ui-e2e.ts";
 import { createTeamScaleSidebarListOwner } from "../test-helpers/control-ui-sidebar-list-fixture.ts";
+import { sidebarPresentationProbe } from "../test-helpers/control-ui-sidebar-presentation-probe.test-support.ts";
 import { revealSidebarTarget } from "../test-helpers/control-ui-sidebar-window.ts";
 import { createControlUiTeamScaleFixture } from "../test-helpers/control-ui-team-scale-fixture.ts";
 import { createControlUiE2eSuite } from "./control-ui-e2e-suite.test-support.ts";
@@ -35,17 +41,11 @@ suite.define(() => {
       const fixture = createControlUiTeamScaleFixture({
         baseUrl: suite.server.baseUrl,
         sidebarPersistentChildren: true,
+        sidebarPresentation: true,
       });
       const { parentKey, childKeys } = fixture.sidebarPersistentChildren!;
       const owner = fixture.sidebarListInput.rows[0]!.owner!;
       const ownerMatch = { ownerId: owner.actor.id };
-      // Involving me excludes off-window child links. Keep an owned roster
-      // larger than a boot page so its children still require a separate read.
-      const ownedRoots = fixture.sidebarListInput.rows.slice(0, fixture.counts.firstPage + 1);
-      const children = fixture.sidebarListInput.rows.filter((row) => childKeys.includes(row.key));
-      for (const row of [...ownedRoots, ...children]) {
-        row.owner = owner;
-      }
       const lists = createTeamScaleSidebarListOwner(fixture.sidebarListInput);
       await suite.withPage(
         { locale: "en-US", serviceWorkers: "block", viewport: { width: 1440, height: 1000 } },
@@ -59,6 +59,12 @@ suite.define(() => {
               await route.fallback();
             }
           });
+          for (const pattern of ["**/api/users/*/avatar?*", "**/avatar/*"]) {
+            await page.route(pattern, (route) => {
+              const asset = fixture.assets.get(new URL(route.request().url()).pathname);
+              return asset ? route.fulfill(asset) : route.fallback();
+            });
+          }
           await page.addInitScript(
             ({ settingsKey, ownerKey, ownerId, entries }) => {
               localStorage.setItem(
@@ -78,11 +84,28 @@ suite.define(() => {
               entries: fixture.sidebarEntries,
             },
           );
-          const gateway = await installMockGateway(
+          const gateway: MockGatewayControls = await installMockGateway(
             page,
             { ...fixture.scenario, heldMethods: ["connect"] },
             {
               requestHandlers: {
+                [fixture.sidebarPresentation!.method]: async (value) => {
+                  const params = asRecord(value);
+                  const keys = [
+                    ...(Array.isArray(params?.sessionKeys) ? params.sessionKeys : []),
+                    ...(Array.isArray(params?.passiveSessionKeys) ? params.passiveSessionKeys : []),
+                  ];
+                  for (const [key, snapshot] of Object.entries(
+                    fixture.sidebarPresentation!.sessions,
+                  )) {
+                    if (keys.includes(key)) {
+                      await gateway.emitGatewayEvent(fixture.sidebarPresentation!.event, {
+                        sessions: { [key]: snapshot },
+                      });
+                    }
+                  }
+                  return { subscribed: true };
+                },
                 "sessions.list": async (value) => {
                   const params = asRecord(value);
                   if (!params) {
@@ -95,7 +118,7 @@ suite.define(() => {
             },
           );
           await page.addInitScript({
-            content: `{ const __name = (fn) => fn; (${warmReloadProbe.toString()})(); }`,
+            content: `{ const __name = (fn) => fn; (${warmReloadProbe.toString()})(); (${sidebarPresentationProbe.toString()})(); }`,
           });
           await page.goto(
             controlUiSessionUrl(suite.server.baseUrl, fixture.selectedSessionKey, face),
@@ -126,7 +149,10 @@ suite.define(() => {
               animations: "disabled",
               elements: [sidebar],
             });
-            await writeFile(path.join(suite.artifactDir, `${face}-${stage}.png`), frame.png);
+            await writeFile(
+              path.join(suite.artifactDir, `${face}-${stage}.png`),
+              frame.elements[0]!.png,
+            );
           };
           const saved = () =>
             page.locator('aside.sidebar[data-snapshot-state="live"][data-snapshot-saved="true"]');
@@ -172,12 +198,62 @@ suite.define(() => {
           // The selected pin is retained offscreen; wait for an unretained top
           // row to prove the scroll event has published the new visible window.
           await sidebar.locator(`[data-session-key="${fixture.pinnedKeys[1]}"]`).waitFor();
+          await sidebar.locator(".session-row-badge--pull-request").nth(6).waitFor();
+          await sidebar.locator(".sidebar-issues-button__count").waitFor();
+          await page.waitForFunction(() =>
+            [...document.querySelectorAll("aside.sidebar [data-avatar-state]")].every(
+              (element) => element.getAttribute("data-avatar-state") !== "pending",
+            ),
+          );
+          await saved().waitFor();
+          await page.evaluate(
+            () =>
+              new Promise<void>((resolve) =>
+                requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+              ),
+          );
+          await saved().waitFor();
+          const beforePresentation = await page.evaluate(() =>
+            Reflect.get(window, "__sidebarPresentation").read(),
+          );
           const beforeReload = await geometry();
+          const changedPin = rootLast
+            ? {
+                ...fixture.sidebarListInput.rows.find((row) => row.key === fixture.pinnedKeys[3])!,
+                unread: false,
+                status: "running" as const,
+                hasActiveRun: true,
+                activeRunIds: ["sidebar-reload-run"],
+                icon: "monitor",
+                updatedAt: fixture.sidebarListInput.now + 1000,
+                snapshotAt: fixture.sidebarListInput.now + 1000,
+              }
+            : undefined;
+          if (changedPin) {
+            lists.apply({ upsert: [changedPin] });
+            const snapshot = fixture.sidebarPresentation!.sessions[changedPin.key]!;
+            snapshot.pullRequests = snapshot.pullRequests.map((request) => ({
+              ...request,
+              state: "closed",
+            }));
+            await gateway.setSessionsListResponse({
+              sessions: fixture.sidebarListInput.rows.map((row) =>
+                row.key === changedPin.key ? changedPin : row,
+              ),
+            });
+          }
+          // Keep the old client snapshot, but restore the mock server's new canonical rows.
+          const warmState = await page.evaluate(persistColdLoadWarmState, {
+            sessionKey: fixture.selectedSessionKey,
+            sidebarView: "sessions",
+          });
+          expect(warmState.sidebarBytes).toBeGreaterThan(0);
           await writeFile(
             path.join(suite.artifactDir, `${face}-before-reload-geometry.json`),
             JSON.stringify(beforeReload, null, 2),
           );
 
+          await restoreColdLoadWarmState(page, warmState.storage);
           await page.reload();
           await page.locator('aside.sidebar[data-snapshot-state="cached"]').waitFor();
           await capture("cached");
@@ -213,7 +289,8 @@ suite.define(() => {
             await gateway.deferNext("sessions.list", { ownerFirst: true });
           }
           await gateway.waitForRequest("connect");
-          await pauseVirtualClock(page);
+          // The general pause helper skips five seconds, intentionally surfacing offline chrome.
+          await page.clock.pauseAt((await page.evaluate(() => Date.now())) + 100);
           const connectedAt = await page.evaluate(() => performance.now());
           await gateway.resolveDeferred("connect");
           await page.clock.runFor(100);
@@ -289,6 +366,22 @@ suite.define(() => {
             expect(beforeChildren.foregroundReady, readinessDiagnostic).toBe(true);
             expect(beforeChildren.state, readinessDiagnostic).toBe("cached");
             expect(beforeChildren.rows).toEqual(expected);
+            if (changedPin) {
+              const fixturePresentation = fixture.sidebarPresentation!;
+              await gateway.waitForRequest(fixturePresentation.method);
+              const snapshot = fixturePresentation.sessions[changedPin.key]!;
+              await gateway.emitGatewayEvent(fixturePresentation.event, {
+                sessions: {
+                  [changedPin.key]: {
+                    ...snapshot,
+                    pullRequests: snapshot.pullRequests.map((request) => ({
+                      ...request,
+                      state: "closed",
+                    })),
+                  },
+                },
+              });
+            }
             if (cap) {
               await pauseVirtualClock(page);
               await page.clock.runFor(3001);
@@ -406,6 +499,21 @@ suite.define(() => {
             }
             await page.clock.resume();
             await saved().waitFor();
+            if (changedPin) {
+              await sidebar
+                .locator(`[data-session-key="${changedPin.key}"].session-row-host--running`)
+                .waitFor();
+              await sidebar
+                .locator(
+                  `[data-session-key="${changedPin.key}"] [data-pull-request-state="closed"]`,
+                )
+                .waitFor();
+              expect(
+                await sidebar
+                  .locator(`[data-session-key="${changedPin.key}"] .session-glyph__badge--unread`)
+                  .count(),
+              ).toBe(0);
+            }
             await page.evaluate(
               () =>
                 new Promise<void>((resolve) => {
@@ -415,6 +523,9 @@ suite.define(() => {
             await capture("complete");
             const finalRows = await rowKeys();
             const proof = await page.evaluate(() => Reflect.get(window, "__warmReload").read());
+            const presentation = await page.evaluate(() =>
+              Reflect.get(window, "__sidebarPresentation").read(),
+            );
             const first = proof.sidebarFrames.findIndex(
               (frame: { cached: boolean; rowIds: string[] }) => frame.cached && frame.rowIds.length,
             );
@@ -425,6 +536,8 @@ suite.define(() => {
               JSON.stringify(
                 {
                   ...proof,
+                  presentation,
+                  beforePresentation,
                   childRequest,
                   beforeChildren,
                   expected,
@@ -440,6 +553,38 @@ suite.define(() => {
                 expect(finalRows).not.toContain(key);
               }
             } else {
+              expect(presentation.handoffChanges.glyphs).toBe(changedPin ? 1 : 0);
+              expect(presentation.handoffChanges.badges).toBe(changedPin ? 1 : 0);
+              const firstPresentation = presentation.frames.find(
+                (frame: { cached: boolean }) => frame.cached,
+              );
+              const previous = beforePresentation.frames.at(-1);
+              const facts = (
+                frame: {
+                  rows: Array<{
+                    key: string;
+                    glyphs: string[];
+                    unread: number;
+                    pullRequests: string[];
+                  }>;
+                },
+                omitChanged = false,
+              ) =>
+                frame.rows
+                  .filter((row) => !omitChanged || row.key !== changedPin?.key)
+                  .map(({ key, glyphs, unread, pullRequests }) => ({
+                    key,
+                    glyphs,
+                    unread,
+                    pullRequests,
+                  }));
+              expect(firstPresentation).toBeDefined();
+              expect(previous).toBeDefined();
+              expect(facts(firstPresentation)).toEqual(facts(previous));
+              for (const frame of presentation.frames) {
+                if (!frame.cached)
+                  expect(facts(frame, true)).toEqual(facts(firstPresentation, true));
+              }
               expect(finalRows).toEqual(expected);
               expect(visibleGeometry(await geometry())).toEqual(expectedGeometry);
             }

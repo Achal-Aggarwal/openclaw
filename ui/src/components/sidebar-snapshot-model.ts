@@ -1,4 +1,6 @@
 import { isIncognitoSessionKey } from "../../../src/shared/incognito-session-key.js";
+import { resolveSessionDisplayName } from "../lib/session-display.ts";
+import { resolveUiSessionRowAgentId } from "../lib/sessions/session-key.ts";
 import type { SidebarVisibleSections } from "./app-sidebar-session-projection.ts";
 import type { SidebarRecentSession } from "./app-sidebar-session-types.ts";
 import type { SidebarSnapshotModel, SidebarSnapshotSession } from "./sidebar-snapshot-data.ts";
@@ -7,6 +9,7 @@ export {
   parseSidebarSnapshot,
   type SidebarSnapshotModel,
   type SidebarSnapshotSession,
+  type SidebarSnapshotFacts,
 } from "./sidebar-snapshot-data.ts";
 
 function containsIncognito(rows: readonly SidebarRecentSession[]): boolean {
@@ -17,31 +20,44 @@ function containsIncognito(rows: readonly SidebarRecentSession[]): boolean {
 
 export function snapshotSessions(
   rows: readonly SidebarRecentSession[],
-  presentation?: (
-    row: SidebarRecentSession,
-  ) => Pick<SidebarSnapshotSession, "snapshotSubtitle" | "childrenDisplayMode">,
+  presentation?: (row: SidebarRecentSession) => Partial<SidebarSnapshotSession>,
+  roster?: SidebarSnapshotModel["roster"],
 ): SidebarSnapshotSession[] {
   return rows
     .filter((row) => !row.incognito && !isIncognitoSessionKey(row.key))
     .map((row) => {
-      const display = presentation?.(row);
+      const privateChildren = containsIncognito([
+        ...row.children,
+        ...(row.unreadHiddenRuns ?? []),
+        ...(row.subagentSummary?.unreadHiddenRuns ?? []),
+      ]);
+      // A parent's resolved indicators may summarize omitted private descendants.
+      const display = privateChildren ? undefined : presentation?.(row);
+      const header = roster?.result.sessions.find((entry) => entry.key === row.key);
       return {
         key: row.key,
-        label: row.label,
         agentId: row.agentId,
         subtitle: row.subtitle,
         icon: row.icon,
         color: row.color,
-        pinned: row.pinned,
-        isChild: row.isChild,
         category: row.category,
         archived: row.archived,
         boardFace: row.boardFace,
-        childrenDisplayMode: display?.childrenDisplayMode,
+        ...display,
+        label:
+          header && resolveSessionDisplayName(row.key, header) === row.label
+            ? undefined
+            : row.label,
+        pinned: row.pinned,
+        isChild: row.isChild || undefined,
+        facts: {
+          unread: row.unread || undefined,
+          status: row.isChild ? row.status : undefined,
+          hasAutomation: row.hasAutomation || undefined,
+          ...display?.facts,
+        },
         childLoadParentKeys: row.childLoadParentKeys?.filter((key) => !isIncognitoSessionKey(key)),
-        // Parent attention can summarize private descendants even after their rows are omitted.
-        snapshotSubtitle: containsIncognito(row.children) ? undefined : display?.snapshotSubtitle,
-        children: snapshotSessions(row.children, presentation),
+        children: snapshotSessions(row.children, presentation, roster),
       };
     });
 }
@@ -50,9 +66,10 @@ export function snapshotSections(
   source: SidebarVisibleSections["sections"],
   collapsedSections: ReadonlySet<string>,
   presentation?: Parameters<typeof snapshotSessions>[1],
+  roster?: SidebarSnapshotModel["roster"],
 ) {
   const sections = source.flatMap((section) => {
-    const rows = snapshotSessions(section.rows, presentation);
+    const rows = snapshotSessions(section.rows, presentation, roster);
     if (section.rows.length > 0 && rows.length === 0) {
       return [];
     }
@@ -84,35 +101,45 @@ export function restoreSnapshotSections(
   model: SidebarSnapshotModel,
   selected: string,
 ): SidebarVisibleSections {
-  const sections: SidebarVisibleSections["sections"] = [];
-  for (const section of model.sections) {
-    sections.push({
-      ...section,
-      rows: section.rows.map((row) => restoreSnapshotSession(row, selected)),
-    });
-  }
+  const sections = model.sections.map((section) => ({
+    ...section,
+    rows: section.rows.map((row) => restoreSnapshotSession(model, row, selected)),
+  }));
   return { sections, visibleRows: sections.flatMap((section) => section.rows) };
 }
 
 export function restoreSnapshotSession(
+  model: SidebarSnapshotModel,
   row: SidebarSnapshotSession,
   selected: string,
 ): SidebarRecentSession {
+  const facts = row.facts;
+  const header = model.roster?.result.sessions.find((entry) => entry.key === row.key);
+  const label = row.label ?? resolveSessionDisplayName(row.key, header);
   return {
+    ...header,
     ...row,
-    renameValue: row.label,
+    key: row.key,
+    label,
+    renameValue: label,
+    agentId: row.agentId ?? resolveUiSessionRowAgentId(row, model.brand.agentId ?? "main"),
+    pinned: row.pinned ?? false,
+    isChild: row.isChild ?? false,
+    snapshot: facts,
+    owner: undefined,
     active: row.key === selected,
     visuallyActive: row.key === selected,
     hasActiveRun: false,
     modelSelectionLocked: true,
     pinnable: false,
     cloudWorkerStopAction: null,
-    hasAutomation: false,
-    unread: false,
+    hasAutomation: facts?.hasAutomation ?? false,
+    unread: facts?.unread ?? false,
+    status: facts?.status,
     attention: { kind: "none" },
     childSessionKeys: row.children.map((child) => child.key),
     childLoadParentKeys: row.childLoadParentKeys ?? [],
-    children: row.children.map((child) => restoreSnapshotSession(child, selected)),
+    children: row.children.map((child) => restoreSnapshotSession(model, child, selected)),
     loadingChildren: false,
     containsActiveDescendant: false,
     runningChildCount: 0,

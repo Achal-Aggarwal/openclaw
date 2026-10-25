@@ -85,7 +85,7 @@ it("retires pre-rail-identity sidebars and unbounded transcripts", async () => {
   transaction.objectStore(SIDEBAR).put({
     sessionKey: key(scope),
     savedAt: Date.now(),
-    projectionVersion: 1,
+    projectionVersion: 2,
     model,
   });
   const transcript = { sessionKey, snapshot: { messages: ["Retained conversation"] } };
@@ -155,7 +155,7 @@ it("retires a legacy hierarchy without evicting valid sidebars or transcripts", 
       projectSidebarSession({ key: `agent:main:${name}`, label: name }),
     ),
   );
-  const legacy = { ...sidebarSnapshot, sessions: [{ ...parent!, children: [child!] }] };
+  const legacy = { ...sidebarSnapshot, pinnedSessions: [{ ...parent!, children: [child!] }] };
   expect(parseSidebarSnapshot(legacy)).toBeNull();
   const database = await openSessionSnapshotDatabase();
   if (!database) {
@@ -165,7 +165,7 @@ it("retires a legacy hierarchy without evicting valid sidebars or transcripts", 
   transaction.objectStore(SIDEBAR).put({
     sessionKey: key(scope),
     savedAt: 2000,
-    projectionVersion: 1,
+    projectionVersion: 2,
     model: legacy,
   });
   await transactionComplete(transaction);

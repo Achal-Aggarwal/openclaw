@@ -5,9 +5,11 @@ import {
   parseSidebarSnapshot,
   restoreSnapshotSession,
   snapshotSections,
-  snapshotSessions,
 } from "./sidebar-snapshot-model.ts";
-import { sidebarSnapshot as model } from "./sidebar-snapshot.test-support.ts";
+import {
+  sidebarSnapshot as model,
+  sidebarSnapshotWithRows,
+} from "./sidebar-snapshot.test-support.ts";
 
 function captureRoster(rows: Parameters<typeof sessionsResult>[0]) {
   return captureBootRoster({
@@ -21,35 +23,106 @@ function captureRoster(rows: Parameters<typeof sessionsResult>[0]) {
   });
 }
 function displayRow(key: string, label: string, pinned = false) {
-  return restoreSnapshotSession(
-    { key, label, pinned, isChild: false, children: [] },
-    pinned ? key : "",
-  );
+  return restoreSnapshotSession(model, { key, label, pinned, children: [] }, pinned ? key : "");
 }
+
+it("reuses the canonical header without restoring authority", () => {
+  const key = "agent:main:work";
+  const roster = captureRoster([
+    { key, kind: "direct", label: "Canonical title", icon: "monitor" },
+  ]);
+  const captured = sidebarSnapshotWithRows(
+    [{ ...displayRow(key, "Canonical title"), unread: true, icon: "monitor" }],
+    () => ({ facts: { run: "queued", glyph: ["approval", "shieldQuestion"] } }),
+    roster,
+  );
+  const encoded = JSON.stringify(captured);
+  expect(encoded.match(/Canonical title/gu)).toHaveLength(1);
+  expect(encoded.match(/shieldQuestion/gu)).toHaveLength(1);
+  const saved = parseSidebarSnapshot(JSON.parse(encoded));
+  expect(saved).not.toBeNull();
+  const restored = restoreSnapshotSession(saved!, saved!.sections[0]!.rows[0]!, key);
+  expect(restored).toMatchObject({
+    label: "Canonical title",
+    icon: "monitor",
+    unread: true,
+    hasActiveRun: false,
+    pinnable: false,
+    snapshot: { run: "queued", glyph: ["approval", "shieldQuestion"] },
+  });
+});
+
+it("does not save attention or counts folded from incognito descendants", () => {
+  const child = { ...displayRow("agent:main:incognito-hidden", "Private"), incognito: true };
+  const row = {
+    ...displayRow("agent:main:public", "Public"),
+    attention: {
+      kind: "error" as const,
+      reason: "Private child failure",
+      sourceSessionKey: child.key,
+    },
+    children: [child],
+    unreadChildCount: 3,
+    runningChildCount: 1,
+  };
+  const captured = sidebarSnapshotWithRows([row], (source) => ({
+    facts: {
+      glyph:
+        source.attention.kind === "none" ? undefined : [source.attention.kind, "alertTriangle"],
+      team: {
+        unread: source.unreadChildCount,
+        run: source.runningChildCount ? "active" : undefined,
+      },
+    },
+  }));
+  const facts = captured.sections[0]?.rows[0]?.facts;
+  expect(facts?.glyph).toBeUndefined();
+  expect(facts?.team?.unread).toBeUndefined();
+  expect(facts?.team?.run).toBeUndefined();
+  expect(JSON.stringify(captured)).not.toMatch(/Private|incognito-hidden/);
+});
 
 it("roundtrips hidden-run child queries without retaining incognito parent keys", () => {
   const parent = displayRow("agent:main:parent", "Parent");
   const child = displayRow("agent:main:child", "Child");
   const hiddenRun = "agent:main:subagent:review";
   const incognitoRun = "agent:main:subagent:incognito-private";
-  const captured = snapshotSessions([
+  const captured = sidebarSnapshotWithRows([
     { ...parent, children: [child], childLoadParentKeys: [parent.key, hiddenRun, incognitoRun] },
   ]);
-  expect(captured[0]?.childLoadParentKeys).toEqual([parent.key, hiddenRun]);
-  const saved = parseSidebarSnapshot(structuredClone({ ...model, sessions: captured }));
+  expect(captured.sections[0]?.rows[0]?.childLoadParentKeys).toEqual([parent.key, hiddenRun]);
+  const saved = parseSidebarSnapshot(structuredClone(captured));
   expect(saved).not.toBeNull();
-  const restored = restoreSnapshotSession(saved!.sessions[0]!, parent.key);
+  const restored = restoreSnapshotSession(saved!, saved!.sections[0]!.rows[0]!, parent.key);
   expect(restored.childLoadParentKeys).toEqual([parent.key, hiddenRun]);
   expect(restored.children.map((row) => row.key)).toEqual([child.key]);
-  const legacyParent = { ...captured[0], childLoadParentKeys: undefined };
-  expect(parseSidebarSnapshot({ ...model, sessions: [legacyParent] })).toBeNull();
+  const legacyParent = { ...captured.sections[0]!.rows[0]!, childLoadParentKeys: undefined };
   expect(
-    parseSidebarSnapshot({ ...model, sessions: [{ ...legacyParent, children: [] }] }),
+    parseSidebarSnapshot({
+      ...captured,
+      sections: [{ ...captured.sections[0], rows: [legacyParent] }],
+    }),
+  ).toBeNull();
+  expect(
+    parseSidebarSnapshot({
+      ...captured,
+      sections: [{ ...captured.sections[0], rows: [{ key: parent.key, children: [] }] }],
+    }),
   ).not.toBeNull();
   expect(
     parseSidebarSnapshot({
-      ...model,
-      sessions: [{ ...captured[0], childLoadParentKeys: [parent.key, incognitoRun] }],
+      ...captured,
+      sections: [
+        {
+          ...captured.sections[0],
+          rows: [
+            {
+              ...legacyParent,
+              childLoadParentKeys: [parent.key, incognitoRun],
+            },
+          ],
+        },
+      ],
     }),
   ).toBeNull();
 });
@@ -117,21 +190,74 @@ it("keeps display data without persisting authority, executable plugins, or watc
   ).toBeNull();
 });
 
+it("roundtrips avatar identities and revisions without retaining image payloads", () => {
+  const owner = {
+    id: "operator",
+    identity: { type: "profile", id: "operator" },
+    avatarUrl: "/avatars/operator?rev=7",
+  };
+  const participant = {
+    id: "helper",
+    identity: { type: "agent", id: "helper" },
+    avatarUrl: "/avatars/helper?rev=3",
+  };
+  const viewer = {
+    id: "reviewer",
+    identity: { type: "profile", id: "reviewer" },
+    avatarUrl: "/avatars/reviewer?rev=9",
+  };
+  const payload = {
+    ...model,
+    pinnedSessions: [
+      {
+        key: "agent:main:thread",
+        children: [],
+        facts: {
+          owner: { ...owner, imageBytes: [1, 2, 3], dataUrl: "data:image/png;base64,AQID" },
+          participants: [participant],
+          viewers: [viewer],
+          avatarImages: [{ url: owner.avatarUrl, imageBytes: [1, 2, 3] }],
+        },
+      },
+    ],
+  };
+  const saved = parseSidebarSnapshot(JSON.parse(JSON.stringify(payload)));
+  expect(saved?.pinnedSessions[0]?.facts).toEqual({
+    owner,
+    participants: [participant],
+    viewers: [viewer],
+  });
+  for (const field of ["owner", "participants", "viewers"] as const) {
+    const inline = { ...owner, avatarUrl: "data:image/png;base64,AQID" };
+    expect(
+      parseSidebarSnapshot({
+        ...payload,
+        pinnedSessions: [
+          {
+            ...payload.pinnedSessions[0],
+            facts: { [field]: field === "owner" ? inline : [inline] },
+          },
+        ],
+      }),
+    ).toBeNull();
+  }
+});
+
 it("excludes incognito roots and descendants and restores no live mutation facts", () => {
   const row = displayRow("agent:main:visible", "Project", true);
   const privateRow = { ...row, key: "agent:main:private", incognito: true };
-  const captured = snapshotSessions(
+  const captured = sidebarSnapshotWithRows(
     [
       { ...row, children: [privateRow], sharingRole: "owner", activeRunIds: ["live-run"] },
       privateRow,
     ],
     () => ({ snapshotSubtitle: { subtitle: "Private child approval details" } }),
   );
-  expect(captured).toHaveLength(1);
-  expect(captured[0]?.children).toEqual([]);
-  expect(captured[0]?.snapshotSubtitle).toBeUndefined();
+  expect(captured.sections[0]?.rows).toHaveLength(1);
+  expect(captured.sections[0]?.rows[0]?.children).toEqual([]);
+  expect(captured.sections[0]?.rows[0]?.snapshotSubtitle).toBeUndefined();
   expect(JSON.stringify(captured)).not.toContain("Private child approval details");
-  const restored = restoreSnapshotSession(captured[0]!, row.key);
+  const restored = restoreSnapshotSession(captured, captured.sections[0]!.rows[0]!, row.key);
   expect(restored).toMatchObject({ visuallyActive: true, pinnable: false });
   expect([restored.sharingRole, restored.activeRunIds]).toEqual([undefined, undefined]);
 });

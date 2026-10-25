@@ -13,6 +13,14 @@ export function sessionAttentionIconName(attention: SidebarSessionAttention) {
         : "alertTriangle";
 }
 
+export function sessionAttentionGlyph(
+  attention: SidebarSessionAttention,
+): NonNullable<SidebarRecentSession["snapshot"]>["glyph"] {
+  return attention.kind === "none"
+    ? undefined
+    : [attention.kind, sessionAttentionIconName(attention)];
+}
+
 export function resolveSessionIdleBadge(status: SidebarRecentSession["status"], translate = t) {
   switch (status) {
     case "done":

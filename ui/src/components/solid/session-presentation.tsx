@@ -1,9 +1,6 @@
 import type { JSX } from "@solidjs/web";
 import { For, Match, Show, Switch, createMemo, createSignal } from "solid-js";
-import type {
-  SessionParticipant,
-  SessionParticipantIdentity,
-} from "../../../../packages/gateway-protocol/src/schema/session-participant.js";
+import type { SessionParticipant } from "../../../../packages/gateway-protocol/src/schema/session-participant.js";
 import {
   SESSION_ICON_GLYPH_IDS,
   SESSION_ICON_SVG_DATA_URL_PREFIX,
@@ -13,7 +10,6 @@ import { resolveToolDisplayIcon } from "../../lib/chat/tool-display-icon.ts";
 import { t, registerEnglishCatalog } from "../../lib/reactive/i18n.ts";
 import type { SessionCreatedActor, SessionOwnerOption } from "../../lib/session-owner.ts";
 import {
-  summarizeSidebarSessionAttention,
   type SidebarRecentSession,
   type SidebarSessionAttention,
 } from "../app-sidebar-session-types.ts";
@@ -22,6 +18,7 @@ import {
   sessionAttentionIconName,
   resolveSessionIdleBadge,
 } from "../session-attention-presentation.ts";
+import { sessionLeadingState, summarizeTeamSessionSlots } from "../session-leading-indicator.ts";
 import {
   resolveSessionRowBadges,
   type SessionRowBadgesParams,
@@ -38,13 +35,17 @@ registerEnglishCatalog(registerChatToolLabelsEnglish);
 type SessionRunVisibility = typeof sessionRunVisibility;
 export { sessionRunVisibility };
 
-function SessionAttentionIcon(props: { attention: SidebarSessionAttention }) {
+function SessionAttentionIcon(props: {
+  attention: SidebarSessionAttention;
+  glyph?: NonNullable<SidebarRecentSession["snapshot"]>["glyph"];
+}) {
   const parts = createMemo(() => sessionAttentionTooltipParts(props.attention, t));
   const label = () =>
     [parts().status, parts().preview, parts().more].filter(Boolean).join("\n") || undefined;
-  const icon = () => sessionAttentionIconName(props.attention);
+  const kind = () => props.glyph?.[0] ?? props.attention.kind;
+  const icon = () => props.glyph?.[1] ?? sessionAttentionIconName(props.attention);
   return (
-    <Show when={props.attention.kind !== "none"}>
+    <Show when={kind() !== "none"}>
       {/* Sidebar rows sit against the app rail; open inline to the right so the
           tooltip never clamps over the rail or the row's own title. */}
       <openclaw-tooltip
@@ -53,11 +54,8 @@ function SessionAttentionIcon(props: { attention: SidebarSessionAttention }) {
         open-on-click
       >
         <span
-          class={[
-            "sidebar-session-attention__icon",
-            `sidebar-session-attention__icon--${props.attention.kind}`,
-          ]}
-          data-session-attention={props.attention.kind}
+          class={["sidebar-session-attention__icon", `sidebar-session-attention__icon--${kind()}`]}
+          data-session-attention={kind()}
           role={label() ? "img" : undefined}
           aria-label={label()}
           aria-hidden={label() ? undefined : "true"}
@@ -298,36 +296,6 @@ function SessionIdleState(props: { session: SidebarRecentSession }) {
   );
 }
 
-export function summarizeTeamSessionSlots(
-  rows: readonly SidebarRecentSession[],
-  includeChildren: boolean,
-) {
-  const attention = summarizeSidebarSessionAttention(
-    rows.flatMap((row) =>
-      includeChildren
-        ? [row.attention]
-        : [
-            row.ownAttention ?? row.attention,
-            ...(row.subagentSummary ? [row.subagentSummary.attention] : []),
-          ],
-    ),
-  );
-  let active = 0;
-  let queued = 0;
-  let unread = 0;
-  let failed = false;
-  for (const row of rows) {
-    const children = includeChildren ? row : row.subagentSummary;
-    const visuallyActive = row.isRunVisuallyActive ?? row.hasActiveRun;
-    active += Number(visuallyActive) + (children?.runningChildCount ?? 0);
-    queued += Number(visuallyActive && row.status === "queued") + (children?.queuedChildCount ?? 0);
-    unread += Number(row.unread) + (children?.unreadChildCount ?? 0);
-    failed ||=
-      row.status === "failed" || row.status === "timeout" || (children?.failedChildCount ?? 0) > 0;
-  }
-  return { attention, active, queued, unread, failed };
-}
-
 export type TeamSessionSlotsProps = {
   rows: readonly SidebarRecentSession[];
   includeChildren: boolean;
@@ -339,6 +307,8 @@ export type TeamSessionSlotsProps = {
 
 export function TeamSessionSlots(props: TeamSessionSlotsProps) {
   const summary = createMemo(() => summarizeTeamSessionSlots(props.rows, props.includeChildren));
+  const slots = () => summary().slots;
+  const unread = () => slots().unread ?? 0;
   const idleChild = createMemo(() =>
     props.rows.length === 1 &&
     props.rows[0]?.isChild &&
@@ -348,17 +318,15 @@ export function TeamSessionSlots(props: TeamSessionSlotsProps) {
   );
   const hasState = createMemo(
     () =>
-      summary().attention.kind !== "none" ||
-      summary().failed ||
+      Boolean(slots().glyph) ||
+      slots().failed ||
       Boolean(props.groupConflicts) ||
-      (!props.statusOnly && (summary().active > 0 || Boolean(idleChild()))),
+      (!props.statusOnly && (Boolean(slots().run) || Boolean(idleChild()))),
   );
   return (
-    <Show
-      when={(!props.statusOnly && (props.childCount > 0 || summary().unread > 0)) || hasState()}
-    >
+    <Show when={(!props.statusOnly && (props.childCount > 0 || unread() > 0)) || hasState()}>
       <span class="sidebar-session-team-state">
-        <Show when={!props.statusOnly && (props.childCount > 0 || summary().unread > 0)}>
+        <Show when={!props.statusOnly && (props.childCount > 0 || unread() > 0)}>
           <span class="sidebar-session-team-state__counts">
             <Show when={props.childCount > 0}>
               <span
@@ -370,16 +338,14 @@ export function TeamSessionSlots(props: TeamSessionSlotsProps) {
                 {props.childCount}
               </span>
             </Show>
-            <Show when={summary().unread > 0}>
+            <Show when={unread() > 0}>
               <span
-                class={
-                  summary().unread === 1 ? "session-unread-dot" : "sidebar-agent-roster__unread"
-                }
+                class={unread() === 1 ? "session-unread-dot" : "sidebar-agent-roster__unread"}
                 role="img"
                 aria-label={t("sessionsView.unread")}
                 title={t("sessionsView.unread")}
               >
-                {summary().unread > 1 ? summary().unread : undefined}
+                {unread() > 1 ? unread() : undefined}
               </span>
             </Show>
           </span>
@@ -387,10 +353,10 @@ export function TeamSessionSlots(props: TeamSessionSlotsProps) {
         <Show when={hasState()}>
           <span class="sidebar-session-team-state__status">
             <Switch>
-              <Match when={summary().attention.kind !== "none"}>
-                <SessionAttentionIcon attention={summary().attention} />
+              <Match when={slots().glyph}>
+                <SessionAttentionIcon attention={summary().attention} glyph={slots().glyph} />
               </Match>
-              <Match when={summary().failed}>
+              <Match when={slots().failed}>
                 <span
                   class="sidebar-child-session__status--failed"
                   role="img"
@@ -409,11 +375,11 @@ export function TeamSessionSlots(props: TeamSessionSlotsProps) {
                   <Icon name="globe" />
                 </span>
               </Match>
-              <Match when={!props.statusOnly && summary().active > 0}>
+              <Match when={!props.statusOnly && Boolean(slots().run)}>
                 <SessionGlyph
                   content={undefined}
                   running={true}
-                  queued={summary().active === summary().queued}
+                  queued={slots().run === "queued"}
                   runVisibility={props.runVisibility}
                 />
               </Match>
@@ -459,29 +425,11 @@ type SessionLeadingStateProps = {
 
 export function renderSessionLeadingState(props: SessionLeadingStateProps) {
   const session = () => props.session;
-  const subagentsWorking = createMemo(
-    () => !props.trailingState && session().runningChildCount > 0,
+  const state = createMemo(() =>
+    sessionLeadingState(session(), props.ownerActor, props.trailingState, props.icon != null),
   );
-  const ownRunActive = () => session().isRunVisuallyActive ?? session().hasActiveRun;
-  const running = createMemo(() => ownRunActive() || subagentsWorking());
-  const ownRunQueued = createMemo(() => ownRunActive() && session().status === "queued");
-  const showRun = createMemo(
-    () => running() && !props.trailingState && session().attention.kind !== "question",
-  );
-  const runningLabel = createMemo(() =>
-    subagentsWorking() && (!ownRunActive() || ownRunQueued())
-      ? t("sessionsView.subagentsWorking")
-      : undefined,
-  );
-  const icon = createMemo(() => session().icon);
-  const attentionIcon = createMemo(
-    () => session().attention.kind !== "none" && !props.trailingState,
-  );
-  const hasIcon = createMemo(() => attentionIcon() || props.icon != null || Boolean(icon()));
-  const child = createMemo(() => session().isChild && !props.trailingState);
-  const hasOwner = createMemo(() => !child() && Boolean(props.ownerActor?.id?.trim()));
   const OwnerChip = () => (
-    <Show when={hasOwner()}>
+    <Show when={state().hasOwner}>
       <SessionOwnerChip
         owner={props.ownerActor}
         size="row"
@@ -492,39 +440,18 @@ export function renderSessionLeadingState(props: SessionLeadingStateProps) {
       />
     </Show>
   );
-  const channelAvatarUrl = createMemo(() => session().channelAvatarUrl);
-  const stackedParticipants = createMemo(
-    () => session().participantCount ?? session().participants?.length ?? 0,
-  );
-  const renderedIdentities = createMemo(() => {
-    if (hasIcon() || channelAvatarUrl() || !hasOwner()) {
-      return undefined;
-    }
-    return [
-      props.ownerActor?.identity,
-      stackedParticipants() === 1 ? session().participants?.[0]?.identity : undefined,
-    ].filter((identity): identity is SessionParticipantIdentity => identity !== undefined);
-  });
-  const hasContent = createMemo(() => hasIcon() || Boolean(channelAvatarUrl()) || hasOwner());
-  const showGlyph = createMemo(
-    () =>
-      hasIcon() ||
-      (child() && !channelAvatarUrl()
-        ? running()
-        : Boolean(channelAvatarUrl()) || hasOwner() || showRun()),
-  );
   const content = (
     <Switch fallback={<OwnerChip />}>
-      <Match when={attentionIcon()}>
-        <SessionAttentionIcon attention={session().attention} />
+      <Match when={state().attention}>
+        <SessionAttentionIcon attention={session().attention} glyph={state().glyph} />
       </Match>
       <Match when={props.icon != null}>{props.icon}</Match>
-      <Match when={Boolean(icon())}>
-        <SessionIcon icon={icon()!} />
+      <Match when={Boolean(session().icon)}>
+        <SessionIcon icon={session().icon!} />
       </Match>
-      <Match when={Boolean(channelAvatarUrl())}>
+      <Match when={Boolean(session().channelAvatarUrl)}>
         <ChannelAvatar
-          routeUrl={channelAvatarUrl()!}
+          routeUrl={session().channelAvatarUrl!}
           authTokens={props.avatarAuth?.authTokens ?? []}
           authReady={props.avatarAuth?.authReady ?? false}
         >
@@ -533,17 +460,10 @@ export function renderSessionLeadingState(props: SessionLeadingStateProps) {
       </Match>
     </Switch>
   );
-  const unreadBadge = createMemo(
-    () =>
-      session().unread &&
-      !running() &&
-      !props.trailingState &&
-      !(!hasIcon() && child() && !channelAvatarUrl()),
-  );
   // Keep the glyph mounted while session facts change so its CSS animation keeps its timeline.
   const leadingIndicator = (
     <Show
-      when={showGlyph()}
+      when={state().visible}
       fallback={
         <Show when={!props.trailingState}>
           <SessionIdleState session={session()} />
@@ -551,26 +471,23 @@ export function renderSessionLeadingState(props: SessionLeadingStateProps) {
       }
     >
       <SessionGlyph
+        {...state()}
+        runningLabel={state().run === "subagents" ? t("sessionsView.subagentsWorking") : undefined}
         content={
-          hasContent() ? (!attentionIcon() && props.icon === false ? false : content) : undefined
+          state().hasContent
+            ? !state().attention && props.icon === false
+              ? false
+              : content
+            : undefined
         }
-        running={showRun()}
-        queued={ownRunQueued() && !subagentsWorking()}
-        runningLabel={runningLabel()}
         runVisibility={props.runVisibility}
-        circular={!hasIcon() && Boolean(channelAvatarUrl() || hasOwner())}
-        ring={
-          !hasIcon() && !channelAvatarUrl() && hasOwner() && stackedParticipants() > 0
-            ? "pair"
-            : "circle"
-        }
-        badge={<Show when={unreadBadge()}>{renderSessionUnreadBadge()}</Show>}
+        badge={<Show when={state().unreadBadge}>{renderSessionUnreadBadge()}</Show>}
       />
     </Show>
   );
   return {
-    running,
+    running: () => Boolean(state().run),
     leadingIndicator,
-    renderedIdentities,
+    renderedIdentities: () => state().identities,
   };
 }
