@@ -656,24 +656,24 @@ describe("chat pane header", () => {
 it("releases each merged-chrome toggle when its header branch closes", async () => {
   const registered = trackNavigation();
   const mounted = mountHeader({ mergedChrome: false });
-  const retainedToggle = query(mounted.container, ".mobile-header__navigation");
-  await waitForSolid(() => expect(registered()).toEqual([retainedToggle]));
+  expect(mounted.container.querySelector(".mobile-header__navigation")).toBeNull();
+  await waitForSolid(() => expect(registered()).toEqual([]));
   for (let mount = 0; mount < 2; mount += 1) {
     mounted.update({ mergedChrome: true });
     const toggle = query(mounted.container, ".chat-pane__nav-toggle");
-    await waitForSolid(() => expect(registered()).toEqual([retainedToggle, toggle]));
+    await waitForSolid(() => expect(registered()).toEqual([toggle]));
     mounted.update({ mergedChrome: false });
     // A connected retired button exposes a stale map entry instead of letting isConnected mask it.
     mounted.container.append(toggle);
     try {
-      await waitForSolid(() => expect(registered()).toEqual([retainedToggle]));
+      await waitForSolid(() => expect(registered()).toEqual([]));
     } finally {
       toggle.remove();
     }
   }
   mounted.update({ mergedChrome: true });
   const toggle = query(mounted.container, ".chat-pane__nav-toggle");
-  await waitForSolid(() => expect(registered()).toEqual([retainedToggle, toggle]));
+  await waitForSolid(() => expect(registered()).toEqual([toggle]));
   mounted.unmount();
   document.body.append(toggle);
   try {
@@ -709,8 +709,20 @@ it("publishes the active header while retaining mobile chrome across desktop tra
       setRef: vi.fn(),
     },
   });
+  expect(mounted.container.querySelector(".agent-chat__header--mobile")).toBeNull();
+  await waitForSolid(() =>
+    expect(pane.headerElement).toBe(mounted.container.querySelector(".chat-pane__header")),
+  );
+  mounted.update({ mergedChrome: true });
+  await waitForSolid(() =>
+    expect(mounted.container.querySelector(".agent-chat__header--mobile")).not.toBeNull(),
+  );
   const mobileHeader = query(mounted.container, ".agent-chat__header--mobile");
   const toggle = query(mobileHeader, ".mobile-header__navigation");
+  await waitForSolid(() => expect(pane.headerElement).toBe(mobileHeader));
+  expect(registered()).toEqual([toggle]);
+  mounted.update({ mergedChrome: false });
+  await waitForSolid(() => expect(registered()).toEqual([]));
   for (let transition = 0; transition < 2; transition += 1) {
     await waitForSolid(() =>
       expect(pane.headerElement).toBe(mounted.container.querySelector(".chat-pane__header")),
@@ -721,6 +733,7 @@ it("publishes the active header while retaining mobile chrome across desktop tra
     expect(registered()).toEqual([toggle]);
     mounted.update({ mergedChrome: false });
     expect(mounted.container.querySelector(".agent-chat__header--mobile")).toBe(mobileHeader);
+    await waitForSolid(() => expect(registered()).toEqual([]));
   }
   await waitForSolid(() =>
     expect(pane.headerElement).toBe(mounted.container.querySelector(".chat-pane__header")),

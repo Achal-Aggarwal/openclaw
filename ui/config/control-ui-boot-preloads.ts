@@ -18,6 +18,8 @@ const sharedInteractionEntries = new Set([
   "ui/src/components/app-sidebar-online.tsx",
 ]);
 const chatInteractionEntries = new Set([
+  // Viewport transitions use cached bytes while desktop boot skips mobile evaluation.
+  "ui/src/pages/chat/components/chat-pane-mobile-runtime.tsx",
   "ui/src/pages/chat/components/chat-context-breakdown.tsx",
   "ui/src/pages/chat/components/chat-transcript-search-content.tsx",
   "ui/src/pages/chat/components/chat-details-desktop-process-row.tsx",

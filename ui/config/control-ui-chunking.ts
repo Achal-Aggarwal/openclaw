@@ -103,6 +103,13 @@ export function controlUiStableChunkName(id: string): string | undefined {
     case "ui/src/pages/chat/chat-outbox-recovery-rows.tsx":
     case "ui/src/pages/chat/chat-outbox-recovery-actions.ts":
       return "chat-outbox-recovery-runtime";
+    case "ui/src/pages/chat/components/chat-pane-mobile-runtime.tsx":
+    case "ui/src/pages/chat/components/chat-pane-mobile-chrome.runtime.tsx":
+    case "ui/src/pages/chat/components/chat-pane-mobile-header.tsx":
+    case "ui/src/pages/chat/components/chat-session-sharing-mobile-adapter.tsx":
+    case "ui/src/pages/chat/components/chat-session-sharing-options.tsx":
+      // Download the mobile renderer with Chat, but evaluate it on the first mobile layout.
+      return "chat-mobile-header-runtime";
     case "ui/src/pages/chat/chat-tool-family-runtime.ts":
     case "ui/src/pages/chat/chat-tool-activity-coalesce.runtime.ts":
     case "ui/src/pages/chat/chat-sessions-yield.runtime.ts":
