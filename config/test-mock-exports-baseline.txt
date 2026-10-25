@@ -3927,7 +3927,6 @@
 ["src/commands/doctor-memory-recall.test.ts","../plugin-sdk/memory-core-bundled-runtime.js","753e6e3f7f7ce651ea7859d0294efc03d38ae36ccb0f80a7b5129dad18c47af3",1]
 ["src/commands/doctor-memory-recall.test.ts","../plugins/memory-runtime.js","28a5d8a93f984fa1b04bcaf8d07e3318b3a753970ad27173fb76afc5d2452282",1]
 ["src/commands/doctor-memory-recall.test.ts","./doctor-workspace.js","829b39d26b8b5fd155aa09a3d8dd70d5bca60d03e6495829f12c0f0bf362b4e5",1]
-["src/commands/doctor-memory-search.test.ts","../agents/agent-scope.js","9c0ab162d0316f5b89bde612c36e34b270937b6da2247df96f880f1d4f5dde73",1]
 ["src/commands/doctor-memory-search.test.ts","../agents/auth-profiles.js","72f2b4936c8033169da6071fdeec9f00d7aa6ec2b72bc124b34851b27338fc0b",1]
 ["src/commands/doctor-memory-search.test.ts","../agents/model-auth.js","0f1ca482744ee8ba64f1c65459b006a8fb7bd7a7881b25b11fc2c5696f7bc584",1]
 ["src/commands/doctor-memory-search.test.ts","../plugin-sdk/memory-core-bundled-runtime.js","8a9350f6986b48f53bea64b8df025d4891ad185db0b203b1a328bcf52eac28cd",1]
