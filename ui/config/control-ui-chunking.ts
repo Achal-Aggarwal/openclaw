@@ -135,11 +135,13 @@ export function controlUiStableChunkName(id: string): string | undefined {
     case "ui/src/pages/chat/components/chat-forwarded-attribution.tsx":
       return "chat-forwarded-attribution-runtime";
     case "ui/src/pages/chat/components/chat-transcript-search-content.tsx":
+      return "chat-interaction-runtime";
     case "ui/src/pages/chat/components/chat-details-desktop-process-row.tsx":
     case "ui/src/pages/chat/components/chat-details-process-row.tsx":
     case "ui/src/pages/chat/components/chat-details-subagent-rows.tsx":
-      // Preload common follow-up rows without evaluating absent variants at boot.
-      return "chat-interaction-runtime";
+    case "ui/src/pages/chat/components/chat-details-environment-body.tsx":
+      // Saved Details may render at boot without admitting tool/send interactions.
+      return "chat-details-runtime";
     case "ui/src/pages/chat/chat-provider-review-controller.tsx":
       return "chat-provider-review";
     // Keep optional compression groups separate from code evaluated by text-only Chat.
@@ -163,7 +165,6 @@ export function controlUiStableChunkName(id: string): string | undefined {
     case "ui/src/pages/chat/components/chat-context-breakdown.tsx":
     case "ui/src/pages/chat/components/chat-context-breakdown-model.ts":
     case "ui/src/pages/chat/components/chat-context-report.tsx":
-    case "ui/src/pages/chat/components/chat-details-environment-body.tsx":
     case "ui/src/lib/session-context-report.ts":
       return "chat-interaction-runtime";
     case "node_modules/@solidjs/signals/dist/prod/deferred.js":

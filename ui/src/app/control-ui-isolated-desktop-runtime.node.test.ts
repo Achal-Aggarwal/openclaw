@@ -224,6 +224,11 @@ it("prioritizes signing and route dependencies over unevaluated interaction hint
     toolFamily: modulePath("../pages/chat/chat-tool-family-runtime.ts"),
     toolPresentation: modulePath("../pages/chat/chat-tool-presentation.runtime.ts"),
     liveEvents: modulePath("../pages/chat/chat-live-events.runtime.ts"),
+    search: modulePath("../pages/chat/components/chat-transcript-search-content.tsx"),
+    desktopProcess: modulePath("../pages/chat/components/chat-details-desktop-process-row.tsx"),
+    process: modulePath("../pages/chat/components/chat-details-process-row.tsx"),
+    subagents: modulePath("../pages/chat/components/chat-details-subagent-rows.tsx"),
+    environment: modulePath("../pages/chat/components/chat-details-environment-body.tsx"),
     runFrame: modulePath("../pages/chat/components/chat-agent-run-frame.tsx"),
     sourcePreview: modulePath("../pages/chat/components/chat-source-previews.tsx"),
   };
@@ -316,13 +321,19 @@ it("prioritizes signing and route dependencies over unevaluated interaction hint
     (id) => chunkFor(id).fileName,
   );
   expect(chunkFor(entries.liveEvents).fileName).toBe(chunkFor(entries.toolFamily).fileName);
+  expect(chunkFor(entries.search).fileName).toBe(chunkFor(entries.toolFamily).fileName);
+  const detailsChunk = chunkFor(entries.subagents).fileName;
+  for (const id of [entries.desktopProcess, entries.process, entries.environment]) {
+    expect(chunkFor(id).fileName).toBe(detailsChunk);
+  }
+  expect(toolChunks).not.toContain(detailsChunk);
   const placementChunks = [entries.placement, placementDependency].map(
     (id) => chunkFor(id).fileName,
   );
   const html = await fs.readFile(local("dist/index.html"), "utf8");
   const chatPreloads = routePreloads(html, "chat");
   expect(chatPreloads.toSorted()).toEqual(
-    [...new Set([signerChunk, chatChunk, ...commonChunks, ...toolChunks])].toSorted(),
+    [...new Set([signerChunk, chatChunk, ...commonChunks, ...toolChunks, detailsChunk])].toSorted(),
   );
   expect(routePreloads(html, "new").toSorted()).toEqual(
     [...new Set([signerChunk, ...commonChunks, ...placementChunks])].toSorted(),
@@ -336,7 +347,7 @@ it("prioritizes signing and route dependencies over unevaluated interaction hint
   expect(linkFor(chunkFor(entries.online).fileName)).toContain('fetchpriority="low"');
   expect(linkFor(chunkFor(entries.draftWrite).fileName)).toContain('fetchpriority="low"');
   expect(linkFor(payloadChunk)).toBeUndefined();
-  for (const file of toolChunks) {
+  for (const file of [...toolChunks, detailsChunk]) {
     expect(linkFor(file)).toContain('fetchpriority="low"');
   }
   expect(linkFor(chunkFor(commonDependency).fileName)).not.toContain("fetchpriority");
@@ -379,6 +390,17 @@ it("prioritizes signing and route dependencies over unevaluated interaction hint
     "placement-dependency",
     "placement",
   ]);
+  // A default-open Details section must not evaluate future tool/send/search modules.
+  expect((await fixture.load.subagents!()).value).toBe("common");
+  expect(fixture.events).toEqual([
+    "common",
+    "online",
+    "draftWrite",
+    "outboxPayload",
+    "placement-dependency",
+    "placement",
+    "subagents",
+  ]);
   expect((await fixture.load.liveEvents!()).value).toBe("common");
   expect(fixture.events).toEqual([
     "common",
@@ -387,6 +409,7 @@ it("prioritizes signing and route dependencies over unevaluated interaction hint
     "outboxPayload",
     "placement-dependency",
     "placement",
+    "subagents",
     "liveEvents",
   ]);
   expect((await fixture.load.toolFamily!()).value).toBe("common");
@@ -400,6 +423,7 @@ it("prioritizes signing and route dependencies over unevaluated interaction hint
     "outboxPayload",
     "placement-dependency",
     "placement",
+    "subagents",
     "liveEvents",
     "toolFamily",
     "toolPresentation",
