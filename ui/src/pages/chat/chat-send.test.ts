@@ -13,6 +13,7 @@ import {
   buildSlashCommandsFromEntries,
   replaceSlashCommands,
 } from "../../lib/chat/commands.ts";
+import { outboxStorageScope } from "../../lib/chat/outbox-payload-owner.ts";
 import * as outboxPayloadStore from "../../lib/chat/outbox-payload-store.runtime.ts";
 import { listStoredChatOutboxes } from "../../lib/chat/outbox-store-projection.ts";
 import { storedChatOutboxScopeKey } from "../../lib/chat/outbox-store-scope.ts";
@@ -1538,7 +1539,7 @@ describe("handleSendChat", () => {
     expect(host.request).not.toHaveBeenCalled();
     const ownedOriginal = {
       ...original,
-      storageScope: outboxPayloadStore.outboxStorageScope(host),
+      storageScope: outboxStorageScope(host),
     };
     expect(host.chatQueue).toStrictEqual([ownedOriginal]);
     getItem.mockRestore();
@@ -2399,7 +2400,7 @@ describe("handleSendChat", () => {
             queue: [
               {
                 ...item,
-                storageScope: outboxPayloadStore.outboxStorageScope(host),
+                storageScope: outboxStorageScope(host),
                 sendState: "unconfirmed",
                 sendAttempts: 1,
               },

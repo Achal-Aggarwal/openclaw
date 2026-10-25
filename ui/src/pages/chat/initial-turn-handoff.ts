@@ -1,6 +1,6 @@
 import { createChangeListeners } from "../../../../src/shared/listeners.js";
 import type { ChatQueueItem } from "../../lib/chat/chat-types.ts";
-import { outboxPayloadMatchesOwner } from "../../lib/chat/outbox-payload-store.runtime.ts";
+import { outboxPayloadMatchesOwner } from "../../lib/chat/outbox-payload-owner.ts";
 import { areUiSessionKeysEquivalent } from "../../lib/sessions/session-key.ts";
 import { releaseChatAttachmentPayloads } from "./attachment-payload-store.ts";
 import type { ChatHost } from "./chat-send-contract.ts";

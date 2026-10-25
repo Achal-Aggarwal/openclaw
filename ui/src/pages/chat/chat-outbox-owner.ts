@@ -10,7 +10,7 @@ import {
 import {
   outboxPayloadMatchesOwner,
   outboxStorageScope,
-} from "../../lib/chat/outbox-payload-store.runtime.ts";
+} from "../../lib/chat/outbox-payload-owner.ts";
 import { sameQueuedDeliveryVersion } from "../../lib/chat/outbox-store-codec.ts";
 import {
   readStoredChatOutbox as read,

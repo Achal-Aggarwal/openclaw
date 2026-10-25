@@ -1,5 +1,4 @@
 import { isRecord } from "@openclaw/normalization-core/record-coerce";
-import { removeOutboxPayloads } from "./outbox-payload-store.runtime.ts";
 import type { StoredComposerState } from "./outbox-store-codec.ts";
 import type { ComposerStorageTarget } from "./outbox-store-scope.ts";
 
@@ -89,9 +88,19 @@ export function retireRemovedOutboxPayloads(
     }
     const removed = references(JSON.parse(previous)).filter((ref) => !remaining.has(ref.key));
     if (removed.length) {
-      void removeOutboxPayloads(removed);
+      removeRetiredOutboxPayloads(removed);
     }
   } catch {
     // Missing/unreadable storage cannot authorize deletion; the Blob budget bounds retention.
   }
+}
+
+export function removeRetiredOutboxPayloads(
+  removed: Parameters<typeof import("./outbox-payload-store.runtime.ts").removeOutboxPayloads>[0],
+): void {
+  void import("./outbox-payload-store.runtime.ts")
+    .then(({ removeOutboxPayloads }) => removeOutboxPayloads(removed))
+    .catch(() => {
+      // Metadata retirement remains authoritative; failed cleanup uses the bounded Blob budget.
+    });
 }

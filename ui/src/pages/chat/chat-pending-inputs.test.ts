@@ -35,7 +35,7 @@ import {
   getChatPendingInputs,
 } from "./chat-pending-inputs.ts";
 import { readChatQueueForScope } from "./chat-queue.ts";
-import { retireDeliveredQueuedUserTurn } from "./chat-send-support.ts";
+import { retireDeliveredQueuedUserTurn } from "./chat-send-support.runtime.ts";
 import { handlePageGatewayEvent } from "./chat-state-events.test-support.ts";
 import { buildChatItems } from "./chat-thread-build.ts";
 import { resetChatThreadState } from "./chat-thread.ts";

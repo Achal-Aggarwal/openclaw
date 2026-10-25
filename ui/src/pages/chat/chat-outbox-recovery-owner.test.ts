@@ -62,6 +62,7 @@ afterEach(async () => {
   document.body.replaceChildren();
   await Promise.resolve();
   flush();
+  vi.doUnmock("./chat-outbox-recovery-actions.ts");
   vi.unstubAllGlobals();
 });
 
@@ -281,3 +282,94 @@ it.each(["restore", "discard"] as const)(
     expect(fixture.request).not.toHaveBeenCalled();
   },
 );
+
+it("admits one recovery review after a held action import outlives its first owner", async () => {
+  const started = createDeferred();
+  const release = createDeferred();
+  const confirmation = createDeferred<boolean>();
+  recoveryIo.confirm.mockReturnValue(confirmation.promise);
+  // mock-isolation: Delay the real actions while retiring their first mounted owner.
+  vi.doMock(import("./chat-outbox-recovery-actions.ts"), async (importOriginal) => {
+    started.resolve();
+    await release.promise;
+    return importOriginal();
+  });
+  const fixture = await mountRecovery();
+  try {
+    fixture.button("restore").click();
+    fixture.button("restore").click();
+    await started.promise;
+    fixture.remount();
+    await waitForSolid(() => expect(fixture.button("restore").disabled).toBe(false));
+    fixture.button("restore").click();
+    fixture.button("restore").click();
+    release.resolve();
+
+    await waitForSolid(() => {
+      expect(recoveryIo.confirm).toHaveBeenCalledOnce();
+      expect(fixture.button("restore").disabled).toBe(true);
+      expect(fixture.button("discard").disabled).toBe(true);
+    });
+    confirmation.resolve(false);
+    await waitForSolid(() => expect(fixture.button("restore").disabled).toBe(false));
+    expect(recoveryIo.confirm).toHaveBeenCalledOnce();
+    expect(fixture.host.chatMessage).toBe("");
+    expect(readChatOutboxRecovery(fixture.host).entries).toHaveLength(1);
+    expect(
+      readStoredOutboxStore(sessionStorage, storageTargetForComposer(fixture.host)).sessions,
+    ).toEqual({});
+    expect(fixture.restored).not.toHaveBeenCalled();
+    expect(fixture.request).not.toHaveBeenCalled();
+  } finally {
+    release.resolve();
+    confirmation.resolve(false);
+  }
+});
+
+it("keeps recovery rows after an action import fails and restores on retry", async () => {
+  const started = createDeferred();
+  const loading = createDeferred<typeof import("./chat-outbox-recovery-actions.ts")>();
+  // mock-isolation: Fail only the action chunk; recovery discovery and storage remain real.
+  vi.doMock("./chat-outbox-recovery-actions.ts", () => {
+    started.resolve();
+    return loading.promise;
+  });
+  const fixture = await mountRecovery();
+  try {
+    fixture.button("restore").click();
+    await started.promise;
+    loading.reject(new Error("Synthetic recovery actions unavailable"));
+    await waitForSolid(() => {
+      expect(fixture.element.querySelector('[role="alert"]')?.textContent).toBe(
+        t("chat.outboxRecoveryStorageFailed"),
+      );
+      expect(fixture.element.querySelector(".chat-outbox-recovery__preview")?.textContent).toBe(
+        "Saved input for explicit review",
+      );
+      expect(fixture.button("restore").disabled).toBe(false);
+    });
+    expect(readChatOutboxRecovery(fixture.host).entries).toHaveLength(1);
+    expect(fixture.host.chatMessage).toBe("");
+    expect(fixture.restored).not.toHaveBeenCalled();
+    expect(recoveryIo.confirm).not.toHaveBeenCalled();
+
+    vi.doUnmock("./chat-outbox-recovery-actions.ts");
+    recoveryIo.confirm.mockResolvedValue(true);
+    fixture.button("restore").click();
+    await waitForSolid(() => {
+      expect(fixture.restored).toHaveBeenCalledOnce();
+      expect(fixture.element.querySelector(".chat-outbox-recovery-row")).toBeNull();
+      expect(fixture.element.querySelector('[role="alert"]')).toBeNull();
+    });
+    expect(recoveryIo.confirm).toHaveBeenCalledOnce();
+    expect(
+      readStoredOutboxStore(sessionStorage, storageTargetForComposer(fixture.host)).sessions[
+        "agent:main:main\u0000agent:main"
+      ]?.draft,
+    ).toBe("Saved input for explicit review");
+    expect(readChatOutboxRecovery(fixture.host).entries).toEqual([]);
+    expect(fixture.request).not.toHaveBeenCalled();
+  } finally {
+    loading.reject(new Error("Synthetic recovery action cleanup"));
+  }
+});

@@ -210,6 +210,10 @@ it("prioritizes signing and route dependencies over unevaluated interaction hint
   const signingFallback = local("signing-fallback.js");
   const entries = {
     online: modulePath("../components/app-sidebar-online.tsx"),
+    draftWrite: modulePath("../lib/chat/composer-draft-write.runtime.ts"),
+    composerMenu: modulePath("../pages/chat/components/chat-composer-slash-menu.tsx"),
+    outboxPayload: modulePath("../pages/chat/outbox-payloads.runtime.ts"),
+    deferredSupport: modulePath("../components/session-git-diff.tsx"),
     catalog: modulePath("../components/mcp-app-catalog-view.tsx"),
     resources: modulePath("../components/mcp-app-resources-view.tsx"),
     context: modulePath("../components/solid/mcp-app-context-strip-view.tsx"),
@@ -292,7 +296,15 @@ it("prioritizes signing and route dependencies over unevaluated interaction hint
     expect(chunk).toBeDefined();
     return chunk!;
   };
-  const commonChunks = [entries.online, commonDependency].map((id) => chunkFor(id).fileName);
+  const commonChunks = [
+    entries.online,
+    entries.draftWrite,
+    entries.composerMenu,
+    commonDependency,
+  ].map((id) => chunkFor(id).fileName);
+  const payloadChunk = chunkFor(entries.outboxPayload).fileName;
+  expect(payloadChunk).not.toBe(chunkFor(entries.deferredSupport).fileName);
+  expect(chunkFor(entries.draftWrite).fileName).toBe(chunkFor(entries.composerMenu).fileName);
   const signerChunk = chunkFor(entries.signer).fileName;
   const chatChunk = chunkFor(entries.chat).fileName;
   const placementChunks = [entries.placement, placementDependency].map(
@@ -313,6 +325,8 @@ it("prioritizes signing and route dependencies over unevaluated interaction hint
   const links = [...html.matchAll(/<link[^>]+>/gu)].map((match) => match[0]);
   const linkFor = (file: string) => links.find((link) => link.includes(`href="./${file}"`));
   expect(linkFor(chunkFor(entries.online).fileName)).toContain('fetchpriority="low"');
+  expect(linkFor(chunkFor(entries.draftWrite).fileName)).toContain('fetchpriority="low"');
+  expect(linkFor(payloadChunk)).toBeUndefined();
   expect(linkFor(chunkFor(commonDependency).fileName)).not.toContain("fetchpriority");
   expect(linkFor(signerChunk)).not.toContain("fetchpriority");
   expect(html).not.toContain(chunkFor(signingFallback).fileName);
@@ -335,6 +349,17 @@ it("prioritizes signing and route dependencies over unevaluated interaction hint
   expect(fixture.events).toEqual([]);
   expect((await fixture.load.online!()).value).toBe("common");
   expect(fixture.events).toEqual(["common", "online"]);
+  expect((await fixture.load.draftWrite!()).value).toBe("common");
+  expect(fixture.events).toEqual(["common", "online", "draftWrite"]);
+  expect((await fixture.load.outboxPayload!()).value).toBe("common");
+  expect(fixture.events).toEqual(["common", "online", "draftWrite", "outboxPayload"]);
   expect((await fixture.load.placement!()).value).toBe("placement");
-  expect(fixture.events).toEqual(["common", "online", "placement-dependency", "placement"]);
+  expect(fixture.events).toEqual([
+    "common",
+    "online",
+    "draftWrite",
+    "outboxPayload",
+    "placement-dependency",
+    "placement",
+  ]);
 });

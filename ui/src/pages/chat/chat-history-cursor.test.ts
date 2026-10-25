@@ -12,7 +12,7 @@ import { handleChatGatewayEvent } from "./chat-gateway.ts";
 import { event, toolEvent } from "./chat-history.inflight.test-support.ts";
 import { loadChatHistory } from "./chat-history.ts";
 import { makeChatHost } from "./chat-host.test-support.ts";
-import { retireDeliveredQueuedUserTurn } from "./chat-send-support.ts";
+import { retireDeliveredQueuedUserTurn } from "./chat-send-support.runtime.ts";
 import { buildChatItems } from "./chat-thread-build.ts";
 import { admitStoredChatComposerQueueItemResult } from "./composer-queue-persistence.ts";
 import { getChatSessionProjection, reduceChatSessionProjection } from "./history-merge.ts";

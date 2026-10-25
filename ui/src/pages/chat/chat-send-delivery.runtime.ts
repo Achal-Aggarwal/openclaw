@@ -40,9 +40,9 @@ import {
   updateQueuedSendItem,
 } from "./chat-send-queue-state.ts";
 import { requestChatSend } from "./chat-send-request.ts";
+import { retireDeliveredQueuedUserTurn } from "./chat-send-support.runtime.ts";
 import {
   OFFLINE_QUEUE_STORAGE_ERROR,
-  retireDeliveredQueuedUserTurn,
   surfaceChatDeliveryFailure,
 } from "./chat-send-support.ts";
 import { refreshChatSessionListForTarget } from "./chat-session.ts";

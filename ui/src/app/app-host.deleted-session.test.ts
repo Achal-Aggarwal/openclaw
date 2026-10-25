@@ -7,7 +7,7 @@ import {
   writeDurableComposerDraft,
 } from "../lib/chat/composer-draft-store.runtime.ts";
 import { requestResult } from "../lib/chat/control-ui-database.runtime.ts";
-import { outboxStorageScope } from "../lib/chat/outbox-payload-store.runtime.ts";
+import { outboxStorageScope } from "../lib/chat/outbox-payload-owner.ts";
 import "../lib/toast-host.tsx";
 import { createStoredChatOutboxReader } from "../lib/chat/outbox-store-projection.ts";
 import {

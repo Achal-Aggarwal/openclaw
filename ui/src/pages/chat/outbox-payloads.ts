@@ -1,25 +1,18 @@
 import { readOfflineStorageScope } from "../../app/boot-record.ts";
 import { t } from "../../i18n/index.ts";
-import { readBlobAsDataUrl } from "../../lib/blob-data-url.ts";
 import type { ChatQueueItem } from "../../lib/chat/chat-types.ts";
-import {
-  outboxPayloadTab,
-  readOutboxPayload,
-  removeOutboxPayloads,
-  writeOutboxPayload,
-  type OutboxPayloadFailure,
-} from "../../lib/chat/outbox-payload-store.runtime.ts";
+import type { OutboxPayloadFailure } from "../../lib/chat/outbox-payload-store.runtime.ts";
+import { removeRetiredOutboxPayloads } from "../../lib/chat/outbox-store-payload-retirement.ts";
 import type { StoredChatOutboxScope } from "../../lib/chat/outbox-store-scope.ts";
-import { storageTargetForGateway, type ChatComposerScope } from "../../lib/chat/outbox-store.ts";
+import type { ChatComposerScope } from "../../lib/chat/outbox-store.ts";
 import { resolveUiConversationIdentity } from "../../lib/sessions/session-key.ts";
 import { isIncognitoComposerScope } from "./composer-persistence-state.ts";
-import { captureDurableChatAttachments } from "./durable-composer-persistence.ts";
 
-type Host = ChatComposerScope & { sessionKey?: string };
+export type Host = ChatComposerScope & { sessionKey?: string };
 type PayloadUpdate = Pick<ChatQueueItem, "attachments" | "attachmentPayload"> & {
   attachmentStorageError?: undefined;
 };
-type PayloadResult =
+export type PayloadResult =
   | { status: "ready"; update: PayloadUpdate }
   | { status: "failed"; reason: OutboxPayloadFailure };
 
@@ -66,16 +59,14 @@ export function captureOutboxPayloadOwner(
     isIncognitoComposerScope(host, scope) === incognito;
 }
 
-async function preparePayload(
+export async function prepareOutboxPayload(
   host: Host,
   item: ChatQueueItem,
-  purpose: "send" | "handoff",
+  purpose: "send" | "handoff" = "send",
 ): Promise<PayloadResult> {
   if (!item.attachments?.length && !item.attachmentPayload && !item.attachmentStorageError) {
     return { status: "ready", update: {} };
   }
-  // Incognito keeps the existing tab-only inline outbox and its quota. It must
-  // never acquire restart-persistent Blob ownership or hydrate a regular row.
   const scope = payloadScope(host, item);
   if (isIncognitoComposerScope(host, scope)) {
     return item.attachmentPayload
@@ -87,154 +78,18 @@ async function preparePayload(
     return { status: "failed", reason: "unavailable" };
   }
   const isCurrent = captureOutboxPayloadOwner(host, scope);
-  let tabId: string;
   try {
-    tabId = await outboxPayloadTab();
+    const { prepareOutboxPayload } = await import("./outbox-payloads.runtime.ts");
+    return isCurrent()
+      ? prepareOutboxPayload(host, item, purpose, { scope, recoveryScope, isCurrent })
+      : { status: "failed", reason: "unavailable" };
   } catch {
     return { status: "failed", reason: "unavailable" };
   }
-  if (!isCurrent()) {
-    return { status: "failed", reason: "unavailable" };
-  }
-  const owner = {
-    tabId,
-    gatewayOwner: storageTargetForGateway(host.settings?.gatewayUrl).gatewayOwner,
-    recoveryScope,
-    queueId: item.id,
-  };
-  if (item.attachmentPayload) {
-    const result = await readOutboxPayload(owner, item.attachmentPayload);
-    if (result.status === "failed") {
-      return result;
-    }
-    const metadata = item.attachments ?? [];
-    if (
-      result.value.length !== metadata.length ||
-      result.value.some((attachment, index) => {
-        const expected = metadata[index]!;
-        return (
-          attachment.mimeType !== expected.mimeType ||
-          attachment.fileName !== expected.fileName ||
-          attachment.origin !== expected.origin ||
-          attachment.sizeBytes !== expected.sizeBytes
-        );
-      })
-    ) {
-      return { status: "failed", reason: "missing" };
-    }
-    if (!isCurrent()) {
-      return { status: "failed", reason: "unavailable" };
-    }
-    try {
-      // Restore into isolated objects; no consumer sees a partially hydrated batch.
-      const attachments = await Promise.all(
-        result.value.map(async (attachment, index) => ({
-          ...metadata[index]!,
-          ...(attachment.selectionAnnotation
-            ? { selectionAnnotation: attachment.selectionAnnotation }
-            : {}),
-          dataUrl: await readBlobAsDataUrl(attachment.blob),
-        })),
-      );
-      if (!isCurrent()) {
-        return { status: "failed", reason: "unavailable" };
-      }
-      const update = {
-        attachments,
-        attachmentPayload: item.attachmentPayload,
-        attachmentStorageError: undefined,
-      };
-      if (purpose === "send" && item.attachmentPayload.tabId !== tabId) {
-        const copy = await writeOutboxPayload(owner, result.value);
-        if (copy.status === "failed") {
-          return copy;
-        }
-        if (!isCurrent()) {
-          await removeOutboxPayloads([copy.value]);
-          return { status: "failed", reason: "unavailable" };
-        }
-        // A duplicate tab keeps the original submission ID; server admission
-        // deduplicates its retry while each tab owns its attachment bytes.
-        return {
-          status: "ready",
-          update: {
-            ...update,
-            attachmentPayload: copy.value,
-          },
-        };
-      }
-      return { status: "ready", update };
-    } catch {
-      return { status: "failed", reason: "missing" };
-    }
-  }
-  // Delivery already happened: read existing bytes, never allocate a new bundle.
-  if (purpose === "handoff" || item.attachmentStorageError === "missing") {
-    return { status: "failed", reason: "missing" };
-  }
-  const attachments = captureDurableChatAttachments(item.attachments ?? []);
-  if (!attachments) {
-    return { status: "failed", reason: "missing" };
-  }
-  const result = await writeOutboxPayload(owner, attachments);
-  if (result.status === "failed") {
-    return result;
-  }
-  if (!isCurrent()) {
-    await removeOutboxPayloads([result.value]);
-    return { status: "failed", reason: "unavailable" };
-  }
-  return {
-    status: "ready",
-    update: { attachmentPayload: result.value, attachmentStorageError: undefined },
-  };
-}
-
-// Preview and drain share reads/copies so a cloned tab cannot create competing refs.
-// Check admission per caller; only equivalent bundle identities and metadata may join.
-// Share attachment updates, never the first caller's delivery state or captured destination.
-const pendingPayloads = new Map<string, Promise<PayloadResult>>();
-export async function prepareOutboxPayload(
-  host: Host,
-  item: ChatQueueItem,
-  purpose: "send" | "handoff" = "send",
-): Promise<PayloadResult> {
-  const reference = item.attachmentPayload;
-  const scope = payloadScope(host, item);
-  if (!reference || isIncognitoComposerScope(host, scope) || !readOfflineStorageScope(host)) {
-    return preparePayload(host, item, purpose);
-  }
-  const key = JSON.stringify([
-    item.id,
-    reference.key,
-    reference.tabId,
-    reference.recoveryScope,
-    scope,
-    host.settings?.gatewayUrl,
-    readOfflineStorageScope(host),
-    purpose,
-    item.attachments?.map(({ mimeType, fileName, sizeBytes, origin }) => [
-      mimeType,
-      fileName,
-      sizeBytes,
-      origin,
-    ]),
-  ]);
-  const isCurrent = captureOutboxPayloadOwner(host, scope);
-  let pending = pendingPayloads.get(key);
-  if (!pending) {
-    pending = preparePayload(host, item, purpose).finally(() => pendingPayloads.delete(key));
-    pendingPayloads.set(key, pending);
-  }
-  const result = await pending;
-  if (!isCurrent()) {
-    return { status: "failed", reason: "unavailable" };
-  }
-  return result;
 }
 
 export function retireOutboxPayload(item: Pick<ChatQueueItem, "attachmentPayload">): void {
   if (item.attachmentPayload) {
-    void removeOutboxPayloads([item.attachmentPayload]);
+    removeRetiredOutboxPayloads([item.attachmentPayload]);
   }
 }
