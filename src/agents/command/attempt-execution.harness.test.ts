@@ -152,13 +152,13 @@ describe("embedded attempt harness pinning", () => {
           modelOverride: "gpt-6.1-sol",
           sessionEntry,
           agentHarnessRuntimeOverride: runtime,
-          opts: { extraSystemPromptTurnContext: "Current turn context" },
+          opts: { extraSystemPromptTurnContext: { start: 0, text: "Current turn context" } },
         });
         expectMockArgFields(
           runEmbeddedAgentMock,
           {
             cyberAccessProgram: program,
-            extraSystemPromptTurnContext: "Current turn context",
+            extraSystemPromptTurnContext: { start: 0, text: "Current turn context" },
           },
           runEmbeddedAgentMock.mock.calls.length - 1,
         );
