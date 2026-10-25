@@ -263,14 +263,20 @@ export function observeTranscriptOffset(
     if (offset === logicalOffset) {
       return;
     }
-    // Preserve compensation only at an actual end clamp until the sizer commits.
+    // Preserve reachable compensation at an end clamp until the sizer commits.
     if (
       offset === nativeOffset &&
       logicalOffset !== null &&
       logicalOffset > offset &&
       offset === maxTranscriptScrollOffset(element)
     ) {
-      return;
+      const modeledHeight =
+        instance.getTotalSize() +
+        instance.options.scrollMargin +
+        (Number.parseFloat(element.style.paddingBottom) || 0);
+      if (logicalOffset <= modeledHeight - element.clientHeight) {
+        return;
+      }
     }
     publishOffset(offset, instance.isScrolling);
   };

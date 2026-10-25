@@ -328,7 +328,11 @@ it.each(["append", "reorder", "focused reorder"] as const)(
 it("awaits MCP teardown when rich rows narrow the offscreen window", async () => {
   const pending = createDeferred();
   const rows = numberedContentRows(24);
-  const { container, renderRows } = await mountTestTranscript("narrow-mcp-window", rows);
+  const view = await mountTestTranscript("narrow-mcp-window", rows);
+  const { container, renderRows } = view;
+  view.transcript.scrollToEnd({ source: "manual" });
+  renderRows(rows);
+  await flushDeferredRowPrune();
   const edgeIndex = Number(transcriptRows(container)[0]!.dataset.index);
   expect(edgeIndex).toBeGreaterThan(0);
   rows[edgeIndex]!.content = <mcp-app-view />;
