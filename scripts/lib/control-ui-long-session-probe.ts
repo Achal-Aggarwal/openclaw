@@ -305,6 +305,7 @@ export async function probeLongSession(options: {
             intervalMs: number;
             coverage: number;
             rows: number;
+            rowKeys: Array<string | null>;
             scrollTop: number;
             scrollHeight: number;
           }> = [];
@@ -335,6 +336,7 @@ export async function probeLongSession(options: {
               intervalMs: now - previous,
               coverage: covered / viewport.height,
               rows: rows.length,
+              rowKeys: rows.map((row) => row.getAttribute("data-virtual-row-key")),
               scrollTop: scroller.scrollTop,
               scrollHeight: scroller.scrollHeight,
             });

@@ -42,6 +42,8 @@ rendering opportunities, not a compositor paint acknowledgment. Scroll trajector
 begin with real wheel input to retire placement/follow commands through the reader-input owner.
 One long-task observer covers hover, wheel admission, the trajectory, and two
 settling frames; the endpoint is checked again after those final frames.
+Each scroll frame retains ordered virtual-row keys alongside row counts, so
+membership changes and reentries can be distinguished from viewport geometry.
 Collapse starts
 after an unmeasured return to the disclosure, which may be unmounted while reading
 the bottom of a virtualized run. Long-task

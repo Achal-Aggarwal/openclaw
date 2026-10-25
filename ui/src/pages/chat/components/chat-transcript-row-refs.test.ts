@@ -22,8 +22,9 @@ it.each([
   { kind: "cold scrolling", scrolling: true, indexes: [0, 1, 2] },
   { kind: "re-stamped", scrolling: false, indexes: [0, 1, 2], restamped: true },
   { kind: "later microtask", scrolling: true, indexes: [0, 1], deferred: true },
+  { kind: "ordinary observer", scrolling: true, indexes: [0, 1, 2], synchronizeOffset: false },
 ])("defers $kind measurement without layout reads", async (scenario) => {
-  const { kind, scrolling, indexes, deferred, restamped } = scenario;
+  const { kind, scrolling, indexes, deferred, restamped, synchronizeOffset = true } = scenario;
   const viewport = document.body.appendChild(document.createElement("div"));
   const rows = Array.from({ length: 12 }, (_, index) => {
     const row = viewport.appendChild(document.createElement("div"));
@@ -46,6 +47,7 @@ it.each([
     virtualizer,
     () => rows,
     () => void viewport.scrollTop,
+    () => synchronizeOffset,
   );
   const { _didMount: mountVirtualizer, _willUpdate: updateVirtualizer } = virtualizer;
   onTestFinished(mountVirtualizer());
@@ -96,7 +98,7 @@ it.each([
   }
   expect([...virtualizer.itemSizeCache.values()]).toEqual(indexes.map(() => 80));
   expect(readHeight).not.toHaveBeenCalled();
-  expect(readOffset).toHaveBeenCalledOnce();
+  expect(readOffset).toHaveBeenCalledTimes(synchronizeOffset ? 1 : 0);
 
   await Promise.resolve();
   readOffset.mockReturnValue(10);
@@ -104,5 +106,5 @@ it.each([
     observer.emit(800, 90);
   }
   expect([...virtualizer.itemSizeCache.values()]).toEqual(indexes.map(() => 90));
-  expect(readOffset).toHaveBeenCalledTimes(2);
+  expect(readOffset).toHaveBeenCalledTimes(synchronizeOffset ? 2 : 0);
 });

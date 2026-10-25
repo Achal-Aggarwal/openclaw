@@ -50,6 +50,7 @@ import {
 import { TranscriptRowRefs } from "./chat-transcript-row-refs.ts";
 import {
   applyPendingScrollOffset,
+  cancelPendingScrollRetry,
   type TranscriptScrollRestoreHost,
 } from "./chat-transcript-scroll-restore.ts";
 import {
@@ -118,11 +119,9 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
   get contentElement(): HTMLDivElement | null {
     return this.threadInnerElement;
   }
-  // Keep one ref per root and row so redraws do not repeat attachment work.
   private scrollElementAttachQueued = false;
   readonly scrollElementRef = (element?: Element) => {
     this.threadInnerElement = element instanceof HTMLDivElement ? element : null;
-    // A retained root can move to another host without changing its identity.
     // Attach after commit so a foreign host cannot leave the virtualizer detached.
     if (this.scrollElementAttachQueued) {
       return;
@@ -256,6 +255,7 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
       this.virtualizer,
       () => this.rowRefs.elements,
       () => !this.initialRange.pending && this.offsetState.syncNativeOffset?.(),
+      (index) => this.acceptedRows?.[index]?.estimatedSize !== undefined,
     );
     this.rowRefs = new TranscriptRowRefs(this.virtualizer, {
       isCurrentRow: (element, key) =>
@@ -392,10 +392,7 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
     this.offsetState.touchScrolling = false;
     this.renderPreviousRows = null;
     this.messageReveal.clear();
-    if (this.scrollRestoreHost.pendingScrollFrame !== null) {
-      cancelAnimationFrame(this.scrollRestoreHost.pendingScrollFrame);
-      this.scrollRestoreHost.pendingScrollFrame = null;
-    }
+    cancelPendingScrollRetry(this.scrollRestoreHost);
     this.threadInnerElement = null;
     this.connected = false;
     this.stopGeometry?.();
@@ -610,10 +607,7 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
     const measureSkippedRows = this.offsetState.scrollCommand?.behavior === "smooth";
     this.offsetState.scrollCommand = null;
     this.offsetState.pendingScrollOffset = null;
-    if (this.scrollRestoreHost.pendingScrollFrame !== null) {
-      cancelAnimationFrame(this.scrollRestoreHost.pendingScrollFrame);
-      this.scrollRestoreHost.pendingScrollFrame = null;
-    }
+    cancelPendingScrollRetry(this.scrollRestoreHost);
     // The smooth journey may already be automatic when its skipped sizes settle.
     if (measureSkippedRows) {
       this.presentation.measureRowsWithoutScrollAdjustment();

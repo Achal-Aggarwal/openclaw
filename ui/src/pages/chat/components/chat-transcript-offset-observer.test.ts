@@ -246,6 +246,7 @@ it.each([
     virtualizer,
     () => rows,
     () => state.syncNativeOffset?.(),
+    () => true,
   );
   const { _didMount: mount, _willUpdate: update } = virtualizer;
   const dispose = mount();

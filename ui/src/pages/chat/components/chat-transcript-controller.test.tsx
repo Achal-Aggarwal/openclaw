@@ -607,10 +607,10 @@ it.each([
   },
 );
 
-it("preserves newer native offsets when row measurement precedes the scroll event", async () => {
+it("preserves newer native offsets when fragment measurement precedes the scroll event", async () => {
   const flushFrames = stubAnimationFrames();
   transcriptDomState.measuredRowHeight = 120;
-  const rows = numberedContentRows(40);
+  const rows = numberedContentRows(40).map((row) => Object.assign(row, { estimatedSize: 120 }));
   const { container, renderRows, transcript } = await mountTestTranscript(
     "native-before-row-measurement",
     rows,
