@@ -10,7 +10,7 @@ import {
   MIGRATION_REASON_MISSING_SOURCE_OR_TARGET,
 } from "openclaw/plugin-sdk/migration";
 import type { MigrationItem } from "openclaw/plugin-sdk/plugin-entry";
-import { appendRegularFile } from "openclaw/plugin-sdk/security-runtime";
+import { appendRegularFile, readRegularFile } from "openclaw/plugin-sdk/security-runtime";
 import { asNonArrayRecord } from "openclaw/plugin-sdk/string-coerce-runtime";
 import { parse as parseYaml } from "yaml";
 
@@ -42,7 +42,13 @@ export function sanitizeName(name: string): string {
 }
 
 export async function readText(filePath: string | undefined): Promise<string | undefined> {
-  return filePath ? await fs.readFile(filePath, "utf8").catch(() => undefined) : undefined;
+  return filePath
+    ? await fs
+        .realpath(filePath)
+        .then((resolvedPath) => readRegularFile({ filePath: resolvedPath }))
+        .then(({ buffer }) => buffer.toString("utf8"))
+        .catch(() => undefined)
+    : undefined;
 }
 
 export async function readJsonObject(
@@ -69,7 +75,9 @@ export async function appendItem(item: MigrationItem): Promise<MigrationItem> {
     return markMigrationItemError(item, MIGRATION_REASON_MISSING_SOURCE_OR_TARGET);
   }
   try {
-    const content = await fs.readFile(item.source);
+    const { buffer: content } = await readRegularFile({
+      filePath: await fs.realpath(item.source),
+    });
     if (!isUtf8(content)) {
       throw new Error(
         `Source file is not valid UTF-8: ${item.source}. Re-encode it as UTF-8 and retry migration.`,
@@ -81,7 +89,7 @@ export async function appendItem(item: MigrationItem): Promise<MigrationItem> {
       return markMigrationItemSkipped(item, "source file is empty");
     }
     const importBlock = `${header}${body}\n`;
-    const existing = await fs.readFile(item.target, "utf8").catch(() => "");
+    const existing = (await readText(item.target)) ?? "";
     if (existing.includes(importBlock)) {
       return markMigrationItemSkipped(item, "already imported from Hermes");
     }
