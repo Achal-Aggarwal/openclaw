@@ -1,9 +1,9 @@
 import { execFile, execFileSync } from "node:child_process";
-import { promisify } from "node:util";
 // Memory Wiki tests cover cli plugin behavior.
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { promisify } from "node:util";
 import { expectDefined } from "@openclaw/normalization-core";
 import { Command } from "commander";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -58,6 +58,7 @@ vi.mock("./compile.js", async (importOriginal) => {
   };
 });
 
+const execFileAsync = promisify(execFile);
 const { createVault } = createMemoryWikiTestHarness();
 let suiteRoot = "";
 let caseIndex = 0;
@@ -732,6 +733,29 @@ cli note
     ).resolves.toStrictEqual([]);
   });
 
+  async function createChatGptVault() {
+    const { rootDir, config } = await createCliVault({ initialize: true });
+    const exportDir = await createChatGptExport(rootDir);
+    return { rootDir, config, exportDir };
+  }
+
+  async function runChatGptImport(
+    config: ResolvedMemoryWikiConfig,
+    exportPath: string,
+    ...flags: string[]
+  ) {
+    return JSON.parse(
+      await runRegisteredWikiCommand(config, [
+        "chatgpt",
+        "import",
+        "--export",
+        exportPath,
+        ...flags,
+        "--json",
+      ]),
+    ) as { createdCount: number; updatedCount: number; skippedCount: number };
+  }
+
   it.skipIf(process.platform === "win32").each(["export", "existing page"] as const)(
     "refuses a FIFO ChatGPT %s and releases the vault for a retry",
     async (input) => {
@@ -748,34 +772,41 @@ cli note
         await fs.unlink(inputPath);
       }
       execFileSync("mkfifo", [inputPath]);
-      // A writer lets the old blocking reader finish, so RED cannot strand a worker.
-      const writer = execFileAsync(process.execPath, [
-        "-e",
-        "require('node:fs').writeFileSync(process.argv[1], process.argv[2])",
-        inputPath,
-        contents,
-      ]);
-      const writerSettled = writer.catch(() => undefined);
+      // No writer exists while the fixed reader rejects. A delayed rescue bounds regressions.
+      let writer: ReturnType<typeof execFileAsync> | undefined;
+      const rescue = setTimeout(() => {
+        writer = execFileAsync(process.execPath, [
+          "-e",
+          "require('node:fs').writeFileSync(process.argv[1], process.argv[2])",
+          inputPath,
+          contents,
+        ]);
+        void writer.catch(() => undefined);
+      }, 1_000);
       try {
         await expect(runChatGptImport(config, exportDir, "--dry-run")).rejects.toThrow(
           "path must be a regular file",
         );
+        expect(writer).toBeUndefined();
       } finally {
-        writer.child.kill();
-        await writerSettled;
+        clearTimeout(rescue);
+        writer?.child.kill();
+        await writer?.catch(() => undefined);
       }
       expect((await fs.lstat(inputPath)).isFIFO()).toBe(true);
       await fs.unlink(inputPath);
-      if (input === "export") {
-        await fs.writeFile(inputPath, contents);
-      }
+      await fs.writeFile(inputPath, contents);
       const retried = await runChatGptImport(config, exportDir);
-      expect(retried.createdCount).toBe(1);
+      expect(retried.createdCount).toBe(input === "export" ? 1 : 0);
+      expect(retried.updatedCount).toBe(input === "existing page" ? 1 : 0);
       const page = await fs.readFile(
         path.join(rootDir, "sources", await findImportedSourceFile(rootDir)),
         "utf8",
       );
       expect(page).toContain("I prefer aisle seats");
+      if (input === "existing page") {
+        expect(page).toContain("Keep my note.");
+      }
     },
   );
 
@@ -792,6 +823,7 @@ cli note
         "<!-- openclaw:human:start -->\n<!-- openclaw:human:end -->",
         "<!-- openclaw:human:start -->\nKeep my handwritten note.\n<!-- openclaw:human:end -->",
       );
+      expect(notes).toContain("Keep my handwritten note.");
       const targetPath = path.join(exportDir, "source-page.md");
       await fs.writeFile(targetPath, notes);
       await fs.unlink(pagePath);
