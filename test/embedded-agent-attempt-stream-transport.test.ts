@@ -364,9 +364,13 @@ describe("prepareEmbeddedAttemptTransport", () => {
       input.attempt.runtimePlan!.auth.modelRoute = route;
       // A provider-owned async payload hook holds the request after stream admission.
       let releasePayload!: () => void;
-      const payloadGate = new Promise<void>((resolve) => (releasePayload = resolve));
+      const payloadGate = new Promise<void>((resolve) => {
+        releasePayload = resolve;
+      });
       let payloadHeld!: () => void;
-      const payloadReached = new Promise<void>((resolve) => (payloadHeld = resolve));
+      const payloadReached = new Promise<void>((resolve) => {
+        payloadHeld = resolve;
+      });
       const { buildOpenAIProvider } = await import("../extensions/openai/api.js");
       const provider = buildOpenAIProvider();
       extraParamsTesting.setProviderRuntimeDepsForTest({
