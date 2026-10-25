@@ -164,13 +164,6 @@ afterEach(() => {
   streamingStartBackoffUntilByAccount.clear();
 });
 
-function jsonResponse(payload: unknown, status = 200, headers?: Record<string, string>): Response {
-  return new Response(JSON.stringify(payload), {
-    status,
-    headers: { "content-type": "application/json", ...headers },
-  });
-}
-
 function parseJsonRecord(value: unknown): Record<string, unknown> {
   if (typeof value !== "string") {
     throw new Error("expected JSON string body");
@@ -291,7 +284,7 @@ function createRecordingCardKitFetch(): typeof fetch {
         // belong in committed goldens, and the run-scoped app id must not leak
         // into byte-stable fixtures.
         record(undefined, { code: 0 });
-        return jsonResponse({
+        return Response.json({
           code: 0,
           msg: "ok",
           // Short dummy value: autoreview's secret scanner rejects longer
@@ -305,19 +298,23 @@ function createRecordingCardKitFetch(): typeof fetch {
         const cardId = `card-${traceState.cardCount}`;
         const body = parseJsonRecord(init?.body);
         record({ type: body.type, card: parseJsonRecord(body.data) }, { code: 0, card_id: cardId });
-        return jsonResponse({ code: 0, msg: "ok", data: { card_id: cardId } });
+        return Response.json({ code: 0, msg: "ok", data: { card_id: cardId } });
       }
       if (wirePath.endsWith("/elements/content/content")) {
         const body = parseJsonRecord(init?.body);
         const fault = traceState.wireFaults.shift();
         if (fault) {
           record(body, { status: 429, retryAfterMs: fault.retryAfterMs });
-          return jsonResponse({ code: 99991400, msg: "rate limited" }, 429, {
-            "retry-after": String(Math.ceil(fault.retryAfterMs / 1000)),
-          });
+          return Response.json(
+            { code: 99991400, msg: "rate limited" },
+            {
+              status: 429,
+              headers: { "retry-after": String(Math.ceil(fault.retryAfterMs / 1000)) },
+            },
+          );
         }
         record(body, { code: 0 });
-        return jsonResponse({ code: 0, msg: "ok" });
+        return Response.json({ code: 0, msg: "ok" });
       }
       if (wirePath.endsWith("/elements/content")) {
         const body = parseJsonRecord(init?.body);
@@ -325,11 +322,11 @@ function createRecordingCardKitFetch(): typeof fetch {
           { element: parseJsonRecord(body.element), sequence: body.sequence, uuid: body.uuid },
           { code: 0 },
         );
-        return jsonResponse({ code: 0, msg: "ok" });
+        return Response.json({ code: 0, msg: "ok" });
       }
       if (wirePath.endsWith("/elements/note/content")) {
         record(parseJsonRecord(init?.body), { code: 0 });
-        return jsonResponse({ code: 0, msg: "ok" });
+        return Response.json({ code: 0, msg: "ok" });
       }
       if (wirePath.endsWith("/settings")) {
         const body = parseJsonRecord(init?.body);
@@ -337,7 +334,7 @@ function createRecordingCardKitFetch(): typeof fetch {
           { settings: parseJsonRecord(body.settings), sequence: body.sequence, uuid: body.uuid },
           { code: 0 },
         );
-        return jsonResponse({ code: 0, msg: "ok" });
+        return Response.json({ code: 0, msg: "ok" });
       }
       throw new Error(`Unexpected CardKit request: ${method} ${url.pathname}`);
     }),
