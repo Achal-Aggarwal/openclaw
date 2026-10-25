@@ -1308,8 +1308,14 @@ try {
         await reveal(`.sidebar-session-content [data-session-key="${key}"]`);
       }
     }
-    const expansionSaved = async (expanded: boolean) => {
-      type SavedRow = { key: string; children?: SavedRow[] };
+    const expansionSaved = async ({
+      expanded,
+      persistentChildren,
+    }: {
+      expanded: boolean;
+      persistentChildren?: { parentKey: string; childKeys: string[] };
+    }) => {
+      type SavedRow = { key: string; children?: SavedRow[]; childrenDisplayMode?: string };
       const database = await new Promise<IDBDatabase>((resolve, reject) => {
         const request = indexedDB.open("openclaw-chat-snapshots");
         request.addEventListener("success", () => resolve(request.result), { once: true });
@@ -1344,9 +1350,15 @@ try {
         ].map((row) => row.getAttribute("data-session-key"));
         return records.some(({ model }) => {
           const savedKeys = new Set<string>();
+          let parentExpanded = !persistentChildren;
           const collect = (rows: SavedRow[]) => {
             for (const row of rows) {
               savedKeys.add(row.key);
+              if (row.key === persistentChildren?.parentKey) {
+                parentExpanded =
+                  row.childrenDisplayMode === "expanded" ||
+                  row.childrenDisplayMode === "expanded-fully";
+              }
               collect(row.children ?? []);
             }
           };
@@ -1354,6 +1366,8 @@ try {
           collect(model.sections.flatMap((section) => section.rows));
           return (
             (!expanded || model.sections.some(({ visibleLimit }) => visibleLimit > 10)) &&
+            parentExpanded &&
+            (persistentChildren?.childKeys.every((key) => savedKeys.has(key)) ?? true) &&
             visibleKeys.every((key) => key !== null && savedKeys.has(key))
           );
         });
@@ -1362,7 +1376,7 @@ try {
       }
     };
     // Sticky live rows can exceed ten without an explicit Show more selection.
-    if (values["sidebar-expanded"] && !(await page.evaluate(expansionSaved, true))) {
+    if (values["sidebar-expanded"] && !(await page.evaluate(expansionSaved, { expanded: true }))) {
       await page
         .locator(".sidebar-session-content .sidebar-session-pagination__button")
         .filter({ hasText: "Show more" })
@@ -1371,7 +1385,12 @@ try {
     }
     // waitForFunction treats an async predicate's Promise as truthy.
     const deadline = Date.now() + 30_000;
-    while (!(await page.evaluate(expansionSaved, values["sidebar-expanded"]))) {
+    while (
+      !(await page.evaluate(expansionSaved, {
+        expanded: values["sidebar-expanded"],
+        persistentChildren: fixture.sidebarPersistentChildren,
+      }))
+    ) {
       if (Date.now() >= deadline) {
         throw new Error("Expanded sidebar membership was not persisted");
       }
