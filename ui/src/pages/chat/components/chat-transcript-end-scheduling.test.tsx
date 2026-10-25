@@ -31,7 +31,7 @@ afterEach(() => {
 });
 
 it.each(["row growth", "viewport resize"] as const)(
-  "skips offset-only end reads and retains a locked reader's end after %s",
+  "skips eager end reads and retains a locked reader's end after %s",
   async (geometryChange) => {
     const flushFrames = stubAnimationFrames();
     transcriptDomState.measuredRowHeight = 1000;
@@ -103,6 +103,13 @@ it.each(["row growth", "viewport resize"] as const)(
       emitTranscriptResize(container, 800, viewportHeight);
     }
     // Geometry changes below this stationary reader emit no native offset event.
+    renderRows(rows);
+    readContentHeight.mockClear();
+    // Drain committed row effects without releasing the queued animation frame.
+    await vi.advanceTimersByTimeAsync(0);
+    flush();
+    await vi.advanceTimersByTimeAsync(0);
+    expect.soft(readContentHeight).not.toHaveBeenCalled();
     await commitFrame();
     await commitFrame();
     expect(container.scrollTop).toBe(200);
