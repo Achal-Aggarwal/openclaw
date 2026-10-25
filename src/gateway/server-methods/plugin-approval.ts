@@ -33,10 +33,9 @@ import { resolveRequestedSessionAgentId } from "../session-request-agent.js";
 import { resolveStoredSessionKeyForAgentStore } from "../session-store-key.js";
 import {
   captureApprovalWorkerOwner,
-  registerPendingApprovalRecord,
+  registerPendingApprovalRequestWithDelivery,
 } from "./approval-registration.js";
 import { createApprovalRequestAuthority } from "./approval-request-authority.js";
-import { handlePendingApprovalRequestWithDelivery } from "./approval-request-delivery.js";
 import {
   bindApprovalRequesterMetadata,
   bindApprovalReviewerDeviceIds,
@@ -225,20 +224,10 @@ export function createPluginApprovalHandlers(
           });
         }
 
-        const registration = await registerPendingApprovalRecord({
-          manager,
-          record,
-          timeoutMs,
-          respond,
-          context,
-          workerOwner,
-        });
-        if (!registration) {
-          return;
-        }
-
-        await handlePendingApprovalRequestWithDelivery({
+        await registerPendingApprovalRequestWithDelivery({
           approvalKind: "plugin",
+          timeoutMs,
+          workerOwner,
           manager,
           record,
           respond,

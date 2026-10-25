@@ -1,12 +1,10 @@
-import type { ExecApprovalDecision } from "../../infra/exec-approvals.js";
 import type { AgentRuntimeIdentity } from "../agent-runtime-identity-token.js";
-import type { ExecApprovalManager, ExecApprovalRecord } from "../exec-approval-manager.js";
 import {
   captureWorkerTurnLiveEventOwner,
   type WorkerTurnLiveEventOwner,
 } from "../worker-environments/worker-turn-run-owner.js";
+import { handlePendingApprovalRequestWithDelivery } from "./approval-request-delivery.js";
 import { respondApprovalStorageUnavailable } from "./approval-shared.js";
-import type { GatewayRequestContext, RespondFn } from "./types.js";
 
 /** Capture the validated requester before any approval preparation can yield. */
 export function captureApprovalWorkerOwner(
@@ -21,15 +19,13 @@ export function captureApprovalWorkerOwner(
     : undefined;
 }
 
-/** Registers an approval record and converts manager registration errors to gateway errors. */
-export async function registerPendingApprovalRecord<TPayload>(params: {
-  manager: ExecApprovalManager<TPayload>;
-  record: ExecApprovalRecord<TPayload>;
-  timeoutMs: number;
-  respond: RespondFn;
-  context: GatewayRequestContext;
-  workerOwner?: WorkerTurnLiveEventOwner;
-}): Promise<{ decision: Promise<ExecApprovalDecision | null> } | undefined> {
+/** Register before delivery; only registration failures become storage errors. */
+export async function registerPendingApprovalRequestWithDelivery<TKind extends "exec" | "plugin">(
+  params: Parameters<typeof handlePendingApprovalRequestWithDelivery<TKind>>[0] & {
+    timeoutMs: number;
+    workerOwner?: WorkerTurnLiveEventOwner;
+  },
+): Promise<void> {
   try {
     const registration = await params.manager.register(params.record, params.timeoutMs);
     if (params.workerOwner && params.manager.isPending(params.record)) {
@@ -44,9 +40,9 @@ export async function registerPendingApprovalRecord<TPayload>(params: {
         );
       }
     }
-    return registration;
   } catch (err) {
     respondApprovalStorageUnavailable({ ...params, operation: "request", error: err });
-    return undefined;
+    return;
   }
+  await handlePendingApprovalRequestWithDelivery(params);
 }

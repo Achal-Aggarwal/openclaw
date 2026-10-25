@@ -42,10 +42,9 @@ import { listCronStandingGrants, revokeCronStandingGrant } from "../operator-app
 import { resolveGrantExpiryDaysConfig } from "../standing-grant-expiry-config.js";
 import {
   captureApprovalWorkerOwner,
-  registerPendingApprovalRecord,
+  registerPendingApprovalRequestWithDelivery,
 } from "./approval-registration.js";
 import { createApprovalRequestAuthority } from "./approval-request-authority.js";
-import { handlePendingApprovalRequestWithDelivery } from "./approval-request-delivery.js";
 import {
   handleApprovalWaitDecision,
   bindApprovalRequesterMetadata,
@@ -380,19 +379,10 @@ export function createExecApprovalHandlers(
             deviceIds: p.approvalReviewerDeviceIds,
           });
         }
-        const registration = await registerPendingApprovalRecord({
-          manager,
-          record,
-          timeoutMs,
-          respond,
-          context,
-          workerOwner,
-        });
-        if (!registration) {
-          return;
-        }
-        await handlePendingApprovalRequestWithDelivery({
+        await registerPendingApprovalRequestWithDelivery({
           approvalKind: "exec",
+          timeoutMs,
+          workerOwner,
           manager,
           record,
           respond,
