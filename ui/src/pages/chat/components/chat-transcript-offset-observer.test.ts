@@ -11,9 +11,16 @@ import { TranscriptEndAnchor } from "./chat-transcript-end-anchor.ts";
 import {
   isTranscriptProgrammaticScroll,
   observeTranscriptOffset,
+  scrollTranscriptOffset,
   TranscriptOffsetState,
 } from "./chat-transcript-offset-observer.ts";
 import { TranscriptPrependAnchor } from "./chat-transcript-prepend-anchor.ts";
+import { createTranscriptPresentation } from "./chat-transcript-session.ts";
+import {
+  installTranscriptDomMocks,
+  resetTranscriptTestDom,
+  resizeObservers,
+} from "./chat-transcript.test-support.ts";
 
 it.each([false, true])(
   "classifies an idle or pending offset without layout (pending: %s)",
@@ -173,4 +180,103 @@ it.each([
     element.scrollTop = scrollHeight - element.clientHeight;
   });
   expect(element.scrollTop).toBe(testCase.expected);
+});
+
+it.each([
+  { action: "accumulates separate resize deliveries", command: false, expected: 500 },
+  { action: "settles an explicit no-op command before measurement", command: true, expected: 300 },
+])("$action while native compensation is clamped", async ({ command, expected }) => {
+  installTranscriptDomMocks();
+  const element = document.body.appendChild(document.createElement("div"));
+  let scrollHeight = 400;
+  let scrollTop = 300;
+  Object.defineProperties(element, {
+    clientHeight: { value: 100 },
+    scrollHeight: { get: () => scrollHeight },
+    scrollTop: {
+      get: () => scrollTop,
+      set: (value: number) => {
+        scrollTop = Math.max(0, Math.min(value, scrollHeight - 100));
+      },
+    },
+    scrollTo: {
+      value: (options: ScrollToOptions) => {
+        element.scrollTop = options.top ?? element.scrollTop;
+      },
+    },
+  });
+  const rows = Array.from({ length: 4 }, (_, index) => {
+    const row = element.appendChild(document.createElement("div"));
+    row.dataset.index = String(index);
+    return row;
+  });
+  const state = new TranscriptOffsetState();
+  const virtualizer = new Virtualizer<HTMLDivElement, HTMLElement>({
+    count: rows.length,
+    initialOffset: 300,
+    overscan: 3,
+    getScrollElement: () => element,
+    estimateSize: () => 100,
+    scrollToFn: (offset, options, instance) =>
+      scrollTranscriptOffset(state, offset, options, instance),
+    observeElementRect: (_, callback) => callback({ width: 800, height: 100 }),
+    observeElementOffset: (instance, callback) =>
+      observeTranscriptOffset(
+        {
+          state,
+          getScrollElement: () => element,
+          endAnchor: new TranscriptEndAnchor(() => {}),
+          prependAnchor: new TranscriptPrependAnchor(new Map(), vi.fn()),
+          canFollowEnd: () => false,
+          isProgrammaticScroll: () => isTranscriptProgrammaticScroll(state, element),
+          cancelScroll: vi.fn(),
+          onLayoutCorrection: vi.fn(),
+          invalidate: vi.fn(),
+          onOffset: vi.fn(),
+          onReaderScroll: vi.fn(),
+          onComposerLayout: vi.fn(),
+        },
+        instance,
+        callback,
+      ),
+    measureElement: (row, entry) => presentation.measureElement(row, entry),
+  });
+  const presentation = createTranscriptPresentation(
+    () => element,
+    virtualizer,
+    () => rows,
+    () => state.syncNativeOffset?.(),
+  );
+  const { _didMount: mount, _willUpdate: update } = virtualizer;
+  const dispose = mount();
+  onTestFinished(() => {
+    dispose();
+    resetTranscriptTestDom();
+  });
+  update();
+  for (const row of rows) {
+    virtualizer.measureElement(row);
+  }
+  for (const observer of resizeObservers) {
+    observer.emitTarget(rows[0]!, 800, 200);
+  }
+  expect(virtualizer.scrollOffset).toBe(400);
+  expect(element.scrollTop).toBe(300);
+
+  // Separate observer deliveries must retain compensation until the sizer commits.
+  await Promise.resolve();
+  if (command) {
+    virtualizer.scrollToOffset(300, { behavior: "instant" });
+    state.syncNativeOffset?.();
+  } else {
+    for (const observer of resizeObservers) {
+      observer.emitTarget(rows[1]!, 800, 200);
+    }
+  }
+  expect.soft(virtualizer.scrollOffset).toBe(expected);
+  if (!command) {
+    scrollHeight = 600;
+    update();
+    expect(element.scrollTop).toBe(expected);
+  }
 });

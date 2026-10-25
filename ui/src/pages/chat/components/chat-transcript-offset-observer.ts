@@ -181,6 +181,10 @@ export function observeTranscriptOffset(
       owner.onLayoutCorrection(before, after);
     }
     recordProgrammaticScroll(before, after);
+    // A native no-op has no scroll event to acknowledge an explicit command.
+    if (!maintenance && before === after && after !== instance.scrollOffset) {
+      publishOffset(after, instance.isScrolling);
+    }
   };
   owner.state.recordProgrammaticScroll = recordVirtualizerScroll;
   const stopCorrections = element
@@ -248,7 +252,8 @@ export function observeTranscriptOffset(
       return;
     }
     const offset = element.scrollTop;
-    if (offset !== instance.scrollOffset) {
+    // Logical compensation can exceed the old native maximum until the sizer commits.
+    if (offset !== nativeOffset) {
       publishOffset(offset, instance.isScrolling);
     }
   };
