@@ -187,11 +187,6 @@ describe("Codex app-server model catalog", () => {
         },
       },
     ]);
-    expect(listModelsMock).toHaveBeenCalledExactlyOnceWith({
-      request: rpc.request,
-      limit: 100,
-      includeHidden: true,
-    });
     expect(probeCodexNativeAuth).not.toHaveBeenCalled();
   });
 

@@ -118,6 +118,7 @@ export async function executePreparedReplyRun(
     useFastReplyRuntime,
     fullAccessState,
     extraSystemPromptParts,
+    extraSystemPromptTurnContext,
     sourceConversationContextByMode,
     sourceConversationContextPromptOffset,
     extraSystemPromptStatic,
@@ -637,6 +638,7 @@ export async function executePreparedReplyRun(
         ? { suppressNextUserMessagePersistence: true }
         : {}),
       extraSystemPrompt: extraSystemPromptParts.join("\n\n") || undefined,
+      extraSystemPromptTurnContext,
       sourceReplyDeliveryMode,
       bootstrapContextMode: opts?.bootstrapContextMode,
       taskSuggestionDeliveryMode: opts?.taskSuggestionDeliveryMode,

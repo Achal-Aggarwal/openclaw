@@ -145,6 +145,7 @@ type AgentRunInputContext = Pick<
   | "ownerNumbers"
   | "inputProvenance"
   | "extraSystemPrompt"
+  | "extraSystemPromptTurnContext"
 > & {
   /** Canonical agent workspace used for bootstrap files when execution runs elsewhere. */
   bootstrapWorkspaceDir?: string;
