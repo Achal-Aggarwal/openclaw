@@ -221,6 +221,7 @@ export async function persistCliSessionBindingResult(
   params: CliSessionStoreTarget & {
     result: EmbeddedAgentRunResult;
     expectedSession?: InternalSessionEntry;
+    preserveBinding?: boolean;
     assertSettlementCurrent: SessionSourceAssertion;
     abortSignal?: AbortSignal;
   },
@@ -235,8 +236,26 @@ export async function persistCliSessionBindingResult(
       expectedSession,
       preserveActivity: true,
       skipMaintenance: true,
-      update: (entry) =>
-        applyCliSessionBindingResult(entry, params.provider, params.result.meta.agentMeta),
+      update: (entry) => {
+        const meta = params.result.meta.agentMeta;
+        if (!params.preserveBinding) {
+          return applyCliSessionBindingResult(entry, params.provider, meta);
+        }
+        const binding = getCliSessionBinding(entry, params.provider);
+        const resultBinding = meta?.cliSessionBinding;
+        const transcriptCursor = resultBinding?.transcriptCursor;
+        if (
+          meta?.clearCliSessionBinding === true ||
+          !binding ||
+          binding.sessionId !== resultBinding?.sessionId ||
+          !transcriptCursor
+        ) {
+          return false;
+        }
+        // Preserved completions acknowledge input only in the native session they resumed.
+        setCliSessionBinding(entry, params.provider, { ...binding, transcriptCursor });
+        return true;
+      },
       assertCommitAllowed: composeSessionSourceAssertion(
         [params.assertSettlementCurrent],
         (assertSource) =>

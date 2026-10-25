@@ -475,14 +475,12 @@ have a separate revision from the active database.
 Incognito history uses a request-scoped memory index and never writes that index
 to disk. No migration or update repair is required.
 
-When a restricted completion turn runs in a separate Claude session, the next
-ordinary turn can resume a session that never saw that result. OpenClaw carries
-completion replies recorded since the last ordinary Claude reply into the resumed
-turn, including their prompts when saved. This uses the canonical transcript;
-it adds no stored state and survives Gateway restarts. The newest eight exchanges
-are included, with each string capped at 2,000 characters and labeled as historical
-records whose current facts should be verified. A completion that already ran in
-the bound session may appear once more as quoted context.
+Claude CLI and Gemini CLI resume their own conversation histories. OpenClaw therefore
+hands the same resumed native session new conversation rows it did not receive:
+scheduled results, Talk speech and consult replies, and completion announcements.
+One bounded history renderer supplies the newest eight user/assistant records,
+with each string capped at 2,000 characters and labeled as quoted history.
+Hidden consult instructions remain excluded.
 
 This replay requires the resuming turn's [history account boundary](#history-account-boundaries).
 When that boundary withholds saved text, the completion content is not replayed.
@@ -496,7 +494,7 @@ Automatic durable recovery requires a resolved static credential or a named OAut
 
 This uses existing session metadata and transcript generation/sequence counters. No SQLite schema migration or transcript deletion occurs. Existing conversations are not backfilled from their latest native binding. Older binaries do not enforce this new recovery boundary. After a downgrade and subsequent transcript writes, upgrading again refuses automatic replay because those writes are not covered. Do not rely on a downgrade to preserve the new security behavior.
 
-Explicit caller-owned in-memory context remains caller-supplied input, not permission to read a durable conversation carrying the same identifiers. Authentication invalidations still refuse its recovery prompt and saved session notes. When automatic recovery is refused, the saved transcript remains intact. The next CLI process receives the current request without the saved history or notes.
+Explicit caller-owned in-memory context remains caller-supplied input, not permission to read a durable conversation carrying the same identifiers. Authentication invalidations still refuse its recovery prompt and saved session notes. When automatic recovery is refused, the saved transcript remains intact. A fresh CLI process receives the current request without saved history or notes; the same native resume may also receive the bounded conversation handoff described above.
 
 Serialization: `serialize: true` keeps same-lane runs ordered (most CLIs serialize on one provider lane). OpenClaw also drops stored CLI session reuse when the selected auth identity changes. A changed auth profile id, static API key, static token, or OAuth account identity all count, when the CLI exposes one. OAuth access and refresh token rotation alone does not cut the session. If a CLI has no stable OAuth account id, OpenClaw lets that CLI enforce its own resume permissions.
 

@@ -1554,8 +1554,13 @@ async function prepareCliRunContextWithinReadFence(
             sessionTarget: params.sessionTarget,
             allowRawTranscriptReseed,
             rawTranscriptReseedReason,
+            admittedRunContext: params.admittedRunContext,
+            sessionId: params.sessionId,
             nativeSessionId: reusableCliSessionId,
             provider: params.provider,
+            runId: params.runId,
+            cliSessionBinding: params.cliSessionBinding,
+            userTurnTranscriptRecorder: params.userTurnTranscriptRecorder,
           });
     const effectiveReplyGuidance =
       skipsTurnPreparation || params.isolatedCompletion
@@ -1568,7 +1573,7 @@ async function prepareCliRunContextWithinReadFence(
     const finalizedTranscriptPrompt =
       (params.finalizePromptForResolvedTools ||
         sessionPromptContext?.durableContext ||
-        sessionPromptContext?.preservedTurnsContext ||
+        sessionPromptContext?.resumeContext ||
         effectiveReplyGuidance) &&
       params.transcriptPrompt === undefined
         ? params.prompt
@@ -1623,11 +1628,9 @@ async function prepareCliRunContextWithinReadFence(
     }
     let historyPromptCurrentTurn = preparedPrompt;
     if (!skipsTurnPreparation) {
-      // Missed exchanges are saved conversation text: native reuse alone cannot replay them.
       const currentInboundContext = prependCliSessionResumeUserContext(
         params.currentInboundContext,
         reusableCliSession,
-        cliHistoryWriter ? sessionPromptContext?.preservedTurnsContext : undefined,
       );
       const renderCurrentPrompt = (prompt: string, preferResumableText = false) =>
         annotateInterSessionPromptText(
@@ -1674,6 +1677,11 @@ async function prepareCliRunContextWithinReadFence(
               : systemPromptWithReplacements,
           model: modelDisplay,
         });
+    if (sessionPromptContext?.resumeContext) {
+      promptForHooks = composeCliPromptContext(promptForHooks ?? preparedPrompt, {
+        prependContext: sessionPromptContext.resumeContext,
+      });
+    }
     const systemPromptReport = buildSystemPromptReport({
       source: "run",
       generatedAt: Date.now(),
@@ -1733,6 +1741,8 @@ async function prepareCliRunContextWithinReadFence(
       systemPromptReport,
       claudeSkillsPluginArgs: claudeSkillsPlugin.args,
       ...(cliHistoryWriter ? { cliHistoryWriter } : {}),
+      resumeContext: sessionPromptContext?.resumeContext,
+      transcriptCursor: sessionPromptContext?.transcriptCursor,
       authEpoch,
       authBindingFingerprint,
       ...(skipLocalCredentialEpoch ? { authBindingSkipsLocalCredential: true as const } : {}),
@@ -1884,7 +1894,8 @@ async function prepareCliRunContextWithinReadFence(
       contextEngine,
       deferContextEngineDisposalUntil,
       contextEngineTurnPrompt,
-      ...(promptContext ? { promptContext, promptForHooks } : {}),
+      ...(promptContext ? { promptContext } : {}),
+      ...(promptForHooks !== undefined ? { promptForHooks } : {}),
       ...(nodeSkillWorkshop ? { nodeSkillWorkshop } : {}),
       ...(openClawHistoryPrompt ? { openClawHistoryPrompt } : {}),
     };

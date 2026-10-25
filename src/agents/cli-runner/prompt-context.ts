@@ -171,20 +171,11 @@ export async function prepareCliSystemPrompt(
 export function prependCliSessionResumeUserContext(
   context: RunCliAgentParams["currentInboundContext"],
   reusableCliSession: CliReusableSession,
-  preservedTurnsContext?: string,
 ): RunCliAgentParams["currentInboundContext"] {
-  const completionContext =
-    reusableCliSession.mode === "reuse" || reusableCliSession.mode === "reuse-with-drift"
-      ? preservedTurnsContext
-      : undefined;
-  const note = [
+  const note =
     reusableCliSession.mode === "reuse-with-drift"
       ? buildCliSessionDriftNote(reusableCliSession.drift.reasons)
-      : undefined,
-    completionContext,
-  ]
-    .filter((value): value is string => Boolean(value))
-    .join("\n\n");
+      : undefined;
   if (!note) {
     return context;
   }
