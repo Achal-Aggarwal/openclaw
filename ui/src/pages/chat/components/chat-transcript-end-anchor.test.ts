@@ -37,17 +37,18 @@ function fixture(offset = 600) {
 }
 
 it.each(["reader", "uncaptured", "suspended"] as const)(
-  "does not force row layout when end anchoring cannot act: %s",
+  "records the new end without following when end anchoring cannot act: %s",
   (reason) => {
-    const { element, anchor, readHeight, readContent } = fixture();
+    const { element, anchor, resize } = fixture();
     if (reason !== "uncaptured") {
       anchor.capture(element);
-      readHeight.mockClear();
-      readContent.mockClear();
     }
-    anchor.reconcile(element, reason !== "reader", reason === "suspended", vi.fn());
-    expect(readHeight).not.toHaveBeenCalled();
-    expect(readContent).not.toHaveBeenCalled();
+    resize(300);
+    const follow = vi.fn();
+    anchor.reconcile(element, reason !== "reader", reason === "suspended", follow);
+    expect(anchor.isRecordedEnd(700)).toBe(true);
+    expect(element.scrollTop).toBe(600);
+    expect(follow).not.toHaveBeenCalled();
   },
 );
 

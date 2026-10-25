@@ -43,7 +43,7 @@ it("shares the mobile layout query while preserving initial and updated message 
   const frame = mountSolid(() => (
     <MessageGroup
       group={group}
-      options={{ showReasoning: false, frameContent: <span>Completed fragment</span> }}
+      options={{ showReasoning: false, frameContent: [<span>Completed fragment</span>] }}
     />
   ));
   flush();

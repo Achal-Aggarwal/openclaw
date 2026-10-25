@@ -179,18 +179,15 @@ export class TranscriptEndAnchor {
     suspended: boolean,
     follow: () => void,
   ): void {
+    // Native return and composer resize need current geometry even while the
+    // reader owns scrolling and this anchor cannot follow.
+    const atEnd = this.recordViewport(element);
     // A resized viewport can clamp a reader to the end without granting follow.
     if (!canFollow) {
       this.clear();
       return;
     }
-    if (suspended || !element || this.offset === null) {
-      return;
-    }
-    // Native offset and composer observers already record the viewport. Reading
-    // layout after every row commit only helps while an end anchor can act.
-    const atEnd = this.recordViewport(element);
-    if (this.maxOffset === null) {
+    if (suspended || !element || this.maxOffset === null || this.offset === null) {
       return;
     }
     if (atEnd) {
