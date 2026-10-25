@@ -24,8 +24,6 @@ export function buildViewerUrl(params: {
   const parsedBase = new URL(normalizedBase);
   const basePath = parsedBase.pathname === "/" ? "" : parsedBase.pathname.replace(/\/+$/, "");
   parsedBase.pathname = `${basePath}${viewerPath}`;
-  parsedBase.search = "";
-  parsedBase.hash = "";
   return parsedBase.toString();
 }
 

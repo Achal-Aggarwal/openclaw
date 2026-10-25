@@ -205,9 +205,17 @@ export function resolveDiffsPluginDefaults(config: unknown): DiffToolDefaults {
     (defaults.imageFormat !== undefined ? defaults.imageFormat : defaults.format);
 
   return {
-    fontFamily: normalizeFontFamily(defaults.fontFamily),
-    fontSize: normalizeDiffFontSize(defaults.fontSize),
-    lineSpacing: normalizeDiffLineSpacing(defaults.lineSpacing),
+    fontFamily: defaults.fontFamily?.trim() || DEFAULT_DIFFS_TOOL_DEFAULTS.fontFamily,
+    fontSize: clampInt(
+      asFiniteNumber(defaults.fontSize) ?? DEFAULT_DIFFS_TOOL_DEFAULTS.fontSize,
+      10,
+      24,
+    ),
+    lineSpacing: clampNumber(
+      asFiniteNumber(defaults.lineSpacing) ?? DEFAULT_DIFFS_TOOL_DEFAULTS.lineSpacing,
+      1,
+      3,
+    ),
     layout:
       DIFF_LAYOUTS.find((value) => value === defaults.layout) ?? DEFAULT_DIFFS_TOOL_DEFAULTS.layout,
     showLineNumbers: defaults.showLineNumbers !== false,
@@ -226,7 +234,11 @@ export function resolveDiffsPluginDefaults(config: unknown): DiffToolDefaults {
       profile.maxWidth,
     ),
     mode: DIFF_MODES.find((value) => value === defaults.mode) ?? DEFAULT_DIFFS_TOOL_DEFAULTS.mode,
-    ttlSeconds: normalizeTtlSeconds(defaults.ttlSeconds),
+    ttlSeconds: clampInt(
+      asFiniteNumber(defaults.ttlSeconds) ?? DEFAULT_DIFFS_TOOL_DEFAULTS.ttlSeconds,
+      1,
+      21_600,
+    ),
   };
 }
 
@@ -245,19 +257,6 @@ export function resolveDiffsPluginViewerBaseUrl(config: unknown): string | undef
 
   const normalized = viewerBaseUrl.trim();
   return normalized ? normalizeViewerBaseUrl(normalized) : undefined;
-}
-
-function normalizeFontFamily(fontFamily?: string): string {
-  const normalized = fontFamily?.trim();
-  return normalized || DEFAULT_DIFFS_TOOL_DEFAULTS.fontFamily;
-}
-
-function normalizeDiffFontSize(fontSize?: number): number {
-  return clampInt(asFiniteNumber(fontSize) ?? DEFAULT_DIFFS_TOOL_DEFAULTS.fontSize, 10, 24);
-}
-
-function normalizeDiffLineSpacing(lineSpacing?: number): number {
-  return clampNumber(asFiniteNumber(lineSpacing) ?? DEFAULT_DIFFS_TOOL_DEFAULTS.lineSpacing, 1, 3);
 }
 
 function normalizeFileFormat(fileFormat?: DiffOutputFormat): DiffOutputFormat {
@@ -280,10 +279,6 @@ function normalizeFileScale(fileScale: number | undefined, fallback: number): nu
 function normalizeFileMaxWidth(fileMaxWidth: number | undefined, fallback: number): number {
   const value = asFiniteNumber(fileMaxWidth);
   return value === undefined ? fallback : clampNumber(Math.round(value), 640, 2400);
-}
-
-function normalizeTtlSeconds(ttlSeconds?: number): number {
-  return clampInt(asFiniteNumber(ttlSeconds) ?? DEFAULT_DIFFS_TOOL_DEFAULTS.ttlSeconds, 1, 21_600);
 }
 
 export function resolveDiffImageRenderOptions(
