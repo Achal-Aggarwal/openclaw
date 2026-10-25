@@ -1,6 +1,7 @@
 import { truncateUtf16Safe } from "@openclaw/normalization-core/utf16-slice";
 import { dynamic } from "@solidjs/web";
 import { createMemo, Match, Show, Switch } from "solid-js";
+import { unwrapToolCallForDisplay } from "../../../../../src/agents/tool-display-call.js";
 import { stripShellPreamble } from "../../../../../src/agents/tool-display-exec-shell.js";
 import { Icon } from "../../../components/solid/icon.tsx";
 import { registerChatToolLabelsEnglish } from "../../../i18n/locales/en-chat-tool-labels.ts";
@@ -217,7 +218,9 @@ export function ToolCardRow(props: ToolCardProps) {
   const view = createMemo(() =>
     resolveToolCallView({ name: card().name, args: card().args, details: card().details }),
   );
-  const display = createMemo(() => resolveToolDisplayIdentity(card().name));
+  const display = createMemo(() =>
+    resolveToolDisplayIdentity(unwrapToolCallForDisplay(card()).name),
+  );
   const activityCards = () => props.options.activityCards ?? [card()];
   const running = () =>
     activityCards().some(
