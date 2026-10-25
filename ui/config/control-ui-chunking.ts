@@ -73,13 +73,13 @@ export function controlUiStableChunkName(id: string): string | undefined {
     case "ui/src/pages/chat/session-snapshot-decoder.ts":
     case "ui/src/lib/protocol-validators.generated/board.js":
     case "ui/src/lib/protocol-validators.generated/transcript.js":
-      return "chat-snapshot-decoder";
+      return "chat-interaction-runtime";
     case "ui/src/pages/chat/components/chat-context-breakdown.tsx":
     case "ui/src/pages/chat/components/chat-context-breakdown-model.ts":
     case "ui/src/pages/chat/components/chat-context-report.tsx":
     case "ui/src/lib/session-context-report.ts":
       // Explicit inspection, or the saved Context side-panel's own lazy graph.
-      return "chat-context-runtime";
+      return "chat-interaction-runtime";
     case "ui/src/pages/chat/components/chat-transcript-search-content.tsx":
       return "chat-search-runtime";
     case "ui/src/pages/chat/chat-pane-session-operations.ts":
@@ -87,6 +87,10 @@ export function controlUiStableChunkName(id: string): string | undefined {
       return "chat-session-operations-runtime";
     case "ui/src/pages/chat/chat-command-dispatch.runtime.ts":
       return "chat-command-runtime";
+    case "ui/src/pages/chat/chat-pane-sharing-mutations.ts":
+    case "ui/src/i18n/locales/en-chat-permissions.ts":
+    case "ui/src/i18n/locales/en-session-skill-library.ts":
+    case "src/agents/tool-display-call.ts":
     case "ui/src/pages/chat/chat-composer-capability-host.tsx":
     case "ui/src/pages/chat/composer-library-session.ts":
       // The open Chat menu owns these; New Session shares only the catalog.
@@ -112,6 +116,13 @@ export function controlUiStableChunkName(id: string): string | undefined {
     case "ui/src/pages/chat/components/chat-working-indicator-surprise.ts":
       // New Session already fetches these menus; keep the indicator off Chat-only chunks.
       return "composer-invocation-menus";
+    case "ui/src/pages/chat/composer-capability-catalog.ts":
+    case "ui/src/lib/config/mcp-servers.ts":
+    case "src/config/patch-replace-paths.ts":
+    case "src/infra/plain-object.ts":
+    case "src/infra/prototype-keys.ts":
+      // Both composers need the catalog, independently of the New Session page.
+      return "composer-invocation-menus";
     case "ui/src/lib/chat/composer-draft-write.runtime.ts":
       // Both routes prefetch this file; distinct module initializers still wait for use.
       return "composer-invocation-menus";
@@ -126,7 +137,7 @@ export function controlUiStableChunkName(id: string): string | undefined {
     case "ui/src/pages/chat/components/chat-session-sharing-mobile-adapter.tsx":
     case "ui/src/pages/chat/components/chat-session-sharing-options.tsx":
       // Download the mobile renderer with Chat, but evaluate it on the first mobile layout.
-      return "chat-mobile-header-runtime";
+      return "chat-interaction-runtime";
     case "ui/src/pages/chat/chat-tool-family-runtime.ts":
     case "ui/src/pages/chat/chat-tool-activity-coalesce.runtime.ts":
     case "ui/src/pages/chat/chat-sessions-yield.runtime.ts":
@@ -188,7 +199,7 @@ export function controlUiStableChunkName(id: string): string | undefined {
     case "ui/src/pages/chat/components/chat-details-subagent-rows.tsx":
     case "ui/src/pages/chat/components/chat-details-environment-body.tsx":
       // Saved Details may render at boot without admitting tool/send interactions.
-      return "chat-details-runtime";
+      return "chat-interaction-runtime";
     case "ui/src/pages/chat/chat-provider-review-controller.tsx":
       return "chat-provider-review";
     // Keep optional compression groups separate from code evaluated by text-only Chat.
@@ -239,10 +250,9 @@ export function controlUiStableChunkName(id: string): string | undefined {
       // Session actions must not import whole route chunks through earlier boot captures.
       return "session-mutation-runtime";
     case "ui/src/pages/chat/components/chat-composer-mention-menu-engine.ts":
-      return "composer-mention-runtime";
     case "ui/src/pages/chat/components/chat-composer-emoji-engine.ts":
     case "ui/src/components/textarea-token-anchor.ts":
-      return "composer-emoji-runtime";
+      return "composer-invocation-menus";
     case "ui/src/lib/chat/emoji.ts":
     case "node_modules/markdown-it-emoji/lib/data/full.mjs":
       // Shortcode input owns the catalog; earlier boot captures must not keep it eager.
@@ -302,8 +312,6 @@ export function controlUiStableChunkName(id: string): string | undefined {
     case "ui/src/components/sidebar-update-card.tsx":
     case "ui/src/styles/sidebar-update-card.css":
       return "sidebar-update-runtime";
-    case "ui/src/components/markdown-parser.ts":
-      return "markdown-runtime";
     case "ui/src/components/markdown-live.ts":
     case "ui/src/components/markdown-streaming.ts":
     case "ui/src/components/markdown-tokens.ts":
@@ -329,6 +337,8 @@ export function controlUiStableChunkName(id: string): string | undefined {
     return `locale-namespace-${normalized.slice(resolvedLocaleNamespaceModulePrefix.length).replace("/", "-")}`;
   }
 
+  // Keep application Markdown rendering in its route group: emoji completion
+  // shares the vendor parser without importing the transcript renderer.
   // Code highlighting is requested by the first completed code block; it must
   // not share the parser/sanitizer chunk used by ordinary transcript prose.
   if (moduleIdIncludesPackage(id, "highlight.js")) {
@@ -440,6 +450,7 @@ export function createControlUiCodeSplitting(options: { includeBootGroups?: bool
                 styles.add("ui/src/pages/chat/components/chat-session-activity.css");
                 styles.add("ui/src/pages/chat/chatgpt-usage-limit.css");
                 styles.add("ui/src/styles/chat/selection-annotations.css");
+                styles.add("ui/src/styles/chat/sharing-mobile.css");
               }
               return {
                 name: `control-ui-boot-${route}-styles`,

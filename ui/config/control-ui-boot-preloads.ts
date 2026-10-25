@@ -5,7 +5,6 @@ import { controlUiBootEntryRoute, controlUiBootManifestKey } from "./control-ui-
 // These common interactions download beside the route, but evaluate only on use.
 // Include the nested option entries too: opening a menu must not start a second RTT.
 const sharedInteractionEntries = new Set([
-  "ui/src/components/markdown-json-parser.runtime.ts",
   // First edit downloads in parallel, without running the writer.
   "ui/src/lib/chat/composer-draft-write.runtime.ts",
   "ui/src/pages/chat/components/chat-composer-slash-menu.tsx",
@@ -14,7 +13,7 @@ const sharedInteractionEntries = new Set([
   "ui/src/pages/chat/components/chat-composer-skill-menu-options.tsx",
   "ui/src/pages/chat/components/chat-composer-mention-menu-engine.ts",
   "ui/src/pages/chat/components/chat-composer-emoji-engine.ts",
-  "ui/src/lib/chat/emoji.ts",
+  // The shortcode catalog and Markdown parser wait for an actual emoji query.
   "ui/src/pages/chat/components/chat-composer-mention-menu.tsx",
   "ui/src/pages/chat/components/chat-composer-mention-menu-options.tsx",
   "ui/src/pages/chat/components/chat-composer-emoji.tsx",
@@ -22,6 +21,8 @@ const sharedInteractionEntries = new Set([
   "ui/src/components/app-sidebar-online.tsx",
 ]);
 const chatInteractionEntries = new Set([
+  // JSON trees belong to transcripts; New Session has no code blocks to prepare.
+  "ui/src/components/markdown-json-parser.runtime.ts",
   // Warm disk records decode without another round trip; empty storage stays unevaluated.
   "ui/src/pages/chat/session-snapshot-decoder.ts",
   // Viewport transitions use cached bytes while desktop boot skips mobile evaluation.
