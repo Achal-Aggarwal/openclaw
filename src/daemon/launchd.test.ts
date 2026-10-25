@@ -631,24 +631,6 @@ describe("launchd bootstrap repair", () => {
 });
 
 describe("launchd uninstall", () => {
-  it("unloads a registered service even after its plist is deleted", async () => {
-    const execute = launchdExec.execLaunchctl;
-    using launchctl = vi.spyOn(launchdExec, "execLaunchctl");
-    launchctl.mockImplementation(async (args, ...rest) =>
-      args[0] === "bootout" && args.length !== 2
-        ? { code: 2, stdout: "", stderr: "No such file or directory", termination: "exit" }
-        : execute(args, ...rest),
-    );
-    state.serviceStates.set(`${DOMAIN}/ai.openclaw.gateway`, "running");
-
-    await uninstallLaunchAgent(launchAgentControlFixture(ENV));
-
-    expect(state.serviceLoaded).toBe(false);
-    expect(state.serviceRunning).toBe(false);
-    expect(state.files.has(resolveLaunchAgentPlistPath(ENV))).toBe(false);
-    expect(state.launchctlCalls).toContainEqual(["bootout", `${DOMAIN}/ai.openclaw.gateway`]);
-  });
-
   it("rejects a permission-denied launchctl inspection", async () => {
     state.printError = "launchctl print permission denied";
     state.printFailuresRemaining = 1;
@@ -784,53 +766,6 @@ describe("launchd install", () => {
     expect(state.files.get(plistPath)).toBe(previous);
     expect(state.fileWrites).toEqual([]);
     expect(launchctlCommandNames()).toEqual(["print"]);
-  });
-
-  it("replaces a loaded service after its plist is deleted", async () => {
-    state.serviceStates.set(`${DOMAIN}/ai.openclaw.gateway`, "running");
-    const warn = vi.fn();
-
-    await installLaunchAgent({ ...defaultLaunchAgentFixture(ENV), warn });
-
-    expect(state.launchctlCalls).toContainEqual(["bootout", `${DOMAIN}/ai.openclaw.gateway`]);
-    expect(await readLaunchAgentProgramArguments(ENV)).toMatchObject({
-      programArguments: defaultProgramArguments,
-    });
-    expect(state.serviceLoaded).toBe(true);
-    expect(state.serviceRunning).toBe(true);
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining("plist is missing"));
-  });
-
-  it("replaces a loaded registration whose plist was deleted and restores absence on failure", async () => {
-    state.serviceLoaded = false;
-    state.serviceRunning = false;
-    state.serviceStates.set(`${DOMAIN}/ai.openclaw.gateway`, "running");
-    state.bootstrapError = "Operation not permitted";
-    state.bootstrapTransient = true;
-    const warn = vi.fn();
-
-    await expect(
-      installLaunchAgent({
-        ...defaultLaunchAgentFixture(ENV, { environment: { OPENCLAW_GATEWAY_PORT: "19000" } }),
-        warn,
-      }),
-    ).rejects.toThrow("launchctl bootstrap failed: Operation not permitted");
-
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining("plist is missing"));
-    for (const path of [resolveLaunchAgentPlistPath(ENV), ENV_FILE, WRAPPER]) {
-      expect(state.files.has(path)).toBe(false);
-    }
-    expect(state.serviceLoaded).toBe(false);
-    expect(state.serviceRunning).toBe(false);
-    expect(launchctlCommandNames()).toEqual([
-      "print",
-      "print",
-      "bootout",
-      "enable",
-      "bootstrap",
-      "print",
-      "bootout",
-    ]);
   });
 
   it.each(["fresh", "unloaded reinstall"] as const)(

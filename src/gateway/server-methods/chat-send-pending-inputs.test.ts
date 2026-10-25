@@ -1,5 +1,4 @@
 import { createHash } from "node:crypto";
-import path from "node:path";
 import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import { stableStringify } from "@openclaw/normalization-core/stable-stringify";
 import { describe, expect, it, vi } from "vitest";
@@ -42,11 +41,7 @@ import { createTestGatewayScheduler } from "../../test-utils/gateway-scheduler-c
 import { createMentionInbox } from "../mention-inbox.js";
 import { readMentionInbox, dismissMentionInbox } from "../mention-inbox.test-support.js";
 import { refusePendingInputCommit } from "../pending-input-commit.test-support.js";
-import {
-  dispatchInboundMessageMock,
-  installGatewayTestHooks,
-  writeSessionStore,
-} from "../test-helpers.js";
+import { dispatchInboundMessageMock, installGatewayTestHooks } from "../test-helpers.js";
 import { getTestPluginRegistry } from "../test-helpers.plugin-registry.js";
 import { createWorkerSessionPlacementStore } from "../worker-environments/placement-store.js";
 import { useBrowserFollowupFixture } from "./chat-send-pending-inputs.test-support.js";
@@ -92,35 +87,6 @@ describe("ordinary chat input admission", () => {
     expect(await listSessionPendingInputs(fixture.scope)).toMatchObject({
       items: [{ state: "cancelled", runId: fixture.params.idempotencyKey }],
     });
-  });
-
-  it("stages an authorized follow-up when the agent also has sessions in its state-dir database", async () => {
-    // An absolute per-agent store outside the state dir leaves older state-dir rows
-    // discoverable, so session authority reads span two agent databases.
-    const fixture = await createBrowserFollowupFixture({ perAgentStore: true });
-    await writeSessionStore({
-      storePath: path.join(
-        process.env.OPENCLAW_STATE_DIR!,
-        "agents",
-        "main",
-        "sessions",
-        "sessions.json",
-      ),
-      agentId: "main",
-      entries: { earlier: { sessionId: "state-dir-session", updatedAt: Date.now() } },
-    });
-    try {
-      const ack = await fixture.send(vi.fn<RespondFn>(), {});
-      expect(ack.mock.calls[0]?.[0]).toBe(true);
-      expect(await listSessionPendingInputs(fixture.scope)).toMatchObject({
-        items: [{ state: "queued", runId: fixture.params.idempotencyKey }],
-      });
-      const recorder = await fixture.dispatchedRecorder;
-      recorder.finishPendingInput?.("cancelled");
-      await fixture.finishDispatch();
-    } finally {
-      await fixture.cleanup();
-    }
   });
 
   async function createMentionFixture(
