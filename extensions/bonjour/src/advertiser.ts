@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import { format } from "node:util";
-import type { CiaoLogger, CiaoService } from "@homebridge/ciao/native.js";
+import type { CiaoLogger } from "@homebridge/ciao/native.js";
 import { collectErrorGraphCandidates } from "openclaw/plugin-sdk/error-runtime";
 import type { PluginLogger } from "openclaw/plugin-sdk/plugin-entry";
 import {
@@ -129,10 +129,6 @@ function truncateToDnsLabel(name: string, fallback = "OpenClaw"): string {
   return truncateUtf8Prefix(name, MAX_DNS_LABEL_BYTES).replace(/-+$/, "").trim() || fallback;
 }
 
-function serviceSummary(label: string, svc: CiaoService): string {
-  return `${label} fqdn=${svc.getFQDN()} host=${svc.getHostname()} port=${svc.getPort()} state=${svc.serviceState}`;
-}
-
 function createCiaoLogger(logger: Pick<PluginLogger, "info" | "warn" | "error">): CiaoLogger {
   return {
     log(...args) {
@@ -246,25 +242,15 @@ export async function startGatewayBonjourAdvertiser(
 
     const responder = getResponder({ logger: createCiaoLogger(logger) });
 
-    function handleAdvertiseFailure(
-      label: string,
-      svc: CiaoService,
-      err: unknown,
-      action: "failed" | "threw",
-    ) {
+    function handleAdvertiseFailure(err: unknown, action: "failed" | "threw") {
       const classification = classifyCiaoProcessError(err);
       if (classification) {
         logger.warn(
-          `bonjour: advertise ${action} with ciao ${classification.kind} (${serviceSummary(
-            label,
-            svc,
-          )}): ${classification.formatted}`,
+          `bonjour: advertise ${action} with ciao ${classification.kind} (${serviceSummary()}): ${classification.formatted}`,
         );
         return;
       }
-      logger.warn(
-        `bonjour: advertise ${action} (${serviceSummary(label, svc)}): ${formatBonjourError(err)}`,
-      );
+      logger.warn(`bonjour: advertise ${action} (${serviceSummary()}): ${formatBonjourError(err)}`);
     }
 
     const gateway = responder.createService({
@@ -275,6 +261,10 @@ export async function startGatewayBonjourAdvertiser(
       hostname,
       txt: gatewayTxt,
     });
+    function serviceSummary(): string {
+      return `gateway fqdn=${gateway.getFQDN()} host=${gateway.getHostname()} port=${gateway.getPort()} state=${gateway.serviceState}`;
+    }
+
     gateway.on("name-change", (name) => {
       logger.warn(`bonjour: gateway name conflict resolved; newName=${JSON.stringify(name)}`);
     });
@@ -287,13 +277,13 @@ export async function startGatewayBonjourAdvertiser(
       void gateway
         .advertise()
         .then(() => {
-          logger.info(`bonjour: advertised ${serviceSummary("gateway", gateway)}`);
+          logger.info(`bonjour: advertised ${serviceSummary()}`);
         })
         .catch((err: unknown) => {
-          handleAdvertiseFailure("gateway", gateway, err, "failed");
+          handleAdvertiseFailure(err, "failed");
         });
     } catch (err) {
-      handleAdvertiseFailure("gateway", gateway, err, "threw");
+      handleAdvertiseFailure(err, "threw");
     }
     let stopPromise: Promise<void> | null = null;
 
