@@ -63,6 +63,7 @@ function resultBlock(card: ToolCard): Record<string, unknown> {
       id: card.resultMessageId,
       toolOutput: card.toolOutput,
       truncated: card.outputTruncated,
+      ...(card.catalogTruncated ? { catalogTruncated: true } : {}),
     },
   };
 }
@@ -175,6 +176,7 @@ function readProjections(item: MessageItem, index: number): Projection[] {
                 id: card?.resultMessageId,
                 toolOutput: card?.toolOutput,
                 truncated: card?.outputTruncated,
+                ...(card?.catalogTruncated ? { catalogTruncated: true } : {}),
               },
             }),
         ...(card?.details !== undefined ? { details: card.details } : {}),
