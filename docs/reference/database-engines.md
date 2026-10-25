@@ -297,3 +297,7 @@ contracts, and [Configuration reference](/gateway/configuration-reference) for
 the rest of the Gateway configuration.
 
 Session-state pruning compares integer sequence watermarks on both engines; PostgreSQL bound watermark batches are explicitly cast to bigint without schema or retention changes.
+
+## Native Windows database port
+
+Native Windows does not support SQLite ↔ PostgreSQL database port, including dry-run, resume, and rollback. The command refuses before creating recovery artifacts and leaves existing data and engine selection unchanged. Start with fresh PostgreSQL state on Windows, or run the port on Linux or macOS.
