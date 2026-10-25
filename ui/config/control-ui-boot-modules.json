@@ -1538,6 +1538,7 @@
   "ui/src/pages/chat/chatgpt-usage-limit.tsx",
   "ui/src/pages/chat/components/browser-tab-card.css",
   "ui/src/pages/chat/components/chat-activity-pills-visibility.ts",
+  "ui/src/pages/chat/components/chat-agent-run-frame.tsx",
   "ui/src/pages/chat/components/chat-async-question-content.ts",
   "ui/src/pages/chat/components/chat-async-question-draft.ts",
   "ui/src/pages/chat/components/chat-async-question-summary.tsx",
