@@ -5,6 +5,7 @@ import {
   registerTestPlugin,
 } from "openclaw/plugin-sdk/plugin-test-contracts";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
+import { expectObjectFields as expectRecordFields } from "../../test-utils/mock-call-assertions.js";
 import {
   PROTOCOL_VERSION,
   validatePluginsUiDescriptorsResult,
@@ -195,17 +196,6 @@ async function seedSession(storePath: string, fields: Partial<SessionEntry> = {}
       ...fields,
     },
   );
-}
-
-function expectRecordFields(record: unknown, expected: Record<string, unknown>) {
-  if (!record || typeof record !== "object") {
-    throw new Error("Expected record");
-  }
-  const actual = record as Record<string, unknown>;
-  for (const [key, value] of Object.entries(expected)) {
-    expect(actual[key]).toEqual(value);
-  }
-  return actual;
 }
 
 type HostHookStateFixture = {
