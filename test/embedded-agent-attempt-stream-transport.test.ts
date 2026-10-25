@@ -316,6 +316,127 @@ describe("prepareEmbeddedAttemptTransport", () => {
     },
   );
 
+  it.each(
+    ("daybreak_blue daybreak_red".split(" ") as Array<"daybreak_blue" | "daybreak_red">).flatMap(
+      (program) => [true, false].map((revoke) => ({ program, revoke })),
+    ),
+  )(
+    "revalidates $program at managed HTTP egress after async payload preparation (revoke=$revoke)",
+    async ({ program, revoke }) => {
+      const { input, session } = createTransportFixture({ apiKey: "synthetic-key" });
+      const route = {
+        provider: "openai",
+        modelId: "synthetic-model",
+        api: "openai-responses",
+        baseUrl: "https://api.openai.com/v1",
+        authRequirement: "api-key",
+        requestTransportOverrides: "none",
+      } as const;
+      const credential = { type: "api_key", provider: "openai", key: "synthetic-key" } as const;
+      const accountCatalog = createPreparedAccountCatalogAccess(() => true);
+      const outcome = {
+        provider: "openai",
+        profileId: "openai:a",
+        status: "ready" as const,
+        modelAccessPrograms: [{ runtimeId: "openclaw", ...route, cyber: [program] }],
+      };
+      await accountCatalog.acquire({
+        profileId: "openai:a",
+        credential,
+        allowDiscovery: true,
+        load: async () => [outcome],
+      });
+      const generation = createModelGenerationFixture({
+        label: "access-egress",
+        agentDir: "/agent",
+        workspaceDir: "/workspace",
+        config: {},
+      });
+      Object.assign(input.attempt, {
+        provider: "openai",
+        modelId: "synthetic-model",
+        cyberAccessProgram: program,
+        model: { ...anthropicModel, ...route, id: route.modelId },
+        authProfileId: "openai:a",
+        authProfileStore: { version: 1, profiles: { "openai:a": credential } },
+        preparedModelRuntime: { ...generation.preparedModelRuntime, accountCatalog },
+      });
+      input.attempt.runtimePlan!.auth.modelRoute = route;
+      // A provider-owned async payload hook holds the request after stream admission.
+      let releasePayload!: () => void;
+      const payloadGate = new Promise<void>((resolve) => (releasePayload = resolve));
+      let payloadHeld!: () => void;
+      const payloadReached = new Promise<void>((resolve) => (payloadHeld = resolve));
+      const { buildOpenAIProvider } = await import("../extensions/openai/api.js");
+      const provider = buildOpenAIProvider();
+      extraParamsTesting.setProviderRuntimeDepsForTest({
+        wrapProviderStreamFn:
+          ({ context }) =>
+          (model, streamContext, options) =>
+            (provider.wrapStreamFn?.(context) ?? context.streamFn!)(model, streamContext, {
+              ...options,
+              onPayload: async (payload, payloadModel) => {
+                const next = await options?.onPayload?.(payload, payloadModel);
+                payloadHeld();
+                await payloadGate;
+                return next;
+              },
+            }),
+      });
+      registerProviderStreamForModel.mockReturnValue(createOpenAIResponsesTransportStreamFn());
+      // Production managed fetch; a mocked global fetch skips DNS and records the only I/O.
+      const sent: Array<{ url: string; payload: Record<string, unknown> }> = [];
+      const egress = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+        const request = new Request(url, init);
+        sent.push({ url: request.url, payload: await request.json() });
+        const completed = {
+          type: "response.completed",
+          response: { id: "resp-egress", status: "completed", output: [] },
+        };
+        return new Response(`data: ${JSON.stringify(completed)}\n\n`, {
+          headers: { "content-type": "text/event-stream" },
+        });
+      });
+      vi.stubGlobal("fetch", egress);
+      try {
+        await prepareEmbeddedAttemptTransport(input);
+        const stream = await session.agent.streamFn(input.attempt.model, { messages: [] }, {});
+        await payloadReached;
+        if (revoke) {
+          // Same credential, refreshed account evidence without the selected program.
+          await accountCatalog.acquire({
+            profileId: "openai:a",
+            credential,
+            allowDiscovery: true,
+            refresh: true,
+            load: async () => [],
+          });
+        }
+        releasePayload();
+        const result = await stream.result();
+        if (revoke) {
+          // The SDK reports the local egress refusal as a connection failure.
+          expect(result.stopReason).toBe("error");
+          expect(result.errorMessage).toBe("Connection error.");
+          expect(egress).not.toHaveBeenCalled();
+          // A retried attempt names the stale grant at stream admission.
+          await expect(
+            session.agent.streamFn(input.attempt.model, { messages: [] }, {}),
+          ).rejects.toThrow("not advertised");
+          expect(egress).not.toHaveBeenCalled();
+        } else {
+          expect(result.errorMessage).toBeUndefined();
+          expect(result.stopReason).toBe("stop");
+          expect(egress).toHaveBeenCalledOnce();
+          expect(sent[0]?.url).toBe("https://api.openai.com/v1/responses");
+          expect(sent[0]?.payload).toMatchObject({ access_programs: { cyber: program } });
+        }
+      } finally {
+        vi.unstubAllGlobals();
+      }
+    },
+  );
+
   it("rejects a stale saved Daybreak override before preparing any provider stream", async () => {
     const { input, streamFn } = createTransportFixture();
     input.attempt.provider = "openai";

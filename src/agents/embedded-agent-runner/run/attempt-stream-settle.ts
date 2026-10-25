@@ -8,6 +8,7 @@ import {
 import type { ModelCompatConfig } from "../../../config/types.models.js";
 import type { ContextEngineInfo } from "../../../context-engine/types.js";
 import { formatErrorMessage } from "../../../infra/errors.js";
+import { withGuardedFetchBeforeRequest } from "../../../infra/net/fetch-request-authority.js";
 import { createOpenAIServiceTierObservationWrapper } from "../../../llm/providers/stream-wrappers/openai-service-tier-observation.js";
 import { createCodexNativeWebSearchWrapper } from "../../../llm/providers/stream-wrappers/openai.js";
 import { getAgentScopedMediaLocalRoots } from "../../../media/local-roots.js";
@@ -560,7 +561,10 @@ export async function prepareEmbeddedAttemptTransport(input: {
       openclawThinkingExplicit: attempt.thinkingExplicit,
       ...(providerInput ? { [PROVIDER_MODEL_INPUT]: providerInput } : {}),
     };
-    return boundaryStreamFn(model, context, providerOptions);
+    // Async payload preparation outlives stream admission; managed fetch rechecks Access at egress.
+    return withGuardedFetchBeforeRequest(assertAccessCurrent, () =>
+      boundaryStreamFn(model, context, providerOptions),
+    );
   };
   // Install inside provider/config wrappers so their full onPayload chain runs
   // before admission hashes the request body that the built-in transport sends.
