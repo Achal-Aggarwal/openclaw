@@ -1,6 +1,7 @@
 /* @vitest-environment jsdom */
 /* @vitest-environment-options {"url":"http://chat-pane-sharing.test/"} */
 
+import { expectDefined } from "@openclaw/normalization-core";
 import { asOptionalRecord } from "@openclaw/normalization-core/record-coerce";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createDeferred } from "../../../../test/helpers/promise.js";
@@ -8,8 +9,7 @@ import type { GatewaySessionRow, SessionMembersListEvidenceResult } from "../../
 import { sessionsResult } from "../../lib/sessions/session-capability.test-support.ts";
 import type { SessionRefreshOutcome } from "../../lib/sessions/session-capability.ts";
 import type { GatewayRequestHandler } from "../../test-helpers/gateway-client.ts";
-import { getPaneTestRuntime } from "./chat-pane-runtime.test-support.ts";
-import { mutateSessionSharing, setSessionPublicShare } from "./chat-pane-sharing-mutations.ts";
+import { resolvePreparedChatSessionSharing } from "./chat-pane-sharing-mutations.ts";
 import {
   createGatewayBrowserClientFixture,
   createSessionCapabilityFixture,
@@ -20,7 +20,7 @@ import {
 import type { ChatPageHost } from "./chat-state-host.ts";
 import type {
   ChatSessionSharingState,
-  ChatSessionSharingOutcome,
+  PreparedPaneSessionSharing,
 } from "./components/chat-session-sharing-shared.tsx";
 
 const { confirmPublicShare, copyPublicShare } = vi.hoisted(() => ({
@@ -38,7 +38,7 @@ type SharingPane = TestChatPane & {
   loadSessionSharing: (row: GatewaySessionRow, force?: boolean) => Promise<void>;
   syncSelectedSessionSharing: (row: GatewaySessionRow | undefined) => void;
   sessionSharingCacheKey: (sessionKey: string) => string;
-  copySessionPublicLink: (row: GatewaySessionRow) => Promise<ChatSessionSharingOutcome>;
+  prepareSessionSharing: (row: GatewaySessionRow) => PreparedPaneSessionSharing | undefined;
 };
 
 const SHARING_METHODS = [
@@ -116,6 +116,12 @@ function sharingState(pane: SharingPane, row: GatewaySessionRow) {
   return pane.collaboration.sharingStates.get(pane.sessionSharingCacheKey(row.key));
 }
 
+function sharingActions(pane: SharingPane, row: GatewaySessionRow) {
+  return resolvePreparedChatSessionSharing(
+    expectDefined(pane.prepareSessionSharing(row), "prepared session sharing"),
+  );
+}
+
 function sessionRow(): GatewaySessionRow {
   return {
     key: "agent:main:current",
@@ -171,16 +177,13 @@ const mutations = [
     name: "visibility",
     method: "session.visibility.set",
     invoke: (pane: SharingPane, row: GatewaySessionRow) =>
-      mutateSessionSharing(getPaneTestRuntime(pane), row, { visibility: "shared" }),
+      sharingActions(pane, row).onVisibilityChange("shared"),
   },
   {
     name: "member",
     method: "session.members.add",
     invoke: (pane: SharingPane, row: GatewaySessionRow) =>
-      mutateSessionSharing(getPaneTestRuntime(pane), row, {
-        identityId: "identity-alice",
-        member: true,
-      }),
+      sharingActions(pane, row).onMemberChange("identity-alice", true),
   },
 ] as const;
 
@@ -209,7 +212,7 @@ describe("public session sharing", () => {
         : undefined;
       confirmPublicShare.mockResolvedValue(true);
       copyPublicShare.mockResolvedValue(true);
-      expect(await setSessionPublicShare(getPaneTestRuntime(pane), row, true)).toEqual({
+      expect(await sharingActions(pane, row).onPublicShareChange(true)).toEqual({
         status: "success",
       });
       expect(request).toHaveBeenCalledWith("session.publicShare.set", {
@@ -221,12 +224,12 @@ describe("public session sharing", () => {
       expect(sharingState(pane, row)?.publicUrl).toBe(
         "https://example.test/control/chat/main/current",
       );
-      expect(await pane.copySessionPublicLink(row)).toEqual({ status: "success" });
+      expect(await sharingActions(pane, row).onCopyPublicLink()).toEqual({ status: "success" });
       expect(copyPublicShare).toHaveBeenCalledWith(
         "https://example.test/control/chat/main/current",
         expect.any(Function),
       );
-      await setSessionPublicShare(getPaneTestRuntime(pane), row, false);
+      await sharingActions(pane, row).onPublicShareChange(false);
       expect(request).toHaveBeenCalledWith("session.publicShare.set", {
         sessionKey: row.key,
         agentId: "main",
@@ -284,7 +287,7 @@ describe("public session sharing", () => {
     });
 
     confirmPublicShare.mockResolvedValue(true);
-    const pending = setSessionPublicShare(getPaneTestRuntime(pane), row, true);
+    const pending = sharingActions(pane, row).onPublicShareChange(true);
     if (holdRefresh) {
       await vi.waitFor(() => expect(listCount).toBe(2));
     } else {
@@ -317,7 +320,7 @@ describe("public session sharing", () => {
       const request = vi.fn();
       const { pane, state } = sharingPane(request);
       const row = sessionRow();
-      const pending = setSessionPublicShare(getPaneTestRuntime(pane), row, true);
+      const pending = sharingActions(pane, row).onPublicShareChange(true);
       await vi.waitFor(() => expect(confirmPublicShare).toHaveBeenCalledOnce());
       if (change === "session") {
         state.sessionsResult = sharingSessionsResult({ ...row, sessionId: "replacement" });
@@ -395,11 +398,8 @@ describe("chat pane sharing authorization", () => {
         state.sessionsResult = sharingSessionsResult({ ...sessionRow(), ...current });
       }
       await pane.loadSessionSharing(row);
-      await mutateSessionSharing(getPaneTestRuntime(pane), row, { visibility: "shared" });
-      await mutateSessionSharing(getPaneTestRuntime(pane), row, {
-        identityId: "identity-alice",
-        member: true,
-      });
+      await sharingActions(pane, row).onVisibilityChange("shared");
+      await sharingActions(pane, row).onMemberChange("identity-alice", true);
       if (readable) {
         expect(request).toHaveBeenCalledExactlyOnceWith("session.members.listEvidence", {
           sessionKey: row.key,
@@ -471,11 +471,10 @@ describe("sharing operation code loading", () => {
       const request = vi.fn(async () => ({}));
       const { pane, state } = sharingPane(request);
       const row = sessionRow();
-      const pending = mutateSessionSharing(getPaneTestRuntime(pane), row, { visibility: "shared" });
+      const sharing = sharingActions(pane, row);
+      const pending = sharing.onVisibilityChange("shared");
       expect(sharingState(pane, row)?.loading).toBe(true);
-      const duplicate = mutateSessionSharing(getPaneTestRuntime(pane), row, {
-        visibility: "shared",
-      });
+      const duplicate = sharing.onVisibilityChange("shared");
       if (change === "scope") {
         setSharingAuthorization(pane, { scopes: ["operator.read"] });
       } else if (change === "connection") {
@@ -597,10 +596,7 @@ it("preserves a member sharing refresh failure in the current connection", async
   });
   const { pane, state } = sharingPane(request, sessions);
 
-  await mutateSessionSharing(getPaneTestRuntime(pane), row, {
-    identityId: "identity-alice",
-    member: true,
-  });
+  await sharingActions(pane, row).onMemberChange("identity-alice", true);
 
   expect(sharingState(pane, row)).toMatchObject({
     loading: false,
