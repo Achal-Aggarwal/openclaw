@@ -3,6 +3,18 @@ import { createPositionRail, type PositionRailParams } from "./chat-position-rai
 import { ChatPositionRailView } from "./chat-position-rail-view.tsx";
 
 export function ChatPositionRail(props: PositionRailParams) {
-  const view = createPositionRail(props);
-  return <Show when={view()}>{(current) => <ChatPositionRailView {...current()} />}</Show>;
+  const rail = createPositionRail(props);
+  return (
+    <Show when={rail.view()}>
+      {(current) => (
+        <ChatPositionRailView
+          {...current()}
+          bindMarker={rail.bindings.bindMarker}
+          bindScroller={rail.bindings.bindScroller}
+          bindPreview={rail.bindings.bindPreview}
+          stopScrollInput={rail.bindings.stopScrollInput}
+        />
+      )}
+    </Show>
+  );
 }

@@ -536,7 +536,14 @@ export function createPositionRail(props: PositionRailParams) {
     }
   };
 
-  function readView(params: PositionRailParams): PositionRailViewParams | undefined {
+  function readView(
+    params: PositionRailParams,
+  ):
+    | Omit<
+        PositionRailViewParams,
+        "bindMarker" | "bindScroller" | "bindPreview" | "stopScrollInput"
+      >
+    | undefined {
     const { positions, transcript, assistant } = params;
     if (session !== transcript) {
       session = transcript;
@@ -625,11 +632,7 @@ export function createPositionRail(props: PositionRailParams) {
       previewId: interaction.dismissed
         ? undefined
         : (interaction.hoveredId ?? interaction.focusedId),
-      bindMarker,
-      bindScroller,
-      bindPreview,
       onScroll: observeLayout,
-      stopScrollInput,
       onPointerLeave: () => {
         interaction.hoveredId = null;
         refreshWindow();
@@ -683,5 +686,6 @@ export function createPositionRail(props: PositionRailParams) {
     bindScroller();
     Object.assign(interactionState, initialInteraction());
   });
-  return view;
+  // Unowned DOM refs must not read bindings through a still-uncommitted view projection.
+  return { view, bindings: { bindMarker, bindScroller, bindPreview, stopScrollInput } };
 }
