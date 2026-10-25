@@ -81,7 +81,10 @@ function sharingFixture(initial: PreparedChatSessionSharing, access = false) {
     button: (name: RegExp) => view.getByRole("button", { name }),
     expectDisabled: (name: RegExp, disabled: boolean) =>
       waitForSolid(() =>
-        expect(view.getByRole("button", { name }).hasAttribute("disabled")).toBe(disabled),
+        expect(
+          view.getByRole("button", { name }).hasAttribute("disabled"),
+          `${name} disabled while its sharing operation is pending`,
+        ).toBe(disabled),
       ),
     replaceTarget: () => {
       target = {};
@@ -90,7 +93,7 @@ function sharingFixture(initial: PreparedChatSessionSharing, access = false) {
 }
 const accessFixture = (initial: PreparedChatSessionSharing) => sharingFixture(initial, true);
 
-it("keeps sharing busy through refresh and retires it for a same-key successor", async () => {
+async function assertSharingSuccessor(canonicalFirst = false) {
   const initial = prepared();
   const previous = { ...initial.session, agentId: "main", visibility: "draft" as const };
   const replacement = {
@@ -156,10 +159,20 @@ it("keeps sharing busy through refresh and retires it for a same-key successor",
   response.resolve({});
   await refreshStarted.promise;
   flush();
-  expect(view.button(/Shared/).hasAttribute("disabled")).toBe(true);
+  expect(
+    view.button(/Shared/).hasAttribute("disabled"),
+    "sharing remains disabled through the held membership refresh",
+  ).toBe(true);
   expect(view.applied).not.toHaveBeenCalled();
   holdRefresh = false;
   rows[0] = replacement;
+  if (canonicalFirst) {
+    await fixture.sessions.refresh({ agentId: "main", force: true });
+    expect(
+      source.operationSignal?.aborted,
+      "canonical admission retires sharing before its event",
+    ).toBe(true);
+  }
   fixture.emitGatewayEvent("sessions.changed", {
     sessionKey: previous.key,
     agentId: "main",
@@ -167,7 +180,11 @@ it("keeps sharing busy through refresh and retires it for a same-key successor",
     reason: "update",
     session: replacement,
   });
-  await waitForSolid(() => expect(source.operationSignal?.aborted).toBe(true));
+  await waitForSolid(() =>
+    expect(source.operationSignal?.aborted, "successor retires the predecessor operation").toBe(
+      true,
+    ),
+  );
   pane.syncSelectedSessionSharing(replacement);
   await waitForSolid(() =>
     expect(pane.prepareSessionSharing(replacement)?.state?.loading).toBe(false),
@@ -181,6 +198,14 @@ it("keeps sharing busy through refresh and retires it for a same-key successor",
   await operation.mock.results[0]!.value;
   flush();
   expect(view.applied).not.toHaveBeenCalled();
+}
+
+it("keeps sharing busy through refresh and retires it for a same-key successor", async () => {
+  await assertSharingSuccessor();
+});
+
+it("retires sharing when the canonical list admits the successor before its event", async () => {
+  await assertSharingSuccessor(true);
 });
 
 it("retains access controls across rejection and retries, returning only on native success", async () => {

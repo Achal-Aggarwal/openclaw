@@ -226,6 +226,16 @@ export abstract class ChatPaneSessionObservation extends ChatPaneSessionCreation
       !isUiSelectedGlobalSessionKey(state, state.sessionKey) ||
       presentation.agentId === resolveChatAgentId(state)
     ) {
+      const previousSessionId = selectedChatSessionRow(state)?.sessionId;
+      const nextSessionId = selectedChatSessionRow(
+        state,
+        presentation.result,
+        presentation.agentId,
+      )?.sessionId;
+      if (previousSessionId && nextSessionId && previousSessionId !== nextSessionId) {
+        // The list can admit a successor before its row observation publishes.
+        this.retireHeaderSessionMutations();
+      }
       state.sessionsResult = presentation.result;
       state.sessionsResultAgentId = presentation.agentId;
     }

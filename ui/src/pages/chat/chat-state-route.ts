@@ -71,8 +71,11 @@ const selectedRows = new WeakMap<
   >
 >();
 
-export function selectedChatSessionRow(state: ChatPageHost) {
-  const result = state.sessionsResult;
+export function selectedChatSessionRow(
+  state: ChatPageHost,
+  result = state.sessionsResult,
+  resultAgentId = state.sessionsResultAgentId,
+) {
   if (!result) {
     return undefined;
   }
@@ -107,10 +110,7 @@ export function selectedChatSessionRow(state: ChatPageHost) {
     return row;
   }
   const selectedAgentId = resolveChatAgentId(state);
-  if (
-    state.sessionsResultAgentId &&
-    normalizeAgentId(state.sessionsResultAgentId) !== selectedAgentId
-  ) {
+  if (resultAgentId && normalizeAgentId(resultAgentId) !== selectedAgentId) {
     return undefined;
   }
   if (

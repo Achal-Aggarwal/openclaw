@@ -107,4 +107,11 @@ it("recomputes selected rows when routing defaults change in place", () => {
   state.assistantAgentId = "main";
   state.sessionKey = "global";
   expect(selectedChatSessionRow(state)).toBeUndefined();
+
+  state.assistantAgentId = "work";
+  state.sessionsResultAgentId = "main";
+  expect(selectedChatSessionRow(state)).toBeUndefined();
+  expect(selectedChatSessionRow(state, state.sessionsResult, "work")).toBe(global);
+  expect(selectedChatSessionRow(state, state.sessionsResult, "main")).toBeUndefined();
+  expect(state.sessionsResultAgentId).toBe("main");
 });
