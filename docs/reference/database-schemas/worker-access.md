@@ -6696,6 +6696,12 @@ not require another full byte copy on the main thread. Prepared views remain
 independently mutable. Opaque structured-cloneable SDK data retains native snapshot
 semantics. Worker write ordering, atomic publication, and stored bytes are unchanged.
 
+The actor's retained exact context seals its detached message payload descendants
+once at seeding. Later reads share those immutable leaves while detaching message
+and event envelopes, event arrays, maps, and navigation metadata. CLI timestamp edits
+and SDK whole-field replacement remain isolated; initial model-context projection
+still produces independently writable nested data.
+
 Initial model-context snapshots also reuse equal string values from the loaded
 SessionManager. The context reader still owns selection and admission; its projected
 fields, property order, and mutable containers remain authoritative. Resident SDK

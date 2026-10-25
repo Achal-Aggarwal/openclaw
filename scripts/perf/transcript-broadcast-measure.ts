@@ -143,6 +143,7 @@ const { values } = parseArgs({
     "history-turns": { type: "string", default: "0" },
     "history-last-turns": { type: "string", default: "0" },
     "history-payload-kib": { type: "string", default: "0" },
+    "history-compaction": { type: "boolean", default: false },
     "verify-history-replay": { type: "boolean", default: false },
     "seed-history": { type: "boolean", default: false },
     rounds: { type: "string", default: "5" },
@@ -287,6 +288,12 @@ const historyLastTurns = integer(values["history-last-turns"], "--history-last-t
 const historyPayloadBytes =
   integer(values["history-payload-kib"], "--history-payload-kib", 0) * 1024;
 const verifyHistoryReplay = values["verify-history-replay"];
+const historyCompaction = values["history-compaction"];
+if (historyCompaction && (!soakScenario || !historyTurns || verifyHistoryReplay)) {
+  throw new Error(
+    "--history-compaction requires memory-soak --history-turns without --verify-history-replay",
+  );
+}
 if ((historyTurns || values["seed-history"]) && !idleScenario && !soakScenario) {
   throw new Error(
     "--history-turns and --seed-history require session-idle-retention or memory-soak",
@@ -2883,6 +2890,40 @@ if (values["seed-history"]) {
           ],
         });
       }
+      if (historyCompaction) {
+        const messages = manager.getEntries().filter((entry) => entry.type === "message");
+        const firstUser = messages.find((entry) => entry.message.role === "user");
+        if (!firstUser || messages.length !== turns * 4) {
+          throw new Error("Compaction fixture did not retain its seeded message history");
+        }
+        const digest = (entries: unknown) =>
+          createHash("sha256").update(JSON.stringify(entries)).digest("hex");
+        const before = digest(messages);
+        await manager.appendCompactionAsync(
+          "Synthetic compaction preserving the complete seeded message history.",
+          firstUser.id,
+          turns * 1024,
+        );
+        const { prepareSessionTranscriptHydration } =
+          await import("../../src/config/sessions/session-transcript-hydration.js");
+        const prepared = await prepareSessionTranscriptHydration(target, {
+          maxBytes: 8 * 1024 * 1024,
+          maxEvents: 2000,
+        }).read();
+        if (
+          prepared.kind !== "bounded" ||
+          prepared.snapshot.truncated ||
+          prepared.snapshot.boundaryCount !== 1 ||
+          digest(
+            prepared.snapshot.events.filter((entry) => isRecord(entry) && entry.type === "message"),
+          ) !== before
+        ) {
+          throw new Error("Compaction fixture changed or truncated the seeded message history");
+        }
+        console.log(
+          `COMPACTION_SEEDED ${JSON.stringify({ sessionId, messages: messages.length, boundaryCount: 1, messageSha256: before })}`,
+        );
+      }
       console.log(`SEEDED ${index + 1}/${sessionCount}`);
     }
     if (soakScenario) {
@@ -2895,6 +2936,7 @@ if (values["seed-history"]) {
         historyTurns,
         historyLastTurns,
         historyPayloadBytes,
+        historyCompaction,
         verifyHistoryReplay,
         ...(verifyHistoryReplay ? { modelBaseUrl: cfg.models.providers.openai.baseUrl } : {}),
       }),
@@ -2912,7 +2954,8 @@ if (historyTurns) {
     seeded.sessionCount !== sessionCount ||
     seeded.historyTurns !== historyTurns ||
     (seeded.historyLastTurns ?? 0) !== historyLastTurns ||
-    (seeded.historyPayloadBytes ?? 0) !== historyPayloadBytes
+    (seeded.historyPayloadBytes ?? 0) !== historyPayloadBytes ||
+    (seeded.historyCompaction ?? false) !== historyCompaction
   ) {
     throw new Error("Run --seed-history with matching session count and history options first");
   }
@@ -6554,6 +6597,7 @@ try {
           historyTurns,
           historyLastTurns,
           historyPayloadBytes,
+          historyCompaction,
           completedSoakRounds,
           warmupCompletedRounds: warmupRoundCount,
           completedTurns: samples.length * runCount,

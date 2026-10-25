@@ -230,14 +230,26 @@ describe("actor transcript context replica", () => {
       const retained = seed(undefined, hot, prepared, limits);
       const first = prepared.snapshot.events[1];
       assert(isRecord(first) && isRecord(first.message), "Expected a message fixture");
+      assert(Array.isArray(first.message.content) && isRecord(first.message.content[0]));
       first.id = "mutated-input";
       first.message.role = "mutated-input";
+      first.message.content[0].text = "mutated-input";
       prepared.snapshot.parents.clear();
       const read = readContext(retained, hot, limits);
       expect(read?.snapshot.events[1]).toEqual(message("user", null, "user"));
       expect(read?.snapshot.parents.get("reply")).toBe("user");
       const returned = read?.snapshot.events[1];
       assert(isRecord(returned) && isRecord(returned.message), "Expected a retained message");
+      if (mode === "exact") {
+        const content = returned.message.content;
+        assert(Array.isArray(content) && isRecord(content[0]));
+        expect(Object.isFrozen(content)).toBe(true);
+        expect(Reflect.set(content[0], "text", "mutated-output")).toBe(false);
+        const next = readContext(retained, hot, limits)?.snapshot.events[1];
+        assert(isRecord(next) && isRecord(next.message));
+        expect(next.message).not.toBe(returned.message);
+        expect(next.message.content).toBe(content);
+      }
       returned.id = "mutated-output";
       returned.message.role = "mutated-output";
       read?.snapshot.parents.clear();

@@ -6,7 +6,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { Session, type HeapProfiler } from "node:inspector/promises";
 import { registerHooks } from "node:module";
 import path from "node:path";
-import { setTimeout as delay } from "node:timers/promises";
+import { setImmediate, setTimeout as delay } from "node:timers/promises";
 import { pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 import type { SessionActorHotState } from "../../src/config/sessions/session-actor-contract.js";
@@ -25,6 +25,7 @@ const { values } = parseArgs({
     output: { type: "string" },
     "trace-log": { type: "string" },
     allocations: { type: "boolean", default: false },
+    retention: { type: "boolean", default: false },
   },
 });
 assert(values.output, "--output is required");
@@ -44,6 +45,10 @@ function markGc(phase: string, profilePath?: string) {
 }
 const mode = values.mode;
 assert(mode === "exact" || mode === "window" || mode === "complete", "Invalid --mode");
+assert(
+  !values.retention || (mode === "exact" && !values.allocations && !tracing),
+  "--retention requires exact mode without allocation sampling or tracing",
+);
 const operations = parseStrictIntegerOption({
   raw: values.operations,
   label: "--operations",
@@ -88,8 +93,9 @@ if (tracing) {
 type Bounded = Extract<PreparedSessionTranscriptHydration, { kind: "bounded" }>;
 const eventCount = 64;
 const textBytes = 16 * 1024;
-const limits = { maxBytes: 2 * 1024 ** 2, maxEvents: eventCount };
-const version = { generation: "synthetic-generation", rawSeq: eventCount, updatedAt: 1 };
+const totalEvents = eventCount + Number(values.retention);
+const limits = { maxBytes: 2 * 1024 ** 2, maxEvents: totalEvents };
+const version = { generation: "synthetic-generation", rawSeq: totalEvents, updatedAt: 1 };
 const hot: SessionActorHotState = {
   target: {
     database: { kind: "memory", handle: "synthetic", incarnation: "synthetic" },
@@ -106,7 +112,7 @@ const hot: SessionActorHotState = {
   completionKeys: [],
   transcript: {
     version,
-    watermark: { generation: version.generation, maxSeq: eventCount },
+    watermark: { generation: version.generation, maxSeq: totalEvents },
     anchorsState: "resident",
     anchors: [],
     idempotency: [],
@@ -120,7 +126,7 @@ const hot: SessionActorHotState = {
   },
 };
 function fixture(): Bounded {
-  const events = [
+  const events: Bounded["snapshot"]["events"] = [
     { type: "session", id: "synthetic", version: 3 },
     ...Array.from({ length: eventCount }, (_, index) => ({
       type: "message",
@@ -138,32 +144,46 @@ function fixture(): Bounded {
       },
     })),
   ];
+  if (values.retention) {
+    events.push({
+      type: "compaction",
+      id: "compaction",
+      parentId: `message-${eventCount - 1}`,
+      firstKeptEntryId: "message-0",
+      summary: "Synthetic boundary retaining every message.",
+      tokensBefore: 100000,
+      timestamp: "2026-10-24T00:00:00.000Z",
+    });
+  }
   const residentRows = events.map((event, rawSeq) => ({
     rawSeq,
     serializedBytes: Buffer.byteLength(JSON.stringify(event)),
   }));
   return {
     kind: "bounded",
-    ...(mode === "exact" ? {} : { residentRows }),
+    ...(mode === "exact" && !values.retention ? {} : { residentRows }),
     snapshot: {
       version: { ...version },
-      activeLeafEntryId: `message-${eventCount - 1}`,
+      activeLeafEntryId: values.retention ? "compaction" : `message-${eventCount - 1}`,
       opaqueParents: new Map(),
-      parents: new Map(
-        Array.from({ length: eventCount }, (_, index): [string, string | null] => [
+      parents: new Map([
+        ...Array.from({ length: eventCount }, (_, index): [string, string | null] => [
           `message-${index}`,
           index === 0 ? null : `message-${index - 1}`,
         ]),
+        ...(values.retention ? [["compaction", `message-${eventCount - 1}`] as const] : []),
+      ]),
+      firstKeptRanges: new Map(
+        values.retention ? [["compaction", { startIndex: 1, endIndex: eventCount + 1 }]] : [],
       ),
-      firstKeptRanges: new Map(),
       persistedSuffixStartSeq: 1,
-      boundaryCount: 0,
+      boundaryCount: Number(values.retention),
       events,
       cacheTtlProjectionPrefixes: [],
       serializedBytes: residentRows.reduce((sum, row) => sum + row.serializedBytes, 0),
-      totalEvents: eventCount,
+      totalEvents,
       transcriptMutationAt: 1,
-      truncated: mode !== "complete",
+      truncated: mode !== "complete" && !values.retention,
       ...(mode === "complete" ? { completeActivePath: true } : {}),
     },
   };
@@ -212,6 +232,102 @@ mutateMessage(detached.snapshot);
 detached.snapshot.parents.clear();
 detached.snapshot.events.splice(0, 1);
 assert.equal(json(requireRead(proofRetained)), golden, "Reading leaked the retained context");
+if (values.retention) {
+  assert(global.gc, "--retention requires --expose-gc");
+  const liveCount = 20;
+  const collect = async () => {
+    for (let index = 0; index < 8; index++) {
+      await setImmediate();
+      global.gc!();
+    }
+  };
+  const createCohort = (reads: number) => {
+    const live = Array.from({ length: liveCount }, () => {
+      const retained = seed(undefined, hot, fixture(), limits);
+      requireMode(retained);
+      assert(retained);
+      return { retained, views: Array.from({ length: reads }, () => requireRead(retained)) };
+    });
+    return {
+      live,
+      replicas: live.map(({ retained }) => new WeakRef(retained)),
+      views: live.flatMap(({ views }) => views.map((view) => new WeakRef(view))),
+    };
+  };
+  const verifyCohort = (cohort: ReturnType<typeof createCohort>) => {
+    for (const { retained, views } of cohort.live) {
+      assert.equal(json(requireRead(retained)), golden);
+      for (const view of views) {
+        assert.equal(json(view), golden);
+      }
+    }
+  };
+  const warmRetention = () => {
+    const cohort = createCohort(4);
+    verifyCohort(cohort);
+  };
+  warmRetention();
+  await collect();
+  const results = [];
+  for (let sample = 0; sample < 5; sample++) {
+    for (const reads of sample % 2 ? [4, 1, 0] : [0, 1, 4]) {
+      await collect();
+      const beforeBytes = process.memoryUsage().heapUsed;
+      const cohort = createCohort(reads);
+      await collect();
+      const retainedBytes = process.memoryUsage().heapUsed;
+      // Serialization and weak-reference inspection stay outside the retained-heap reading.
+      verifyCohort(cohort);
+      cohort.live.length = 0;
+      await collect();
+      const releasedBytes = process.memoryUsage().heapUsed;
+      results.push({
+        sample,
+        contexts: liveCount,
+        readsPerContext: reads,
+        beforeBytes,
+        retainedBytes,
+        releasedBytes,
+        retainedBytesPerContext: (retainedBytes - beforeBytes) / liveCount,
+        replicaSurvivors: cohort.replicas.filter((ref) => ref.deref()).length,
+        viewSurvivors: cohort.views.filter((ref) => ref.deref()).length,
+      });
+    }
+  }
+  const result = {
+    scope: "Exact actor replica with fresh owned payloads and retained reread views",
+    sourceSha256: hash("sha256", readFileSync(sourceUrl), "hex"),
+    ownerReplacement: ownerLoaded,
+    mode,
+    timingGateEligible: false,
+    goldenSha256: hash("sha256", golden, "hex"),
+    fixture: {
+      eventCount,
+      textBytes,
+      boundaryCount: 1,
+      serializedBytes: proof.snapshot.serializedBytes,
+    },
+    samples: 5,
+    contextsPerSample: liveCount,
+    forcedCollectionsPerBoundary: 8,
+    results,
+    rereadDeltas: Array.from({ length: 5 }, (_, sample) => {
+      const rows = results.filter((row) => row.sample === sample);
+      const cost = (reads: number) =>
+        rows.find((row) => row.readsPerContext === reads)!.retainedBytesPerContext;
+      return {
+        sample,
+        firstReadBytes: cost(1) - cost(0),
+        additionalReadBytes: (cost(4) - cost(1)) / 3,
+      };
+    }),
+  };
+  const output = path.resolve(values.output);
+  await mkdir(path.dirname(output), { recursive: true });
+  await writeFile(output, `${JSON.stringify(result, null, 2)}\n`, { flag: "wx" });
+  console.log(JSON.stringify(result));
+  process.exit(0);
+}
 const prepared = fixture();
 let latest = requireRead(seed(undefined, hot, prepared, limits));
 const operation = () => {

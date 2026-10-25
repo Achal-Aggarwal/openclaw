@@ -1,5 +1,6 @@
 import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import type { UserTurnTranscriptAdmissionReceipt } from "../../sessions/user-turn-transcript.types.js";
+import { freezeTrustedJsonSnapshot } from "../../shared/immutable-data.js";
 import {
   readSessionActorBoundedHistory,
   type SessionActorTranscriptRow,
@@ -373,6 +374,16 @@ export function seedSessionActorTranscriptContext(
   }
   const window =
     !complete && rows ? seedContextWindow(current, snapshot, rows, limits, admission) : undefined;
+  if (!complete && !window) {
+    for (const event of snapshot.events) {
+      if (isRecord(event) && event.type === "message" && isRecord(event.message)) {
+        // Own canonical payloads once; SDK/CLI readers still edit detached envelopes.
+        for (const value of Object.values(event.message)) {
+          freezeTrustedJsonSnapshot(value);
+        }
+      }
+    }
+  }
   return {
     ...current,
     anchors,

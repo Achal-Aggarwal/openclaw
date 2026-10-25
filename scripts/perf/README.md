@@ -2435,6 +2435,15 @@ calibration and paired-delta rules. This owner workload does not measure Gateway
 turn latency or establish a deployed allocation reduction; use the real
 `memory-soak` turn workload for that evidence.
 
+`--retention --mode exact` requires `--expose-gc` and excludes tracing and
+allocation sampling. It adds a compaction boundary with resident row facts to
+select the exact path, then measures five counterbalanced samples of 20 private
+replicas with zero, one, or four retained read views. Each replica starts from a
+fresh fixture. Eight yielded collections bracket each reading; equality checks
+run afterward. Results include retained bytes per context, incremental bytes
+per read, post-release heap drift, and surviving replica/view weak references.
+These forced-GC measurements do not gate latency or natural-GC behavior.
+
 ## Measure transcript broadcast fanout
 
 With runtime artifacts built on the authorized benchmark host, seed a fixture
@@ -2770,6 +2779,14 @@ signature and tool result of the requested KiB each; the default zero preserves
 the smaller reopen fixture. In this mode, `--mixed-rpc` history polls select the
 active seeded sessions, including the larger last session. Keep fixture writes sequential and record actual
 database bytes before choosing the shape on a shared filesystem.
+
+For retained exact-context hydration, add `--history-compaction` to both seeding
+and capture commands. The seeder appends a real compaction retaining the first
+user onward, then verifies one boundary and byte-equivalent, untruncated messages
+through bounded hydration. This requires `memory-soak` with `--history-turns`
+and is incompatible with `--verify-history-replay`; a compaction changes the
+historical reasoning replay contract. Keep `--reset-every-rounds 0` to retain
+the seeded boundary during the measured turn mix.
 
 Add `--worker-memory` in a separate diagnostic pass to record bounded task-kind
 memory under `transcript-worker-<thread>.jsonl`. The private preload observes
