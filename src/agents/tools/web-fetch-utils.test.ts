@@ -5,6 +5,17 @@ import { extractBasicHtmlContent, htmlToMarkdown, markdownToText } from "./web-f
 const extractText = async (html: string) =>
   (await extractBasicHtmlContent({ html, extractMode: "text" }))?.text;
 describe("web-fetch-utils", () => {
+  it.each(["markdown", "text"] as const)(
+    "separates definition-list terms in %s mode",
+    async (extractMode) => {
+      const result = await extractBasicHtmlContent({
+        html: "<dl><dt>Region</dt><dd>EMEA</dd><dt>Units</dt><dd>120</dd></dl>",
+        extractMode,
+      });
+      expect(result?.text).toBe("Region\nEMEA\nUnits\n120");
+    },
+  );
+
   it("keeps Markdown-looking inline code literal in text mode", () => {
     const markdown =
       "Use `![alt](image.png)` and ``[label](https://example.com)``; read [guide](https://example.com).";
