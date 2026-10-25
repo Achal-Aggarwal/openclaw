@@ -347,8 +347,5 @@ export const clawsAddHandlers: GatewayRequestHandlers = {
 };
 
 class ClawGatewayAuthorityError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "ClawGatewayAuthorityError";
-  }
+  override name = "ClawGatewayAuthorityError";
 }

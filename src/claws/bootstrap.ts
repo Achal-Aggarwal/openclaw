@@ -12,10 +12,7 @@ import { clawContainedRelativePath } from "./path-containment.js";
 import type { ClawAddPlan } from "./types.js";
 
 class ClawBootstrapWriteError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "ClawBootstrapWriteError";
-  }
+  override name = "ClawBootstrapWriteError";
 }
 
 export async function seedClawPackageBootstrap(
