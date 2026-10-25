@@ -243,6 +243,9 @@ it("keeps details process observation through refreshes and follows its presente
   details.presented = true;
   mount(details);
   await settle(details, 0);
+  await waitForSolid(() =>
+    expect(details.querySelector(".chat-details__process")?.textContent).toContain("Main build"),
+  );
   const row = details.querySelector(".chat-details__process");
   expect(row?.textContent).toContain("Main build");
   expect(request.mock.calls).toEqual([mainRead]);

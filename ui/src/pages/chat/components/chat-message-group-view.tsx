@@ -10,7 +10,6 @@ import { persistedMessageEntryId } from "../chat-thread-items.ts";
 import { hasForwardedSource, isSessionActivityGroup } from "../chat-turn-boundary.ts";
 import { ChatAuthorAvatar } from "./chat-author-avatar.ts";
 import { BrowserTabPreviews } from "./chat-browser-tab-previews.tsx";
-import { ForwardedAttribution } from "./chat-forwarded-attribution.tsx";
 import { ChatLazyBoundary } from "./chat-lazy-boundary.tsx";
 import type { GroupedMessageOptions } from "./chat-message-bubble-options.ts";
 import { GroupedMessage } from "./chat-message-bubble-view.tsx";
@@ -47,6 +46,10 @@ import type { ReplyConnectorElements } from "./chat-reply-connector.tsx";
 import { ChatSessionActivity } from "./chat-session-activity.solid.tsx";
 import { selectBrowserTabPreviews } from "./chat-tool-cards.ts";
 import { TurnRecapRow } from "./chat-turn-recap-view.tsx";
+
+const ForwardedAttribution = lazy(() => import("./chat-forwarded-attribution.tsx"), {
+  export: "ForwardedAttribution",
+});
 
 const ActivityGroupContent = lazy(() => import("./chat-message-activity-view.tsx"), {
   export: "ActivityGroupContent",
@@ -448,7 +451,9 @@ function FramedMessageGroup(props: {
       </Show>
       <div ref={(element) => (replyElements.messages = element)} class="chat-group-messages">
         <Show when={frame().forwardedSource}>
-          <ForwardedAttribution group={props.group} options={options()} />
+          <ChatLazyBoundary>
+            <ForwardedAttribution group={props.group} options={options()} />
+          </ChatLazyBoundary>
         </Show>
         <ReplyLineView line={frame().replyLine} actions={options()} elements={replyElements} />
         <Show

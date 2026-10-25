@@ -103,6 +103,20 @@ export function controlUiStableChunkName(id: string): string | undefined {
     case "ui/src/pages/chat/components/chat-media-playback.ts":
     case "ui/src/pages/chat/components/chat-message-image-loading.ts":
       return "chat-message-media-runtime";
+    case "ui/src/pages/chat/chat-view-notices-content.tsx":
+    case "ui/src/pages/chat/chatgpt-usage-limit.tsx":
+      return "chat-notices-runtime";
+    case "ui/src/pages/chat/components/chat-comment-pins.tsx":
+    case "ui/src/pages/chat/components/chat-selection-annotation-rows.tsx":
+      return "chat-saved-annotations-runtime";
+    case "ui/src/pages/chat/components/chat-forwarded-attribution.tsx":
+      return "chat-forwarded-attribution-runtime";
+    case "ui/src/pages/chat/components/chat-transcript-search-content.tsx":
+    case "ui/src/pages/chat/components/chat-details-desktop-process-row.tsx":
+    case "ui/src/pages/chat/components/chat-details-process-row.tsx":
+    case "ui/src/pages/chat/components/chat-details-subagent-rows.tsx":
+      // Preload common follow-up rows without evaluating absent variants at boot.
+      return "chat-followup-rows-runtime";
     case "ui/src/pages/chat/chat-provider-review-controller.tsx":
       return "chat-provider-review";
     // Keep optional compression groups separate from code evaluated by text-only Chat.

@@ -17,6 +17,10 @@ const sharedInteractionEntries = new Set([
 ]);
 const chatInteractionEntries = new Set([
   "ui/src/pages/chat/components/chat-context-breakdown.tsx",
+  "ui/src/pages/chat/components/chat-transcript-search-content.tsx",
+  "ui/src/pages/chat/components/chat-details-desktop-process-row.tsx",
+  "ui/src/pages/chat/components/chat-details-process-row.tsx",
+  "ui/src/pages/chat/components/chat-details-subagent-rows.tsx",
   "ui/src/components/markdown-live.ts",
   // Cached environment facts reveal without another network round trip.
   "ui/src/pages/chat/components/chat-details-environment-body.tsx",

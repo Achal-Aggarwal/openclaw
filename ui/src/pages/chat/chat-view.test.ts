@@ -357,6 +357,7 @@ describe("chat run error", () => {
         onRetrySessionPlacementStartup,
       });
 
+      await waitForSolid(() => expect(container.querySelector(".chat-error")).not.toBeNull());
       const alert = requireElement(container, ".chat-error", "chat run error");
       expect(alert.getAttribute("role")).toBe("alert");
       const details = requireElement(alert, "details", "error disclosure");
@@ -410,6 +411,7 @@ describe("chat run error", () => {
       },
       onRetrySessionPlacementStartup,
     });
+    await waitForSolid(() => expect(container.querySelector(".chat-error")).not.toBeNull());
     const alert = requireElement(container, ".chat-error", "startup error");
     expect(requireElement(alert, "pre", "startup diagnostic").textContent).toBe(
       "The session was created, but startup needs attention:  Provisioning failed\n  Final diagnostic line  ",
@@ -463,6 +465,9 @@ describe("cloud workspace conflict notice", () => {
       onDismissWorkspaceConflict,
     });
 
+    await waitForSolid(() =>
+      expect(container.querySelector(".chat-workspace-conflict-notice")).not.toBeNull(),
+    );
     const notice = requireElement(
       container,
       ".chat-workspace-conflict-notice",
@@ -507,7 +512,7 @@ describe("cloud workspace conflict notice", () => {
 
   it.each(["\u0085"])(
     "keeps terminal-control paths visible without building copyable commands (%j)",
-    (controlSequence) => {
+    async (controlSequence) => {
       const entryPath = `src/${controlSequence}unsafe.ts`;
       const normalizedConflict = workspaceResultConflictFromTranscript({
         role: "custom",
@@ -519,6 +524,9 @@ describe("cloud workspace conflict notice", () => {
       });
       expect(normalizedConflict).toBeDefined();
       const container = renderChatView({ workspaceConflict: normalizedConflict });
+      await waitForSolid(() =>
+        expect(container.querySelector(".chat-workspace-conflict-notice")).not.toBeNull(),
+      );
       expect(container.querySelector(".chat-workspace-conflict-paths code")?.textContent).toBe(
         workspaceConflictPathForDisplay(entryPath),
       );
@@ -529,12 +537,14 @@ describe("cloud workspace conflict notice", () => {
 });
 
 describe("cloud worker disk-space notice", () => {
-  it("updates persistent disk guidance and clears it after recovery", () => {
+  it("updates persistent disk guidance and clears it after recovery", async () => {
     const container = createComposerContainer();
     renderChatInto(container, {
       diskSpace: { status: "warning", availableBytes: 400, totalBytes: 1_000, observedAtMs: 1 },
     });
-    expect(container.querySelector(".chat-cloud-disk-space-notice")).not.toBeNull();
+    await waitForSolid(() =>
+      expect(container.querySelector(".chat-cloud-disk-space-notice")).not.toBeNull(),
+    );
     renderChatInto(container, {
       diskSpace: {
         status: "critical",
@@ -1369,7 +1379,7 @@ describe("per-pane chat presentation state", () => {
     }
   });
 
-  it("keeps search state and resets scoped to its pane", () => {
+  it("keeps search state and resets scoped to its pane", async () => {
     const paneA = createComposerContainer();
     const paneB = createComposerContainer();
     const selector = ".agent-chat__search-bar";
@@ -1382,9 +1392,10 @@ describe("per-pane chat presentation state", () => {
     renderPane(paneA, "pane-a");
     renderPane(paneB, "pane-b");
     open(paneA, "pane-a");
-    expect(paneA.querySelector(selector)).not.toBeNull();
+    await waitForSolid(() => expect(paneA.querySelector(selector)).not.toBeNull());
     expect(paneB.querySelector(selector)).toBeNull();
     open(paneB, "pane-b");
+    await waitForSolid(() => expect(paneB.querySelector(selector)).not.toBeNull());
     resetTranscriptSession("pane-a");
     renderPane(paneA, "pane-a");
     renderPane(paneB, "pane-b");

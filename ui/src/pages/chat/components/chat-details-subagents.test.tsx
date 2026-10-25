@@ -2,7 +2,7 @@
 import { createSignal } from "solid-js";
 import { expect, it, vi } from "vitest";
 import { mountSolid } from "../../../test-helpers/mount-solid.ts";
-import { flush } from "../../../test-helpers/solid-settle.ts";
+import { flush, waitForSolid } from "../../../test-helpers/solid-settle.ts";
 import { ChatDetailsSubagents, type ChatDetailsSubagentsProps } from "./chat-details-subagents.tsx";
 
 type Row = ChatDetailsSubagentsProps["rows"][number];
@@ -12,7 +12,7 @@ it.each([
   { mobile: true, limit: 3 },
 ])(
   "uses the total at the $limit-item boundary (mobile=$mobile), preserving child and collection intent",
-  ({ mobile, limit }) => {
+  async ({ mobile, limit }) => {
     const initial: Row[] = Array.from({ length: limit }, (_, index) => ({
       key: `child-${index}`,
       label: "Review",
@@ -30,6 +30,7 @@ it.each([
         onOpenSubagents={openCollection}
       />
     ));
+    await waitForSolid(() => expect(view.getAllByRole("button")).toHaveLength(limit));
     const buttons = view.getAllByRole("button");
     expect(buttons).toHaveLength(limit);
     buttons[0]!.click();
@@ -54,7 +55,7 @@ it.each([
   },
 );
 
-it("omits empty content and removes collapsed activity when the last waiting child settles", () => {
+it("omits empty content and removes collapsed activity when the last waiting child settles", async () => {
   const [rows, setRows] = createSignal<readonly Row[]>([]);
   const [collapsed, setCollapsed] = createSignal(false);
   const view = mountSolid(() => (
@@ -79,12 +80,14 @@ it("omits empty content and removes collapsed activity when the last waiting chi
   expect(view.container.childElementCount).toBe(0);
   setCollapsed(false);
   flush();
-  expect(view.getByRole("button", { name: "Waiting child Done" })).toBeTruthy();
+  await waitForSolid(() =>
+    expect(view.getByRole("button", { name: "Waiting child Done" })).toBeTruthy(),
+  );
 });
 
 it.each([false, true])(
   "folds failed runs into Done without changing child outcomes (mobile=%s)",
-  (mobile) => {
+  async (mobile) => {
     const initial: Row[] = [
       { key: "a", label: "A", status: "running" },
       { key: "b", label: "B", status: "waiting" },
@@ -104,11 +107,13 @@ it.each([false, true])(
         onOpenSubagents={vi.fn()}
       />
     ));
-    expect(
-      view.getByRole("button", {
-        name: "All subagents. 1 Working, 1 Waiting on subagents, 1 Queued, 2 Done, 1 Stopped",
-      }),
-    ).toBeTruthy();
+    await waitForSolid(() =>
+      expect(
+        view.getByRole("button", {
+          name: "All subagents. 1 Working, 1 Waiting on subagents, 1 Queued, 2 Done, 1 Stopped",
+        }),
+      ).toBeTruthy(),
+    );
     setRows(initial.map((row) => (row.key === "e" ? { ...row, status: "running" } : row)));
     flush();
     expect(

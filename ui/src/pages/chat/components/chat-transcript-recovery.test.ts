@@ -71,6 +71,9 @@ async function searchTranscript(pane: RecoveryTranscriptElement, query: string) 
     toggleTranscriptSearch(pane.props.paneId);
     await pane.settleUpdates();
   }
+  await waitForSolid(() =>
+    expect(pane.querySelector(".agent-chat__search-bar input")).not.toBeNull(),
+  );
   const input = expectDefined(
     pane.querySelector<HTMLInputElement>(".agent-chat__search-bar input"),
     "transcript search input",

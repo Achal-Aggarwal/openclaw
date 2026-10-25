@@ -99,6 +99,9 @@ async function mountComments(additional: ChatAttachment[] = []) {
   )!;
   document.body.append(card);
   flush();
+  await waitForSolid(() =>
+    expect(composer.querySelector('button[aria-label="Edit comment 1"]')).not.toBeNull(),
+  );
   const edit = async () => {
     composer.querySelector<HTMLButtonElement>('button[aria-label="Edit comment 1"]')!.click();
     await waitForSolid(() => expect(input()).not.toBeNull());

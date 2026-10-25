@@ -136,6 +136,9 @@ it("relayouts for pin and geometry changes but not unrelated pane renders", asyn
   stubResize((notify) => resizes.push(notify));
   // A loading transcript stays static, so only pin inputs and observers vary.
   const { container, draw } = mount({ attachments: [comment("first")], loading: true });
+  await waitForSolid(() =>
+    expect(container.querySelector("openclaw-chat-comment-pins")).not.toBeNull(),
+  );
   const pins = container.querySelector<HTMLElement & { updateComplete: Promise<unknown> }>(
     "openclaw-chat-comment-pins",
   )!;

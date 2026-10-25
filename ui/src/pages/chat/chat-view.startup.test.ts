@@ -1,5 +1,6 @@
 /* @vitest-environment jsdom */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { waitForSolid } from "../../test-helpers/solid-settle.ts";
 import { resetChatViewState } from "./chat-view-state.test-support.ts";
 import { createTestTranscript, renderChatView } from "./chat-view.test-helpers.ts";
 import {
@@ -66,7 +67,7 @@ describe("initial chat delivery controls", () => {
     },
   );
 
-  it("keeps Retry and Discard reachable when exact history deduplicates the rejected initial turn", () => {
+  it("keeps Retry and Discard reachable when exact history deduplicates the rejected initial turn", async () => {
     const onRetrySessionPlacementStartup = vi.fn();
     const onDiscardSessionPlacementStartup = vi.fn();
     const container = renderChatView({
@@ -99,6 +100,7 @@ describe("initial chat delivery controls", () => {
     });
     expect(container.querySelectorAll(".chat-group.user")).toHaveLength(1);
     expect(container.querySelector(".chat-send-status__retry")).toBeNull();
+    await waitForSolid(() => expect(container.querySelector(".chat-error")).not.toBeNull());
     const action = Array.from(
       container.querySelectorAll<HTMLButtonElement>(".chat-error button"),
     ).find((button) => button.textContent?.trim() === "Retry");
@@ -115,7 +117,7 @@ describe("initial chat delivery controls", () => {
     expect(onRetrySessionPlacementStartup).toHaveBeenCalledOnce();
   });
 
-  it("keeps the retained initial turn's Retry action usable while ordinary sending is held", () => {
+  it("keeps the retained initial turn's Retry action usable while ordinary sending is held", async () => {
     const onRetrySessionPlacementStartup = vi.fn();
     const onQueueRetry = vi.fn();
     const paneId = "startup-retry";
@@ -171,6 +173,10 @@ describe("initial chat delivery controls", () => {
     buttons[0]?.click();
     expect(onRetrySessionPlacementStartup).toHaveBeenCalledOnce();
     expect(onQueueRetry).not.toHaveBeenCalled();
-    expect(container.querySelector(".chat-error")?.textContent).toContain("Retained initial turn");
+    await waitForSolid(() =>
+      expect(container.querySelector(".chat-error")?.textContent).toContain(
+        "Retained initial turn",
+      ),
+    );
   });
 });
