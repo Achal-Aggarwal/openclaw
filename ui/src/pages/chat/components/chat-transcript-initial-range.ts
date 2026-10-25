@@ -51,9 +51,15 @@ export class TranscriptInitialRange {
     return true;
   }
 
+  retryOnNextFrame(): void {
+    // Lazy rows need browser tasks to settle; repeated microtask commits can starve them.
+    scheduleLayout(this, () => this.invalidate);
+  }
+
   finish(afterPaint = false): void {
     this.pending = false;
     this.virtualizer().shouldAdjustScrollPositionOnItemSizeChange = undefined;
+    cancelLayout(this);
     if (!this.tailRows) {
       return;
     }
@@ -62,7 +68,6 @@ export class TranscriptInitialRange {
       this.refresh();
       this.invalidate();
     };
-    cancelLayout(this);
     if (afterPaint) {
       // Paint the measured viewport before preparing the ordinary offscreen overscan.
       scheduleLayout(this, () => () => scheduleLayout(this, () => resumeOverscan));

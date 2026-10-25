@@ -770,7 +770,9 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
     if (isTranscriptRangeCommitted(this.threadInnerElement, this.virtualizer)) {
       this.initialRange.finish(true);
       this.renderer.syncInitialPosition();
+      this.invalidate();
+    } else {
+      this.initialRange.retryOnNextFrame();
     }
-    this.invalidate();
   };
 }
