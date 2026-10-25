@@ -102,6 +102,9 @@ describe("Control UI build chunking", () => {
     const newSession = modulePath("../pages/new-session/new-session-page.tsx");
     const optional = modulePath("../components/assistant-panel-content-solid.tsx");
     const devices = modulePath("../pages/devices/devices-page.tsx");
+    const talk = modulePath("../pages/talk/talk-page.tsx");
+    const skeleton = modulePath("../components/solid/panel-loading-skeleton.tsx");
+    const skeletonStyle = `${modulePath("../styles/panel-loading-skeleton.css")}?inline`;
     const sharedUi = modulePath("../components/select-picker-view.tsx");
     const pluginActions = modulePath("../plugins/control-ui-actions.ts");
     const pluginLoader = modulePath("../plugins/control-ui-loader.ts");
@@ -126,11 +129,11 @@ describe("Control UI build chunking", () => {
     const sources = new Map([
       [
         entry,
-        `export const chat = () => import(${JSON.stringify(chat)}); export const newSession = () => import(${JSON.stringify(newSession)}); export const devices = () => import(${JSON.stringify(devices)}); export const plugins = () => import(${JSON.stringify(pluginLoader)}); export const mutate = () => import(${JSON.stringify(mutations)}); export const copy = () => import(${JSON.stringify(copy)}); export const online = () => import(${JSON.stringify(online)}); export const deliver = () => import(${JSON.stringify(delivery)}); export const live = () => import(${JSON.stringify(live)}); export const tools = () => import(${JSON.stringify(tools)});`,
+        `export const chat = () => import(${JSON.stringify(chat)}); export const newSession = () => import(${JSON.stringify(newSession)}); export const devices = () => import(${JSON.stringify(devices)}); export const talk = () => import(${JSON.stringify(talk)}); export const plugins = () => import(${JSON.stringify(pluginLoader)}); export const mutate = () => import(${JSON.stringify(mutations)}); export const copy = () => import(${JSON.stringify(copy)}); export const online = () => import(${JSON.stringify(online)}); export const deliver = () => import(${JSON.stringify(delivery)}); export const live = () => import(${JSON.stringify(live)}); export const tools = () => import(${JSON.stringify(tools)});`,
       ],
       [
         chat,
-        `import ${JSON.stringify(sharedStyle)}; import ${JSON.stringify(transcriptStyle)}; import { label } from ${JSON.stringify(sharedUi)}; import { action } from ${JSON.stringify(pluginActions)}; import { patch } from ${JSON.stringify(mutations)}; export { version } from ${JSON.stringify(inlineView)}; export class Chat { label = patch(action(label)); } export const openPanel = () => import(${JSON.stringify(optional)});`,
+        `import ${JSON.stringify(sharedStyle)}; import ${JSON.stringify(transcriptStyle)}; import { label } from ${JSON.stringify(sharedUi)}; import { action } from ${JSON.stringify(pluginActions)}; import { patch } from ${JSON.stringify(mutations)}; export { version } from ${JSON.stringify(inlineView)}; export { skeleton } from ${JSON.stringify(skeleton)}; export class Chat { label = patch(action(label)); } export const openPanel = () => import(${JSON.stringify(optional)});`,
       ],
       [
         newSession,
@@ -138,6 +141,9 @@ describe("Control UI build chunking", () => {
       ],
       [optional, `import ${JSON.stringify(optionalStyle)}; export const panel = "optional-panel";`],
       [devices, 'export const page = "devices-page";'],
+      [talk, `export { skeleton } from ${JSON.stringify(skeleton)};`],
+      [skeleton, `import css from ${JSON.stringify(skeletonStyle)}; export const skeleton = css;`],
+      [skeletonStyle, ".skeleton-fixture { color: purple; }"],
       [sharedUi, `import inline from ${JSON.stringify(inlineStyle)}; export const label = inline;`],
       [pluginActions, "export const action = (label) => label;"],
       [
@@ -280,6 +286,9 @@ describe("Control UI build chunking", () => {
     expect(staticImports(mutationChunk.fileName)).not.toContain(chatChunk.fileName);
     expect(staticImports(mutationChunk.fileName)).not.toContain(sharedChunk.fileName);
     const devicesChunk = chunks.find((chunk) => devices in chunk.modules)!;
+    const talkChunk = chunks.find((chunk) => talk in chunk.modules)!;
+    expect(staticImports(talkChunk.fileName)).not.toContain(chatChunk.fileName);
+    expect(staticImports(talkChunk.fileName)).not.toContain(newSessionChunk.fileName);
     expect(staticImports(chatChunk.fileName)).not.toContain(devicesChunk.fileName);
     expect(staticImports(newSessionChunk.fileName)).not.toContain(devicesChunk.fileName);
     const deferred = chunks.find((chunk) => optional in chunk.modules)!;
@@ -323,7 +332,24 @@ describe("Control UI build chunking", () => {
       [new URL("../pages/chat/route-entry.ts", import.meta.url).pathname, "chat-route-entry"],
       [new URL("../pages/cron/cron-page.tsx", import.meta.url).pathname, "cron-page"],
       [new URL("../pages/plugins/plugins-page.tsx", import.meta.url).pathname, "plugins-page"],
-      [new URL("../components/markdown-parser.ts", import.meta.url).pathname, undefined],
+      [
+        new URL("../components/markdown-parser.ts", import.meta.url).pathname,
+        "markdown-rendering-runtime",
+      ],
+      [
+        new URL("../components/markdown-json.ts", import.meta.url).pathname,
+        "markdown-rendering-runtime",
+      ],
+      [
+        new URL("../components/markdown-json-parser.runtime.ts", import.meta.url).pathname,
+        "markdown-json-runtime",
+      ],
+      ["/repo/ui/node_modules/jsonc-parser/lib/esm/main.js", "markdown-json-runtime"],
+      [
+        "/repo/ui/node_modules/markdown-it-cjk-friendly/dist/index.js",
+        "markdown-rendering-runtime",
+      ],
+      ["/repo/ui/node_modules/get-east-asian-width/index.js", "markdown-rendering-runtime"],
       ["/repo/ui/src/components/config-form.shared.ts", undefined],
       ["/repo/ui/src/lib/clipboard.ts", undefined],
       ["/repo/ui/src/build-info.ts", undefined],

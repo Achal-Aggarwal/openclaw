@@ -4,14 +4,19 @@ import { loadavg } from "node:os";
 import path from "node:path";
 import { parseArgs } from "node:util";
 import { chromium } from "playwright";
-import { CONTROL_UI_BOOTSTRAP_CONFIG_ATTRIBUTE } from "../src/gateway/control-ui-bootstrap-contract.ts";
+import {
+  CONTROL_UI_BOOTSTRAP_CONFIG_ATTRIBUTE,
+  CONTROL_UI_BOOTSTRAP_CONFIG_PATH,
+} from "../src/gateway/control-ui-bootstrap-contract.ts";
 import {
   installMockGateway,
   controlUiSessionUrl,
+  controlUiBundledGatewayUrl,
   createControlUiMockBootstrapConfig,
   resolvePlaywrightChromiumExecutablePath,
 } from "../ui/src/test-helpers/control-ui-e2e.ts";
 import { startControlUiBenchGatewayServer } from "./lib/control-ui-bench-gateway-server.ts";
+import { startControlUiBenchProxy } from "./lib/control-ui-bench-proxy.ts";
 import {
   prepareColdLoadTraceEvent,
   summarizeColdLoadTrace,
@@ -34,6 +39,10 @@ const { values } = parseArgs({
     pairs: { type: "string" },
     "network-latency-ms": { type: "string", default: "0" },
     "service-worker": { type: "boolean", default: false },
+    http2: { type: "boolean", default: false },
+    "compare-http2": { type: "boolean", default: false },
+    "compare-delivery-hints": { type: "boolean", default: false },
+    "typeface-profile": { type: "string", default: "claw" },
   },
 });
 if (values.coverage && values.trace) {
@@ -46,6 +55,9 @@ if (!values["bundle-dir"] || (!externalGatewayUrl && !values["compare-bundle-dir
 if (externalGatewayUrl) {
   if (!["base", "control", "head"].includes(values.variant ?? "") || !values["expected-build-id"]) {
     throw new Error("gateway-url requires variant=base|control|head and expected-build-id");
+  }
+  if (values.http2 || values["compare-http2"] || values["compare-delivery-hints"]) {
+    throw new Error("HTTP delivery comparisons require a locally owned Gateway");
   }
   if (values["compare-bundle-dir"] || (values.pairs !== undefined && values.pairs !== "1")) {
     throw new Error("gateway-url runs one selected build in one fresh browser process");
@@ -61,6 +73,14 @@ const base = path.resolve(values["bundle-dir"]);
 const head = path.resolve(values["compare-bundle-dir"] ?? values["bundle-dir"]);
 const pairs = Number(values.pairs ?? (externalGatewayUrl ? "1" : "20"));
 const networkLatencyMs = Number(values["network-latency-ms"]);
+if (!["claw", "dash", "system"].includes(values["typeface-profile"])) {
+  throw new Error("typeface-profile must be claw, dash, or system");
+}
+const typefacePreferences = {
+  theme: values["typeface-profile"] === "dash" ? "dash" : "claw",
+  themeMode: "light",
+  ...(values["typeface-profile"] === "system" ? { fontUi: "system", fontChat: "system" } : {}),
+};
 if (
   !Number.isSafeInteger(pairs) ||
   pairs < 1 ||
@@ -109,10 +129,14 @@ const historyMessages = [
 await mkdir(output, { recursive: true });
 const server = externalGatewayUrl ? undefined : await startControlUiBenchGatewayServer(base);
 const gatewayUrl = externalGatewayUrl ?? server!.baseUrl;
+let proxy: Awaited<ReturnType<typeof startControlUiBenchProxy>> | undefined;
 let browser: Awaited<ReturnType<typeof chromium.launch>> | undefined;
 let workerNetwork: Awaited<ReturnType<typeof emulateNavigationWorkerNetwork>> | undefined;
 const results: unknown[] = [];
 try {
+  if (server && (values.http2 || values["compare-http2"])) {
+    proxy = await startControlUiBenchProxy(server.baseUrl);
+  }
   browser = await chromium.launch({
     executablePath: resolvePlaywrightChromiumExecutablePath(chromium.executablePath()),
   });
@@ -125,7 +149,13 @@ try {
   }
   for (let pair = 0; pair < pairs; pair++) {
     for (const [variant, bundle] of variants) {
+      const baseUrl =
+        externalGatewayUrl ??
+        (proxy && (!values["compare-http2"] || variant === "head")
+          ? proxy.baseUrl
+          : server!.baseUrl);
       await server?.selectBuild(bundle);
+      server?.setPreloadHeadersEnabled(!values["compare-delivery-hints"] || variant === "head");
       const source = await readFile(path.join(bundle, "sw.js"), "utf8");
       const buildId = /EMBEDDED_CACHE_VERSION = "([^"]+)"/.exec(source)![1]!;
       if (externalGatewayUrl && buildId !== values["expected-build-id"]) {
@@ -135,6 +165,7 @@ try {
         viewport: { width: 1440, height: 1100 },
         colorScheme: "light",
         serviceWorkers: values["service-worker"] ? "allow" : "block",
+        ignoreHTTPSErrors: Boolean(proxy),
       });
       const page = await context.newPage();
       const errors: string[] = [];
@@ -153,6 +184,17 @@ try {
       const rawTrace: unknown[] = [];
       try {
         const scenario = {
+          methodResponses: {
+            "config.get": {
+              appliedConfigHash: "synthetic-typography",
+              configRevisionHash: "synthetic-typography",
+              hash: "synthetic-typography",
+              config: { ui: { prefs: typefacePreferences } },
+              raw: JSON.stringify({ ui: { prefs: typefacePreferences } }),
+              issues: [],
+              valid: true,
+            },
+          },
           serverBuildId: buildId,
           sessionKey,
           historyMessages,
@@ -164,7 +206,29 @@ try {
             status: "running",
           },
         };
+        server?.setFixtureReader((pathname) =>
+          pathname.endsWith(CONTROL_UI_BOOTSTRAP_CONFIG_PATH)
+            ? {
+                body: JSON.stringify(createControlUiMockBootstrapConfig(scenario)),
+                contentType: "application/json",
+              }
+            : undefined,
+        );
+        await page.addInitScript(
+          ({ gatewayUrl, prefs }) => {
+            if (location.origin !== "null") {
+              localStorage.setItem(
+                `openclaw.control.settings.v1:${gatewayUrl}`,
+                JSON.stringify({ gatewayUrl, ...prefs }),
+              );
+            }
+          },
+          { gatewayUrl: controlUiBundledGatewayUrl(baseUrl), prefs: typefacePreferences },
+        );
         await installMockGateway(page, scenario);
+        // HTTP interception disables the browser cache, including speculative
+        // preload reuse. The isolated server owns the synthetic bootstrap read.
+        if (server) await page.unrouteAll();
         const init = ({
           bootstrap,
           attribute,
@@ -208,6 +272,14 @@ try {
               return longTasks;
             },
           });
+          timings.layoutShift = 0;
+          new PerformanceObserver((entries) => {
+            for (const entry of entries.getEntries()) {
+              if (!Reflect.get(entry, "hadRecentInput")) {
+                timings.layoutShift += Reflect.get(entry, "value");
+              }
+            }
+          }).observe({ type: "layout-shift", buffered: true });
           const visible = (node: Element) => {
             const rect = node.getBoundingClientRect();
             const style = getComputedStyle(node);
@@ -257,6 +329,7 @@ try {
         const responses: Array<{
           url: string;
           protocol?: string;
+          connectionId?: number;
           status: number;
           fromServiceWorker: boolean;
           headers: Record<string, string>;
@@ -282,11 +355,12 @@ try {
           responses.push({
             url: response.url,
             protocol: response.protocol,
+            connectionId: response.connectionId,
             status: response.status,
             fromServiceWorker: response.fromServiceWorker ?? false,
             headers: Object.fromEntries(
               Object.entries(response.headers)
-                .filter(([name]) => /^(cache-control|content-encoding|vary)$/i.test(name))
+                .filter(([name]) => /^(cache-control|content-encoding|vary|link)$/i.test(name))
                 .map(([name, value]) => [name.toLowerCase(), value]),
             ),
           });
@@ -305,10 +379,14 @@ try {
             request.error = event.errorText;
           }
         });
+        const earlyHints: unknown[] = [];
+        cdp.on("Network.responseReceivedEarlyHints", (event) => earlyHints.push(event));
         await cdp.send("Network.enable");
-        let workerSetup: { scriptUrl?: string; navigationPreloadEnabled?: boolean } | undefined;
+        let workerSetup:
+          | { scriptUrl?: string; navigationPreloadEnabled?: boolean; nativeAuthRequests?: number }
+          | undefined;
         if (values["service-worker"]) {
-          await page.goto(controlUiSessionUrl(gatewayUrl, sessionKey));
+          await page.goto(controlUiSessionUrl(baseUrl, sessionKey));
           await page.waitForFunction(() => navigator.serviceWorker.controller !== null);
           workerSetup = await page.evaluate(async () => {
             const registration = await navigator.serviceWorker.ready;
@@ -317,6 +395,20 @@ try {
               navigationPreloadEnabled: (await registration.navigationPreload?.getState())?.enabled,
             };
           });
+          if (server) {
+            const nativeAuthUrl = new URL(controlUiSessionUrl(baseUrl, sessionKey));
+            nativeAuthUrl.searchParams.set("openclaw_http_auth", "1");
+            server.requests.length = 0;
+            await page.goto(nativeAuthUrl.href);
+            workerSetup.nativeAuthRequests = server.requests.filter(
+              (request) => request.url === nativeAuthUrl.pathname + nativeAuthUrl.search,
+            ).length;
+            if (workerSetup.nativeAuthRequests !== 1) {
+              throw new Error(
+                `Native auth navigation sent ${workerSetup.nativeAuthRequests} requests`,
+              );
+            }
+          }
           // Retire the warm document before stopping its worker: its resume and
           // offline-cache probes must not restart it during cold-state setup.
           await page.goto("about:blank");
@@ -324,12 +416,12 @@ try {
           await cdp.send("ServiceWorker.enable");
           await cdp.send("ServiceWorker.stopAllWorkers");
           await cdp.send("Storage.clearDataForOrigin", {
-            origin: new URL(gatewayUrl).origin,
+            origin: new URL(baseUrl).origin,
             storageTypes: "cache_storage,indexeddb,local_storage",
           });
         }
         await cdp.send("Network.clearBrowserCache");
-        await cdp.send("Network.setCacheDisabled", { cacheDisabled: true });
+        await cdp.send("Network.setCacheDisabled", { cacheDisabled: false });
         await cdp.send("Network.emulateNetworkConditions", {
           offline: false,
           latency: networkLatencyMs,
@@ -357,11 +449,12 @@ try {
         const before = (await cdp.send("Performance.getMetrics")).metrics;
         const hostLoad = loadavg();
         responses.length = 0;
+        earlyHints.length = 0;
         requests.length = 0;
         requestsById.clear();
         if (server) server.requests.length = 0;
         const workerRequestStart = workerNetwork?.snapshot().requests.length ?? 0;
-        await page.goto(controlUiSessionUrl(gatewayUrl, sessionKey), {
+        await page.goto(controlUiSessionUrl(baseUrl, sessionKey), {
           waitUntil: "domcontentloaded",
         });
         if (!(await page.evaluate(() => Reflect.has(window, "__richRiskReadiness")))) {
@@ -402,6 +495,7 @@ try {
               transferSize: entry.transferSize,
               url: entry.name,
               initiator: entry.initiatorType,
+              initiatorType: entry.initiatorType,
               startMs: entry.startTime,
               requestMs: entry.requestStart,
               responseMs: entry.responseStart,
@@ -414,6 +508,7 @@ try {
         }));
         const requestSnapshot = requests.map((request) => ({ ...request }));
         const responseSnapshot = [...responses];
+        const earlyHintsSnapshot = [...earlyHints];
         const workerRequestSnapshot = workerNetwork?.snapshot().requests.slice(workerRequestStart);
         const serverRequests = server ? [...server.requests] : undefined;
         const cpu = Object.fromEntries(
@@ -456,7 +551,7 @@ try {
         }
         const networkBytes = summarizeJavaScriptResources(data.resources, coverage);
         if (serverRequests) {
-          const documentPath = new URL(controlUiSessionUrl(gatewayUrl, sessionKey)).pathname;
+          const documentPath = new URL(controlUiSessionUrl(baseUrl, sessionKey)).pathname;
           const documentRequests = serverRequests.filter((request) => request.url === documentPath);
           if (documentRequests.length !== 1) {
             throw new Error(`Expected one document request, received ${documentRequests.length}`);
@@ -466,12 +561,14 @@ try {
           pair,
           variant,
           buildId,
+          gatewayUrl: baseUrl,
           hostLoad,
           ...data,
           responses: responseSnapshot,
           requests: requestSnapshot,
           serverRequests,
           workerRequests: workerRequestSnapshot,
+          earlyHints: earlyHintsSnapshot,
           workerSetup,
           cpu,
           errors,
@@ -497,6 +594,10 @@ try {
               measurementBoundary:
                 "Navigation through first visible composer, completed answer and active answer; no post-readiness settling delay.",
               serviceWorker: values["service-worker"],
+              http2: values.http2,
+              compareHttp2: values["compare-http2"],
+              compareDeliveryHints: values["compare-delivery-hints"],
+              typefaceProfile: values["typeface-profile"],
               results,
             },
             null,
@@ -504,6 +605,7 @@ try {
           ),
         );
         if (pair === 0) {
+          await page.evaluate(() => document.fonts.ready.then(() => undefined));
           await page.screenshot({ path: path.join(output, `${variant}.png`) });
         }
         console.log(
@@ -550,6 +652,10 @@ try {
       await browser?.close();
     }
   } finally {
-    await server?.close();
+    try {
+      await proxy?.close();
+    } finally {
+      await server?.close();
+    }
   }
 }

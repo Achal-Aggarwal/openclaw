@@ -3,7 +3,10 @@ import { expectDefined } from "@openclaw/normalization-core";
 import { Compile } from "typebox/compile";
 import { expect, vi } from "vitest";
 import { ChannelsPairingListResultSchema } from "../../../packages/gateway-protocol/src/schema/channel-pairing.ts";
-import { ChannelsStatusResultSchema } from "../../../packages/gateway-protocol/src/schema/channels.ts";
+import {
+  ChannelsStatusResultSchema,
+  TalkConfigResultSchema,
+} from "../../../packages/gateway-protocol/src/schema/channels.ts";
 import { UpdateStatusResultSchema } from "../../../packages/gateway-protocol/src/schema/config.ts";
 import { MigrationProtocolSchemas } from "../../../packages/gateway-protocol/src/schema/migrations.ts";
 import { SystemAgentChatHistoryResultSchema } from "../../../packages/gateway-protocol/src/schema/openclaw.ts";
@@ -11,6 +14,12 @@ import {
   PluginsCatalogBrowseResultSchema,
   PluginsCatalogCategoriesResultSchema,
 } from "../../../packages/gateway-protocol/src/schema/plugins.ts";
+import { SessionsViewerPresenceSetResultSchema } from "../../../packages/gateway-protocol/src/schema/sessions-viewer-presence.ts";
+import {
+  SessionsBranchesListResultSchema,
+  SessionsCompanionStateResultSchema,
+} from "../../../packages/gateway-protocol/src/schema/sessions.ts";
+import { SystemInfoResultSchema } from "../../../packages/gateway-protocol/src/schema/system-info.ts";
 import { createControlUiCoreBootFixture } from "./control-ui-core-boot-fixture.ts";
 import type { MockGatewayWindow } from "./control-ui-e2e-contract.ts";
 import {
@@ -39,7 +48,7 @@ it("fails an unmodeled strict fixture request through the page error boundary", 
   expect(socket.frames.some((frame) => frame.id === "unmodeled")).toBe(false);
 });
 
-it("answers initial core update status and activity requests under strict admission", async ({
+it("answers core boot and post-transcript requests under strict admission", async ({
   gatewayPage,
 }) => {
   const fixture = createControlUiCoreBootFixture("selected", "fixture-boot");
@@ -49,6 +58,7 @@ it("answers initial core update status and activity requests under strict admiss
       methodResponses: fixture.methodResponses,
     }),
   );
+  gatewayPage.execute(fixture.initScript);
   const errors: string[] = [];
   gatewayPage.window.addEventListener("error", (event) => {
     errors.push(event.message);
@@ -58,6 +68,14 @@ it("answers initial core update status and activity requests under strict admiss
   await flushMockTimers();
   socket.send("updates", "update.status", {});
   socket.send("activity", "presence.activity", {});
+  socket.send("talk", "talk.config", {});
+  socket.send("apps", "mcp.app.discover", { sessionKey: "selected" });
+  socket.send("system", "system.info", {});
+  socket.send("branches", "sessions.branches.list", { sessionKey: "selected" });
+  socket.send("companion", "sessions.companion.state", { sessionKey: "selected" });
+  socket.send("viewers", "sessions.viewers.set", {
+    sessionKeys: ["agent:main:selected", "agent:main:selected"],
+  });
   await flushMockTimers();
   expect(errors).toEqual([]);
   const updates = socket.frames.find((frame) => frame.id === "updates");
@@ -67,6 +85,29 @@ it("answers initial core update status and activity requests under strict admiss
     type: "res",
     ok: true,
     payload: { ok: true },
+  });
+  for (const [id, schema] of [
+    ["talk", TalkConfigResultSchema],
+    ["system", SystemInfoResultSchema],
+    ["branches", SessionsBranchesListResultSchema],
+    ["companion", SessionsCompanionStateResultSchema],
+    ["viewers", SessionsViewerPresenceSetResultSchema],
+  ] as const) {
+    const frame = socket.frames.find((entry) => entry.id === id);
+    expect(frame).toMatchObject({ type: "res", ok: true });
+    expect(Compile(schema).Check(frame?.payload), id).toBe(true);
+  }
+  expect(socket.frames.find((frame) => frame.id === "apps")?.payload).toEqual({
+    servers: [],
+    onboarding: [],
+  });
+  expect(socket.frames.find((frame) => frame.id === "viewers")?.payload).toEqual({
+    sessionKeys: ["agent:main:selected"],
+  });
+  socket.send("clear-viewers", "sessions.viewers.set", { sessionKeys: [] });
+  await flushMockTimers();
+  expect(socket.frames.find((frame) => frame.id === "clear-viewers")?.payload).toEqual({
+    sessionKeys: [],
   });
 });
 

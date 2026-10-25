@@ -1,4 +1,5 @@
 import type { SessionGitHubOptionsResult } from "../../../packages/gateway-protocol/src/schema/session-github-publication.ts";
+import type { SystemInfoResult } from "../../../packages/gateway-protocol/src/schema/system-info.ts";
 import type { ControlUiSessionPullRequestSnapshot } from "../../../src/gateway/control-ui-contract.ts";
 import { CONTROL_UI_SESSION_PULL_REQUESTS_CHANGED_EVENT } from "../../../src/gateway/control-ui-contract.ts";
 import type { MockGatewayWindow } from "./control-ui-e2e-contract.ts";
@@ -46,6 +47,24 @@ export function createControlUiCoreBootFixture(sessionKey: string, gatewayBootId
     methodResponses: {
       "update.status": { sentinel: null, updateAvailable: null },
       "presence.activity": { ok: true },
+      "talk.config": { config: {} },
+      "mcp.app.discover": { servers: [], onboarding: [] },
+      "system.info": {
+        machineName: "Synthetic Gateway",
+        hostname: "gateway.example",
+        platform: "darwin",
+        release: "0",
+        arch: "arm64",
+        osLabel: "Synthetic macOS",
+        nodeVersion: "v26.12.1",
+        pid: 1,
+        uptimeMs: 60000,
+        cpuCount: 4,
+        memoryTotalBytes: 1073741824,
+        memoryFreeBytes: 536870912,
+      } satisfies SystemInfoResult,
+      "sessions.branches.list": { branches: [] },
+      "sessions.companion.state": { exchanges: [] },
       "sessions.github.options": publication,
       "session.discussion.info": { state: "none" },
       "sessions.observer.visibility": { ok: true },
@@ -53,7 +72,7 @@ export function createControlUiCoreBootFixture(sessionKey: string, gatewayBootId
       "session.suggestions.list": { suggestions: [], role: "admin" },
       "mentions.list": { gatewayInstanceId: gatewayBootId, revision: 0, items: [] },
     },
-    initScript: `;(() => { const __name = (fn) => fn; (${installCoreBootPullRequests.toString()})(${JSON.stringify(
+    initScript: `;(() => { const __name = (fn) => fn; (${installCoreBootSubscriptions.toString()})(${JSON.stringify(
       {
         event: CONTROL_UI_SESSION_PULL_REQUESTS_CHANGED_EVENT,
         sessionKey,
@@ -64,7 +83,7 @@ export function createControlUiCoreBootFixture(sessionKey: string, gatewayBootId
 }
 
 /** The production subscription acknowledges a replace-set, then pushes per-session facts. */
-function installCoreBootPullRequests(input: {
+function installCoreBootSubscriptions(input: {
   event: string;
   sessionKey: string;
   snapshot: ControlUiSessionPullRequestSnapshot;
@@ -73,6 +92,18 @@ function installCoreBootPullRequests(input: {
   if (!gateway) {
     throw new Error("Core boot fixture requires the mock Gateway");
   }
+  gateway.setRequestHandler("sessions.viewers.set", ({ params, respond }) => {
+    if (
+      typeof params !== "object" ||
+      params === null ||
+      !("sessionKeys" in params) ||
+      !Array.isArray(params.sessionKeys) ||
+      !params.sessionKeys.every((key) => typeof key === "string")
+    ) {
+      throw new Error("Core boot fixture requires string viewer session keys");
+    }
+    respond({ sessionKeys: [...new Set(params.sessionKeys)] });
+  });
   gateway.setRequestHandler(
     "controlUi.sessionPullRequests.subscribe",
     ({ params, respond, emit }) => {
