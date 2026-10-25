@@ -10,6 +10,71 @@ const paneSelector = ".chat-pane-cache__pane--active";
 const needle = "long-session-search-needle";
 const cpuMetrics = ["TaskDuration", "ScriptDuration", "LayoutDuration", "RecalcStyleDuration"];
 
+async function sampleTranscriptScrollFrames(
+  element: HTMLElement | SVGElement,
+  options: { direction: "top" | "bottom"; trajectory: boolean; count: number },
+) {
+  if (!(element instanceof HTMLElement)) {
+    throw new Error("Transcript is not an HTML scroll element");
+  }
+  const frames: Array<{
+    intervalMs: number;
+    coverage: number;
+    rows: number;
+    rowKeys: Array<string | null>;
+    scrollTop: number;
+    scrollHeight: number;
+    clientHeight: number;
+  }> = [];
+  const startTop = element.scrollTop;
+  let lastTarget = startTop;
+  let previous = performance.now();
+  for (let frame = 0; frame < options.count; frame++) {
+    const now = await new Promise<number>(requestAnimationFrame);
+    const viewport = element.getBoundingClientRect();
+    const rows = [...element.querySelectorAll<HTMLElement>(".chat-virtual-row")];
+    const segments = rows
+      .map((row) => row.getBoundingClientRect())
+      .map(
+        (rect) =>
+          [Math.max(viewport.top, rect.top), Math.min(viewport.bottom, rect.bottom)] as const,
+      )
+      .filter(([top, bottom]) => bottom > top)
+      .toSorted((a, b) => a[0] - b[0]);
+    let covered = 0;
+    let end = viewport.top;
+    for (const [top, bottom] of segments) {
+      covered += Math.max(0, bottom - Math.max(top, end));
+      end = Math.max(end, bottom);
+    }
+    frames.push({
+      intervalMs: now - previous,
+      coverage: covered / viewport.height,
+      rows: rows.length,
+      rowKeys: rows.map((row) => row.getAttribute("data-virtual-row-key")),
+      scrollTop: element.scrollTop,
+      scrollHeight: element.scrollHeight,
+      clientHeight: element.clientHeight,
+    });
+    previous = now;
+    if (options.trajectory && frame < options.count - 1) {
+      lastTarget = options.direction === "top" ? 0 : element.scrollHeight - element.clientHeight;
+      element.scrollTop = startTop + ((lastTarget - startTop) * (frame + 1)) / (options.count - 1);
+    }
+  }
+  return {
+    frames,
+    lastTarget,
+    scrollTop: element.scrollTop,
+    scrollHeight: element.scrollHeight,
+    clientHeight: element.clientHeight,
+    distancePx:
+      options.direction === "top"
+        ? element.scrollTop
+        : element.scrollHeight - element.clientHeight - element.scrollTop,
+  };
+}
+
 export function readLongSessionMessageCount(page: Page, sessionKey: string): Promise<number> {
   return page.evaluate((key) => {
     const pane = document.querySelector(".chat-pane-cache__pane--active");
@@ -297,123 +362,64 @@ export async function probeLongSession(options: {
         await movePointerToTranscript();
         // Reader input retires initial placement and follow commands before the trajectory.
         await page.mouse.wheel(0, direction === "top" ? -1 : 1);
-        return thread.evaluate(async (element, destination) => {
-          if (!(element instanceof HTMLElement)) {
-            throw new Error("Transcript is not an HTML scroll element");
-          }
-          const scroller = element;
-          const frames: Array<{
-            intervalMs: number;
-            coverage: number;
-            rows: number;
-            rowKeys: Array<string | null>;
-            scrollTop: number;
-            scrollHeight: number;
-          }> = [];
-          let previous = performance.now();
-          const startTop = scroller.scrollTop;
-          let lastTarget = startTop;
-          const sampleFrame = async () => {
-            const now = await new Promise<number>(requestAnimationFrame);
-            const viewport = scroller.getBoundingClientRect();
-            const rows = [...scroller.querySelectorAll<HTMLElement>(".chat-virtual-row")];
-            const segments = rows
-              .map((row) => row.getBoundingClientRect())
-              .map(
-                (rect) =>
-                  [
-                    Math.max(viewport.top, rect.top),
-                    Math.min(viewport.bottom, rect.bottom),
-                  ] as const,
-              )
-              .filter(([top, bottom]) => bottom > top)
-              .toSorted((a, b) => a[0] - b[0]);
-            let covered = 0;
-            let end = viewport.top;
-            for (const [top, bottom] of segments) {
-              covered += Math.max(0, bottom - Math.max(top, end));
-              end = Math.max(end, bottom);
-            }
-            const sample = {
-              intervalMs: now - previous,
-              coverage: covered / viewport.height,
-              rows: rows.length,
-              rowKeys: rows.map((row) => row.getAttribute("data-virtual-row-key")),
-              scrollTop: scroller.scrollTop,
-              scrollHeight: scroller.scrollHeight,
-            };
-            previous = now;
-            return sample;
+        const trajectory = await thread.evaluate(sampleTranscriptScrollFrames, {
+          direction,
+          trajectory: true,
+          count: 61,
+        });
+        // Preserve the synthetic sweep's gap before testing real reader completion.
+        let endpoint = await thread.evaluate(sampleTranscriptScrollFrames, {
+          direction,
+          trajectory: false,
+          count: 2,
+        });
+        const settleFrames = [...endpoint.frames];
+        let correction: {
+          kind: "native-wheel";
+          distancePx: number;
+          scrollHeight: number;
+          scrollTop: number;
+          deltaY: number;
+        } | null = null;
+        if (endpoint.distancePx > 2) {
+          const deltaY =
+            (direction === "top" ? -1 : 1) * (endpoint.distancePx + endpoint.clientHeight);
+          correction = {
+            kind: "native-wheel",
+            distancePx: endpoint.distancePx,
+            scrollHeight: endpoint.scrollHeight,
+            scrollTop: endpoint.scrollTop,
+            deltaY,
           };
-          for (let frame = 0; frame <= 60; frame++) {
-            frames.push(await sampleFrame());
-            if (frame < 60) {
-              const target =
-                destination === "top" ? 0 : scroller.scrollHeight - scroller.clientHeight;
-              lastTarget = target;
-              scroller.scrollTop = startTop + ((target - startTop) * (frame + 1)) / 60;
-            }
-          }
-          const readDistance = () =>
-            destination === "top"
-              ? scroller.scrollTop
-              : scroller.scrollHeight - scroller.clientHeight - scroller.scrollTop;
-          const trajectoryEnd = {
-            distancePx: readDistance(),
-            scrollHeight: scroller.scrollHeight,
-            lastTarget,
-          };
-          const settleFrames: typeof frames = [];
-          let correction: { distancePx: number; scrollHeight: number } | null = null;
-          // A row first measured on the last trajectory frame can move the end.
-          // Preserve that gap, then finish this reader-directed scroll once.
-          if (
-            destination === "bottom" &&
-            readDistance() > 2 &&
-            Math.abs(scroller.scrollHeight - scroller.clientHeight - lastTarget) > 2
-          ) {
-            for (let frame = 0; frame < 2; frame++) {
-              settleFrames.push(await sampleFrame());
-            }
-            if (
-              readDistance() > 2 &&
-              Math.abs(scroller.scrollHeight - scroller.clientHeight - lastTarget) > 2
-            ) {
-              correction = { distancePx: readDistance(), scrollHeight: scroller.scrollHeight };
-              scroller.scrollTop = scroller.scrollHeight - scroller.clientHeight;
-              for (let frame = 0; frame < 2; frame++) {
-                settleFrames.push(await sampleFrame());
-              }
-            }
-          }
-          const distance = readDistance();
-          if (distance > 2) {
-            Reflect.set(window, "__longSessionScrollFailure", {
-              direction: destination,
-              frames,
-              settleFrames,
-              trajectoryEnd,
-              correction,
-              distance,
-            });
-            throw new Error(`Scroll did not reach ${destination}: ${distance}px remaining`);
-          }
-          return {
-            direction: destination,
-            frames,
-            settleFrames,
-            trajectoryEnd,
-            correction,
-            endpointDistancePx: distance,
-            blankFrames: frames.filter((frame) => frame.coverage === 0).length,
-            maxRows: Math.max(...frames.map((frame) => frame.rows)),
-            frameGapsOver50Ms: frames.filter((frame) => frame.intervalMs > 50).length,
-            estimatedDroppedFrames60Hz: frames.reduce(
-              (sum, frame) => sum + Math.max(0, Math.round(frame.intervalMs / (1000 / 60)) - 1),
-              0,
-            ),
-          };
-        }, direction);
+          await page.mouse.wheel(0, deltaY);
+          endpoint = await thread.evaluate(sampleTranscriptScrollFrames, {
+            direction,
+            trajectory: false,
+            count: 2,
+          });
+          settleFrames.push(...endpoint.frames);
+        }
+        return {
+          endpointProtocol: "native-wheel-v3",
+          direction,
+          frames: trajectory.frames,
+          settleFrames,
+          trajectoryEnd: {
+            distancePx: trajectory.distancePx,
+            scrollHeight: trajectory.scrollHeight,
+            scrollTop: trajectory.scrollTop,
+            lastTarget: trajectory.lastTarget,
+          },
+          correction,
+          endpointDistancePx: endpoint.distancePx,
+          blankFrames: trajectory.frames.filter((frame) => frame.coverage === 0).length,
+          maxRows: Math.max(...trajectory.frames.map((frame) => frame.rows)),
+          frameGapsOver50Ms: trajectory.frames.filter((frame) => frame.intervalMs > 50).length,
+          estimatedDroppedFrames60Hz: trajectory.frames.reduce(
+            (sum, frame) => sum + Math.max(0, Math.round(frame.intervalMs / (1000 / 60)) - 1),
+            0,
+          ),
+        };
       },
       async () => {
         settledDistancePx = await thread.evaluate((scroller, destination) => {
@@ -429,21 +435,15 @@ export async function probeLongSession(options: {
       },
       async (error, trajectory) => {
         try {
-          const failure =
-            trajectory ??
-            (await page.evaluate(() => {
-              const savedFailure: unknown = Reflect.get(window, "__longSessionScrollFailure");
-              Reflect.deleteProperty(window, "__longSessionScrollFailure");
-              return savedFailure;
-            }));
           await writeFile(
             path.join(artifactDir, `${prefix}.scroll-failure.json`),
-            JSON.stringify({ direction, error: String(error), trajectory: failure }, null, 2),
+            JSON.stringify({ direction, error: String(error), trajectory }, null, 2),
           );
         } catch (captureError) {
           console.warn("Could not save the failed scroll trajectory:", captureError);
         }
       },
+      0,
     );
     return { ...timing, result: { ...value, settledDistancePx, longTasks, maxLongTaskMs } };
   };
@@ -457,6 +457,7 @@ export async function probeLongSession(options: {
     action: () => Promise<T>,
     afterRender?: () => Promise<void>,
     onFailure?: (error: unknown, value: T | undefined) => Promise<void>,
+    settleFrameCount = 2,
   ) => {
     const measured = await measure(async () => {
       await page.evaluate(() => {
@@ -472,7 +473,9 @@ export async function probeLongSession(options: {
       let value: T | undefined;
       try {
         value = await action();
-        await renderFrames();
+        if (settleFrameCount > 0) {
+          await renderFrames(settleFrameCount);
+        }
         if (afterRender) {
           await afterRender();
         }
@@ -507,7 +510,7 @@ export async function probeLongSession(options: {
   const save = async <T extends object>(result: T) => {
     const report = {
       measurement:
-        "Synthetic production UI; automation-to-visible/focus wall time and CDP duration deltas. Dedicated actions end after their DOM identity assertions and two rendering opportunities, not compositor presentation. Scroll includes real wheel admission, 60-frame native scrollTop trajectories, two rendering opportunities and a final endpoint check. If the last frame changes the bottom extent, separately sampled settling frames and at most one final retarget remain inside the measured action; the original gap is retained. One observer covers that entire action. Geometric row coverage is not compositor paint proof. Explicit GC and heap snapshots are outside action timings. CPU includes measurement overhead; compare identical paired instrumentation.",
+        "Synthetic production UI; automation-to-visible/focus wall time and CDP duration deltas. Dedicated actions end after their DOM identity assertions and two rendering opportunities, not compositor presentation. Scroll includes real wheel admission, a 61-sample programmatic scrollTop trajectory and two sampled settling frames. Its raw endpoint gap remains recorded. If needed, one native wheel input and two more sampled frames measure user-directed endpoint completion; the final endpoint must be within two pixels. Both phases remain inside the measured action. One observer covers that entire action. Geometric row coverage is not compositor paint proof. Explicit GC and heap snapshots are outside action timings. CPU includes measurement overhead; compare identical paired instrumentation.",
       scenario: workload.scenario,
       sessionKey,
       initialMemory,

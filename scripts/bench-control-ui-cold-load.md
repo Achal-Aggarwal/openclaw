@@ -40,14 +40,16 @@ measurements, so a bounded inner window can pass without mounting every message.
 Expansion/collapse timings end after the asserted disclosure/entry DOM and two
 rendering opportunities, not a compositor paint acknowledgment. Scroll trajectories
 begin with real wheel input to retire placement/follow commands through the reader-input owner.
-One long-task observer covers hover, wheel admission, the trajectory, and two
-settling frames; the endpoint is checked again after those final frames.
-If the last trajectory frame changes the bottom extent, the probe retains the
-original endpoint gap, samples two settling frames, and permits one final move
-to the new bottom followed by two more sampled frames. That continuation stays
-inside the action's CPU, wall-time, and long-task measurements; its frames and
-correction are recorded separately from the original 61 trajectory samples.
-Top endpoints remain strict, and every final endpoint must be within two pixels.
+The fast sweep uses 60 programmatic `scrollTop` assignments and retains all 61
+sampled frames, including its raw endpoint gap. Row measurements can displace
+that synthetic target; a nonzero gap remains a reported trajectory problem.
+Endpoint completion is a separate measured phase: after two sampled settling
+frames, at most one native wheel input requests the remaining distance plus one
+viewport, followed by two more sampled frames. The final endpoint must be within
+two pixels in either direction. This proves reader-directed completion, not
+automatic anchor recovery. One long-task observer and the CPU/wall interval cover
+hover, wheel admission, the full sweep, settling, and native completion. Reports
+keep the sweep and completion frames separate; neither phase is discarded.
 Each scroll frame retains ordered virtual-row keys alongside row counts, so
 membership changes and reentries can be distinguished from viewport geometry.
 Collapse starts
