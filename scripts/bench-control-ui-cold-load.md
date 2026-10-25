@@ -18,6 +18,8 @@ checks the actual loaded transcript count against the fixture (or the initial
 page size for `paging`); warm restores can otherwise contain only the latest 80
 messages. Full-history scenarios intentionally return all records in their
 synthetic startup response. Use `paging` to exercise bounded history responses.
+Switch-in also checks and records the full expected count before its measured
+callback returns; `visibleMs` remains the earlier first-row visibility time.
 
 `--long-session-scenario` selects a dedicated workload while retaining the same
 production server, browser, fixture clock, network profile, and paired-run loop:

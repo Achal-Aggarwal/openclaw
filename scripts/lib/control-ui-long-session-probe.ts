@@ -2,12 +2,27 @@ import { closeSync, openSync, readSync, writeSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { CDPSession, Page } from "playwright";
+import type { ChatMessageCache } from "../../ui/src/pages/chat/session-message-cache.ts";
 import type { ControlUiMockGateway } from "../../ui/src/test-helpers/control-ui-e2e-contract.ts";
 import type { LongSessionWorkload } from "../../ui/src/test-helpers/control-ui-team-scale-history-fixture.ts";
 
 const paneSelector = ".chat-pane-cache__pane--active";
 const needle = "long-session-search-needle";
 const cpuMetrics = ["TaskDuration", "ScriptDuration", "LayoutDuration", "RecalcStyleDuration"];
+
+export function readLongSessionMessageCount(page: Page, sessionKey: string): Promise<number> {
+  return page.evaluate((key) => {
+    const pane = document.querySelector(".chat-pane-cache__pane--active");
+    const cache: ChatMessageCache | undefined = pane
+      ? Reflect.get(pane, "chatMessagesBySession")
+      : undefined;
+    const entry = cache && [...cache].find(([scope]) => scope.endsWith(`\u0000${key}`));
+    if (!entry) {
+      throw new Error("Long-session measurement requires the active transcript cache owner");
+    }
+    return entry[1].snapshot.messages.length;
+  }, sessionKey);
+}
 
 /** Read only metadata and numeric nodes; large edge/string tables never enter the JS heap. */
 function countDetachedHeapNodes(file: string) {
@@ -135,6 +150,7 @@ export async function probeLongSession(options: {
   prefix: string;
   sessionKey: string;
   otherSessionKey: string;
+  messageCount: number;
   captureHeap?: boolean;
   workload?: LongSessionWorkload;
 }) {
@@ -145,6 +161,7 @@ export async function probeLongSession(options: {
     prefix,
     sessionKey,
     otherSessionKey,
+    messageCount,
     captureHeap = true,
     workload = { scenario: "mixed" },
   } = options;
@@ -626,7 +643,14 @@ export async function probeLongSession(options: {
       await visible(key);
       const visibleMs = await page.evaluate((origin) => performance.now() - origin, start);
       await ready(key);
-      return { sessionKey: key, visibleMs };
+      const loadedMessages =
+        key === sessionKey ? await readLongSessionMessageCount(page, key) : undefined;
+      if (key === sessionKey && loadedMessages !== messageCount) {
+        throw new Error(
+          `Long-session switch loaded ${loadedMessages} messages; expected ${messageCount}`,
+        );
+      }
+      return { sessionKey: key, visibleMs, loadedMessages };
     });
   const switchOut = await switchTo(otherSessionKey);
   const switchIn = await switchTo(sessionKey);
