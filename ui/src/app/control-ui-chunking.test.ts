@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { build } from "vite";
 import { describe, expect, it } from "vitest";
+import { collectControlUiBootAssets } from "../../config/control-ui-boot-preloads.ts";
 import {
   controlUiBootManifestKey,
   controlUiCodeSplitting,
@@ -108,6 +109,13 @@ describe("Control UI build chunking", () => {
     const receipts = modulePath("../lib/sessions/session-patch-row-facts.ts");
     const creation = modulePath("../lib/sessions/create.ts");
     const unread = modulePath("../../../src/shared/session-unread.ts");
+    const copy = modulePath("../components/solid/copy-button.tsx");
+    const online = modulePath("../components/app-sidebar-online.tsx");
+    const delivery = modulePath("../pages/chat/chat-send-delivery.runtime.ts");
+    const live = modulePath("../pages/chat/chat-live-events.runtime.ts");
+    const tools = modulePath("../pages/chat/chat-tool-family-runtime.ts");
+    const diff = modulePath("../lib/chat/tool-call-diff.ts");
+    const preamble = modulePath("../../../src/agents/agent-activity-presentation.ts");
     const sharedStyle = modulePath("../styles/select-picker.css");
     const transcriptStyle = modulePath("../styles/chat/grouped.css");
     const sidebarStyle = modulePath("../styles/sidebar-reorder.css");
@@ -117,7 +125,7 @@ describe("Control UI build chunking", () => {
     const sources = new Map([
       [
         entry,
-        `export const chat = () => import(${JSON.stringify(chat)}); export const newSession = () => import(${JSON.stringify(newSession)}); export const devices = () => import(${JSON.stringify(devices)}); export const plugins = () => import(${JSON.stringify(pluginLoader)}); export const mutate = () => import(${JSON.stringify(mutations)});`,
+        `export const chat = () => import(${JSON.stringify(chat)}); export const newSession = () => import(${JSON.stringify(newSession)}); export const devices = () => import(${JSON.stringify(devices)}); export const plugins = () => import(${JSON.stringify(pluginLoader)}); export const mutate = () => import(${JSON.stringify(mutations)}); export const copy = () => import(${JSON.stringify(copy)}); export const online = () => import(${JSON.stringify(online)}); export const deliver = () => import(${JSON.stringify(delivery)}); export const live = () => import(${JSON.stringify(live)}); export const tools = () => import(${JSON.stringify(tools)});`,
       ],
       [
         chat,
@@ -139,6 +147,16 @@ describe("Control UI build chunking", () => {
       [creation, "export const create = () => 'created';"],
       [receipts, `export { patch } from ${JSON.stringify(unread)};`],
       [unread, "export const patch = (value) => value;"],
+      [copy, "export const copy = () => 'copied';"],
+      [online, "export const online = () => 'online';"],
+      [delivery, "export const deliver = () => 'delivered';"],
+      [
+        live,
+        `import { diff } from ${JSON.stringify(diff)}; import { preamble } from ${JSON.stringify(preamble)}; export const live = () => diff() + preamble();`,
+      ],
+      [tools, "export const tools = () => 'tools';"],
+      [diff, "export const diff = () => 'diff';"],
+      [preamble, "export const preamble = () => 'preamble';"],
       [sharedStyle, ".shared-fixture { color: red; }"],
       [transcriptStyle, ".transcript-fixture { color: green; }"],
       [sidebarStyle, ".sidebar-fixture { color: blue; }"],
@@ -233,6 +251,25 @@ describe("Control UI build chunking", () => {
     expect(staticImports(pluginChunk.fileName)).not.toContain(chatChunk.fileName);
     const entryChunk = chunks.find((chunk) => chunk.isEntry)!;
     expect(staticImports(entryChunk.fileName)).not.toContain(actionChunk.fileName);
+    const copyChunk = chunks.find((chunk) => copy in chunk.modules)!;
+    const onlineChunk = chunks.find((chunk) => online in chunk.modules)!;
+    expect(copyChunk.fileName).toBe(onlineChunk.fileName);
+    expect(staticImports(entryChunk.fileName)).not.toContain(copyChunk.fileName);
+    const liveChunk = chunks.find((chunk) => live in chunk.modules)!;
+    const deliveryChunk = chunks.find((chunk) => delivery in chunk.modules)!;
+    const toolChunk = chunks.find((chunk) => tools in chunk.modules)!;
+    expect(liveChunk.fileName).toBe(deliveryChunk.fileName);
+    expect(staticImports(entryChunk.fileName)).not.toContain(liveChunk.fileName);
+    expect(staticImports(liveChunk.fileName)).not.toContain(toolChunk.fileName);
+    const boot = collectControlUiBootAssets(
+      Object.fromEntries(result.output.map((asset) => [asset.fileName, asset])),
+    );
+    expect(boot.chat).toContain(copyChunk.fileName);
+    expect(boot.new).toContain(copyChunk.fileName);
+    expect(boot.chat).toContain(liveChunk.fileName);
+    expect(boot.new).not.toContain(liveChunk.fileName);
+    expect(boot.initial).not.toContain(copyChunk.fileName);
+    expect(boot.initial).not.toContain(liveChunk.fileName);
     const mutationChunk = chunks.find((chunk) => mutations in chunk.modules)!;
     expect(staticImports(entryChunk.fileName)).not.toContain(mutationChunk.fileName);
     expect(staticImports(mutationChunk.fileName)).not.toContain(chatChunk.fileName);

@@ -79,8 +79,6 @@ export function controlUiStableChunkName(id: string): string | undefined {
     case "ui/src/lib/chat/source-previews.ts":
     case "ui/src/pages/chat/components/chat-tool-cards.runtime.ts":
     case "ui/src/pages/chat/components/chat-tool-render-model.ts":
-    case "ui/src/lib/chat/tool-call-diff.ts":
-    case "src/agents/agent-activity-presentation.ts":
     case "ui/src/pages/chat/chat-tool-presentation.runtime.ts":
     case "ui/src/pages/chat/components/chat-tool-outcome-summary.solid.tsx":
     case "ui/src/pages/chat/components/chat-permission-card.tsx":
@@ -127,6 +125,12 @@ export function controlUiStableChunkName(id: string): string | undefined {
     case "ui/src/pages/chat/chat-pane-session-metadata-patch.ts":
     case "ui/src/pages/chat/chat-pane-session-operations.ts":
     case "ui/src/pages/chat/chat-pane-session-operations.runtime.ts":
+    case "ui/src/pages/chat/chat-live-events.runtime.ts":
+    case "ui/src/pages/chat/chat-gateway.ts":
+    case "ui/src/pages/chat/tool-stream.ts":
+    case "ui/src/pages/chat/tool-stream-status.ts":
+    case "ui/src/pages/chat/tool-stream-preamble.ts":
+      // Chat already preloads both families; their initializers still run only on use.
       return "chat-interaction-runtime";
     case "ui/src/pages/chat/components/chat-context-breakdown.tsx":
     case "ui/src/pages/chat/components/chat-context-breakdown-model.ts":
@@ -143,12 +147,6 @@ export function controlUiStableChunkName(id: string): string | undefined {
       return "chat-details-people-list";
     case "ui/src/lib/nodes/device-signing.runtime.ts":
       return "device-signing-runtime";
-    case "ui/src/pages/chat/chat-live-events.runtime.ts":
-    case "ui/src/pages/chat/chat-gateway.ts":
-    case "ui/src/pages/chat/tool-stream.ts":
-    case "ui/src/pages/chat/tool-stream-status.ts":
-    case "ui/src/pages/chat/tool-stream-preamble.ts":
-      return "chat-live-events-runtime";
     case "ui/src/pages/chat/chat-mobile-host.runtime.tsx":
     case "ui/src/pages/chat/chat-mobile-scroll-fades.runtime.ts":
     case "ui/src/pages/chat/components/chat-mobile-people-grid.tsx":
@@ -220,6 +218,8 @@ export function controlUiStableChunkName(id: string): string | undefined {
       return "plugin-contracts-runtime";
     case "ui/src/components/solid/copy-button.tsx":
     case "ui/src/components/copy-button-state.ts":
+    case "ui/src/components/app-sidebar-online.tsx":
+      // Both routes preload these; standalone copy surfaces also download the small Online view.
       // Login recovery also copies commands, before any Chat route can load.
       return "copy-button-runtime";
     case "ui/src/components/login-gate-solid.tsx":
