@@ -79,24 +79,6 @@ type RegisteredExecApprovalRequestContext = {
   unavailableReason: ExecApprovalUnavailableReason | null;
 };
 
-type ExecApprovalFollowupTarget = {
-  approvalId: string;
-  agentId?: string;
-  sessionKey?: string;
-  /** Session UUID active when the approval was requested. Lets the followup be
-   *  dropped if `/new` or `/reset` rebinds the session key to a new session. */
-  expectedSessionId?: string;
-  /** Session-store template, so the direct/denied path can resolve the key's
-   *  current sessionId and drop a rebound followup before sending. */
-  sessionStore?: string;
-  turnSourceChannel?: string;
-  turnSourceTo?: string;
-  turnSourceAccountId?: string;
-  turnSourceThreadId?: string | number;
-  direct?: boolean;
-  bashElevated?: ExecElevatedDefaults;
-};
-
 /** Converts a raw approval decision plus fallback policy into execution state. */
 function resolveBaseExecApprovalDecision(params: {
   decision: string | null;
@@ -283,19 +265,18 @@ async function resolveExecApprovalDecisionState<TTimeoutContext = undefined>(
   return { baseDecision, approvedByAsk, deniedReason, timeoutContext };
 }
 
-type ExecApprovalRequestRoute<TTimeoutContext> =
+/** Registers an approval and resolves terminal no-route fallback through the shared policy owner. */
+export async function createExecApprovalRequestRoute<TTimeoutContext = undefined>(
+  params: DefaultExecApprovalRequestParams &
+    Omit<ExecApprovalDecisionParams<TTimeoutContext>, "decision">,
+): Promise<
   | (Omit<RegisteredExecApprovalRequestContext, "preResolvedDecision"> & {
       kind: "inline";
       preResolvedDecision: null;
       state: ExecApprovalDecisionState<TTimeoutContext>;
     })
-  | (RegisteredExecApprovalRequestContext & { kind: "wait" });
-
-/** Registers an approval and resolves terminal no-route fallback through the shared policy owner. */
-export async function createExecApprovalRequestRoute<TTimeoutContext = undefined>(
-  params: DefaultExecApprovalRequestParams &
-    Omit<ExecApprovalDecisionParams<TTimeoutContext>, "decision">,
-): Promise<ExecApprovalRequestRoute<TTimeoutContext>> {
+  | (RegisteredExecApprovalRequestContext & { kind: "wait" })
+> {
   const request = await createAndRegisterDefaultExecApprovalRequest(params);
   if (request.unavailableReason !== "no-approval-route" || request.preResolvedDecision !== null) {
     return { ...request, kind: "wait" };
@@ -391,7 +372,23 @@ export function buildHeadlessExecApprovalDeniedMessage(params: {
 
 /** Sends async approval follow-up results with deduped warning logs on failure. */
 export async function sendExecApprovalFollowupResult(
-  target: ExecApprovalFollowupTarget,
+  target: {
+    approvalId: string;
+    agentId?: string;
+    sessionKey?: string;
+    /** Session UUID active when the approval was requested. Lets the followup be
+     *  dropped if `/new` or `/reset` rebinds the session key to a new session. */
+    expectedSessionId?: string;
+    /** Session-store template, so the direct/denied path can resolve the key's
+     *  current sessionId and drop a rebound followup before sending. */
+    sessionStore?: string;
+    turnSourceChannel?: string;
+    turnSourceTo?: string;
+    turnSourceAccountId?: string;
+    turnSourceThreadId?: string | number;
+    direct?: boolean;
+    bashElevated?: ExecElevatedDefaults;
+  },
   resultText: string,
 ): Promise<void> {
   const runtimeHandoff =

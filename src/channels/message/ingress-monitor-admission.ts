@@ -20,28 +20,26 @@ type AdmissionDrain<TStoredPayload, TMetadata> = ReturnType<
   typeof createChannelIngressDrainOwner<TStoredPayload, TMetadata>
 >;
 
-type ChannelIngressAdmissionOptions<TRaw, TBody, TStoredPayload, TMetadata> = Pick<
-  CreateChannelIngressMonitorOptions<TRaw, TBody, TStoredPayload, TMetadata>,
-  | "payload"
-  | "appendRetryDelaysMs"
-  | "onDurableAdmission"
-  | "onAdmissionFailure"
-  | "reuseAdmissionFactsForFreshClaims"
-  | "prepareAdmission"
-> & {
-  signal: AbortSignal;
-  inspect: (
-    raw: TRaw,
-  ) => ChannelIngressMonitorFacts | null | Promise<ChannelIngressMonitorFacts | null>;
-  getQueue: () => ChannelIngressQueue<TStoredPayload, TMetadata>;
-  pruneBeforeAdmission: () => Promise<void>;
-  getIdleDrain: () => AdmissionDrain<TStoredPayload, TMetadata> | undefined;
-  recoverUntrackedClaim: (drain: AdmissionDrain<TStoredPayload, TMetadata>) => void;
-  scheduleDrainIdleWake: (drain: AdmissionDrain<TStoredPayload, TMetadata>) => void;
-};
-
 export function createChannelIngressAdmission<TRaw, TBody, TStoredPayload, TMetadata>(
-  options: ChannelIngressAdmissionOptions<TRaw, TBody, TStoredPayload, TMetadata>,
+  options: Pick<
+    CreateChannelIngressMonitorOptions<TRaw, TBody, TStoredPayload, TMetadata>,
+    | "payload"
+    | "appendRetryDelaysMs"
+    | "onDurableAdmission"
+    | "onAdmissionFailure"
+    | "reuseAdmissionFactsForFreshClaims"
+    | "prepareAdmission"
+  > & {
+    signal: AbortSignal;
+    inspect: (
+      raw: TRaw,
+    ) => ChannelIngressMonitorFacts | null | Promise<ChannelIngressMonitorFacts | null>;
+    getQueue: () => ChannelIngressQueue<TStoredPayload, TMetadata>;
+    pruneBeforeAdmission: () => Promise<void>;
+    getIdleDrain: () => AdmissionDrain<TStoredPayload, TMetadata> | undefined;
+    recoverUntrackedClaim: (drain: AdmissionDrain<TStoredPayload, TMetadata>) => void;
+    scheduleDrainIdleWake: (drain: AdmissionDrain<TStoredPayload, TMetadata>) => void;
+  },
 ) {
   type Queue = ChannelIngressQueue<TStoredPayload, TMetadata>;
   return async (rawEvents: readonly TRaw[], admitOptions: ChannelIngressAdmissionContext) => {
