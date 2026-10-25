@@ -49,7 +49,7 @@ declare module "@solidjs/web" {
 }
 
 type ModalState = {
-  policy?: ModalPolicy;
+  policy?: ReturnType<typeof createModalPolicy>;
   returnTarget?: { value: HTMLElement | null };
 };
 const states = new WeakMap<OpenClawModalDialog, ModalState>();
@@ -123,17 +123,7 @@ function isRadioInput(element: HTMLElement): element is HTMLInputElement {
   return element.localName === "input" && element.matches("[type=radio i]");
 }
 
-type ModalPolicy = {
-  request(open: boolean): void;
-  setReturnFocusTarget(target: HTMLElement | null): void;
-  getOverlayContainer(): HTMLElement | null;
-  bindDialog: (element: HTMLDialogElement) => void;
-  bindOverlayContainer: (element: HTMLElement) => void;
-  connect(): void;
-  disconnect(): void;
-};
-
-function createModalPolicy(host: OpenClawModalDialog): ModalPolicy {
+function createModalPolicy(host: OpenClawModalDialog) {
   let dialog!: HTMLDialogElement;
   let mounted = false;
   let disposed = false;
@@ -340,9 +330,9 @@ function createModalPolicy(host: OpenClawModalDialog): ModalPolicy {
       programmatic = previousProgrammatic;
     }
   };
-  const policy: ModalPolicy = {
+  const policy = {
     request,
-    setReturnFocusTarget(target) {
+    setReturnFocusTarget(target: HTMLElement | null) {
       if (returnFocusPending) {
         focusReturnVersion += 1;
         clearReturnFocus();
@@ -350,10 +340,10 @@ function createModalPolicy(host: OpenClawModalDialog): ModalPolicy {
       returnOverride = target;
     },
     getOverlayContainer: () => overlayContainer,
-    bindDialog(element) {
+    bindDialog(this: void, element: HTMLDialogElement) {
       dialog = element;
     },
-    bindOverlayContainer(element) {
+    bindOverlayContainer(this: void, element: HTMLElement) {
       overlayContainer = element;
     },
     connect() {

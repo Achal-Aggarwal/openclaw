@@ -106,10 +106,7 @@ function makeRoomForChatAudioBlob(sizeBytes: number): boolean {
   return true;
 }
 
-function retainChatAudioBlobEntry(entry: ChatAudioBlobCacheEntry): {
-  value: CachedChatAudioBlob;
-  release: () => void;
-} {
+function retainChatAudioBlobEntry(entry: ChatAudioBlobCacheEntry) {
   entry.retainCount += 1;
   let released = false;
   return {

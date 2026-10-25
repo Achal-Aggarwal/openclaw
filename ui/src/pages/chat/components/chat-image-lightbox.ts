@@ -13,7 +13,13 @@ export function isImageLightboxEvent(event: Event): boolean {
     );
 }
 
-function inlineChatImageFromEvent(event: Event): HTMLImageElement | null {
+export function openInlineChatImage(
+  event: Event,
+  onOpenImage: ((item: ImageLightboxItem) => void) | undefined,
+): boolean {
+  if (event.defaultPrevented) {
+    return false;
+  }
   const target = event
     .composedPath()
     .find(
@@ -26,18 +32,7 @@ function inlineChatImageFromEvent(event: Event): HTMLImageElement | null {
     target instanceof HTMLImageElement
       ? target
       : (target?.querySelector<HTMLImageElement>(".markdown-inline-image") ?? null);
-  return image?.closest("a") ? null : image;
-}
-
-export function openInlineChatImage(
-  event: Event,
-  onOpenImage: ((item: ImageLightboxItem) => void) | undefined,
-): boolean {
-  if (event.defaultPrevented) {
-    return false;
-  }
-  const image = inlineChatImageFromEvent(event);
-  if (!image) {
+  if (!image || image.closest("a")) {
     return false;
   }
   event.preventDefault();

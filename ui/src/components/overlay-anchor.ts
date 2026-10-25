@@ -16,22 +16,11 @@ type AnchorElement = HTMLElement | SVGElement;
 type Binding = { name: string; anchor?: AnchorElement; placement: OverlayPlacement };
 type AnchorNames = { original: string; priority: string; names: Set<string> };
 
-export interface OverlayAnchorBinding {
-  update(anchor: AnchorElement, placement?: OverlayPlacement): void;
-  dispose(): void;
-}
-
-type SurfaceAnchor = {
-  readonly sameRoot: boolean;
-  update(binding: Binding): void;
-  remove(binding: Binding): void;
-  show(): void;
-  hide(): void;
-};
+export type OverlayAnchorBinding = ReturnType<typeof createOverlayAnchor>;
 
 let nextAnchor = 0;
 const anchors = new WeakMap<AnchorElement, AnchorNames>();
-const surfaces = new WeakMap<HTMLElement, SurfaceAnchor>();
+const surfaces = new WeakMap<HTMLElement, ReturnType<typeof createSurfaceAnchor>>();
 
 function publishAnchorNames(anchor: AnchorElement, state: AnchorNames) {
   anchor.style.setProperty(
@@ -75,7 +64,7 @@ function removeAnchorName(anchor: AnchorElement, name: string) {
   }
 }
 
-function createSurfaceAnchor(surface: HTMLElement, sameRoot: boolean): SurfaceAnchor {
+function createSurfaceAnchor(surface: HTMLElement, sameRoot: boolean) {
   const bindings: Binding[] = [];
   const original = surface.style.getPropertyValue("position-anchor");
   const priority = surface.style.getPropertyPriority("position-anchor");
@@ -145,9 +134,9 @@ function createSurfaceAnchor(surface: HTMLElement, sameRoot: boolean): SurfaceAn
       schedule();
     });
   };
-  const state: SurfaceAnchor = {
+  const state = {
     sameRoot,
-    update(binding) {
+    update(binding: Binding) {
       const index = bindings.indexOf(binding);
       if (index !== -1) {
         bindings.splice(index, 1);
@@ -156,7 +145,7 @@ function createSurfaceAnchor(surface: HTMLElement, sameRoot: boolean): SurfaceAn
       apply();
       schedule();
     },
-    remove(binding) {
+    remove(binding: Binding) {
       const index = bindings.indexOf(binding);
       if (index !== -1) {
         bindings.splice(index, 1);
@@ -233,13 +222,13 @@ function createSurfaceAnchor(surface: HTMLElement, sameRoot: boolean): SurfaceAn
 export function createOverlayAnchor(
   surface: HTMLElement,
   { sameRoot = false }: { sameRoot?: boolean } = {},
-): OverlayAnchorBinding {
+) {
   const state = surfaces.get(surface) ?? createSurfaceAnchor(surface, sameRoot);
   const binding: Binding = { name: `--oc-overlay-${++nextAnchor}`, placement: "bottom-start" };
   state.update(binding);
   let disposed = false;
   return {
-    update(anchor, placement = "bottom-start") {
+    update(anchor: AnchorElement, placement: OverlayPlacement = "bottom-start") {
       if (disposed) {
         return;
       }

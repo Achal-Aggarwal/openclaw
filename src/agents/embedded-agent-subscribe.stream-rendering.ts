@@ -18,7 +18,6 @@ import {
   readAgentAssistantSource,
 } from "../infra/agent-events.js";
 import { findFinalTagMatches } from "../shared/text/final-tags.js";
-import { hasOrphanReasoningCloseBoundary } from "../shared/text/reasoning-tags.js";
 import {
   createTextProjection,
   trimTextFilter,
@@ -252,7 +251,7 @@ export function createStreamRendering({
           const afterIndex = cursor;
           const before = scanText.slice(lastIndex, idx);
           const after = scanText.slice(afterIndex);
-          if (hasOrphanReasoningCloseBoundary({ before, after })) {
+          if (before.trim().length > 0 && after.trim().length > 0) {
             processed = "";
           } else {
             processed += before;

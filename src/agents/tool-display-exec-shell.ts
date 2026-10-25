@@ -5,11 +5,6 @@
  */
 import { normalizeLowercaseStringOrEmpty } from "@openclaw/normalization-core/string-coerce";
 
-type PreambleResult = {
-  command: string;
-  chdirPath?: string;
-};
-
 export function stripOuterQuotes(value: string | undefined): string | undefined {
   if (!value) {
     return value;
@@ -599,7 +594,7 @@ export function splitTopLevelPipes(command: string): string[] {
 }
 
 /** Removes leading setup commands such as exports and cwd changes from display summaries. */
-export function stripShellPreamble(command: string): PreambleResult {
+export function stripShellPreamble(command: string) {
   let rest = command.trim();
   let chdirPath: string | undefined;
 

@@ -56,7 +56,66 @@ export function createWorkerTaskCompletion<Input, Output>(
     if (!task.owner && !preparation) {
       completion.releaseAdmission(task);
     }
-    return completeWorkerTask(task, completion, error, value, settlementError);
+    const initialSettlementError = settlementError;
+    return task.runInContext(() => {
+      let completionError = error ?? initialSettlementError;
+      const cleanupErrors: Error[] = initialSettlementError ? [initialSettlementError] : [];
+      try {
+        // Retiring completion follows native exit. Queued inputs were never delivered.
+        if (!task.inputConsumed) {
+          task.inputConsumed = true;
+          task.options.onInputConsumed?.();
+        }
+        const release = task.exchange?.onConsumed;
+        task.exchange = undefined;
+        release?.();
+      } catch (releaseError) {
+        const cleanupError = toErrorObject(releaseError, "worker input release failed");
+        cleanupErrors.push(cleanupError);
+        completionError ??= cleanupError;
+      }
+      const receiptError = notifyExecutionSettled(task);
+      if (receiptError) {
+        cleanupErrors.push(receiptError);
+        completionError ??= receiptError;
+      }
+      const permit = task.computePermit;
+      task.computePermit = undefined;
+      if (permit) {
+        completion.releaseCompute(permit);
+      }
+      if (taskDiagnostics.hasSubscribers) {
+        const now = performance.now();
+        taskDiagnostics.publish({
+          ...completion.diagnostics(),
+          outcome: completionError ? "failed" : "ok",
+          queueMs: (task.startedAt ?? now) - task.enqueuedAt,
+          preparationMs:
+            task.startedAt === undefined ? 0 : (task.preparedAt ?? now) - task.startedAt,
+          runMs: task.preparedAt === undefined ? 0 : now - task.preparedAt,
+          transferMs: task.transferMs,
+          hostWaitMs: task.hostWaitMs,
+        });
+      }
+      const firstCleanupError = cleanupErrors[0];
+      const cleanupError =
+        cleanupErrors.length > 1
+          ? new AggregateError(cleanupErrors, "Worker task cleanup failed", {
+              cause: firstCleanupError,
+            })
+          : firstCleanupError;
+      if (task.owner) {
+        if (cleanupError) {
+          throw cleanupError;
+        }
+      } else if (completionError) {
+        task.reject(completionError);
+      } else {
+        // SAFETY: Only a validated successful worker reply supplies the completion value.
+        task.resolve(value as Output);
+      }
+      return cleanupError;
+    });
   };
   if (!preparation) {
     return complete;
@@ -83,71 +142,4 @@ export function createWorkerTaskCompletion<Input, Output>(
       })
       .catch(cleanup.reject);
   };
-}
-
-function completeWorkerTask<Input, Output>(
-  task: Task<Input, Output>,
-  completion: WorkerTaskCompletion<Input, Output>,
-  error?: Error,
-  value?: Output,
-  settlementError?: Error,
-): Error | undefined {
-  return task.runInContext(() => {
-    let completionError = error ?? settlementError;
-    const cleanupErrors: Error[] = settlementError ? [settlementError] : [];
-    try {
-      // Retiring completion follows native exit. Queued inputs were never delivered.
-      if (!task.inputConsumed) {
-        task.inputConsumed = true;
-        task.options.onInputConsumed?.();
-      }
-      const release = task.exchange?.onConsumed;
-      task.exchange = undefined;
-      release?.();
-    } catch (releaseError) {
-      const cleanupError = toErrorObject(releaseError, "worker input release failed");
-      cleanupErrors.push(cleanupError);
-      completionError ??= cleanupError;
-    }
-    const receiptError = notifyExecutionSettled(task);
-    if (receiptError) {
-      cleanupErrors.push(receiptError);
-      completionError ??= receiptError;
-    }
-    const permit = task.computePermit;
-    task.computePermit = undefined;
-    if (permit) {
-      completion.releaseCompute(permit);
-    }
-    if (taskDiagnostics.hasSubscribers) {
-      const now = performance.now();
-      taskDiagnostics.publish({
-        ...completion.diagnostics(),
-        outcome: completionError ? "failed" : "ok",
-        queueMs: (task.startedAt ?? now) - task.enqueuedAt,
-        preparationMs: task.startedAt === undefined ? 0 : (task.preparedAt ?? now) - task.startedAt,
-        runMs: task.preparedAt === undefined ? 0 : now - task.preparedAt,
-        transferMs: task.transferMs,
-        hostWaitMs: task.hostWaitMs,
-      });
-    }
-    const firstCleanupError = cleanupErrors[0];
-    const cleanupError =
-      cleanupErrors.length > 1
-        ? new AggregateError(cleanupErrors, "Worker task cleanup failed", {
-            cause: firstCleanupError,
-          })
-        : firstCleanupError;
-    if (task.owner) {
-      if (cleanupError) {
-        throw cleanupError;
-      }
-    } else if (completionError) {
-      task.reject(completionError);
-    } else {
-      // SAFETY: Only a validated successful worker reply supplies the completion value.
-      task.resolve(value as Output);
-    }
-    return cleanupError;
-  });
 }

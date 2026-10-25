@@ -128,7 +128,7 @@ function sameToolNames(left: readonly string[], right: readonly string[]): boole
  * the concrete host baseline makes the hook an intersection with every host
  * policy while allowing a later prompt build to apply a different cap.
  */
-export function applyPromptBuildToolsAllow<
+function applyPromptBuildToolsAllow<
   TEffectiveTool extends NamedTool,
   TUncompactedTool extends NamedTool,
   TTool extends NamedTool,

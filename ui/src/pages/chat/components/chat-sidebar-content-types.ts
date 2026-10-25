@@ -40,10 +40,8 @@ export type SessionWorkspaceDirectory = {
   error: string | null;
 };
 
-type SessionWorkspaceMobileGroupKind = "changed" | "read" | "artifacts" | "workspace";
-
 export type SessionWorkspaceMobileNavigation = {
-  expandedGroups: Record<SessionWorkspaceMobileGroupKind, boolean>;
+  expandedGroups: Record<"changed" | "read" | "artifacts" | "workspace", boolean>;
   scrollTop: number;
   locations: Record<string, { search: string; filter: SessionWorkspaceFilter; scrollTop: number }>;
 };
@@ -102,13 +100,6 @@ export type SessionDiffOwner = { agentId: string; sessionKey: string };
 
 export type SessionDiffFileView = "reading" | "highlighted" | "plain" | "edit";
 
-type SessionDiffMobilePageRequest = {
-  key: "session-diff-sync";
-  title: string;
-  /** Invoke in the native page outlet; dispose on Back, retain only while hidden. */
-  render: () => SolidJSX.Element;
-};
-
 export type SessionDiffProps = {
   onScrollPortRef?: (element: HTMLElement) => void | (() => void);
   /** Native host presentation, not the width of the panel. Unknown retains the native UI. */
@@ -130,44 +121,26 @@ export type SessionDiffProps = {
   openFile: ((path: string) => void | Promise<SessionWorkspacePreview | undefined>) | null;
   revealFile: ((path: string) => void) | null;
   openFileView?: ((path: string, view: SessionDiffFileView) => void) | null;
-  onOpenMobilePage?: ((page: SessionDiffMobilePageRequest, source: HTMLElement) => void) | null;
+  onOpenMobilePage?:
+    | ((
+        page: {
+          key: "session-diff-sync";
+          title: string;
+          /** Invoke in the native page outlet; dispose on Back, retain only while hidden. */
+          render: () => SolidJSX.Element;
+        },
+        source: HTMLElement,
+      ) => void)
+    | null;
 };
 
-type SidebarFullMessageRequest = {
+export type SidebarFullMessageLoader = (request: {
   sessionKey: string;
   agentId?: string;
   sessionId?: string;
   messageId: string;
   maxChars?: number;
-};
-
-export type SidebarFullMessageLoader = (
-  request: SidebarFullMessageRequest,
-) => Promise<Partial<ChatMessageGetResult> | null | undefined>;
-
-type MarkdownSidebarContent = {
-  kind: "markdown";
-  file?: FilePreviewSource;
-  content: string;
-  rawText?: string | null;
-  fileLinkSessionKey?: string;
-  fileDownload?: {
-    path: string;
-    name: string;
-    download: (signal: AbortSignal) => Promise<SessionFileDownload | null>;
-  };
-};
-
-type CanvasSidebarContent = {
-  kind: "canvas";
-  docId: string;
-  title?: string;
-  entryUrl: string;
-  preferredHeight?: number;
-  /** Per-preview sandbox ceiling; keeps widget iframes below the global embed mode. */
-  sandbox?: "strict" | "scripts";
-  rawText?: string | null;
-};
+}) => Promise<Partial<ChatMessageGetResult> | null | undefined>;
 
 export type FilePreviewSource = {
   path: string;
@@ -239,36 +212,10 @@ export type AttachmentSidebarContent = Omit<AttachmentSidebarSource, "src"> & {
   rawText?: string | null;
 };
 
-type SessionDiffSidebarContent = {
-  kind: "session-diff";
-  owner: SessionDiffOwner;
-  load: SessionDiffLoader;
-  /** Last accepted native Uncommitted result for this exact diff loader. */
-  uncommitted?: SessionsDiffResult;
-  /** Visible Environment demand shares this content's native diff loader. */
-  requestUncommitted?: () => void | (() => void);
-  onResult?: SessionDiffProps["onResult"];
-  loadFileText?: SessionDiffFileTextLoader;
-  openFile?: (path: string) => void | Promise<SessionWorkspacePreview | undefined>;
-  /** Native host/reader inputs, memoized by the caller for this retained content. */
-  presentation?: Pick<
-    SessionDiffProps,
-    "mobile" | "active" | "openFileView" | "onOpenMobilePage" | "scopeRequest"
-  >;
-  rawText?: string | null;
-};
-
 type FileSaveOutcome =
   | { ok: true; hash: string }
   | { ok: false; code: "conflict" }
   | { ok: false; code: "error"; message: string };
-
-type FileSidebarEdit = {
-  hash: string;
-  save: (params: { content: string; expectedHash: string }) => Promise<FileSaveOutcome>;
-  /** `editable: false` means the latest content no longer qualifies for edit mode. */
-  fetchLatest: () => Promise<{ content: string; hash: string; editable: boolean } | null>;
-};
 
 export type FileReaderView = "reading" | "highlighted" | "plain" | "edit";
 
@@ -312,7 +259,12 @@ export type FileSidebarContent = {
   /** Explicit line/view request; ordinary tab selection retains its identity. */
   navigation?: FileSidebarNavigation;
   rawText?: string | null;
-  edit?: FileSidebarEdit;
+  edit?: {
+    hash: string;
+    save: (params: { content: string; expectedHash: string }) => Promise<FileSaveOutcome>;
+    /** `editable: false` means the latest content no longer qualifies for edit mode. */
+    fetchLatest: () => Promise<{ content: string; hash: string; editable: boolean } | null>;
+  };
 };
 
 export type ToolOutputSidebarContent = {
@@ -322,23 +274,58 @@ export type ToolOutputSidebarContent = {
   agentId?: string;
 };
 
-type McpAppSidebarContent = {
-  kind: "mcp-app";
-  title: string;
-  observeRetirement: import("../../../components/mcp-app-launch.ts").McpAppPanelRetirement;
-  launch: import("../../../components/mcp-app-launch.ts").McpAppOpenDetail;
-  rawText?: null;
-};
-
 export type SidebarContent =
-  | McpAppSidebarContent
+  | {
+      kind: "mcp-app";
+      title: string;
+      observeRetirement: import("../../../components/mcp-app-launch.ts").McpAppPanelRetirement;
+      launch: import("../../../components/mcp-app-launch.ts").McpAppOpenDetail;
+      rawText?: null;
+    }
   | ToolOutputSidebarContent
-  | MarkdownSidebarContent
-  | CanvasSidebarContent
+  | {
+      kind: "markdown";
+      file?: FilePreviewSource;
+      content: string;
+      rawText?: string | null;
+      fileLinkSessionKey?: string;
+      fileDownload?: {
+        path: string;
+        name: string;
+        download: (signal: AbortSignal) => Promise<SessionFileDownload | null>;
+      };
+    }
+  | {
+      kind: "canvas";
+      docId: string;
+      title?: string;
+      entryUrl: string;
+      preferredHeight?: number;
+      /** Per-preview sandbox ceiling; keeps widget iframes below the global embed mode. */
+      sandbox?: "strict" | "scripts";
+      rawText?: string | null;
+    }
   | ImageSidebarContent
   | AttachmentSidebarContent
   | FileSidebarContent
-  | SessionDiffSidebarContent;
+  | {
+      kind: "session-diff";
+      owner: SessionDiffOwner;
+      load: SessionDiffLoader;
+      /** Last accepted native Uncommitted result for this exact diff loader. */
+      uncommitted?: SessionsDiffResult;
+      /** Visible Environment demand shares this content's native diff loader. */
+      requestUncommitted?: () => void | (() => void);
+      onResult?: SessionDiffProps["onResult"];
+      loadFileText?: SessionDiffFileTextLoader;
+      openFile?: (path: string) => void | Promise<SessionWorkspacePreview | undefined>;
+      /** Native host/reader inputs, memoized by the caller for this retained content. */
+      presentation?: Pick<
+        SessionDiffProps,
+        "mobile" | "active" | "openFileView" | "onOpenMobilePage" | "scopeRequest"
+      >;
+      rawText?: string | null;
+    };
 
 export type ChatDetailPanelContent = Exclude<SidebarContent, { kind: "tool-output" }>;
 

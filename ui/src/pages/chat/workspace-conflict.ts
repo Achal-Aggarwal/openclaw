@@ -77,10 +77,7 @@ export function workspaceConflictCount(conflict: WorkspaceResultConflict): numbe
   return Math.max(conflict.paths.length, conflict.totalCount ?? conflict.paths.length);
 }
 
-export function visibleWorkspaceConflictPaths(conflict: WorkspaceResultConflict): {
-  paths: string[];
-  remaining: number;
-} {
+export function visibleWorkspaceConflictPaths(conflict: WorkspaceResultConflict) {
   const paths = conflict.paths.slice(0, WORKSPACE_CONFLICT_VISIBLE_PATH_LIMIT);
   return {
     paths,
@@ -91,12 +88,7 @@ export function visibleWorkspaceConflictPaths(conflict: WorkspaceResultConflict)
 export function workspaceConflictGitCommands(
   conflict: WorkspaceResultConflict,
   requestedPath?: string,
-):
-  | {
-      inspect: string;
-      takeCloud: string;
-    }
-  | undefined {
+) {
   const entryPath =
     requestedPath === undefined
       ? conflict.paths.find((candidate) => !hasTerminalControl(candidate))

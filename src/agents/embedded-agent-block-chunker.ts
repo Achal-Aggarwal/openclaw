@@ -39,11 +39,6 @@ type BreakResult = {
   fenceSplit?: FenceSplit;
 };
 
-type ParagraphBreak = {
-  index: number;
-  length: number;
-};
-
 export type BlockChunkMetadata = {
   sourceText: string;
   sourceGeneration: number;
@@ -688,7 +683,7 @@ function findNextParagraphBreak(
   fenceSpans: FenceSpan[],
   startIndex = 0,
   minCharsFromStart = 1,
-): ParagraphBreak | null {
+) {
   const re = /\n[\t ]*\n+/g;
   re.lastIndex = startIndex;
   let match: RegExpExecArray | null;

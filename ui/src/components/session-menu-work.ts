@@ -56,10 +56,7 @@ async function loadWorktreePath(params: SessionMenuWorkParams): Promise<string |
   }
 }
 
-export async function fetchSessionMenuWork(params: SessionMenuWorkParams): Promise<{
-  pullRequestUrl: string | null;
-  worktreePath: string | null;
-}> {
+export async function fetchSessionMenuWork(params: SessionMenuWorkParams) {
   const [pullRequestUrl, worktreePath] = await Promise.all([
     loadPullRequestUrl(params),
     loadWorktreePath(params),

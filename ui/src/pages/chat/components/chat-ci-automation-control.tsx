@@ -50,7 +50,9 @@ type AutomationState = {
 };
 type Inventory = { jobs: CiAutomationJobs; schedulerEnabled: boolean };
 
-function createCiAutomation(props: Props, host: SolidBridgeElement<Props>) {
+export type ChatCiAutomationElement = SolidBridgeElement<Props>;
+
+function ChatCiAutomationContent(props: Props, host: SolidBridgeElement<Props>) {
   const [state, setState] = createStore<AutomationState>({
     jobs: {},
     inventoryReady: false,
@@ -425,38 +427,26 @@ function createCiAutomation(props: Props, host: SolidBridgeElement<Props>) {
       },
     };
   });
-  return {
-    view,
-    attempt,
-    read,
-    scope: presentationScope,
-    hasInventory: () => {
-      latest(read);
-      return state.inventoryReady;
-    },
+  const hasInventory = () => {
+    latest(read);
+    return state.inventoryReady;
   };
-}
-
-export type ChatCiAutomationElement = SolidBridgeElement<Props>;
-
-function ChatCiAutomationContent(props: Props, host: SolidBridgeElement<Props>) {
-  const model = createCiAutomation(props, host);
-  const content = (loading = false, error?: () => string, retry?: () => void) => (
+  const content = (loading = false, error?: () => string, resetError?: () => void) => (
     <ChatCiAutomationView
-      {...model.view()}
+      {...view()}
       errorContent={
-        <Show when={error ? undefined : model.attempt()} keyed>
-          {(attempt) => {
-            const outcome = createMemo(() => attempt.result, { loadingValue: undefined });
+        <Show when={error ? undefined : attempt()} keyed>
+          {(mutationAttempt) => {
+            const outcome = createMemo(() => mutationAttempt.result, { loadingValue: undefined });
             return (
               <Errored
                 fallback={(mutationError) => (
                   <ChatCiAutomationError
                     error={formatUiError(mutationError())}
-                    loading={isPending(model.read)}
-                    saving={model.view().saving}
-                    retryDisabled={model.view().retryDisabled}
-                    onRetry={model.view().onRetry}
+                    loading={isPending(read)}
+                    saving={view().saving}
+                    retryDisabled={view().retryDisabled}
+                    onRetry={view().onRetry}
                     controls={props.controls}
                   />
                 )}
@@ -467,29 +457,27 @@ function ChatCiAutomationContent(props: Props, host: SolidBridgeElement<Props>) 
           }}
         </Show>
       }
-      loading={loading || isPending(model.read)}
-      disabled={loading || Boolean(error) || model.view().disabled || !model.hasInventory()}
+      loading={loading || isPending(read)}
+      disabled={loading || Boolean(error) || view().disabled || !hasInventory()}
       error={error ? error() : null}
-      onRetry={retry ?? model.view().onRetry}
+      onRetry={
+        resetError
+          ? () => {
+              view().onRetry();
+              resetError();
+            }
+          : view().onRetry
+      }
       menuPresentation={props.menuPresentation}
       controls={props.controls}
     />
   );
   return (
     <Errored
-      fallback={(error, reset) =>
-        content(
-          false,
-          () => formatUiError(error()),
-          () => {
-            model.view().onRetry();
-            reset();
-          },
-        )
-      }
+      fallback={(error, resetError) => content(false, () => formatUiError(error()), resetError)}
     >
-      <Loading on={model.scope()} fallback={content(true)}>
-        {(latest(model.read), null)}
+      <Loading on={presentationScope()} fallback={content(true)}>
+        {(latest(read), null)}
         {content()}
       </Loading>
     </Errored>

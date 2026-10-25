@@ -398,12 +398,6 @@ export function prepareShellPathFromLoginShell(
   return result;
 }
 
-type UserShellExecutableResolution = {
-  executable: string;
-  /** Present only when the login-shell PATH selected the executable. */
-  pathEnv?: string;
-};
-
 export function resolveExecutableFromUserShellPath(
   executable: string,
   opts: Parameters<typeof getShellPathFromLoginShell>[0] & {
@@ -411,7 +405,7 @@ export function resolveExecutableFromUserShellPath(
     includeExtensionless?: boolean;
     strategy: "fallback" | "prefer";
   },
-): UserShellExecutableResolution | undefined {
+) {
   const direct = resolveExecutableFromPathEnv(
     executable,
     opts.pathEnv ?? opts.env.PATH ?? opts.env.Path ?? "",

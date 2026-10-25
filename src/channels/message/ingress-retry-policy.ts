@@ -97,7 +97,7 @@ export function shouldDeadLetterRetryableIngressEvent(
 }
 
 /** Resolve release vs fail for a dispatch error using optional non-retryable hook. */
-export function resolveIngressFailureDisposition(params: {
+function resolveIngressFailureDisposition(params: {
   err: unknown;
   event: IngressRetryEventFacts;
   formatError: (err: unknown) => string;

@@ -9,13 +9,6 @@ export type FormatDurationSecondsOptions = {
   unit?: "s" | "seconds";
 };
 
-export type FormatDurationCompactOptions = {
-  /** Show year units instead of folding them into days. Default: false */
-  showYears?: boolean;
-  /** Add space between units: "2m 5s" instead of "2m5s". Default: false */
-  spaced?: boolean;
-};
-
 export function formatDurationSeconds(
   ms: number,
   options: FormatDurationSecondsOptions = {},
@@ -57,7 +50,12 @@ export function formatDurationPrecise(
  */
 export function formatDurationCompact(
   ms?: number | null,
-  options?: FormatDurationCompactOptions,
+  options?: {
+    /** Show year units instead of folding them into days. Default: false */
+    showYears?: boolean;
+    /** Add space between units: "2m 5s" instead of "2m5s". Default: false */
+    spaced?: boolean;
+  },
 ): string | undefined {
   const parts = resolveCompactDurationParts(ms, options?.showYears);
   const formatted = parts && formatDurationParts(parts);

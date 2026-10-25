@@ -39,12 +39,6 @@ export type {
   StructuredInputValue,
 } from "./structured-input-boundary.js";
 
-type FieldMetadata = {
-  secret: boolean;
-  otherAnswer: boolean;
-  otherQuestionId?: string;
-};
-
 /** Wraps already bounded protocol questions in the shared execution plan. */
 export function compileStructuredInputQuestions(params: {
   questions: readonly AgentHarnessUserInputQuestion[];
@@ -107,7 +101,9 @@ export function compileStructuredInputForm(params: {
     );
   }
 
-  const validatedFields: Array<[string, StructuredInputRecord, FieldMetadata]> = [];
+  const validatedFields: Array<
+    [string, StructuredInputRecord, Exclude<ReturnType<typeof readFieldMetadata>, string>]
+  > = [];
   const otherFields = new Map<string, { fieldId: string; secret: boolean }>();
   for (const [fieldId, rawSchema] of propertyEntries) {
     if (!validFieldName(fieldId) || !isStructuredInputRecord(rawSchema)) {
@@ -245,7 +241,7 @@ function readRequired(
 function readFieldMetadata(
   schema: StructuredInputRecord,
   policy: StructuredInputCompilerOptions["metadata"],
-): FieldMetadata | string {
+) {
   const secret = readMetadataValue(schema, policy?.secretPath);
   const otherAnswer = readMetadataValue(schema, policy?.otherAnswerPath);
   const otherQuestionId = readMetadataValue(schema, policy?.otherQuestionIdPath);

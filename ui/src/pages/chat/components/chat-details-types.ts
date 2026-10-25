@@ -14,8 +14,6 @@ import type { ChatThreadProps } from "./chat-thread-interactions.ts";
 
 export type ChatProcessShowRequest = { instanceId: string | null; fromDetails: boolean };
 
-type ChatDetailsWorkspace = { root: string | null; label: string | null; branch?: string };
-
 export type ChatDetailsDesktopSectionId =
   | "people"
   | "environment"
@@ -47,30 +45,6 @@ export type ChatDetailsEnvironmentDesktopProps = ChatDetailsEnvironmentProps & {
   placement?: ChatPanePlacementProps;
 };
 
-type ChatDetailsDesktopDisclosures = {
-  /** Restored by the preference owner before the first render, scoped to this session. */
-  expanded: Partial<Record<ChatDetailsDesktopSectionId, boolean>>;
-  onExpandedChange: (section: ChatDetailsDesktopSectionId, expanded: boolean) => void;
-};
-
-type ChatDetailsDesktopPresentation = {
-  /** Localized section labels supplied by the host's copy owner. */
-  peopleLabel: string;
-  outputsLabel: string;
-  /** Localized Working, without the ellipsis in common.working. */
-  subagentsWorkingLabel: string;
-};
-
-type ChatDetailsEnvironmentData = Pick<
-  ChatDetailsEnvironmentDesktopProps,
-  | "onOpenProject"
-  | "onOpenMachine"
-  | "uncommitted"
-  | "onRequestUncommitted"
-  | "onOpenUncommitted"
-  | "placement"
->;
-
 /** Published assistant-artifact/dashboard facts and real destination/icon operations. */
 export type ChatDetailsOutputs = ChatOutputsDesktopProps;
 
@@ -89,9 +63,27 @@ export type ChatDetailsProps = ChatSessionProgressProps &
     | "personActivity"
     | "onScrollPortRef"
   > & {
-    desktopPresentation?: ChatDetailsDesktopPresentation;
-    desktopDisclosures?: ChatDetailsDesktopDisclosures;
-    environment?: ChatDetailsEnvironmentData;
+    desktopPresentation?: {
+      /** Localized section labels supplied by the host's copy owner. */
+      peopleLabel: string;
+      outputsLabel: string;
+      /** Localized Working, without the ellipsis in common.working. */
+      subagentsWorkingLabel: string;
+    };
+    desktopDisclosures?: {
+      /** Restored by the preference owner before the first render, scoped to this session. */
+      expanded: Partial<Record<ChatDetailsDesktopSectionId, boolean>>;
+      onExpandedChange: (section: ChatDetailsDesktopSectionId, expanded: boolean) => void;
+    };
+    environment?: Pick<
+      ChatDetailsEnvironmentDesktopProps,
+      | "onOpenProject"
+      | "onOpenMachine"
+      | "uncommitted"
+      | "onRequestUncommitted"
+      | "onOpenUncommitted"
+      | "placement"
+    >;
     outputs?: ChatDetailsOutputs;
     /** Stable per native resource identity; acquire only while Details is presented. */
     retainOutputs?: () => (() => void) | undefined;
@@ -100,7 +92,7 @@ export type ChatDetailsProps = ChatSessionProgressProps &
     showTaskProgress?: boolean;
     onShowTaskProgressChange?: (shown: boolean) => void;
     onSessionSelect?: (sessionKey: string) => void;
-    detailsWorkspace?: ChatDetailsWorkspace;
+    detailsWorkspace?: { root: string | null; label: string | null; branch?: string };
     onHideTaskProgress?: () => void;
     onCollapseTaskProgressChange?: (collapsed: boolean) => void;
     onOpenTaskProgressSettings?: () => void;

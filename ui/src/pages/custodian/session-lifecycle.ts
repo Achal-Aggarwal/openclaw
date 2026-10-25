@@ -41,10 +41,7 @@ export function hasCustodianUserInput(params: SystemAgentChatParams): boolean {
   );
 }
 
-export function custodianFailure(error: unknown): {
-  inferenceUnavailable: boolean;
-  sessionInvalidated: boolean;
-} {
+export function custodianFailure(error: unknown) {
   const details =
     error && typeof error === "object" ? (error as { details?: unknown }).details : undefined;
   return {

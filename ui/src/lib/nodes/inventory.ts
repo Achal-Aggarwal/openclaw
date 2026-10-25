@@ -253,10 +253,7 @@ export function listUnpairedPresence(
   });
 }
 
-export function resolveInventoryRemoval(entry: DeviceInventoryEntry): {
-  removeNode: boolean;
-  removeDevice: boolean;
-} {
+export function resolveInventoryRemoval(entry: DeviceInventoryEntry) {
   const hasNodeRole = entry.roles.includes("node");
   const nonNodeRoles = entry.roles.filter((role) => role !== "node");
   return {

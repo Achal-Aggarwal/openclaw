@@ -13,20 +13,11 @@ import {
   applyEmbeddedAttemptToolsAllow,
   shouldCreateBundleMcpRuntimeForAttempt,
 } from "../embedded-agent-runner/run/attempt-tool-construction-plan.js";
-import type { AnyAgentTool } from "../tools/common.js";
 import { cliBackendLog } from "./log.js";
 import type { resolveCliNativeMcpPolicy } from "./prepare-mcp.js";
 import type { RunCliAgentParams } from "./types.js";
 
 type CliCapabilityProfile = Awaited<ReturnType<typeof resolveCliNativeMcpPolicy>>;
-
-/** Run-owned configured MCP tools served through the OpenClaw loopback bridge. */
-export type CliLoopbackBundleMcp = {
-  tools: readonly AnyAgentTool[];
-  /** Transfers disposal to the prepared run's cleanup chain. */
-  takeCleanup: () => () => Promise<void>;
-  [Symbol.asyncDispose]: () => Promise<void>;
-};
 
 /**
  * Local Claude and exclusive CLI runs use one Gateway-owned configured MCP
@@ -41,7 +32,7 @@ export async function prepareCliLoopbackBundleMcp(params: {
   agentDir: string;
   resolveCapabilityProfile: () => Promise<CliCapabilityProfile>;
   runtimeToolsAllow?: string[];
-}): Promise<CliLoopbackBundleMcp | undefined> {
+}) {
   const { run } = params;
   if (!run.sessionId) {
     return undefined;
@@ -136,6 +127,7 @@ export async function prepareCliLoopbackBundleMcp(params: {
   const dispose = () => materialized.dispose();
   return {
     tools: materialized.tools,
+    /** Transfers disposal to the prepared run's cleanup chain. */
     takeCleanup: () => {
       owned = false;
       return dispose;
