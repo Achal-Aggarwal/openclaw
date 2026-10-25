@@ -63,7 +63,8 @@ export async function prepareEmbeddedAccessProgramGuard(
       throw new FailoverError(
         "This Daybreak program is not advertised for the current account, model, and runtime. Reset Access to the model default or refresh account capabilities.",
         {
-          reason: "auth",
+          // A stale session choice says nothing about shared credential health.
+          reason: "format",
           provider: attempt.provider,
           model: attempt.modelId,
           code: "OPENAI_ACCESS_PROGRAM_UNAVAILABLE",
