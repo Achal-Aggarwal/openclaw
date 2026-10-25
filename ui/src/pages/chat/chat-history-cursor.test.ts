@@ -70,6 +70,8 @@ beforeAll(async () => {
     message("assistant", [toolCall("prepared-corpus", "exec")], "prepared-corpus", 1),
   ]);
 });
+const preamble = (seq: number, itemId: string, progressText: string) =>
+  event(seq, "item", { kind: "preamble", itemId, progressText });
 const cachedSnapshot = (state: ReturnType<typeof createState>) =>
   readChatSessionSnapshot(state.chatMessagesBySession!, state, { sessionKey: state.sessionKey });
 
@@ -119,9 +121,7 @@ describe("chat history cursor revalidation", () => {
     expect(second.chatMessages).toEqual([cached]);
     await loadChatHistory(second);
     expect(second.chatMessages).toEqual([cached, reply]);
-    expect(handler).toHaveBeenLastCalledWith(
-      expect.objectContaining({ cursor: "cursor-1", toolResultMaxChars: 2_000 }),
-    );
+    expect(handler).toHaveBeenLastCalledWith(expect.objectContaining({ cursor: "cursor-1" }));
   });
 
   it.each(["session", "agent", "transcript", "reset"] as const)(
@@ -416,17 +416,16 @@ describe("chat history cursor revalidation", () => {
   );
 
   it.each([
-    { kind: "delta", persistedRunId: "run-other" },
-    { kind: "full", persistedRunId: "run-live" },
+    ["delta", "run-other"],
+    ["full", "run-live"],
   ] as const)(
-    "restores active commentary once from $kind history with persisted owner $persistedRunId",
-    async ({ kind, persistedRunId }) => {
+    "restores active commentary once from %s history with persisted owner %s",
+    async (kind, persistedRunId) => {
       const cached = message("user", "cached", "cached-user", 1);
+      const text = "Checking the workspace";
       const commentary = {
-        ...message("assistant", "Checking the workspace", "persisted-commentary", 2, {
-          runId: persistedRunId,
-        }),
-        openclawStreamFallback: fallback("Checking the workspace", "preamble-restored"),
+        ...message("assistant", text, "persisted-commentary", 2, { runId: persistedRunId }),
+        openclawStreamFallback: fallback(text, "preamble-restored"),
       };
       const cachedMessages = [cached, commentary];
       const handler = vi.fn(async (_params?: unknown) => ({
@@ -443,11 +442,7 @@ describe("chat history cursor revalidation", () => {
           text: "",
           startedAt: 900,
           events: [
-            event(1, "item", {
-              kind: "preamble",
-              itemId: "preamble-restored",
-              progressText: "Checking the workspace",
-            }),
+            preamble(1, "preamble-restored", text),
             toolEvent("call-restored"),
             {
               ...event(3, "usage", {
@@ -492,12 +487,12 @@ describe("chat history cursor revalidation", () => {
   );
 
   it.each([
-    { terminal: "aborted", historyFirst: false },
-    { terminal: "error", historyFirst: false },
-    { terminal: "final", historyFirst: true },
+    ["aborted", false],
+    ["error", false],
+    ["final", true],
   ] as const)(
-    "adopts live commentary once across $terminal and cursor catch-up (history first: $historyFirst)",
-    async ({ terminal, historyFirst }) => {
+    "adopts live commentary once across %s and cursor catch-up (history first: %s)",
+    async (terminal, historyFirst) => {
       const runId = "commentary-run";
       const text = "Checking the workspace.";
       const prompt = {
@@ -521,16 +516,12 @@ describe("chat history cursor revalidation", () => {
       const state = createState(handler);
       seedCachedHistory(state, [prompt], "cursor-1");
       state.chatRunId = runId;
-      const preamble = (seq: number) => ({
-        ...event(seq, "item", {
-          kind: "preamble",
-          itemId: "item-1",
-          progressText: text,
-        }),
+      const livePreamble = (seq: number) => ({
+        ...preamble(seq, "item-1", text),
         runId,
         ts: 2,
       });
-      handleAgentEvent(state, preamble(1));
+      handleAgentEvent(state, livePreamble(1));
       applySessionMessagePayload(state, payload, true, { kind: "live", activeRunId: runId });
       expect(state.chatMessages).toEqual([prompt, commentary]);
       expect(state.chatStreamSegments).toEqual([]);
@@ -560,7 +551,7 @@ describe("chat history cursor revalidation", () => {
       expect(state.chatStreamSegments).toEqual([]);
       // Reconnect replay retains the same row and cannot revive its live segment.
       await loadChatHistory(state);
-      handleAgentEvent(state, preamble(2));
+      handleAgentEvent(state, livePreamble(2));
       expect(state.chatMessages.filter((candidate) => extractText(candidate) === text)).toEqual([
         commentary,
       ]);

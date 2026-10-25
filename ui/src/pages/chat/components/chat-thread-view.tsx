@@ -241,6 +241,7 @@ function PreparedChatThread(input: ChatThreadInput) {
           },
         ]}
         role="log"
+        aria-label={t("chat.sidePanel.conversation")}
         aria-live="off"
         aria-relevant="additions"
         tabindex={0}
