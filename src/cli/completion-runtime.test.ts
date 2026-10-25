@@ -1,5 +1,5 @@
 // Completion runtime tests cover shell completion generation and runtime file writes.
-import { spawnSync, type SpawnSyncReturns } from "node:child_process";
+import { execFileSync, spawnSync, type SpawnSyncReturns } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -86,6 +86,28 @@ function expectAvailableShellToSucceed(
 }
 
 describe("completion-runtime", () => {
+  it.skipIf(process.platform === "win32")("rejects a special-device profile target", async () => {
+    await withBashCompletionHome(async ({ homeDir }) => {
+      await fs.symlink("/dev/null", path.join(homeDir, ".zshrc"));
+      await expect(isCompletionInstalled("zsh")).rejects.toThrow(/regular file/);
+    });
+  });
+
+  it.skipIf(process.platform === "win32")(
+    "rejects a FIFO profile without replacing it",
+    async () => {
+      await withBashCompletionHome(async ({ homeDir }) => {
+        await writeCompletionCache("zsh", "# completion\n");
+        const profilePath = path.join(homeDir, ".zshrc");
+        execFileSync("mkfifo", [profilePath]);
+        await expect(isCompletionInstalled("zsh")).rejects.toThrow(/regular file/);
+        await expect(usesSlowDynamicCompletion("zsh")).rejects.toThrow(/regular file/);
+        await expect(installCompletion("zsh", true)).rejects.toThrow(/regular file/);
+        expect((await fs.lstat(profilePath)).isFIFO()).toBe(true);
+      });
+    },
+  );
+
   it.skipIf(process.platform === "win32")(
     "escapes terminal controls in installation messages without changing profile paths",
     async () => {
