@@ -8,6 +8,7 @@ switch-out/return, end-to-end scrolling, transcript search, and retained-memory
 measurements to the existing open/streaming measurements. The other session
 contains 400 messages. Run the same workload with `--transcript-messages 400`
 for the size control, and add `--streaming-reply` for bottom-follow behavior.
+Long-session mode requires `--boot-route chat` and cannot run with `--layout-matrix`.
 Open-to-interactive is `presentation.firstComposerFocusMs`: after navigation,
 Playwright waits for the active composer to be visible, enabled, and editable,
 focuses it, and verifies focus before the initial metrics settle and save.
@@ -156,6 +157,21 @@ byte preloads. It records the actual warmup wall time and CPU for every variant;
 preload completion may extend the window. Coverage mode records V8 evaluation
 and rejects a panel that evaluates before its action. Cold readiness and
 coverage remain bounded before this optional warmup.
+
+Use `--routes advanced --interactions settings-security-immediate` or
+`settings-security-idle` for one independent native Settings → Security visit.
+Run each action in its own command and fresh contexts; do not combine them.
+The idle case has a fixed 2,000 ms post-ready minimum and does not wait longer
+for preloads. Both record actual modulepreload links, resource completion,
+config/schema receipt counts, and V8 evaluation before/after the native click.
+Security readiness requires its checked Browser toggle and four enabled tool
+profiles with no override selected. The action precedes artifact analysis and
+screenshots; `readinessToActionMs` records observation/automation overhead.
+Cold Advanced coverage remains frozen at its own readiness. Use separate
+coverage and timing runs, both localhost and 100 ms HTTP, with the same A/A
+control and CPU rules above. HTTP shaping does not add synthetic RPC latency.
+A route's declared next interaction is its only automatic idle choice; after
+it completes, New Session still warms on intent or on routes without a declaration.
 
 ## Media load, remount, and disposal
 

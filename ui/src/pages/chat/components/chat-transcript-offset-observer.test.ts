@@ -8,6 +8,7 @@ import {
   handleChatScrollTakeover,
 } from "../scroll.ts";
 import { TranscriptEndAnchor } from "./chat-transcript-end-anchor.ts";
+import { TranscriptLayoutOwner } from "./chat-transcript-layout-owner.ts";
 import {
   isTranscriptProgrammaticScroll,
   observeTranscriptOffset,
@@ -231,6 +232,7 @@ it.each([
     return row;
   });
   const state = new TranscriptOffsetState();
+  const host = { layout: new TranscriptLayoutOwner(vi.fn()), contentElement: null };
   const virtualizer = new Virtualizer<HTMLDivElement, HTMLElement>({
     count: rows.length,
     initialOffset: 300,
@@ -238,7 +240,7 @@ it.each([
     getScrollElement: () => element,
     estimateSize: () => 100,
     scrollToFn: (offset, options, instance) =>
-      scrollTranscriptOffset(state, offset, options, instance),
+      scrollTranscriptOffset(state, host, 0, offset, options, instance),
     observeElementRect: (_, callback) => callback({ width: 800, height: 100 }),
     observeElementOffset: (instance, callback) =>
       observeTranscriptOffset(

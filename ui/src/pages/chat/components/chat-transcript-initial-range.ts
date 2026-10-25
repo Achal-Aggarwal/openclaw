@@ -1,5 +1,4 @@
 import type { Range, Virtualizer } from "@tanstack/virtual-core";
-import { cancelLayout, scheduleLayout } from "../../../lib/layout-frame.ts";
 import type { TranscriptRow } from "./chat-transcript-layout.ts";
 import { transcriptOverscan } from "./chat-transcript-range.ts";
 import { CHAT_TRANSCRIPT_OVERSCAN } from "./chat-transcript-session.ts";
@@ -8,6 +7,8 @@ import { CHAT_TRANSCRIPT_OVERSCAN } from "./chat-transcript-session.ts";
 export class TranscriptInitialRange {
   pending = true;
   private tailRows: number;
+  private viewportOnly = false;
+  private preparingOverscan = false;
   overscan = CHAT_TRANSCRIPT_OVERSCAN;
   private rows: readonly TranscriptRow[] = [];
   // Completed fragments have no widget custody. Retain their keyed DOM while
@@ -20,6 +21,9 @@ export class TranscriptInitialRange {
   private prepareStarted = 0;
   private prepareLatency = 16;
   private scrollSample = { offset: 0, time: 0, velocity: 0, direction: -1 };
+  get measuring(): boolean {
+    return this.pending || this.preparingOverscan;
+  }
 
   constructor(
     initialOffset: number | null,
@@ -37,7 +41,9 @@ export class TranscriptInitialRange {
 
   extract(range: Range): number[] {
     if (!this.tailRows) {
-      const indexes = new Set(this.normalRange(range, this.rowIndexes));
+      const indexes = new Set(
+        this.normalRange(this.viewportOnly ? { ...range, overscan: 0 } : range, this.rowIndexes),
+      );
       for (const key of this.preparedRowKeys) {
         const index = this.rowIndexes.get(key);
         if (index !== undefined) {
@@ -70,7 +76,7 @@ export class TranscriptInitialRange {
           {
             ...range,
             count: virtualizer.options.count,
-            overscan: virtualizer.options.overscan,
+            overscan: this.viewportOnly ? 0 : virtualizer.options.overscan,
           },
           this.rowIndexes,
         )
@@ -105,23 +111,25 @@ export class TranscriptInitialRange {
     return true;
   }
 
-  finish(afterPaint = false): void {
+  finish(viewportOnly = false): void {
     this.pending = false;
     this.virtualizer().shouldAdjustScrollPositionOnItemSizeChange = undefined;
-    if (!this.tailRows) {
+    if (!this.tailRows && !this.viewportOnly) {
       return;
     }
-    const resumeOverscan = () => {
-      this.tailRows = 0;
-      this.refresh();
-      this.invalidate();
-    };
-    cancelLayout(this);
-    if (afterPaint) {
-      // Paint the measured viewport before preparing the ordinary offscreen overscan.
-      scheduleLayout(this, () => () => scheduleLayout(this, () => resumeOverscan));
+    this.preparingOverscan = this.viewportOnly && !viewportOnly;
+    // The measured viewport stays adaptive; offscreen rows wait for reader navigation.
+    this.tailRows = 0;
+    this.viewportOnly = viewportOnly;
+    this.refresh();
+    this.invalidate();
+  }
+
+  complete(): void {
+    if (this.pending) {
+      this.finish(true);
     } else {
-      resumeOverscan();
+      this.preparingOverscan = false;
     }
   }
 
@@ -309,9 +317,10 @@ export class TranscriptInitialRange {
     this.preparedRowKeys.clear();
     this.refresh();
 
-    cancelLayout(this);
-    if (!this.pending && this.tailRows) {
+    this.preparingOverscan = false;
+    if (!this.pending && (this.tailRows || this.viewportOnly)) {
       this.tailRows = 0;
+      this.viewportOnly = false;
       this.refresh();
     }
   }
