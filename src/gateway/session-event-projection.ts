@@ -38,7 +38,7 @@ export function prepareSessionEventProjection(
     ancestors: ReturnType<SessionRowProjection["ancestorRows"]>;
     /** The transcript publisher owns the message graph for synchronous fanout. */
     encodeMessage?: true;
-    /** Rechecked per recipient after row projection; exact interest always wins. */
+    /** Rechecked per recipient after row projection. */
     omitMessage?: (client: GatewayClient) => boolean;
     controlUiOnly?: boolean;
   },
