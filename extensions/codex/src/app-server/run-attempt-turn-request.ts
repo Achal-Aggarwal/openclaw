@@ -29,6 +29,7 @@ import {
 } from "./run-attempt-lifecycle.js";
 import type { CodexAttemptResources } from "./run-attempt-resources.js";
 import type { CodexAttemptTurnState } from "./run-attempt-turn-state.js";
+import { buildCodexConversationTurnInstructions } from "./thread-prompt.js";
 import { recordCodexTrajectoryContext } from "./trajectory.js";
 import { buildCodexParentLocalInstructions, buildTurnStartParams } from "./turn-params.js";
 import type { CodexThreadRouteReservation } from "./turn-router.js";
@@ -224,13 +225,16 @@ export async function prepareCodexAttemptTurnRequest(
       const inferenceThread = resourceState.thread;
       const registration = await inferenceRoute.context.register({
         threadId: resourceState.thread.threadId,
-        text: usesSupervisionConnection
-          ? ""
-          : (buildCodexParentLocalInstructions(runtimeParams, {
-              personaInstructions: workspaceBootstrapContext.personaInstructions,
-              skillsInstructions: context.skillsInstructions,
-              memoryInstructions: workspaceBootstrapContext.memoryInstructions,
-            }) ?? ""),
+        text: joinPresentSections(
+          usesSupervisionConnection
+            ? ""
+            : (buildCodexParentLocalInstructions(runtimeParams, {
+                personaInstructions: workspaceBootstrapContext.personaInstructions,
+                skillsInstructions: context.skillsInstructions,
+                memoryInstructions: workspaceBootstrapContext.memoryInstructions,
+              }) ?? ""),
+          buildCodexConversationTurnInstructions(runtimeParams, toolBridge.availableSpecs),
+        ),
         signal: runAbortController.signal,
         assertCurrent: () => {
           params.hostCapabilities.assertActive();
