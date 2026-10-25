@@ -221,8 +221,14 @@ describe("Canvas widget view", () => {
       title: "Survey",
       html: "<p>First",
     });
+    view.allowScripts = false;
     const frame = await frameFor(view);
     const post = vi.spyOn(frame.contentWindow!, "postMessage");
+    for (const height of [240, 120, 360]) {
+      message(frame, { type: "openclaw:widget-size", height }, [], "null");
+      await settle(view);
+      expect(Number.parseFloat(frame.style.height)).toBe(Math.max(240, height));
+    }
     message(frame, { type: "openclaw:widget-input-ready" }, [], "null");
     await settle(view);
     expect(client.request).not.toHaveBeenCalled();
@@ -247,10 +253,14 @@ describe("Canvas widget view", () => {
       1,
     );
     view.inputPreview = undefined;
+    view.allowScripts = true;
     view.docId = "cv_final";
     await settle(view);
     const finalFrame = await frameFor(view);
     expect(finalFrame).not.toBe(frame);
+    message(finalFrame, { type: "openclaw:widget-size", height: 180 });
+    await settle(view);
+    expect(finalFrame.style.height).toBe("180px");
     expectRead(client, "cv_final");
     expect(client.request).toHaveBeenCalledOnce();
   });

@@ -105,6 +105,7 @@ export function CanvasWidgetFrame(props: {
                   height: props.height ? `${props.height}px` : undefined,
                   "min-height": props.height ? `${props.height}px` : undefined,
                   "pointer-events": props.input ? "none" : undefined,
+                  transition: "height var(--widget-height-duration, 0ms) var(--ease-out)",
                 }}
                 ref={props.onFrame}
                 onError={() => props.onFrameError()}

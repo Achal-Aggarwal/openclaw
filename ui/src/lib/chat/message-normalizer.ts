@@ -225,6 +225,10 @@ export function readCanvasContentPreview(content: unknown): CanvasPreview | null
       result[key] = value;
     }
   }
+  const inputViewId = readStringField(preview, "inputViewId");
+  if (inputViewId?.startsWith("input:")) {
+    result.inputViewId = inputViewId;
+  }
   const preferredHeight = asFiniteNumber(preview.preferredHeight);
   if (preferredHeight !== undefined) {
     result.preferredHeight = preferredHeight;

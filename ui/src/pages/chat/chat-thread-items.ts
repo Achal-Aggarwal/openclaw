@@ -29,6 +29,7 @@ import {
 } from "./chat-message-recovery.ts";
 import { chatItemStartsUserTurn, safeNormalizeMessage } from "./chat-turn-boundary.ts";
 import { copyLiveTerminalIdentity } from "./terminal-message-identity.ts";
+import { buildToolStreamIdentity } from "./tool-stream-identity.ts";
 import { buildLocalUserMessage } from "./user-message-content.ts";
 
 export function appendCanvasBlockToAssistantMessage(
@@ -150,7 +151,17 @@ function readChatMessagePreview(toolMessage: Record<string, unknown>) {
       return {
         runId: card.runId,
         parentToolCallId: card.parentToolCallId,
-        preview: card.preview,
+        preview:
+          toolMessage["__openclawToolStreamLive"] === true &&
+          card.name === "show_widget" &&
+          card.preview.render === "url" &&
+          card.runId &&
+          card.callId
+            ? {
+                ...card.preview,
+                inputViewId: `input:${buildToolStreamIdentity(card.runId, card.callId)}`,
+              }
+            : card.preview,
         text: card.outputText ?? null,
         timestamp: rawMessageTimestamp(toolMessage),
       };

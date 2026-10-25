@@ -514,7 +514,11 @@ export type ToolCard = {
   /** Tab actions can identify a route without a previewable page URL. */
   browserTab?: BrowserTabTarget;
   preview?:
-    | (NonNullable<ReturnType<typeof extractCanvasFromText>> & { surface: "assistant_message" })
+    | (NonNullable<ReturnType<typeof extractCanvasFromText>> & {
+        surface: "assistant_message";
+        /** UI-only handoff from the same live tool call, never a document capability. */
+        inputViewId?: string;
+      })
     | {
         kind: "canvas";
         surface: "assistant_message";

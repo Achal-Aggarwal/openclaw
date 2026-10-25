@@ -409,8 +409,10 @@ function WidgetContent(props: {
         : `frame:${props.preview.url?.trim() || props.preview.viewId?.trim()}`;
   const height = () =>
     props.options?.widgetLayout?.read(layoutKey()) ??
-    props.preview.preferredHeight ??
-    (props.preview.mcpApp ? 600 : 420);
+    (props.preview.render === "url" && props.preview.inputViewId
+      ? props.options?.widgetLayout?.read(`canvas:${props.preview.inputViewId}`)
+      : undefined) ??
+    (input() ? 48 : (props.preview.preferredHeight ?? (props.preview.mcpApp ? 600 : 420)));
   return (
     <Show
       when={props.options?.mediaReadAllowed !== false}
@@ -616,6 +618,12 @@ function CanvasPreview(props: {
     <div
       ref={widgetActionsPlacementRef(hasActions)}
       class="chat-tool-card__preview"
+      style={{
+        "--widget-height-duration":
+          props.preview.render === "url" && props.preview.inputViewId
+            ? "var(--duration-normal)"
+            : undefined,
+      }}
       data-content-kind={
         props.preview.render === "input"
           ? "widget-input"

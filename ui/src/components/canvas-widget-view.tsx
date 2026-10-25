@@ -483,8 +483,13 @@ function createCanvasWidget(
         Number.isFinite(event.data.height) &&
         event.data.height > 0
       ) {
-        state.contentHeight = Math.min(8000, Math.max(48, Math.trunc(event.data.height)));
-        props.onHeightChange?.(state.contentHeight);
+        const height = Math.min(8000, Math.max(48, Math.trunc(event.data.height)));
+        // Incomplete markup can briefly shrink before the next input arrives.
+        if (height <= (state.contentHeight ?? 0)) {
+          return;
+        }
+        state.contentHeight = height;
+        props.onHeightChange?.(height);
         notify();
       }
       return;
@@ -693,7 +698,8 @@ export const CanvasWidgetView = defineSolidBridge<CanvasWidgetViewProps, CanvasW
         context.gateway.connection.gatewayUrl,
       ),
     );
-    const height = () => read().contentHeight ?? props.preferredHeight ?? 420;
+    const height = () =>
+      read().contentHeight ?? props.preferredHeight ?? (props.inputPreview ? 48 : 420);
     return (
       <CanvasWidgetFrame
         state={read()}
