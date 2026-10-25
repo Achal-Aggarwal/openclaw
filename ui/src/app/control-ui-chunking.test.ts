@@ -260,7 +260,7 @@ describe("Control UI build chunking", () => {
     const toolChunk = chunks.find((chunk) => tools in chunk.modules)!;
     expect(liveChunk.fileName).toBe(deliveryChunk.fileName);
     expect(staticImports(entryChunk.fileName)).not.toContain(liveChunk.fileName);
-    expect(staticImports(liveChunk.fileName)).not.toContain(toolChunk.fileName);
+    expect(liveChunk.fileName).toBe(toolChunk.fileName);
     const boot = collectControlUiBootAssets(
       Object.fromEntries(result.output.map((asset) => [asset.fileName, asset])),
     );

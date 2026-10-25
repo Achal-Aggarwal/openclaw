@@ -219,6 +219,7 @@ it("prioritizes signing and route dependencies over unevaluated interaction hint
     chat: modulePath("../pages/chat/route-entry.ts"),
     toolFamily: modulePath("../pages/chat/chat-tool-family-runtime.ts"),
     toolPresentation: modulePath("../pages/chat/chat-tool-presentation.runtime.ts"),
+    liveEvents: modulePath("../pages/chat/chat-live-events.runtime.ts"),
     runFrame: modulePath("../pages/chat/components/chat-agent-run-frame.tsx"),
     sourcePreview: modulePath("../pages/chat/components/chat-source-previews.tsx"),
   };
@@ -299,9 +300,10 @@ it("prioritizes signing and route dependencies over unevaluated interaction hint
   const commonChunks = [entries.online, commonDependency].map((id) => chunkFor(id).fileName);
   const signerChunk = chunkFor(entries.signer).fileName;
   const chatChunk = chunkFor(entries.chat).fileName;
-  const toolChunks = [entries.toolFamily, entries.toolPresentation, entries.runFrame].map(
+  const toolChunks = [entries.toolFamily, entries.toolPresentation].map(
     (id) => chunkFor(id).fileName,
   );
+  expect(chunkFor(entries.liveEvents).fileName).toBe(chunkFor(entries.toolFamily).fileName);
   const placementChunks = [entries.placement, placementDependency].map(
     (id) => chunkFor(id).fileName,
   );
@@ -352,7 +354,16 @@ it("prioritizes signing and route dependencies over unevaluated interaction hint
   expect(fixture.events).toEqual(["common", "online"]);
   expect((await fixture.load.placement!()).value).toBe("placement");
   expect(fixture.events).toEqual(["common", "online", "placement-dependency", "placement"]);
+  expect((await fixture.load.liveEvents!()).value).toBe("common");
+  expect(fixture.events).toEqual([
+    "common",
+    "online",
+    "placement-dependency",
+    "placement",
+    "liveEvents",
+  ]);
   expect((await fixture.load.toolFamily!()).value).toBe("common");
+  expect(fixture.events).not.toContain("toolPresentation");
   expect((await fixture.load.toolPresentation!()).value).toBe("common");
   expect((await fixture.load.runFrame!()).value).toBe("common");
   expect(fixture.events).toEqual([
@@ -360,6 +371,7 @@ it("prioritizes signing and route dependencies over unevaluated interaction hint
     "online",
     "placement-dependency",
     "placement",
+    "liveEvents",
     "toolFamily",
     "toolPresentation",
     "runFrame",

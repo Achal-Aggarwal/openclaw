@@ -87,8 +87,8 @@ export function controlUiStableChunkName(id: string): string | undefined {
     case "ui/src/pages/chat/components/chat-message-activity-operation.tsx":
     case "ui/src/pages/chat/components/chat-tool-row-presentation.ts":
     case "ui/src/pages/chat/components/chat-work-group-summary.tsx":
-      // Fetch common facts and collapsed chrome together; module initialization stays separate.
-      return "chat-tool-runtime";
+      // Chat preloads these interactions together; each module still initializes on use.
+      return "chat-interaction-runtime";
     case "ui/src/pages/chat/components/chat-details-people.css":
     case "ui/src/pages/chat/components/chat-outputs.css":
     case "ui/src/pages/chat/components/chat-details-environment-desktop.css":
@@ -130,6 +130,8 @@ export function controlUiStableChunkName(id: string): string | undefined {
     case "ui/src/pages/chat/tool-stream.ts":
     case "ui/src/pages/chat/tool-stream-status.ts":
     case "ui/src/pages/chat/tool-stream-preamble.ts":
+    case "ui/src/lib/chat/tool-call-diff.ts":
+    case "src/agents/agent-activity-presentation.ts":
       // Chat already preloads both families; their initializers still run only on use.
       return "chat-interaction-runtime";
     case "ui/src/pages/chat/components/chat-context-breakdown.tsx":
