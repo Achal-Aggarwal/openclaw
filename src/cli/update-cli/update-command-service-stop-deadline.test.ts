@@ -19,10 +19,20 @@ const { fixtureGatewayPid, mocks, withServiceHome } =
 
 const deadlineAtMs = 1_500;
 
-async function nativeStopFixture(home: string, expireDuring: "transport" | "settlement") {
+async function nativeStopFixture(
+  home: string,
+  expireDuring: "transport" | "settlement",
+  wallCorrection = -90_000,
+) {
   mockProcessPlatform("linux");
   let wallNow = 1_000;
   let elapsedMs = 0;
+  let preparingNativeStop = false;
+  const transportPhases: string[] = [];
+  const expireDeadline = () => {
+    wallNow += wallCorrection;
+    elapsedMs = 501;
+  };
   vi.spyOn(performance, "now").mockImplementation(() => elapsedMs);
   vi.spyOn(Date, "now").mockImplementation(() => wallNow);
   vi.spyOn(systemdScope, "findInstalledSystemdGatewayScope").mockResolvedValue(null);
@@ -31,15 +41,15 @@ async function nativeStopFixture(home: string, expireDuring: "transport" | "sett
     undefined,
   );
   vi.spyOn(systemdTransport, "resolveSystemdUserTransport").mockImplementation(async () => {
-    if (expireDuring === "transport") {
-      wallNow -= 90_000;
-      elapsedMs = 501;
+    transportPhases.push(preparingNativeStop ? "native-stop" : "inspection");
+    // Discovery may also resolve transport; only the actual stop owns this fault.
+    if (expireDuring === "transport" && preparingNativeStop) {
+      expireDeadline();
     }
     return undefined;
   });
   const dispatch = vi.spyOn(processExec, "runCommandWithTimeout").mockImplementation(async () => {
-    wallNow -= 90_000;
-    elapsedMs = 501;
+    expireDeadline();
     return { stdout: "", stderr: "", code: 0, termination: "exit", signal: null, killed: false };
   });
   const service = createMockGatewayService({
@@ -53,7 +63,14 @@ async function nativeStopFixture(home: string, expireDuring: "transport" | "sett
       systemd: { managerUid: 2001 },
     }),
     isLoaded: async () => true,
-    stop: vi.fn(stopSystemdService),
+    stop: vi.fn(async (params) => {
+      preparingNativeStop = true;
+      try {
+        await stopSystemdService(params);
+      } finally {
+        preparingNativeStop = false;
+      }
+    }),
   });
   mocks.service.mockReturnValue(service);
   const expectedService = await maybeStopManagedServiceBeforeMutableUpdate({
@@ -64,13 +81,48 @@ async function nativeStopFixture(home: string, expireDuring: "transport" | "sett
     phase: "inspect",
   });
   const remaining = createDoctorServiceInspectionBudget(deadlineAtMs);
-  return { service, dispatch, expectedService, remaining };
+  return { service, dispatch, expectedService, remaining, expireDeadline, transportPhases };
 }
 
-it("refuses the Doctor native stop when transport preparation consumes the deadline", () =>
+it.each([-90_000, 90_000])(
+  "refuses the Doctor native stop when transport preparation consumes the deadline (wall correction %s)",
+  (wallCorrection) =>
+    withServiceHome(async (home) => {
+      const { service, dispatch, transportPhases } = await nativeStopFixture(
+        home,
+        "transport",
+        wallCorrection,
+      );
+      vi.spyOn(doctorServicePolicy, "shouldManageGatewayService").mockImplementation(async () => {
+        // A preceding read must not consume the fault intended for native stop preparation.
+        await systemdTransport.resolveSystemdUserTransport(process.env);
+        return true;
+      });
+      await expect(
+        beginDoctorMaintenance({
+          root: process.cwd(),
+          options: { repair: true },
+          runtime: { log: vi.fn(), error: vi.fn(), exit: vi.fn() },
+          serviceInspectionDeadlineAtMs: deadlineAtMs,
+        }),
+      ).rejects.toThrow("Doctor service-inspection deadline has expired.");
+      expect(service.stop).toHaveBeenCalledOnce();
+      expect(transportPhases).toContain("inspection");
+      expect(transportPhases).toContain("native-stop");
+      expect(dispatch).not.toHaveBeenCalled();
+    }),
+);
+
+it("refuses an already-expired Doctor deadline before entering native stop", () =>
   withServiceHome(async (home) => {
-    const { service, dispatch } = await nativeStopFixture(home, "transport");
-    vi.spyOn(doctorServicePolicy, "shouldManageGatewayService").mockResolvedValue(true);
+    const { service, dispatch, expireDeadline, transportPhases } = await nativeStopFixture(
+      home,
+      "transport",
+    );
+    vi.spyOn(doctorServicePolicy, "shouldManageGatewayService").mockImplementation(async () => {
+      expireDeadline();
+      return true;
+    });
     await expect(
       beginDoctorMaintenance({
         root: process.cwd(),
@@ -79,7 +131,8 @@ it("refuses the Doctor native stop when transport preparation consumes the deadl
         serviceInspectionDeadlineAtMs: deadlineAtMs,
       }),
     ).rejects.toThrow("Doctor service-inspection deadline has expired.");
-    expect(service.stop).toHaveBeenCalledOnce();
+    expect(service.stop).not.toHaveBeenCalled();
+    expect(transportPhases).not.toContain("native-stop");
     expect(dispatch).not.toHaveBeenCalled();
   }));
 
