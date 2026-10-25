@@ -7,6 +7,7 @@ import { currentThemeBranding, setCurrentThemeBranding } from "../../../app/them
 import { resolveAvatarHat } from "../../../components/agent-avatar-hat.ts";
 import { latestBrowserTabCards } from "../../../lib/chat/browser-tab-selection.runtime.ts";
 import { prepareChatToolPresentation } from "../../../lib/chat/tool-family.ts";
+import { sessionListResult } from "../../../test-helpers/chat-model.ts";
 import { createTestGatewayClient } from "../../../test-helpers/gateway-client.ts";
 import { gatewayHelloForMethods } from "../../../test-helpers/gateway-methods.ts";
 import {
@@ -518,13 +519,11 @@ describe("chat transcript rendering", () => {
       archivedAt: 2_000,
       archivedBy: { type: "human", id: "profile-ada", label: "Ada" },
     };
-    const sessions: SessionsListResult = {
-      ts: 0,
-      path: "",
-      count: 1,
-      defaults: { modelProvider: "openai", model: "gpt-5", contextTokens: null },
-      sessions: [archivedSession],
-    };
+    const sessions: SessionsListResult = sessionListResult(0, [archivedSession], {
+      modelProvider: "openai",
+      model: "gpt-5",
+      contextTokens: null,
+    });
     const props = threadProps(
       "pane-archived-notice",
       sessionKey,
