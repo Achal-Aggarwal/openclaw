@@ -425,7 +425,10 @@ it.for([
       const params = {
         broadcastToConnIds,
         sessionEventSubscribers: { getAll: () => new Set(["subscriber"]) },
-        sessionMessageSubscribers: { get: () => new Set<string>(), getNarration: () => new Set() },
+        sessionMessageSubscribers: {
+          get: () => new Set<string>(),
+          getNarration: () => new Set<string>(),
+        },
         getSessionRowProjection: () => projection,
       };
       const pending =
