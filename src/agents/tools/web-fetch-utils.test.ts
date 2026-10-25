@@ -16,6 +16,28 @@ describe("web-fetch-utils", () => {
     },
   );
 
+  it("does not separate ordinary inline elements", () => {
+    expect(htmlToMarkdown("<span>Region</span><span>EMEA</span>").text).toBe("RegionEMEA");
+  });
+
+  it.each([
+    [
+      "<p>He said:</p><blockquote>Stay hungry</blockquote><p>Then he left.</p>",
+      "He said:\nStay hungry\nThen he left.",
+    ],
+    [
+      "<figure><figcaption>Figure 1: Results</figcaption></figure><p>Body text.</p>",
+      "Figure 1: Results\n\nBody text.",
+    ],
+    ["<nav>Home</nav><main>Article</main><aside>Note</aside>", "Home\nArticle\nNote"],
+    ["<details><summary>Question</summary>Answer</details>", "Question\nAnswer"],
+    ["<span>Price</span><div>10 EUR</div>", "Price\n10 EUR"],
+    ["Intro<p>Body</p>", "Intro\nBody"],
+    ["<p>One</p><p>Two</p>", "One\nTwo"],
+  ])("starts block elements on their own line (case %#)", (html, expected) => {
+    expect(htmlToMarkdown(html).text).toBe(expected);
+  });
+
   it("keeps Markdown-looking inline code literal in text mode", () => {
     const markdown =
       "Use `![alt](image.png)` and ``[label](https://example.com)``; read [guide](https://example.com).";
@@ -196,7 +218,7 @@ describe("web-fetch-utils", () => {
   });
 
   it("skips raw-text blocks without reusing indices from a lowercased copy", () => {
-    expect(htmlToMarkdown(`İ<script>x</script><p>After</p>`).text).toBe("İAfter");
+    expect(htmlToMarkdown(`İ<script>x</script><p>After</p>`).text).toBe("İ\nAfter");
   });
 
   it("continues href scanning after unsupported framework-style attributes", () => {
