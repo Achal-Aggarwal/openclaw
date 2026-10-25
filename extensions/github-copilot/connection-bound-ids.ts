@@ -41,7 +41,8 @@ function dropReasoningItem(input: unknown[], index: number): void {
   }
 }
 
-function sanitizeCopilotReplayResponseIds(input: unknown): boolean {
+export function sanitizeCopilotReplayResponsePayload(payload: unknown): boolean {
+  const input = asOptionalObjectRecord(payload)?.input;
   if (!Array.isArray(input)) {
     return false;
   }
@@ -86,8 +87,4 @@ function sanitizeCopilotReplayResponseIds(input: unknown): boolean {
     }
   }
   return rewrote;
-}
-
-export function sanitizeCopilotReplayResponsePayload(payload: unknown): boolean {
-  return sanitizeCopilotReplayResponseIds(asOptionalObjectRecord(payload)?.input);
 }

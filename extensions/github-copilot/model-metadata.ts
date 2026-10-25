@@ -58,20 +58,12 @@ const STATIC_MODEL_OVERRIDES = new Map<string, Partial<ModelDefinitionConfig>>([
   ],
 ]);
 
-function isCopilotGeminiModelId(modelId: string): boolean {
-  return /(?:^|[-_.])gemini(?:$|[-_.])/.test(modelId);
-}
-
-function isCopilotClaude45ModelId(modelId: string): boolean {
-  return /^claude-(?:haiku|opus|sonnet)-4[.-]5(?:$|[-.])/.test(modelId);
-}
-
 export function resolveCopilotTransportApi(modelId: string): CopilotRuntimeApi {
   const normalized = normalizeOptionalLowercaseString(modelId) ?? "";
   if (normalized.includes("claude")) {
     return "anthropic-messages";
   }
-  if (isCopilotGeminiModelId(normalized)) {
+  if (/(?:^|[-_.])gemini(?:$|[-_.])/.test(normalized)) {
     return "openai-completions";
   }
   return "openai-responses";
@@ -88,7 +80,10 @@ export function resolveCopilotModelCompat(
   }
   // Copilot's Claude 4.5 endpoints reject Anthropic's eager tool extension,
   // while current Claude 4.6+ endpoints accept it.
-  if (runtimeApi === "anthropic-messages" && isCopilotClaude45ModelId(normalized)) {
+  if (
+    runtimeApi === "anthropic-messages" &&
+    /^claude-(?:haiku|opus|sonnet)-4[.-]5(?:$|[-.])/.test(normalized)
+  ) {
     return { supportsEagerToolInputStreaming: false };
   }
   return undefined;
