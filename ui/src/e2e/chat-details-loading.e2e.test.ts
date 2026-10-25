@@ -125,6 +125,9 @@ suite.define(() => {
         );
         onTestFinished(module.release);
         await page.reload();
+        await page.locator(".chat-thread").getByText(text, { exact: true }).waitFor();
+        await gateway.waitForRequest("chat.startup");
+        await gateway.resolveDeferred("chat.startup");
         await gateway.waitForRequest("sessions.list", { match: childQuery });
         await page.locator(".chat-thread").getByText(text, { exact: true }).waitFor();
         const details = page.locator(".chat-details[data-open]");
@@ -164,8 +167,6 @@ suite.define(() => {
         }
         expect(await details.locator("openclaw-panel-loading-skeleton").count()).toBe(0);
         expect(await details.evaluate((panel) => panel.getBoundingClientRect().width)).toBe(width);
-        await gateway.waitForRequest("chat.startup");
-        await gateway.resolveDeferred("chat.startup");
         expect(module.requests()).toBe(1);
       });
     },

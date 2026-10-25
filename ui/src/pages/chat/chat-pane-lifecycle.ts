@@ -349,10 +349,10 @@ export abstract class ChatPaneLifecycle extends ChatPaneSessionObservation {
         pageState.client = this.context.gateway.snapshot.client ?? null;
         const initialRun = readAcknowledgedInitialRun(pageState);
         const cache = pageState.chatMessagesBySession;
-        const target = { sessionKey: initialSessionKey };
-        const snapshot = readChatSessionSnapshot(cache, pageState, target);
-        if (snapshot && this.ownsChatSnapshot(target)) {
-          const key = resolveChatSnapshotKey(pageState, target);
+        const cacheTarget = { sessionKey: initialSessionKey };
+        const snapshot = readChatSessionSnapshot(cache, pageState, cacheTarget);
+        if (snapshot && this.ownsChatSnapshot(cacheTarget)) {
+          const key = resolveChatSnapshotKey(pageState, cacheTarget);
           pageState.restoredChatSnapshot = { key, sessionId: snapshot.sessionId };
           applyChatCacheSnapshot(pageState, snapshot);
           const target = this.resolveChatReadTarget();
