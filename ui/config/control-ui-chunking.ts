@@ -112,15 +112,15 @@ export function controlUiStableChunkName(id: string): string | undefined {
     case "ui/src/components/working-phrase-solid.tsx":
     case "ui/src/pages/chat/components/chat-retry-status.tsx":
     case "ui/src/pages/chat/components/chat-working-indicator-surprise.ts":
-      // New Session already fetches these menus; keep the indicator off Chat-only chunks.
-      return "composer-invocation-menus";
+      // Initial presentation must not evaluate the optional composer menus.
+      return "control-ui-boot-shared";
     case "ui/src/pages/chat/composer-capability-catalog.ts":
     case "ui/src/lib/config/mcp-servers.ts":
     case "src/config/patch-replace-paths.ts":
     case "src/infra/plain-object.ts":
     case "src/infra/prototype-keys.ts":
       // Both composers need the catalog, independently of the New Session page.
-      return "composer-invocation-menus";
+      return "control-ui-boot-shared";
     case "ui/src/lib/chat/composer-draft-write.runtime.ts":
       // Both routes prefetch this file; distinct module initializers still wait for use.
       return "composer-invocation-menus";
