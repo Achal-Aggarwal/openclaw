@@ -43,10 +43,14 @@ export async function prewarmChatSnapshot(cacheKey: string): Promise<void> {
       .catch(() => undefined),
   };
   pending = entry;
-  // Load alongside storage so decoding adds no serial import to a warm first paint.
-  // Board restoration remains independent of the optional history validator.
+  // Parse alongside route loading, not after the pane's first empty projection.
+  // The store shares the parsed result and early board receipt with its consumer.
   try {
     await Promise.all([
+      (async () => {
+        const { readPrewarmedChatSnapshot } = await import("./session-snapshot-store.ts");
+        await readPrewarmedChatSnapshot(cacheKey);
+      })(),
       import("./session-snapshot-decoder.ts"),
       import("../../lib/protocol-validators.generated/history-state.js"),
     ]);
