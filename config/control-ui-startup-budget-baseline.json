@@ -1,5 +1,5 @@
 {
-  "startupJsGzipBytes": 273120,
-  "reason": "Measured long-session window: 273120 B startup gzip versus same-machine base 272851 B (+269 B); 2000-message local open Task CPU falls 87% and open-plus-scroll CPU 76%, with unchanged 7 JS and 1 CSS requests. Record the measured head under the approved CPU/bytes tradeoff.",
+  "startupJsGzipBytes": 273686,
+  "reason": "Route readiness: 20 interleaved pairs against the original base showed 15.8% faster Settings readiness and 8.3% less task CPU. After merging main 2f95e977, same-host builds compare 272893 to 273686 B startup gzip (+793 B); seven JS requests, one CSS request, and total CSS are unchanged. Set the baseline to the measured head.",
   "updatedAt": "2026-10-25"
 }

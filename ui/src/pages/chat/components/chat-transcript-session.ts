@@ -118,7 +118,10 @@ export function createTranscriptPresentation(
   const presentation = {
     measureElement(element: HTMLElement, entry: ResizeObserverEntry | undefined) {
       // ResizeObserver can run before the reader's native scroll event.
-      beforeMeasure();
+      // Registration only reuses a cached size or estimate until that observation.
+      if (entry || !virtualizer.targetWindow?.ResizeObserver) {
+        beforeMeasure();
+      }
       return measureTranscriptRow(element, entry, virtualizer);
     },
     measureRows: () => readConnectedRows()?.() ?? false,

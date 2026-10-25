@@ -720,6 +720,7 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
       ...this.virtualizer.options,
       count: nextKeys.length,
       getItemKey: (index) => nextKeys[index]!,
+      rangeExtractor: (range) => this.initialRange.extract(range),
       overscan,
       scrollMargin,
     });
