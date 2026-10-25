@@ -1,10 +1,10 @@
 import { execFileSync, spawnSync } from "node:child_process";
-import { resolveTestNodeExecPath } from "openclaw/plugin-sdk/test-fixtures";
 import fs, { open, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import "openclaw/plugin-sdk/compiled-subprocess-testing";
 import { buildJsonPluginConfigSchema } from "openclaw/plugin-sdk/plugin-entry";
+import "openclaw/plugin-sdk/compiled-subprocess-testing";
 import { useAutoCleanupTempDirTracker } from "openclaw/plugin-sdk/test-env";
+import { resolveTestNodeExecPath } from "openclaw/plugin-sdk/test-fixtures";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import manifest from "../openclaw.plugin.json" with { type: "json" };
 import { parseTeamReportsConfig, resolveTeamReportsConfig } from "./config.js";
@@ -159,4 +159,3 @@ it.skipIf(process.platform === "win32")("rejects a FIFO people file without a wr
     "resolving people file\nteam-reports.peopleFile must be a regular JSON file of at most 2 MiB.",
   );
 });
-
