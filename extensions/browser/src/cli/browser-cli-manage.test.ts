@@ -361,6 +361,24 @@ describe("browser manage output", () => {
     expect(getBrowserManageGatewayMock()).not.toHaveBeenCalled();
   });
 
+  it.each(["select", "close"] as const)(
+    "dispatches a valid %s index as zero-based",
+    async (action) => {
+      getBrowserManageGatewayMock().mockResolvedValueOnce({ ok: true });
+      await createBrowserManageProgram().parseAsync(["browser", "--json", "tab", action, "2"], {
+        from: "user",
+      });
+      expect(getBrowserManageGatewayMock()).toHaveBeenCalledWith(
+        "browser.request",
+        expect.anything(),
+        expect.objectContaining({ path: "/tabs/action", body: { action, index: 1 } }),
+        expect.anything(),
+      );
+      expect(getBrowserCliRuntimeCapture().runtimeErrors).toEqual([]);
+      expect(getBrowserCliRuntime().exit).not.toHaveBeenCalled();
+    },
+  );
+
   it("rejects unsupported profile drivers before creating a profile", async () => {
     const program = createBrowserManageProgram();
 
