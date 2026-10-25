@@ -111,7 +111,6 @@ export function controlUiStableChunkName(id: string): string | undefined {
     case "ui/src/pages/chat/outbox-payloads.runtime.ts":
     case "ui/src/lib/chat/outbox-payload-store.runtime.ts":
     case "ui/src/pages/chat/components/chat-attachment-reads.runtime.ts":
-    case "ui/src/pages/chat/components/chat-attachment-image.runtime.ts":
       // Both routes prefetch these runtimes; their initializers still wait for use.
       return "composer-invocation-menus";
     case "ui/src/lib/chat/composer-draft-recovery.runtime.ts":

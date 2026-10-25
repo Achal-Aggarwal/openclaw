@@ -6,7 +6,6 @@ import { showToast } from "../../../lib/toast.ts";
 import { uploadsEnabled, uploadsDisabledMessage } from "../../../lib/uploads.ts";
 import { registerChatAttachmentPayload } from "../attachment-payload-store.ts";
 import { admitAttachmentFiles, type ChatAttachmentLimits } from "./chat-attachment-admission.ts";
-import { resizeChatAttachmentImage } from "./chat-attachment-image.runtime.ts";
 import {
   readChatAttachmentFile,
   type ChatAttachmentReadLifecycle,
@@ -190,10 +189,10 @@ export function readAdmittedChatAttachmentFile(
     };
     reads.updateProgress(entry, 0);
   } else if (imageLimit !== undefined && file.type.startsWith("image/") && file.size > imageLimit) {
-    void resizeChatAttachmentImage(file, imageLimit, preparation.signal, setProcessing).then(
-      readPreparedFile,
-      () => finish("error"),
-    );
+    void (async () => {
+      const { resizeChatAttachmentImage } = await import("./chat-attachment-image.runtime.ts");
+      return resizeChatAttachmentImage(file, imageLimit, preparation.signal, setProcessing);
+    })().then(readPreparedFile, () => finish("error"));
   } else {
     readPreparedFile(file);
   }
