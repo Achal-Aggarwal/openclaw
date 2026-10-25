@@ -9,6 +9,8 @@ const sharedInteractionEntries = new Set([
   "ui/src/lib/chat/composer-draft-write.runtime.ts",
   // Queued attachments must remain writable after the connection drops.
   "ui/src/pages/chat/outbox-payloads.runtime.ts",
+  // Both composers reserve reads immediately; file/media execution waits for an admitted file.
+  "ui/src/pages/chat/components/chat-attachment-reads.runtime.ts",
   "ui/src/pages/chat/components/chat-composer-slash-menu.tsx",
   "ui/src/pages/chat/components/chat-composer-slash-menu-options.tsx",
   "ui/src/pages/chat/components/chat-composer-skill-menu.tsx",

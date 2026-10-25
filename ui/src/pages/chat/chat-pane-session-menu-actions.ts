@@ -1,6 +1,9 @@
 import type { GatewaySessionRow } from "../../api/types.ts";
 import { togglePinnedSession } from "../../app/bootstrap-navigation-preferences.ts";
-import type { SidebarSessionMutationResult } from "../../components/app-sidebar-session-types.ts";
+import type {
+  SidebarSessionMutationScope,
+  SidebarSessionMutationResult,
+} from "../../components/app-sidebar-session-types.ts";
 import { t } from "../../i18n/index.ts";
 import { openEditor } from "../../lib/editor-links.ts";
 import {
@@ -13,6 +16,7 @@ import { runControlUiPluginAction } from "../../plugins/control-ui-actions.ts";
 import type {
   ChatHeaderSessionActionSource,
   HeaderMenuAction,
+  HeaderSessionOperation,
 } from "./chat-pane-session-menu-contract.ts";
 import { resolveChatAgentId, selectedChatSessionRow } from "./chat-state-route.ts";
 
@@ -76,7 +80,9 @@ export async function runChatHeaderSessionAction(
     return;
   }
   if (action.kind === "new-group") {
-    return owner.openHeaderSessionGroup(row);
+    return owner.openHeaderSessionGroup((name) =>
+      runHeaderSessionMutation(owner, { kind: "move-to-group", category: name }, row),
+    );
   }
   if (action.kind === "plugin") {
     const scope = owner.captureHeaderSessionActionScope();
@@ -102,5 +108,68 @@ export async function runChatHeaderSessionAction(
     }
     return;
   }
-  return owner.runHeaderSessionMutation(action, row);
+  return runHeaderSessionMutation(owner, action, row);
+}
+
+type HeaderSessionMutationAdmission = {
+  scope: SidebarSessionMutationScope & { signal: AbortSignal };
+  owner: string;
+  draftSignal: AbortSignal;
+};
+export async function runHeaderSessionMutation(
+  owner: ReturnType<ChatHeaderSessionActionSource["readOwner"]>,
+  action: HeaderSessionOperation,
+  row: GatewaySessionRow,
+  admission?: HeaderSessionMutationAdmission,
+): Promise<SidebarSessionMutationResult | void> {
+  const scope =
+    admission?.scope ??
+    owner.captureHeaderSessionActionScope(
+      action.kind === "rename" ||
+        action.kind === "set-icon" ||
+        action.kind === "set-color" ||
+        action.kind === "reset-appearance" ||
+        action.kind === "toggle-archived" ||
+        action.kind === "delete" ||
+        action.kind === "move-to-group",
+    );
+  if (!scope) {
+    owner.publishHeaderError(t("sessionsView.actionRequiresConnection"));
+    return;
+  }
+  const outcomeOwner = admission?.owner ?? owner.headerOutcomeOwner;
+  const draftSignal = admission?.draftSignal ?? owner.headerSessionDraftAbortController.signal;
+  const capturedRow = admission ? row : { ...row };
+  try {
+    const { runHeaderSessionOperation } = await import("./chat-pane-session-operations.ts");
+    return await runHeaderSessionOperation(action, capturedRow, scope, {
+      isCurrent: (candidate) => owner.isHeaderSessionActionCurrent(candidate, outcomeOwner),
+      publishError: (error) => owner.publishHeaderError(error, outcomeOwner),
+      selectSession: (key) => owner.onPaneSessionChange?.(owner.paneId, key),
+      label: (candidate) => owner.resolveHeaderSessionTitle(candidate),
+      rows: () => owner.state?.sessionsResult?.sessions ?? [],
+      state: () => owner.state,
+      draftSignal,
+      beginRename: (state) => {
+        if (owner.state !== state || !owner.presented) {
+          return null;
+        }
+        const currentScope = owner.captureHeaderSessionActionScope(true);
+        if (!currentScope) {
+          return null;
+        }
+        const currentOwner = owner.headerOutcomeOwner;
+        return {
+          scope: currentScope,
+          isCurrent: () =>
+            owner.state === state && owner.isHeaderSessionActionCurrent(currentScope, currentOwner),
+          publishError: (error) => owner.publishHeaderError(error, currentOwner),
+        };
+      },
+    });
+  } catch (error) {
+    if (owner.isHeaderSessionActionCurrent(scope, outcomeOwner)) {
+      owner.publishHeaderError(error, outcomeOwner);
+    }
+  }
 }

@@ -5,21 +5,16 @@ import type {
 } from "../../../../packages/gateway-protocol/src/index.js";
 import type { GatewayBrowserClient } from "../../api/gateway.ts";
 import type { GatewaySessionRow } from "../../api/types.ts";
-import { serializeSidebarEntry } from "../../app-navigation.ts";
-import { resolveSidebarSessionParentKey } from "../../components/app-sidebar-session-parent.ts";
 import type {
   SidebarSessionMutationResult,
   SidebarSessionMutationScope,
 } from "../../components/app-sidebar-session-types.ts";
 import { hasModalSurface } from "../../components/overlay-registry.ts";
 import { sessionMenuReasons } from "../../components/session-menu-access.ts";
-import type { SessionMenuData } from "../../components/session-menu-actions.ts";
-import { sessionMenuDataFromRow } from "../../components/session-menu-data.ts";
 import {
   captureSessionMutationScope,
   isSessionMutationScopeCurrent,
 } from "../../components/session-mutation-scope.ts";
-import { sessionPlacementAction } from "../../components/session-placement-action.ts";
 import { isCloudWorkerPlacementState } from "../../components/session-row-badge-presentation.ts";
 import { t } from "../../i18n/index.ts";
 import { registerChatSessionEnglish } from "../../i18n/locales/en-chat-session.ts";
@@ -35,14 +30,11 @@ import {
   areUiSessionKeysEquivalent,
   canArchiveSessionRow,
   parseAgentSessionKey,
-  isSubagentSessionKey,
   resolveUiConfiguredMainKey,
-  resolveUiConversationIdentity,
 } from "../../lib/sessions/session-key.ts";
 import { readSystemInfo } from "../../lib/system-info.ts";
 import { chatHistoryRequests } from "./chat-history-state.ts";
 import { ChatPaneContext } from "./chat-pane-context.ts";
-import { ChatPaneHeaderMemo } from "./chat-pane-header-memo.ts";
 import { chatSessionPresentationTitle } from "./chat-pane-session-presentation.ts";
 import { resolveChatAgentId, selectedChatSessionRow } from "./chat-state-route.ts";
 import type { ChatPaneHeaderAction } from "./components/chat-pane-header.types.ts";
@@ -51,8 +43,7 @@ import { buildContinueInTerminalCommand } from "./continue-in-terminal-command.t
 registerChatSessionEnglish();
 
 export abstract class ChatPaneSessionMenu extends ChatPaneContext {
-  private readonly headerSessionDataMemo = new ChatPaneHeaderMemo<SessionMenuData>();
-  protected resolveHeaderSessionTitle(row: GatewaySessionRow | undefined): string {
+  resolveHeaderSessionTitle(row: GatewaySessionRow | undefined): string {
     const state = this.state;
     const hydration = state && chatHistoryRequests(state).initialSnapshotHydration;
     const session = row ?? this.resourceSessionObservation()?.row ?? undefined;
@@ -106,51 +97,30 @@ export abstract class ChatPaneSessionMenu extends ChatPaneContext {
       return true;
     }
     event.preventDefault();
-    void this.runHeaderSessionMutation({ kind: "toggle-archived" }, row);
+    const scope = this.captureHeaderSessionActionScope(true);
+    if (!scope) {
+      this.publishHeaderError(t("sessionsView.actionRequiresConnection"));
+      return true;
+    }
+    const owner = this.headerOutcomeOwner;
+    const draftSignal = this.headerSessionDraftAbortController.signal;
+    const capturedRow = { ...row };
+    void (async () => {
+      try {
+        const { runHeaderSessionMutation } = await import("./chat-pane-session-menu-actions.ts");
+        await runHeaderSessionMutation(this, { kind: "toggle-archived" }, capturedRow, {
+          scope,
+          owner,
+          draftSignal,
+        });
+      } catch (error) {
+        if (this.isHeaderSessionActionCurrent(scope, owner)) {
+          this.publishHeaderError(error, owner);
+        }
+      }
+    })();
     return true;
   };
-
-  protected headerSessionMenuData(row: GatewaySessionRow, pinnable: boolean): SessionMenuData {
-    const mainSessionKey = resolveUiConversationIdentity(
-      {
-        agentsList: this.context.agents.state.agentsList,
-        hello: this.context.gateway.snapshot.hello,
-      },
-      "main",
-      parseAgentSessionKey(row.key)?.agentId ?? row.agentId,
-    ).sessionKey;
-    const label = this.resolveHeaderSessionTitle(row);
-    const isChild =
-      !isSubagentSessionKey(row.key) &&
-      Boolean(resolveSidebarSessionParentKey(row, new Set([mainSessionKey])));
-    const archiving = this.context.sessions.archiveVisibility(row.key) === "pending";
-    const pinned = this.context.navigation.snapshot.sidebarEntries.includes(
-      serializeSidebarEntry({ type: "session", key: row.key }),
-    );
-    return this.headerSessionDataMemo.read(
-      [
-        label,
-        sessionPlacementAction(row),
-        row.key,
-        row.agentId,
-        row.sessionId,
-        isChild,
-        pinned,
-        pinnable,
-        row.snoozedUntil,
-        row.unread,
-        row.hiddenFromInvolvingMe,
-        row.communication,
-        row.effectiveCommunication,
-        row.archived,
-        archiving,
-        row.category,
-        row.icon,
-        row.color,
-      ],
-      () => sessionMenuDataFromRow(row, { label, isChild, pinned, pinnable, archiving }),
-    );
-  }
 
   protected async loadHeaderPlatform(
     client: GatewayBrowserClient,
@@ -169,7 +139,9 @@ export abstract class ChatPaneSessionMenu extends ChatPaneContext {
     }
   }
 
-  async openHeaderSessionGroup(row: GatewaySessionRow): Promise<void> {
+  async openHeaderSessionGroup(
+    moveToGroup: (name: string) => Promise<SidebarSessionMutationResult | void>,
+  ): Promise<void> {
     const signal = this.headerSessionDraftAbortController.signal;
     const gateway = this.context.gateway;
     const owner = this.headerOutcomeOwner;
@@ -183,10 +155,7 @@ export abstract class ChatPaneSessionMenu extends ChatPaneContext {
         submitLabel: t("sessionsView.newGroupCreate"),
         requireValue: true,
         submit: async (name) => {
-          const result = await this.runHeaderSessionMutation(
-            { kind: "move-to-group", category: name },
-            row,
-          );
+          const result = await moveToGroup(name);
           return result === "completed"
             ? null
             : result === "stale"
@@ -199,62 +168,6 @@ export abstract class ChatPaneSessionMenu extends ChatPaneContext {
     }
   }
 
-  async runHeaderSessionMutation(
-    action: Parameters<
-      typeof import("./chat-pane-session-operations.ts").runHeaderSessionOperation
-    >[0],
-    row: GatewaySessionRow,
-  ): Promise<SidebarSessionMutationResult | void> {
-    const scope = this.captureHeaderSessionActionScope(
-      action.kind === "rename" ||
-        action.kind === "set-icon" ||
-        action.kind === "set-color" ||
-        action.kind === "reset-appearance" ||
-        action.kind === "toggle-archived" ||
-        action.kind === "delete" ||
-        action.kind === "move-to-group",
-    );
-    if (!scope) {
-      this.publishHeaderError(t("sessionsView.actionRequiresConnection"));
-      return;
-    }
-    const owner = this.headerOutcomeOwner;
-    const draftSignal = this.headerSessionDraftAbortController.signal;
-    const capturedRow = { ...row };
-    try {
-      const { runHeaderSessionOperation } = await import("./chat-pane-session-operations.ts");
-      return await runHeaderSessionOperation(action, capturedRow, scope, {
-        isCurrent: (candidate) => this.isHeaderSessionActionCurrent(candidate, owner),
-        publishError: (error) => this.publishHeaderError(error, owner),
-        selectSession: (key) => this.onPaneSessionChange?.(this.paneId, key),
-        label: (candidate) => this.resolveHeaderSessionTitle(candidate),
-        rows: () => this.state?.sessionsResult?.sessions ?? [],
-        state: () => this.state,
-        draftSignal,
-        beginRename: (state) => {
-          if (this.state !== state || !this.presented) {
-            return null;
-          }
-          const currentScope = this.captureHeaderSessionActionScope(true);
-          if (!currentScope) {
-            return null;
-          }
-          const currentOwner = this.headerOutcomeOwner;
-          return {
-            scope: currentScope,
-            isCurrent: () =>
-              this.state === state && this.isHeaderSessionActionCurrent(currentScope, currentOwner),
-            publishError: (error) => this.publishHeaderError(error, currentOwner),
-          };
-        },
-      });
-    } catch (error) {
-      if (this.isHeaderSessionActionCurrent(scope, owner)) {
-        this.publishHeaderError(error, owner);
-      }
-    }
-  }
-
   private resolveContinueInTerminalCommand(row: GatewaySessionRow, client: GatewayBrowserClient) {
     return buildContinueInTerminalCommand({
       gatewayUrl: client.gatewayUrl,
@@ -262,23 +175,6 @@ export abstract class ChatPaneSessionMenu extends ChatPaneContext {
       rowAgentId: row.agentId,
       selectedAgentId: this.context.agentSelection.state.selectedId ?? undefined,
     });
-  }
-
-  protected continueInTerminalDisabledReason(row: GatewaySessionRow): string | undefined {
-    const gateway = this.context.gateway;
-    const client = gateway.snapshot.client;
-    if (gateway.snapshot.phase !== "connected" || !client) {
-      return t("chat.sessionHeader.continueInTerminal.disconnected");
-    }
-    const result = this.resolveContinueInTerminalCommand(row, client);
-    if (result.ok) {
-      return undefined;
-    }
-    return t(
-      result.reason === "query-routed"
-        ? "chat.sessionHeader.continueInTerminal.queryRouted"
-        : "chat.sessionHeader.continueInTerminal.unavailable",
-    );
   }
 
   openContinueInTerminalDialog(row: GatewaySessionRow): void {
@@ -334,7 +230,7 @@ export abstract class ChatPaneSessionMenu extends ChatPaneContext {
     });
   }
 
-  private isHeaderSessionActionCurrent(scope: SidebarSessionMutationScope, owner: string): boolean {
+  isHeaderSessionActionCurrent(scope: SidebarSessionMutationScope, owner: string): boolean {
     return this.ownsHeaderOutcome(owner) && isSessionMutationScopeCurrent(this.context, scope);
   }
 

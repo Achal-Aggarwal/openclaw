@@ -50,7 +50,14 @@ export function refreshSessionWorkspace(state: SessionWorkspaceHost, refreshFile
 async function readWorkspaceContent<T>(
   state: SessionWorkspaceHost,
   workspace: SessionWorkspaceState,
-  read: (runtime: typeof import("./chat-session-workspace-content.runtime.ts")) => Promise<T>,
+  read: (
+    runtime: Pick<
+      typeof import("./chat-session-workspace-content.runtime.ts"),
+      | "downloadSessionFile"
+      | "loadSessionWorkspaceArtifactContent"
+      | "loadSessionWorkspaceFileContent"
+    >,
+  ) => Promise<T>,
 ): Promise<T | null> {
   const client = state.client;
   const {

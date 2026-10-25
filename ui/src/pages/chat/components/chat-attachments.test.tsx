@@ -247,6 +247,30 @@ describe("chat attachment read failures", () => {
     });
   }
 
+  it.each(["remove", "reset"] as const)(
+    "cancels an admitted attachment before its read starts on %s",
+    async (action) => {
+      const read = vi.spyOn(StubFileReader.prototype, "readAsDataURL");
+      const h = readFixture();
+      expect(h.append([imageFile("cancelled.png", "hi")])).toBe(1);
+      const entry = expectDefined(h.reads.project([])[0], "admitted attachment");
+      expect(h.reads.pendingReads).toBe(1);
+      expect(entry.reservedBytes).toBe(2);
+      if (action === "remove") {
+        h.reads.remove(entry);
+      } else {
+        h.reads.abortReads();
+      }
+
+      await vi.dynamicImportSettled();
+
+      expect(h.reads.pendingReads).toBe(0);
+      expect(h.reads.project(h.attachments)).toEqual([]);
+      expect(h.props.onAttachmentsChange).not.toHaveBeenCalled();
+      expect(read).not.toHaveBeenCalled();
+    },
+  );
+
   it.each([false, true])(
     "retains published payload custody when remaining reads abort (presented=%s)",
     async (presented) => {
@@ -308,6 +332,7 @@ describe("chat attachment read failures", () => {
       const h = previewFixture([], {}, true);
       const { container, reads } = h;
       handleChatAttachmentPaste(pasteEventWithFiles(files), h.previewProps);
+      await vi.dynamicImportSettled();
       if (failure === "error") {
         await waitForSolid(() =>
           expect(

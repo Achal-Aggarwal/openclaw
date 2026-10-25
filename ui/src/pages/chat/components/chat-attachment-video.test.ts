@@ -54,6 +54,7 @@ it("keeps consent optional, reserves remaining batch bytes, and leaves small fil
   vi.useFakeTimers();
   const { reads, props, attachments } = draft;
   appendChatAttachmentFiles([new File([new Uint8Array(30)], "notes.txt")], props);
+  await vi.dynamicImportSettled();
   expect(appendChatAttachmentFiles([video()], props)).toBe(1);
   const entry = reads.project(attachments())[1]!;
   expect(entry).toMatchObject({ preparation: "offer", reservedBytes: 70 });
@@ -66,6 +67,7 @@ it("keeps consent optional, reserves remaining batch bytes, and leaves small fil
   expect(reads.pendingReads).toBe(0);
   const small = new File(["small"], "small.mp4", { type: "video/mp4" });
   appendChatAttachmentFiles([small], props);
+  await vi.dynamicImportSettled();
   expect(attachments().map((attachment) => attachment.fileName)).toEqual([
     "notes.txt",
     "small.mp4",
@@ -151,6 +153,7 @@ it("retries the original video once within the remaining batch budget", async ()
   await vi.advanceTimersByTimeAsync(0);
   expect(reads.pendingReads).toBe(0);
   appendChatAttachmentFiles([new File([new Uint8Array(30)], "notes.txt")], props);
+  await vi.dynamicImportSettled();
   const retry = entry.compress!;
   retry();
   retry();
@@ -200,6 +203,7 @@ it("reports a full batch without restarting the failed encoder", async () => {
     [new File([new Uint8Array(80)], "first.txt"), new File([new Uint8Array(20)], "second.txt")],
     props,
   );
+  await vi.dynamicImportSettled();
   const notification = vi.spyOn(toast, "showToast");
   entry.compress?.();
   expect(notification).toHaveBeenCalledWith({

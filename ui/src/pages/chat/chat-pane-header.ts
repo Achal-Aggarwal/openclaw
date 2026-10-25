@@ -1,6 +1,5 @@
 import type { GatewaySessionRow } from "../../api/types.ts";
 import { pathForAgentPanel } from "../../app-route-paths.ts";
-import { isNativeLocalGateway } from "../../app/native-editor-locality.runtime.ts";
 import { hasOperatorAdminAccess } from "../../app/operator-access.ts";
 import { isDesktopPanelAvailable } from "../../app/panel-availability.ts";
 import type { ApplicationPlacementStartupStatus } from "../../app/session-placement-startup.ts";
@@ -8,15 +7,11 @@ import type { UiSettings } from "../../app/settings.ts";
 import type { BoardWidgetPageMenu } from "../../components/board/board-widget-cell-options.ts";
 import { COMMAND_PALETTE_OPEN_EVENT } from "../../components/command-palette-contract.ts";
 import { personActivityRouting } from "../../components/person-activity-link.ts";
+import { EMPTY_SESSION_MENU_DATA } from "../../components/session-menu-data.ts";
 import { i18n, t } from "../../i18n/index.ts";
 import { registerChatSessionEnglish } from "../../i18n/locales/en-chat-session.ts";
 import { isGatewayMethodAdvertised } from "../../lib/gateway-methods.ts";
 import { readSessionMethodAccess } from "../../lib/session-method-access.ts";
-import { collectKnownSessionGroups } from "../../lib/sessions/grouping.ts";
-import {
-  canCopySessionMarkdown,
-  canSplitSessionView,
-} from "../../lib/sessions/session-menu-navigation.ts";
 import { resolveChatAgentIdentity } from "./chat-agent-id.ts";
 import {
   canLoadChatBranches,
@@ -38,7 +33,6 @@ import { ChatPaneHeaderMemo } from "./chat-pane-header-memo.ts";
 import { ChatPaneHeaderPeople } from "./chat-pane-header-people.ts";
 import { resolveChatPaneDesktopTarget, resolveChatPanePlacement } from "./chat-pane-placement.ts";
 import type { createChatPaneRails } from "./chat-pane-rails.ts";
-import type { HeaderMenuActionKind } from "./chat-pane-session-menu-contract.ts";
 import { isChatRunWorking } from "./chat-run-working.ts";
 import "./components/chat-header-session-menu.ts";
 import { readChatSessionActionAccess } from "./chat-session-action-access.ts";
@@ -78,13 +72,9 @@ export abstract class ChatPaneHeader extends ChatPaneDiscussion {
   private headerPanelControls?: PaneControls;
   private headerBoardMenu?: BoardWidgetPageMenu;
   private readonly headerPanelsMemo = new ChatPaneHeaderMemo<HeaderPanelAction[]>();
-  private readonly headerReasonsMemo = new ChatPaneHeaderMemo<
-    Partial<Record<HeaderMenuActionKind, string>>
-  >();
   private readonly headerMachineNameMemo = new ChatPaneHeaderMemo<
     (() => Promise<string | undefined>) | undefined
   >();
-  private readonly headerGroupsMemo = new ChatPaneHeaderMemo<string[]>();
   private readonly headerActivityMemo = new ChatPaneHeaderMemo<
     ReturnType<typeof personActivityRouting>
   >();
@@ -183,18 +173,10 @@ export abstract class ChatPaneHeader extends ChatPaneDiscussion {
     const headerAccess = readChatPaneHeaderAccess({
       snapshot: sharingSnapshot,
       row,
-      agentsList: this.context.agents.state.agentsList,
       hasLocalRun: Boolean(this.state?.chatRunId),
       working: branchSwitchWorking,
       archived: Boolean(this.state && this.isCurrentSessionArchived(this.state)),
-      continueInTerminalDisabledReason: row
-        ? this.continueInTerminalDisabledReason(row)
-        : undefined,
     });
-    const actionDisabledReasons = this.headerReasonsMemo.read(
-      Object.entries(headerAccess.actionDisabledReasons).flat(),
-      () => headerAccess.actionDisabledReasons,
-    );
     const desktopPanelAvailable =
       resolveChatPaneDesktopTarget(row) !== null &&
       isDesktopPanelAvailable(this.context.gateway.snapshot);
@@ -375,11 +357,6 @@ export abstract class ChatPaneHeader extends ChatPaneDiscussion {
       row,
     });
     const key = this.state?.sessionKey ?? "";
-    const groups = this.context.sessions?.state?.groups;
-    const sessions = this.context.sessions?.state?.result?.sessions;
-    const knownGroups = this.headerGroupsMemo.read([groups, sessions], () =>
-      collectKnownSessionGroups(groups ?? [], sessions ?? []),
-    );
     const personActivity = this.headerActivityMemo.read([this.context, this.context.basePath], () =>
       personActivityRouting(this.context),
     );
@@ -593,23 +570,23 @@ export abstract class ChatPaneHeader extends ChatPaneDiscussion {
         onPlacementReclaim: () => row && void this.changeHeaderPlacement(row, "reclaim"),
         onPlacementRecover: () => row && void this.changeHeaderPlacement(row, "recover"),
       },
+      // The trigger needs its label now; the loaded menu derives management state.
       sessionMenuAction:
         row && this.state
           ? {
-              session: this.headerSessionMenuData(row, headerAccess.pinnable),
-              worktreePath:
-                row.execNode || !isNativeLocalGateway() ? null : (workspace.root ?? null),
+              session: { ...EMPTY_SESSION_MENU_DATA, label: this.resolveHeaderSessionTitle(row) },
+              worktreePath: null,
               onboarding: this.onboarding,
               preferencesBrowserOnly:
                 this.context.runtimeConfig?.state.connected &&
                 this.context.runtimeConfig.canPatch === false,
               compact: this.narrow,
               mobile: this.mergedChrome,
-              copyMarkdownAllowed: canCopySessionMarkdown(this.context.gateway.snapshot),
-              splitAllowed: canSplitSessionView(),
+              copyMarkdownAllowed: false,
+              splitAllowed: false,
               settings: this.state.settings,
               bubbleModeEnabled: this.context.config.current.chatBubblesEnabled === true,
-              mainKey: headerAccess.mainKey,
+              mainKey: "main",
               boardWidgetMenu:
                 this.sessionPresentation === "desktop" && !this.compact && !this.onBackToSubagents
                   ? undefined
@@ -619,16 +596,17 @@ export abstract class ChatPaneHeader extends ChatPaneDiscussion {
                 readOwner: () => this,
                 readRow: () => this.headerMenuRow,
                 stopDisabledReason: placement.reclaimDisabledReason,
+                workspaceRoot: workspace.root,
               },
               sharing: sharing ?? null,
-              groups: knownGroups,
+              groups: [],
               currentOwner: row.owner?.actor ?? null,
-              actionDisabledReasons,
+              actionDisabledReasons: {},
               forkDisabled: this.state.sessionsLoading || row.modelSelectionLocked === true,
               forkFromLastCompleted: row.hasActiveRun === true,
-              archiveAllowed: this.canArchiveHeaderSession(row),
+              archiveAllowed: false,
               archiveShortcut: this.active && this.presented && !this.onboarding,
-              deleteAllowed: headerAccess.deleteAllowed,
+              deleteAllowed: false,
               onOpen: this.onHeaderMenuOpen,
               onOpenCommandPalette: this.onHeaderCommandPalette,
               onOpenDetails: detailsControl === undefined ? undefined : this.onHeaderDetails,

@@ -246,7 +246,6 @@ export interface TestChatPane extends HTMLElement, PaneTestLifecycle {
   hasOlderMessages: () => boolean;
   olderCursorsSeen: Set<string>;
   beginHeaderRename: (row: GatewaySessionRow) => void;
-  runHeaderSessionMutation: ChatPaneRuntime["runHeaderSessionMutation"];
   onboarding: boolean;
   cancelHeaderRename: () => void;
   commitHeaderRename: () => void;

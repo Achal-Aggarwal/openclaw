@@ -39,6 +39,8 @@ export const uiIsolatedTestFiles = [
   "ui/src/pages/agents/memory/memory-panel.test.ts",
   // Cold authoring import failures need a facade cache untouched by other suites.
   "ui/src/pages/chat/authoring-runtime-boundary.test.ts",
+  // Cold delivery admission must reach its held/rejected import before other send suites.
+  "ui/src/pages/chat/chat-send-delivery-loading.test.ts",
   // Holds the live dispatcher import before another chat suite can preload it.
   "ui/src/pages/chat/chat-live-events.test.ts",
   "ui/src/pages/chat/chat-outbox-recovery-owner.test.ts",
