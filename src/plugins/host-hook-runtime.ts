@@ -20,9 +20,6 @@ import { runPluginCleanup } from "./plugin-instance-scope.js";
 import type { PluginRegistry } from "./registry-types.js";
 
 type PluginRunContextNamespaces = Map<string, PluginJsonValue>;
-type PluginRunContextByPlugin = Map<string, PluginRunContextNamespaces>;
-type PluginRunContexts = Map<string, PluginRunContextByPlugin>;
-
 type PluginAgentEventSubscriptionContext = Parameters<
   PluginAgentEventSubscriptionRegistration["handle"]
 >[1];
@@ -34,7 +31,7 @@ type SchedulerJobRecord = {
 };
 
 type PluginHostRuntimeState = {
-  runContextByRunId: PluginRunContexts;
+  runContextByRunId: Map<string, Map<string, PluginRunContextNamespaces>>;
   schedulerJobsByPlugin: Map<string, Map<string, SchedulerJobRecord>>;
   nextSchedulerJobGeneration: number;
   pendingAgentEventHandlersByRunId: Map<string, Set<Promise<void>>>;
@@ -159,18 +156,16 @@ export function getPluginRunContext(params: {
   return value === undefined ? undefined : structuredClone(value);
 }
 
-type PluginRunContextSelection = {
-  pluginId?: string;
-  runId?: string;
-  namespace?: string;
-};
-
 /** Retained for the public test-runtime cleanup-scope option. */
 export function preparePluginRunContextCleanup(): <T>(run: () => T) => T {
   return (run) => run();
 }
 
-export function clearPluginRunContext(params: PluginRunContextSelection): void {
+export function clearPluginRunContext(params: {
+  pluginId?: string;
+  runId?: string;
+  namespace?: string;
+}): void {
   // Empty namespaces select all entries; set/get cannot address an empty key.
   const namespaceFilter = normalizePluginHostHookId(params.namespace) || undefined;
   const state = getPluginHostRuntimeState();

@@ -29,9 +29,9 @@ type RemovalResult = {
   ok: boolean;
 };
 
-type AgentDeleteRemovedPath = NonNullable<AgentsDeleteResult["removed"]>[number];
-type AgentDeleteFailedPath = NonNullable<AgentsDeleteResult["failed"]>[number];
-type MoveToTrashResult = { removed: AgentDeleteRemovedPath } | { failed: AgentDeleteFailedPath };
+type MoveToTrashResult =
+  | { removed: NonNullable<AgentsDeleteResult["removed"]>[number] }
+  | { failed: NonNullable<AgentsDeleteResult["failed"]>[number] };
 
 type CleanupResolvedPaths = {
   stateDir: string;
@@ -44,11 +44,6 @@ type CleanupResolvedPaths = {
 type RemovalOptions = {
   dryRun?: boolean;
   label?: string;
-};
-
-type StateRemovalOptions = {
-  dryRun?: boolean;
-  preservePaths?: readonly string[];
 };
 
 const STATE_CLEANUP_LOCK_TIMEOUT_MS = 250;
@@ -391,7 +386,10 @@ async function removeLinkedCleanupPaths(
 export async function removeStateAndLinkedPaths(
   cleanup: CleanupResolvedPaths,
   runtime: RuntimeEnv,
-  opts?: StateRemovalOptions,
+  opts?: {
+    dryRun?: boolean;
+    preservePaths?: readonly string[];
+  },
 ): Promise<boolean> {
   const requestedStateDir = path.resolve(cleanup.stateDir);
   const requestedPreservePaths = opts?.dryRun
