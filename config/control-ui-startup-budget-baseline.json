@@ -1,5 +1,5 @@
 {
-  "startupJsGzipBytes": 273121,
-  "reason": "Refresh to the measured long-session build: startup 273121 B gzip is 8 B below the same-machine base; the previous cap was exceeded by 1 B of build variance.",
+  "startupJsGzipBytes": 272924,
+  "reason": "Measured integrated long-session startup: 272924 B gzip versus same-machine base 272851 B (+73 B), with unchanged 7 JS and 1 CSS requests. Ratchet to the actual integrated head.",
   "updatedAt": "2026-10-25"
 }

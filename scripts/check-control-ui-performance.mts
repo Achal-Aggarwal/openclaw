@@ -68,7 +68,7 @@ const controlUiPerformanceBudgets = {
   totalCssGzipBytes: 303_372,
   // Completed-run fragments bound mounted content in 2,000-message sessions.
   // Their spacing adds 94 raw bytes; retain the measured total without new headroom.
-  totalCssRawBytes: 1_595_666,
+  totalCssRawBytes: 1_595_749,
 } satisfies Record<string, number>;
 export const CONTROL_UI_PERFORMANCE_BUDGETS = Object.freeze(controlUiPerformanceBudgets);
 
