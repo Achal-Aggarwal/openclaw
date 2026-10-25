@@ -366,6 +366,8 @@ export function createControlUiCodeSplitting(options: { includeBootGroups?: bool
                 styles.add("ui/src/pages/chat/components/chat-pane-mobile-composition.css");
                 styles.add("ui/src/styles/chat/context-breakdown.css");
                 styles.add("ui/src/pages/chat/components/chat-session-activity.css");
+                styles.add("ui/src/pages/chat/chatgpt-usage-limit.css");
+                styles.add("ui/src/styles/chat/selection-annotations.css");
               }
               return {
                 name: `control-ui-boot-${route}-styles`,
