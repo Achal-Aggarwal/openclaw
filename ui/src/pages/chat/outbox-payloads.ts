@@ -73,14 +73,15 @@ export async function prepareOutboxPayload(
       ? { status: "failed", reason: "unavailable" }
       : { status: "ready", update: {} };
   }
-  if (!readOfflineStorageScope(host)) {
+  const recoveryScope = readOfflineStorageScope(host);
+  if (!recoveryScope) {
     return { status: "failed", reason: "unavailable" };
   }
   const isCurrent = captureOutboxPayloadOwner(host, scope);
   try {
     const { prepareOutboxPayload } = await import("./outbox-payloads.runtime.ts");
     return isCurrent()
-      ? prepareOutboxPayload(host, item, purpose)
+      ? prepareOutboxPayload(host, item, purpose, { scope, recoveryScope, isCurrent })
       : { status: "failed", reason: "unavailable" };
   } catch {
     return { status: "failed", reason: "unavailable" };

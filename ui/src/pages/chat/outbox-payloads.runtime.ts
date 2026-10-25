@@ -1,4 +1,3 @@
-import { readOfflineStorageScope } from "../../app/boot-record.ts";
 import { readBlobAsDataUrl } from "../../lib/blob-data-url.ts";
 import type { ChatQueueItem } from "../../lib/chat/chat-types.ts";
 import {
@@ -7,37 +6,24 @@ import {
   removeOutboxPayloads,
   writeOutboxPayload,
 } from "../../lib/chat/outbox-payload-store.runtime.ts";
+import type { StoredChatOutboxScope } from "../../lib/chat/outbox-store-scope.ts";
 import { storageTargetForGateway } from "../../lib/chat/outbox-store.ts";
-import { isIncognitoComposerScope } from "./composer-persistence-state.ts";
 import { captureDurableChatAttachments } from "./durable-composer-persistence.ts";
-import {
-  captureOutboxPayloadOwner,
-  payloadScope,
-  type Host,
-  type PayloadResult,
-} from "./outbox-payloads.ts";
+import type { Host, PayloadResult } from "./outbox-payloads.ts";
+
+type AdmittedPayloadContext = {
+  scope: StoredChatOutboxScope;
+  recoveryScope: string;
+  isCurrent: () => boolean;
+};
 
 async function preparePayload(
   host: Host,
   item: ChatQueueItem,
   purpose: "send" | "handoff",
+  { recoveryScope, isCurrent }: AdmittedPayloadContext,
 ): Promise<PayloadResult> {
-  if (!item.attachments?.length && !item.attachmentPayload && !item.attachmentStorageError) {
-    return { status: "ready", update: {} };
-  }
-  // Incognito keeps the existing tab-only inline outbox and its quota. It must
-  // never acquire restart-persistent Blob ownership or hydrate a regular row.
-  const scope = payloadScope(host, item);
-  if (isIncognitoComposerScope(host, scope)) {
-    return item.attachmentPayload
-      ? { status: "failed", reason: "unavailable" }
-      : { status: "ready", update: {} };
-  }
-  const recoveryScope = readOfflineStorageScope(host);
-  if (!recoveryScope) {
-    return { status: "failed", reason: "unavailable" };
-  }
-  const isCurrent = captureOutboxPayloadOwner(host, scope);
+  // The facade admits public, owner-scoped payloads before loading this engine.
   let tabId: string;
   try {
     tabId = await outboxPayloadTab();
@@ -148,12 +134,13 @@ const pendingPayloads = new Map<string, Promise<PayloadResult>>();
 export async function prepareOutboxPayload(
   host: Host,
   item: ChatQueueItem,
-  purpose: "send" | "handoff" = "send",
+  purpose: "send" | "handoff",
+  context: AdmittedPayloadContext,
 ): Promise<PayloadResult> {
   const reference = item.attachmentPayload;
-  const scope = payloadScope(host, item);
-  if (!reference || isIncognitoComposerScope(host, scope) || !readOfflineStorageScope(host)) {
-    return preparePayload(host, item, purpose);
+  const { scope, recoveryScope, isCurrent } = context;
+  if (!reference) {
+    return preparePayload(host, item, purpose, context);
   }
   const key = JSON.stringify([
     item.id,
@@ -162,7 +149,7 @@ export async function prepareOutboxPayload(
     reference.recoveryScope,
     scope,
     host.settings?.gatewayUrl,
-    readOfflineStorageScope(host),
+    recoveryScope,
     purpose,
     item.attachments?.map(({ mimeType, fileName, sizeBytes, origin }) => [
       mimeType,
@@ -171,10 +158,11 @@ export async function prepareOutboxPayload(
       origin,
     ]),
   ]);
-  const isCurrent = captureOutboxPayloadOwner(host, scope);
   let pending = pendingPayloads.get(key);
   if (!pending) {
-    pending = preparePayload(host, item, purpose).finally(() => pendingPayloads.delete(key));
+    pending = preparePayload(host, item, purpose, context).finally(() =>
+      pendingPayloads.delete(key),
+    );
     pendingPayloads.set(key, pending);
   }
   const result = await pending;

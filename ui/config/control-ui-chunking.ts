@@ -78,12 +78,12 @@ export function controlUiStableChunkName(id: string): string | undefined {
 
   switch (controlUiBootManifestKey(id)) {
     case "ui/src/lib/chat/composer-draft-write.runtime.ts":
-      return "composer-draft-write-runtime";
-    case "ui/src/lib/chat/composer-draft-recovery.runtime.ts":
-      return "composer-draft-recovery-runtime";
     case "ui/src/pages/chat/outbox-payloads.runtime.ts":
     case "ui/src/lib/chat/outbox-payload-store.runtime.ts":
-      return "outbox-payload-runtime";
+      // Both routes prefetch this file; distinct module initializers still wait for use.
+      return "composer-invocation-menus";
+    case "ui/src/lib/chat/composer-draft-recovery.runtime.ts":
+      return "composer-draft-recovery-runtime";
     case "ui/src/pages/chat/chat-outbox-recovery-rows.tsx":
     case "ui/src/pages/chat/chat-outbox-recovery-actions.ts":
       return "chat-outbox-recovery-runtime";
@@ -117,6 +117,7 @@ export function controlUiStableChunkName(id: string): string | undefined {
       return "chat-provider-review";
     // Keep optional compression groups separate from code evaluated by text-only Chat.
     case "ui/src/pages/chat/chat-send-delivery.runtime.ts":
+    case "ui/src/pages/chat/chat-send-support.runtime.ts":
     case "ui/src/pages/chat/chat-send-queue-runtime.ts":
     case "ui/src/pages/chat/chat-model-recovery.runtime.ts":
     case "ui/src/pages/chat/chat-command-dispatch.runtime.ts":
