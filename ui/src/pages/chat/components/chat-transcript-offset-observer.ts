@@ -252,10 +252,20 @@ export function observeTranscriptOffset(
       return;
     }
     const offset = element.scrollTop;
-    // Logical compensation can exceed the old native maximum until the sizer commits.
-    if (offset !== nativeOffset) {
-      publishOffset(offset, instance.isScrolling);
+    const logicalOffset = instance.scrollOffset;
+    if (offset === logicalOffset) {
+      return;
     }
+    // Preserve compensation only at an actual end clamp until the sizer commits.
+    if (
+      offset === nativeOffset &&
+      logicalOffset !== null &&
+      logicalOffset > offset &&
+      offset === maxTranscriptScrollOffset(element)
+    ) {
+      return;
+    }
+    publishOffset(offset, instance.isScrolling);
   };
   owner.state.syncNativeOffset = syncOffset;
   const finishTouch = (event: TouchEvent) => {

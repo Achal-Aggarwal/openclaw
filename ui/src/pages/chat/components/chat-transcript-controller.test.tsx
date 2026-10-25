@@ -324,6 +324,54 @@ it.each(["append", "reorder", "focused reorder"] as const)(
   },
 );
 
+it("awaits MCP teardown when rich rows narrow the offscreen window", async () => {
+  const pending = createDeferred();
+  const rows = numberedContentRows(24);
+  const { container, renderRows } = await mountTestTranscript("narrow-mcp-window", rows);
+  const edgeIndex = Number(transcriptRows(container)[0]!.dataset.index);
+  expect(edgeIndex).toBeGreaterThan(0);
+  rows[edgeIndex]!.content = <mcp-app-view />;
+  renderRows(rows);
+  const { app, teardown } = stubMcpAppLifecycle(container, () => pending.promise);
+  const nextRows = rows.map((row, index) =>
+    index === 0 ? Object.assign({}, row, { key: "rich", estimatedSize: 120 }) : row,
+  );
+
+  renderRows(nextRows);
+  expect(teardown).toHaveBeenCalledOnce();
+  expect(app.isConnected).toBe(true);
+  pending.resolve();
+  await pending.promise;
+  await flushDeferredRowPrune();
+  renderRows(nextRows);
+  expect(app.isConnected).toBe(false);
+});
+
+it("awaits MCP teardown using the candidate row heights", async () => {
+  const pending = createDeferred();
+  const rows = numberedContentRows(24);
+  const { container, renderRows } = await mountTestTranscript("candidate-mcp-heights", rows);
+  scroll(container, 1_200);
+  await flushDeferredRowPrune();
+  renderRows(rows);
+  const edgeIndex = Number(transcriptRows(container).at(-2)!.dataset.index);
+  rows[edgeIndex]!.content = <mcp-app-view />;
+  renderRows(rows);
+  const { app, teardown } = stubMcpAppLifecycle(container, () => pending.promise);
+  const nextRows = rows.map((row, index) =>
+    index === edgeIndex - 3 ? Object.assign({}, row, { key: "rich", estimatedSize: 480 }) : row,
+  );
+
+  renderRows(nextRows);
+  expect(teardown).toHaveBeenCalledOnce();
+  expect(app.isConnected).toBe(true);
+  pending.resolve();
+  await pending.promise;
+  await flushDeferredRowPrune();
+  renderRows(nextRows);
+  expect(app.isConnected).toBe(false);
+});
+
 it("reconciles an implicit end anchor when committed content has no scroll range", async () => {
   const flushFrames = stubAnimationFrames();
   transcriptDomState.measuredRowHeight = 20;

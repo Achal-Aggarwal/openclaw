@@ -59,11 +59,20 @@ it("keeps maintenance and active commands owned until the committed viewport set
   expect(isTranscriptProgrammaticScroll(state, element)).toBe(false);
 });
 
-it("delivers native offsets without checking end geometry when no end command is active", () => {
+it.each([
+  {
+    name: "delivers native offsets without checking end geometry when no end command is active",
+    logicalDrift: false,
+  },
+  {
+    name: "reconciles non-clamped virtual drift at an unchanged native offset",
+    logicalDrift: true,
+  },
+])("$name", ({ logicalDrift }) => {
   const element = document.createElement("div");
   const readGeometry = vi.fn(() => 100);
   for (const key of ["scrollHeight", "clientHeight"]) {
-    Object.defineProperty(element, key, { get: readGeometry });
+    Object.defineProperty(element, key, { configurable: true, get: readGeometry });
   }
   const virtualizer = new Virtualizer<HTMLDivElement, HTMLElement>({
     count: 0,
@@ -75,12 +84,13 @@ it("delivers native offsets without checking end geometry when no end command is
   });
   virtualizer.scrollElement = element;
   virtualizer.targetWindow = window;
+  const state = new TranscriptOffsetState();
   const onOffset = vi.fn();
   const deliver = vi.fn();
   onTestFinished(
     observeTranscriptOffset(
       {
-        state: new TranscriptOffsetState(),
+        state,
         getScrollElement: () => element,
         endAnchor: new TranscriptEndAnchor(() => {}),
         prependAnchor: new TranscriptPrependAnchor(new Map(), vi.fn()),
@@ -102,6 +112,16 @@ it("delivers native offsets without checking end geometry when no end command is
   expect(deliver).toHaveBeenCalledWith(20, true);
   expect(onOffset).toHaveBeenCalledOnce();
   expect(readGeometry).not.toHaveBeenCalled();
+  if (logicalDrift) {
+    Object.defineProperties(element, {
+      clientHeight: { value: 200 },
+      scrollHeight: { value: 1000 },
+    });
+    virtualizer.scrollOffset = 40;
+    deliver.mockClear();
+    state.syncNativeOffset?.();
+    expect(deliver).toHaveBeenCalledExactlyOnceWith(20, false);
+  }
 });
 
 it.each([

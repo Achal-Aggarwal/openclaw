@@ -352,6 +352,11 @@ export async function probeLongSession(options: {
               ? scroller.scrollTop
               : scroller.scrollHeight - scroller.clientHeight - scroller.scrollTop;
           if (distance > 2) {
+            Reflect.set(window, "__longSessionScrollFailure", {
+              direction: destination,
+              frames,
+              distance,
+            });
             throw new Error(`Scroll did not reach ${destination}: ${distance}px remaining`);
           }
           return {
@@ -378,6 +383,23 @@ export async function probeLongSession(options: {
           }
         }, direction);
       },
+      async (error, trajectory) => {
+        try {
+          const failure =
+            trajectory ??
+            (await page.evaluate(() => {
+              const savedFailure: unknown = Reflect.get(window, "__longSessionScrollFailure");
+              Reflect.deleteProperty(window, "__longSessionScrollFailure");
+              return savedFailure;
+            }));
+          await writeFile(
+            path.join(artifactDir, `${prefix}.scroll-failure.json`),
+            JSON.stringify({ direction, error: String(error), trajectory: failure }, null, 2),
+          );
+        } catch (captureError) {
+          console.warn("Could not save the failed scroll trajectory:", captureError);
+        }
+      },
     );
     return { ...timing, result: { ...value, longTasks, maxLongTaskMs } };
   };
@@ -390,6 +412,7 @@ export async function probeLongSession(options: {
   const measureRendered = async <T>(
     action: () => Promise<T>,
     afterRender?: () => Promise<void>,
+    onFailure?: (error: unknown, value: T | undefined) => Promise<void>,
   ) => {
     const measured = await measure(async () => {
       await page.evaluate(() => {
@@ -402,8 +425,9 @@ export async function probeLongSession(options: {
         observer.observe({ type: "longtask" });
         Reflect.set(window, "__longSessionAction", { observer, longTasks });
       });
+      let value: T | undefined;
       try {
-        const value = await action();
+        value = await action();
         await renderFrames();
         if (afterRender) {
           await afterRender();
@@ -423,6 +447,9 @@ export async function probeLongSession(options: {
           };
         });
         return { value, ...sample };
+      } catch (error) {
+        await onFailure?.(error, value);
+        throw error;
       } finally {
         await page.evaluate(() => {
           Reflect.get(window, "__longSessionAction")?.observer.disconnect();

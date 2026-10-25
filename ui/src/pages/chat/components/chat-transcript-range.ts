@@ -1,5 +1,7 @@
 import { defaultRangeExtractor, type Range, Virtualizer } from "@tanstack/virtual-core";
 import { findMcpAppUnmountTargets } from "../../../components/mcp-app-unmount.ts";
+import type { TranscriptRow } from "./chat-transcript-layout.ts";
+import { CHAT_TRANSCRIPT_ESTIMATED_ROW_PX } from "./chat-transcript-session.ts";
 
 export function extractTranscriptRange(
   range: Range,
@@ -18,10 +20,11 @@ export function extractTranscriptRange(
 
 export function previewTranscriptRowKeys(
   virtualizer: Virtualizer<HTMLDivElement, HTMLElement>,
-  nextKeys: readonly string[],
+  nextRows: readonly TranscriptRow[],
   focusedRowKey: string | null,
+  overscan: number,
 ): Set<string> {
-  const nextIndexes = new Map(nextKeys.map((key, index) => [key, index]));
+  const nextIndexes = new Map(nextRows.map((row, index) => [row.key, index]));
   const preview = new Virtualizer<HTMLDivElement, HTMLElement>({
     ...virtualizer.options,
     initialMeasurementsCache: virtualizer.takeSnapshot(),
@@ -35,10 +38,12 @@ export function previewTranscriptRowKeys(
   // advance the model owned by connected DOM.
   preview.setOptions({
     ...preview.options,
-    count: nextKeys.length,
-    getItemKey: (index) => nextKeys[index]!,
+    count: nextRows.length,
+    getItemKey: (index) => nextRows[index]!.key,
+    estimateSize: (index) => nextRows[index]?.estimatedSize ?? CHAT_TRANSCRIPT_ESTIMATED_ROW_PX,
+    overscan,
   });
-  return new Set(preview.getVirtualIndexes().map((index) => nextKeys[index]!));
+  return new Set(preview.getVirtualIndexes().map((index) => nextRows[index]!.key));
 }
 
 export function leavingTranscriptMcpAppRows(

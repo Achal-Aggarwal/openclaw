@@ -470,6 +470,9 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
         rows.some((row, index) => row.key !== this.rowKeys[index]));
     const nextKeys = rowModelChanged ? rows.map((row) => row.key) : this.rowKeys;
     const virtualizer = this.virtualizer;
+    // Rich fragments need one offscreen row; ordinary transcripts keep their window.
+    const hasFragments = rowModelChanged && rows.some((row) => row.estimatedSize !== undefined);
+    const nextOverscan = hasFragments ? 1 : CHAT_TRANSCRIPT_OVERSCAN;
     const nextRowKeys = rowModelChanged
       ? nextKeys
       : virtualizer.getVirtualItems().map(({ index }) => rows[index]!.key);
@@ -506,7 +509,7 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
         }
         this.headerHeight = header?.height ?? 0;
         if (rowModelChanged) {
-          this.syncRows(nextKeys);
+          this.syncRows(nextKeys, nextOverscan);
         } else {
           this.appliedHeaderHeight = reconcileTranscriptHeaderMargin(
             virtualizer,
@@ -542,7 +545,7 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
       () =>
         leavingTranscriptMcpAppRows(this.threadInnerElement, () =>
           rowModelChanged
-            ? previewTranscriptRowKeys(virtualizer, nextKeys, this.focusedRowKey)
+            ? previewTranscriptRowKeys(virtualizer, rows, this.focusedRowKey, nextOverscan)
             : new Set(nextRowKeys),
         ),
       {
@@ -700,7 +703,7 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
     }
   }
 
-  private syncRows(nextKeys: readonly string[]): void {
+  private syncRows(nextKeys: readonly string[], overscan: number): void {
     this.rowKeys = nextKeys;
     this.rowIndexesByKey = new Map(this.rowKeys.map((key, index) => [key, index]));
     // The header margin must land in the same setOptions as the key change:
@@ -714,6 +717,7 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
       count: nextKeys.length,
       getItemKey: (index) => nextKeys[index]!,
       rangeExtractor: (range) => this.initialRange.extract(range),
+      overscan,
       scrollMargin,
     });
   }
