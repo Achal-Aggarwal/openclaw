@@ -18,8 +18,6 @@ const sharedInteractionEntries = new Set([
   "ui/src/components/app-sidebar-online.tsx",
 ]);
 const chatInteractionEntries = new Set([
-  // Chat prepares attachment sends; New Session loads its uncommon attachment path on demand.
-  "ui/src/pages/chat/outbox-payloads.runtime.ts",
   "ui/src/pages/chat/components/chat-context-breakdown.tsx",
   "ui/src/components/markdown-live.ts",
   // Cached environment facts reveal without another network round trip.

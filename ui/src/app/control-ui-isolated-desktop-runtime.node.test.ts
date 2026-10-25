@@ -303,7 +303,7 @@ it("prioritizes signing and route dependencies over unevaluated interaction hint
     commonDependency,
   ].map((id) => chunkFor(id).fileName);
   const payloadChunk = chunkFor(entries.outboxPayload).fileName;
-  expect(payloadChunk).toBe(chunkFor(entries.deferredSupport).fileName);
+  expect(payloadChunk).not.toBe(chunkFor(entries.deferredSupport).fileName);
   expect(chunkFor(entries.draftWrite).fileName).toBe(chunkFor(entries.composerMenu).fileName);
   const signerChunk = chunkFor(entries.signer).fileName;
   const chatChunk = chunkFor(entries.chat).fileName;
@@ -313,7 +313,7 @@ it("prioritizes signing and route dependencies over unevaluated interaction hint
   const html = await fs.readFile(local("dist/index.html"), "utf8");
   const chatPreloads = routePreloads(html, "chat");
   expect(chatPreloads.toSorted()).toEqual(
-    [...new Set([signerChunk, chatChunk, payloadChunk, ...commonChunks])].toSorted(),
+    [...new Set([signerChunk, chatChunk, ...commonChunks])].toSorted(),
   );
   expect(routePreloads(html, "new").toSorted()).toEqual(
     [...new Set([signerChunk, ...commonChunks, ...placementChunks])].toSorted(),
@@ -326,7 +326,7 @@ it("prioritizes signing and route dependencies over unevaluated interaction hint
   const linkFor = (file: string) => links.find((link) => link.includes(`href="./${file}"`));
   expect(linkFor(chunkFor(entries.online).fileName)).toContain('fetchpriority="low"');
   expect(linkFor(chunkFor(entries.draftWrite).fileName)).toContain('fetchpriority="low"');
-  expect(linkFor(chunkFor(entries.outboxPayload).fileName)).toContain('fetchpriority="low"');
+  expect(linkFor(payloadChunk)).toBeUndefined();
   expect(linkFor(chunkFor(commonDependency).fileName)).not.toContain("fetchpriority");
   expect(linkFor(signerChunk)).not.toContain("fetchpriority");
   expect(html).not.toContain(chunkFor(signingFallback).fileName);
