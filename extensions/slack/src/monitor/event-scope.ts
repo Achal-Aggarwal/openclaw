@@ -2,7 +2,6 @@ import type { WebClient, WebClientOptions } from "@slack/web-api";
 import { logVerbose } from "openclaw/plugin-sdk/runtime-env";
 import { normalizeOptionalString } from "openclaw/plugin-sdk/string-coerce-runtime";
 import { getSlackListenerWriteClient } from "../client.js";
-import type { SlackMonitorContext } from "./context.js";
 import type { SlackInstallationIdentity } from "./enterprise-install.js";
 
 export type SlackEventScope = Readonly<{
@@ -87,7 +86,10 @@ export function resolveSlackMonitorEventScope(params: {
 }
 
 export function resolveSlackInteractionEventScope(
-  ctx: SlackMonitorContext,
+  ctx: Parameters<typeof resolveSlackMonitorEventScope>[0]["ctx"] & {
+    runtime: { log?: (message: string) => void };
+    shouldDropMismatchedSlackEvent?: (body: unknown) => boolean;
+  },
   args: Pick<Parameters<typeof resolveSlackMonitorEventScope>[0], "body" | "context" | "client">,
   kind: "action" | "shortcut" | "view_submission" | "view_closed",
 ): SlackEventScope | null | undefined {
