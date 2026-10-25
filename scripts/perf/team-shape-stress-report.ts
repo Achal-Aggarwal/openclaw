@@ -1,5 +1,5 @@
 // Report only completed real-Gateway captures; missing evidence is never reported as zero cost.
-import { readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import type { GatewayResourceSnapshot } from "../lib/gateway-bench-profile.ts";
 
@@ -8,6 +8,7 @@ type Telemetry = {
   mode: string;
   durationMs: number;
   mainThreadCpuPercent: number;
+  hostLoad?: { initial: number[]; final: number[]; samples: number; mean: number[]; max: number[] };
   sampledAllocatedBytesPerSecond: number | null;
   gc: Record<
     string,
@@ -47,9 +48,84 @@ export type StressRun = RunOptions & {
   workerHeaps: GatewayResourceSnapshot["workers"];
   rpcMinutes: SoakResult["teamStress"]["rpcMinutes"];
   nativeOldGenerationSamples: Array<{ scrape: number; bytes: number | null }>;
+  sessionsListHandler?: ReturnType<typeof readHandlerWindow>;
   memoryScope: string;
 };
 const MIB = 1024 ** 2;
+
+function readHandlerWindow(resultDir: string) {
+  const windowPath = path.join(resultDir, "stress-prometheus-window.json");
+  // Earlier stored captures have only periodic scrapes, with no measured-window baseline.
+  if (!existsSync(windowPath)) {
+    return null;
+  }
+  const read = (side: string) => {
+    const samples = new Map<string, number>();
+    for (const line of readFileSync(
+      path.join(resultDir, `stress-prometheus-${side}.prom`),
+      "utf8",
+    ).split("\n")) {
+      const match =
+        /^openclaw_gateway_rpc_handler_seconds_(bucket|count|sum)\{([^}]*)\} ([\d.eE+-]+)$/.exec(
+          line,
+        );
+      if (!match || !/(?:^|,)method="sessions\.list"(?:,|$)/.test(match[2]!)) {
+        continue;
+      }
+      const key = match[1] === "bucket" ? /(?:^|,)le="([^"]+)"/.exec(match[2]!)?.[1] : match[1];
+      if (key) {
+        samples.set(key, Number(match[3]));
+      }
+    }
+    return samples;
+  };
+  const start = read("start");
+  const end = read("end");
+  if (!end.has("count") || !end.has("sum")) {
+    throw new Error("Stress capture lacks server-side sessions.list handler histogram");
+  }
+  const deltas = new Map([...end].map(([key, value]) => [key, value - (start.get(key) ?? 0)]));
+  if ([...deltas.values()].some((value) => value < 0)) {
+    throw new Error("Server-side sessions.list histogram reset during stress capture");
+  }
+  const count = deltas.get("count")!;
+  const boundSeconds = (bound: string) => (bound === "+Inf" ? Infinity : Number(bound));
+  const buckets = [...deltas]
+    .filter(([key]) => key !== "count" && key !== "sum")
+    .map(([upperBoundSeconds, bucketCount]) => ({ upperBoundSeconds, count: bucketCount }))
+    .toSorted((a, b) => boundSeconds(a.upperBoundSeconds) - boundSeconds(b.upperBoundSeconds));
+  const percentile = (fraction: number) => {
+    if (!count) {
+      return null;
+    }
+    let lower = 0;
+    let previousCount = 0;
+    for (const bucket of buckets) {
+      const upper = boundSeconds(bucket.upperBoundSeconds);
+      if (bucket.count >= count * fraction) {
+        return Number.isFinite(upper)
+          ? (lower +
+              ((count * fraction - previousCount) / (bucket.count - previousCount)) *
+                (upper - lower)) *
+              1000
+          : null;
+      }
+      lower = upper;
+      previousCount = bucket.count;
+    }
+    return null;
+  };
+  return {
+    count,
+    totalMs: deltas.get("sum")! * 1000,
+    p95Ms: percentile(0.95),
+    p99Ms: percentile(0.99),
+    buckets,
+    window: JSON.parse(readFileSync(windowPath, "utf8")),
+    scope:
+      "Server handler return/throw duration; cumulative Prometheus buckets differenced across workload boundaries. Quantiles are bucket-interpolated estimates, not client round-trip times. Boundary scrape timestamps bound the capture.",
+  };
+}
 
 export function summarizeStressRun(options: RunOptions): StressRun {
   const result: SoakResult = JSON.parse(
@@ -151,6 +227,7 @@ export function summarizeStressRun(options: RunOptions): StressRun {
     })
     .toSorted((a, b) => a.scrape - b.scrape);
   const nativeOldGeneration = nativeOldGenerationSamples.at(-1)?.bytes;
+  const sessionsListHandler = readHandlerWindow(options.resultDir);
   return {
     ...options,
     durationMs: telemetry.durationMs,
@@ -160,10 +237,13 @@ export function summarizeStressRun(options: RunOptions): StressRun {
     workerHeaps: workers,
     rpcMinutes: result.teamStress.rpcMinutes,
     nativeOldGenerationSamples,
+    sessionsListHandler,
     memoryScope:
       "RSS/main heap at timing stop; workers at last non-forced-GC resource sample; old generation from the last scraped native major-GC epilogue; settled old generation after explicit GC outside timing.",
     metrics: {
       mainThreadCpuPercent: telemetry.mainThreadCpuPercent,
+      hostLoadOneMinuteMean: telemetry.hostLoad?.mean[0] ?? null,
+      hostLoadOneMinuteMax: telemetry.hostLoad?.max[0] ?? null,
       allocationMiBPerSecond:
         telemetry.sampledAllocatedBytesPerSecond === null
           ? null
@@ -179,6 +259,12 @@ export function summarizeStressRun(options: RunOptions): StressRun {
       sessionsListP50Ms: list.p50Ms,
       sessionsListP99Ms: list.p99Ms,
       sessionsListCount: list.count,
+      sessionsListHandlerCount: sessionsListHandler?.count ?? null,
+      sessionsListHandlerP95Ms: sessionsListHandler?.p95Ms ?? null,
+      sessionsListHandlerP99Ms: sessionsListHandler?.p99Ms ?? null,
+      sessionsListHandlerMeanMs: sessionsListHandler?.count
+        ? sessionsListHandler.totalMs / sessionsListHandler.count
+        : null,
       sessionsListPerMinute: list.count / durationMinutes,
       rpcPerMinute:
         Object.values(rpc).reduce((sum, method) => sum + method.count, 0) / durationMinutes,
@@ -227,7 +313,11 @@ export function compareStressRuns(runs: StressRun[]) {
       const base = mean("base"),
         candidate = mean("candidate"),
         absolute = mean("delta");
-      const tailSamples = metric.startsWith("eventLoop") ? "eventLoopCount" : "sessionsListCount";
+      const tailSamples = metric.startsWith("eventLoop")
+        ? "eventLoopCount"
+        : metric.startsWith("sessionsListHandler")
+          ? "sessionsListHandlerCount"
+          : "sessionsListCount";
       const minimum = metric.includes("P99") ? 1000 : metric.includes("P95") ? 200 : 0;
       const context =
         values.length !== pairs.length || !values.length

@@ -102,12 +102,20 @@ each state's `broadcast-measure-*` directory:
 
 - `stress-minutes.jsonl`: main-thread CPU, process RSS, main heap/heap spaces,
   GC duration/count/percentiles/max by kind, event-loop p95/p99/max/count,
-  timer stalls above 100 ms, and sampled JS allocation rate in diagnostic mode.
+  timer stalls above 100 ms, host load averages (1/5/15 minutes), and sampled JS
+  allocation rate in diagnostic mode. Whole-run telemetry includes initial/final,
+  mean, and maximum host load; these include unrelated host processes.
 - `stress-rpc-minutes.jsonl`: per-method completion counts, errors, p50/p95/p99,
   and maxima. The raw round RPC latencies and pooled summaries are in `result.json`.
 - `memory-samples.jsonl`: main and tracked worker heaps, missing worker samples,
   and separately labeled post-window forced-GC samples.
 - `stress-prometheus-*.prom`: real scrapes of the isolated Gateway.
+  The `start` and `end` scrapes bracket measured work; their request timestamps
+  are recorded in `stress-prometheus-window.json`. The report subtracts these
+  cumulative `sessions.list` handler buckets to exclude startup and warmup, and
+  reports server handler count, mean, and bucket-interpolated p95/p99 separately
+  from client round-trip latency. Scrape timestamps bound the handler window;
+  histogram quantiles are estimates, not exact individual-request percentiles.
 - `stress-telemetry.json` and `stress-allocation.heapprofile`: whole-run telemetry
   and sampled allocation evidence (profile only in allocation mode).
 

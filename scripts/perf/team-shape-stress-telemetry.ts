@@ -2,6 +2,7 @@
 import { appendFile, mkdir, writeFile } from "node:fs/promises";
 import type { HeapProfiler } from "node:inspector";
 import { Session } from "node:inspector/promises";
+import { loadavg } from "node:os";
 import path from "node:path";
 import {
   constants,
@@ -92,6 +93,8 @@ export async function startTeamStressTelemetry(options: Options) {
   }
   const mode = inspector ? "allocation-diagnostic" : "untraced-timing";
   const started = performance.now();
+  const initialHostLoad = loadavg();
+  const hostLoads = [initialHostLoad];
   let windowStarted = started;
   const initialCpu = process.threadCpuUsage();
   let previousCpu = initialCpu;
@@ -139,6 +142,8 @@ export async function startTeamStressTelemetry(options: Options) {
     const durationMs = now - windowStarted;
     const cpu = process.threadCpuUsage();
     const mainThreadCpuMs = (cpu.user + cpu.system - previousCpu.user - previousCpu.system) / 1_000;
+    const hostLoad = loadavg();
+    hostLoads.push(hostLoad);
     const result = {
       mode,
       pid: process.pid,
@@ -149,6 +154,7 @@ export async function startTeamStressTelemetry(options: Options) {
       partial,
       mainThreadCpuMs,
       mainThreadCpuPercent: (mainThreadCpuMs / durationMs) * 100,
+      hostLoad,
       gc: summarizeGc(windowGc, durationMs),
       eventLoop: {
         count: loop.count,
@@ -209,6 +215,18 @@ export async function startTeamStressTelemetry(options: Options) {
         windows,
         mainThreadCpuMs,
         mainThreadCpuPercent: (mainThreadCpuMs / durationMs) * 100,
+        hostLoad: {
+          initial: initialHostLoad,
+          final: hostLoads.at(-1)!,
+          samples: hostLoads.length,
+          mean: initialHostLoad.map(
+            (_, index) => hostLoads.reduce((sum, load) => sum + load[index]!, 0) / hostLoads.length,
+          ),
+          max: initialHostLoad.map((_, index) =>
+            Math.max(...hostLoads.map((load) => load[index]!)),
+          ),
+          scope: "Host-wide OS load averages (1, 5, 15 minutes); includes unrelated processes.",
+        },
         gc: summarizeGc(totalGc, durationMs),
         eventLoop: {
           count: allLoop.count,

@@ -8,7 +8,9 @@
  * node --import ./scripts/tsx.mjs scripts/perf/session-event-plan-share.ts \
  *   --baseline-source .local/base-projection.ts --baseline-history-source .local/base-history.ts \
  *   --baseline-connection-source .local/base-connection.ts --publications 250 --pairs 5
- * CPU is untraced; sampled allocation runs separately and includes collected objects.
+ * Synchronous fanout durations, CPU, and sampled allocation use separate phases.
+ * The duration phase yields between publications, never inside the measured fanout.
+ * CPU is untraced; sampled allocation includes collected objects.
  * This owner measurement supplements, and does not replace, built-Gateway load testing.
  */
 import assert from "node:assert/strict";
@@ -288,8 +290,58 @@ try {
         }
       }
       verify();
+      const synchronousDelivery: Record<string, { beforeReturn: number; beforeImmediate: number }> =
+        {};
+      for (const variant of variants) {
+        const count = () => variant.peers.reduce((sum, peer) => sum + peer.received.count, 0);
+        const before = count();
+        let immediateRan = false;
+        const immediate = yieldToLoop().then(() => {
+          immediateRan = true;
+          return count() - before;
+        });
+        variant.publish();
+        const beforeReturn = count() - before;
+        assert.equal(immediateRan, false, "event loop ran inside synchronous publication");
+        assert.equal(beforeReturn, clientCount, "fanout deferred a recipient beyond return");
+        synchronousDelivery[variant.name] = {
+          beforeReturn,
+          beforeImmediate: await immediate,
+        };
+      }
+      verify();
       for (const variant of variants) {
         await run(variant, 50);
+      }
+      // Per-publication clocks stay out of the CPU and allocation measurements below.
+      for (let pair = 0; pair < pairs; pair++) {
+        for (const variant of pair % 2 === 0 ? variants : variants.toReversed()) {
+          const durations: number[] = [];
+          for (let index = 0; index < publications; index++) {
+            await yieldToLoop();
+            const started = performance.now();
+            variant.publish();
+            durations.push(performance.now() - started);
+          }
+          const sorted = durations.toSorted((a, b) => a - b);
+          const percentile = (fraction: number) => sorted[Math.ceil(sorted.length * fraction) - 1];
+          measurements.push({
+            phase: "synchronous-fanout",
+            pair,
+            variant: variant.name,
+            publications,
+            milliseconds: {
+              count: durations.length,
+              mean: durations.reduce((sum, duration) => sum + duration, 0) / durations.length,
+              p50: percentile(0.5),
+              p95: percentile(0.95),
+              p99: percentile(0.99),
+              max: sorted.at(-1),
+            },
+            durations,
+          });
+        }
+        verify();
       }
       for (const phase of ["cpu", "allocation"] as const) {
         if (phase === "allocation") {
@@ -342,6 +394,7 @@ try {
             pairs,
             samplingInterval,
             planCounts,
+            synchronousDelivery,
             sourceSha256: {
               base: sourceHash(baselineSources.get(baselineUrl(ownerUrl))!),
               candidate: sourceHash(readFileSync(ownerUrl, "utf8")),

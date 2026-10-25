@@ -116,6 +116,10 @@ it("records real main-isolate timing windows and settles telemetry once", async 
   expect(summary.durationMs).toBeGreaterThanOrEqual(200);
   expect(summary.eventLoop.count).toBeGreaterThan(0);
   expect(summary.mainThreadCpuMs).toBeGreaterThanOrEqual(0);
+  expect(summary.hostLoad.initial).toHaveLength(3);
+  expect(summary.hostLoad.final).toHaveLength(3);
+  expect(summary.hostLoad.samples).toBe(windows.length + 1);
+  expect(windows.every((window) => window.hostLoad.length === 3)).toBe(true);
   expect(summary.lastSample.memory.heapUsed).toBeGreaterThan(0);
   expect(summary.lastSample.memory.rss).toBeGreaterThan(0);
   expect(summary.windows).toBe(windows.length);
@@ -221,10 +225,29 @@ it("keeps partial worker evidence without comparing incomplete heap totals", () 
         lastSample: { memory: { rss: 1024 ** 2, heapUsed: 1024 ** 2 } },
       }),
     );
+    for (const [boundary, fast, count, sum] of [
+      ["start", 100, 1000, 1000],
+      ["end", 200, 1100, 1005],
+    ] as const) {
+      fs.writeFileSync(
+        path.join(resultDir, `stress-prometheus-${boundary}.prom`),
+        `openclaw_gateway_rpc_handler_seconds_bucket{le="0.01",method="sessions.list"} 100
+openclaw_gateway_rpc_handler_seconds_bucket{le="0.1",method="sessions.list"} ${fast}
+openclaw_gateway_rpc_handler_seconds_bucket{le="+Inf",method="sessions.list"} ${count}
+openclaw_gateway_rpc_handler_seconds_count{method="sessions.list"} ${count}
+openclaw_gateway_rpc_handler_seconds_sum{method="sessions.list"} ${sum}\n`,
+      );
+    }
+    fs.writeFileSync(path.join(resultDir, "stress-prometheus-window.json"), "{}");
     return summarizeStressRun({ resultDir, side, pair: 1, mode: "timing", smoke: false });
   };
   const base = capture("base");
   expect(base.metrics.workerHeapMiB).toBe(10);
+  // The 900 slow warmup handlers are excluded, and server durations stay distinct from 1 ms RTTs.
+  expect(base.metrics.sessionsListHandlerCount).toBe(100);
+  expect(base.metrics.sessionsListHandlerMeanMs).toBe(50);
+  expect(base.metrics.sessionsListHandlerP99Ms).toBeCloseTo(99.1);
+  expect(base.metrics.sessionsListP99Ms).toBe(1);
   for (const reason of ["pending", "stale", "unavailable"]) {
     const candidate = capture("candidate", reason);
     expect(candidate.workerHeaps?.workerHeapUsedBytes).toBe(1024 ** 2);

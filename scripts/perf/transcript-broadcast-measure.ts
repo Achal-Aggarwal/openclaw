@@ -2590,6 +2590,25 @@ let measuring = false;
 let teamStressStartedAt: number | undefined;
 let teamStressTelemetryActive = false;
 let teamStressPrometheusScrapes = 0;
+const teamStressPrometheusWindow: Record<
+  string,
+  { startedAtEpochMs: number; endedAtEpochMs: number }
+> = {};
+async function captureTeamStressPrometheus(name: string) {
+  const startedAtEpochMs = Date.now();
+  const response = await fetch(`http://127.0.0.1:${port}/api/diagnostics/prometheus`, {
+    signal: AbortSignal.timeout(10_000),
+  });
+  if (!response.ok) {
+    throw new Error(`Team stress Prometheus scrape failed: HTTP ${response.status}`);
+  }
+  const text = await response.text();
+  if (!text.includes("openclaw_")) {
+    throw new Error("Team stress Prometheus scrape contained no OpenClaw metrics");
+  }
+  writeFileSync(path.join(output, `stress-prometheus-${name}.prom`), text);
+  return { startedAtEpochMs, endedAtEpochMs: Date.now() };
+}
 let teamStressRpcBucket:
   | {
       minute: number;
@@ -5657,6 +5676,8 @@ try {
   }
   const warmStartReleasedAtEpochMs = Date.now();
   if (values["team-stress"]) {
+    // Bracket measured work; subtract cumulative buckets to exclude startup and warmup.
+    teamStressPrometheusWindow.start = await captureTeamStressPrometheus("start");
     await controlTeamStressTelemetry(gateway, "start");
     teamStressStartedAt = Date.now();
     teamStressTelemetryActive = true;
@@ -5957,20 +5978,7 @@ try {
               if (!polling) {
                 break;
               }
-              const response = await fetch(`http://127.0.0.1:${port}/api/diagnostics/prometheus`, {
-                signal: AbortSignal.timeout(10_000),
-              });
-              if (!response.ok) {
-                throw new Error(`Team stress Prometheus scrape failed: HTTP ${response.status}`);
-              }
-              const text = await response.text();
-              if (!text.includes("openclaw_")) {
-                throw new Error("Team stress Prometheus scrape contained no OpenClaw metrics");
-              }
-              writeFileSync(
-                path.join(output, `stress-prometheus-${teamStressPrometheusScrapes++}.prom`),
-                text,
-              );
+              await captureTeamStressPrometheus(String(teamStressPrometheusScrapes++));
               await Promise.race([delay(15_000, undefined, { ref: false }), stopped]);
             }
           })().catch((error: unknown) => {
@@ -6806,6 +6814,11 @@ try {
     teamStressTelemetryActive = false;
     flushTeamStressRpcMinute();
     await controlTeamStressTelemetry(gateway, "stop");
+    teamStressPrometheusWindow.end = await captureTeamStressPrometheus("end");
+    writeFileSync(
+      path.join(output, "stress-prometheus-window.json"),
+      JSON.stringify(teamStressPrometheusWindow, null, 2),
+    );
   }
   if (workerHeapDoneFile && workerHeapPeerDoneFile) {
     writeFileSync(workerHeapDoneFile, String(Date.now()));
