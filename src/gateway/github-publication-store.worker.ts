@@ -141,6 +141,46 @@ export function listSharedGitHubPublicationsInDatabase(
   ).rows;
 }
 
+export function markTerminalPublicationReported(
+  database: OpenClawStateDatabase,
+  kind: "personal",
+  requestId: string,
+): StateDatabase["github_personal_publication_requests"] | undefined;
+export function markTerminalPublicationReported(
+  database: OpenClawStateDatabase,
+  kind: "repository",
+  requestId: string,
+): StateDatabase["github_repository_publication_requests"] | undefined;
+export function markTerminalPublicationReported(
+  database: OpenClawStateDatabase,
+  kind: "personal" | "repository",
+  requestId: string,
+):
+  | StateDatabase["github_personal_publication_requests" | "github_repository_publication_requests"]
+  | undefined {
+  const { db } = database;
+  const table =
+    kind === "personal"
+      ? "github_personal_publication_requests"
+      : "github_repository_publication_requests";
+  if (!tableExists(db, table)) {
+    return undefined;
+  }
+  const row = executeSqliteQueryTakeFirstSync(
+    db,
+    getNodeSqliteKysely<StateDatabase>(db)
+      .updateTable(table)
+      .set({ reported_at_ms: Date.now() })
+      .where("request_id", "=", requestId)
+      .where("status", "in", ["published", "failed"])
+      .returningAll(),
+  );
+  if (row) {
+    githubPublicationReceipts.stageRow(db, kind, row);
+  }
+  return row;
+}
+
 export function markSharedGitHubPublicationReportedInDatabase(
   database: OpenClawStateDatabase,
   requestId: string,

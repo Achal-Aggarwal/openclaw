@@ -335,29 +335,6 @@ export function claimRepositoryGitHubPublicationInDatabase(
   return changed(db, updated);
 }
 
-export function markRepositoryGitHubPublicationReportedInDatabase(
-  database: OpenClawStateDatabase,
-  requestId: string,
-): RepositoryGitHubPublicationRow | undefined {
-  if (!tableExists(database.db, table)) {
-    return undefined;
-  }
-  const { db } = database;
-  const row = executeSqliteQueryTakeFirstSync(
-    db,
-    query(db)
-      .updateTable(table)
-      .set({ reported_at_ms: Date.now() })
-      .where("request_id", "=", requestId)
-      .where("status", "in", ["published", "failed"])
-      .returningAll(),
-  );
-  if (row) {
-    githubPublicationReceipts.stageRow(db, "repository", row);
-  }
-  return row;
-}
-
 export function failStaleRepositoryGitHubPublicationInDatabase(
   database: OpenClawStateDatabase,
   row: RepositoryGitHubPublicationRow,

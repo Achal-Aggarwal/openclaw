@@ -199,26 +199,3 @@ export function listUnreportedPersonalGitHubPublicationsInDatabase(db: EngineCon
     };
   });
 }
-
-export function markPersonalGitHubPublicationReportedInDatabase(
-  database: OpenClawStateDatabase,
-  requestId: string,
-): PersonalGitHubPublicationRow | undefined {
-  if (!tableExists(database.db, table)) {
-    return undefined;
-  }
-  const { db } = database;
-  const row = executeSqliteQueryTakeFirstSync(
-    db,
-    query(db)
-      .updateTable(table)
-      .set({ reported_at_ms: Date.now() })
-      .where("request_id", "=", requestId)
-      .where("status", "in", ["published", "failed"])
-      .returningAll(),
-  );
-  if (row) {
-    githubPublicationReceipts.stageRow(db, "personal", row);
-  }
-  return row;
-}

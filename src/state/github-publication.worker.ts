@@ -6,6 +6,7 @@ import {
   claimGitHubPublicationExecutionInDatabase,
   bindAcceptedGitHubPublicationClaimSnapshotInDatabase,
   markSharedGitHubPublicationReportedInDatabase,
+  markTerminalPublicationReported,
   createGitHubPublicationExecutionStoreInDatabase,
   deferGitHubPublicationRequestsInDatabase,
 } from "../gateway/github-publication-store.worker.js";
@@ -195,10 +196,7 @@ function personalMutation(database: OpenClawStateDatabase, input: PersonalPublic
         input.instanceId,
       );
     case "report": {
-      const row = personal.markPersonalGitHubPublicationReportedInDatabase(
-        database,
-        input.requestId,
-      );
+      const row = markTerminalPublicationReported(database, "personal", input.requestId);
       return row ? [row] : [];
     }
   }
@@ -270,10 +268,7 @@ function repositoryMutation(database: OpenClawStateDatabase, input: RepositoryPu
       return row ? [row] : [];
     }
     case "report": {
-      const row = repository.markRepositoryGitHubPublicationReportedInDatabase(
-        database,
-        input.requestId,
-      );
+      const row = markTerminalPublicationReported(database, "repository", input.requestId);
       return row ? [row] : [];
     }
   }
