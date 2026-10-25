@@ -6,164 +6,47 @@ import { messageClientSourcesLabel } from "../../../lib/chat/message-client-sour
 import { normalizeRoleForGrouping } from "../../../lib/chat/message-normalizer.ts";
 import { createMediaQuerySource } from "../../../lib/reactive/platform.ts";
 import { ChatAvatar, ForwardedAvatar } from "../chat-avatar.ts";
-import { persistedMessageEntryId } from "../chat-thread-items.ts";
 import { hasForwardedSource, isSessionActivityGroup } from "../chat-turn-boundary.ts";
 import { ChatAuthorAvatar } from "./chat-author-avatar.ts";
 import { BrowserTabPreviews } from "./chat-browser-tab-previews.tsx";
 import { ChatLazyBoundary } from "./chat-lazy-boundary.tsx";
-import type { GroupedMessageOptions } from "./chat-message-bubble-options.ts";
-import { GroupedMessage } from "./chat-message-bubble-view.tsx";
 import { RewindButton } from "./chat-message-confirmation-view.tsx";
 import {
   type GroupMessage,
   type MessageGroupFrame,
   type NativeMessageGroupOptions,
   isActivityMessageGroup,
-  prepareGroupMessage,
   prepareMessageGroupFrame,
   resolveFileLinkOwnerOptions,
 } from "./chat-message-group-frame.ts";
 import {
-  FULL_MESSAGE_RETRY_REVISION_LIMIT,
   hasMessageActionButtons,
   MessageActions,
   ReplyButton,
 } from "./chat-message-markdown-view.tsx";
 import type { MessageActionDetails } from "./chat-message-markdown.types.ts";
-import { GroupMessageReactions } from "./chat-message-reaction-chips-view.tsx";
 import { messageReactionOptions } from "./chat-message-reaction-model.ts";
 import { ChatSendStatus } from "./chat-message-send-status-view.tsx";
-import { StreamGroupParts } from "./chat-message-stream-view.tsx";
-import type { AssistantMessageDisclosure } from "./chat-message-text-view.tsx";
 import { MessageMeta } from "./chat-message-timestamp-view.tsx";
-import {
-  NO_REPLY_LINE,
-  resolveGroupReplyLine,
-  resolveMessageReplyLine,
-} from "./chat-reply-attribution.ts";
+import { PreparedMessage } from "./chat-prepared-message.tsx";
+import { NO_REPLY_LINE, resolveMessageReplyLine } from "./chat-reply-attribution.ts";
 import { ReplyLineView, ReplyLineConnector } from "./chat-reply-attribution.tsx";
 import type { ReplyConnectorElements } from "./chat-reply-connector.tsx";
-import { ChatSessionActivity } from "./chat-session-activity.solid.tsx";
 import { selectBrowserTabPreviews } from "./chat-tool-cards.ts";
 import { ChatToolFamilyBoundary, useChatToolReadiness } from "./chat-tool-family-boundary.tsx";
 import { TurnRecapRow } from "./chat-turn-recap-view.tsx";
+
+const StreamGroupParts = lazy(() => import("./chat-message-stream-view.tsx"), {
+  export: "StreamGroupParts",
+});
 
 const ForwardedAttribution = lazy(() => import("./chat-forwarded-attribution.tsx"), {
   export: "ForwardedAttribution",
 });
 
-const ActivityGroupContent = lazy(() => import("./chat-message-activity-view.tsx"), {
-  export: "ActivityGroupContent",
+const ActivityGroupEntries = lazy(() => import("./chat-message-group-rich.tsx"), {
+  export: "ActivityGroupEntries",
 });
-
-export type { NativeMessageGroupOptions } from "./chat-message-group-frame.ts";
-
-function MessageActionsRow(props: {
-  messageKey?: string;
-  details: MessageActionDetails | null | undefined;
-  options: NativeMessageGroupOptions;
-  class?: string;
-}) {
-  let owner: HTMLDivElement | undefined;
-  return (
-    <div
-      ref={(element) => {
-        owner = element;
-      }}
-      class={props.class ?? "chat-group-footer-actions"}
-      data-message-actions-for={props.messageKey}
-    >
-      <MessageActions
-        details={props.details}
-        options={props.options}
-        actionOwner={() => owner}
-        messageKey={props.messageKey}
-      />
-    </div>
-  );
-}
-
-function PreparedMessage(props: {
-  group: MessageGroupData;
-  item: GroupMessage;
-  index: number;
-  options: NativeMessageGroupOptions & Pick<GroupedMessageOptions, "replyLine">;
-  prepared?: ReturnType<typeof prepareGroupMessage>;
-}) {
-  const toolsReady = useChatToolReadiness();
-  const prepared = createMemo(() => {
-    toolsReady();
-    return props.prepared ?? prepareGroupMessage(props.group, props.item, props.options);
-  });
-  const isStreaming = () =>
-    props.group.isStreaming && props.index === props.group.messages.length - 1;
-  const options = createMemo(() => {
-    const actionDetails = prepared().actions;
-    let assistantMessageDisclosure: AssistantMessageDisclosure | undefined;
-    const fullMessage = actionDetails?.fullMessage;
-    if (
-      fullMessage &&
-      props.options.loadFullAssistantMessage &&
-      props.options.onToggleAssistantMessageExpanded
-    ) {
-      const { messageId, state: expansion } = fullMessage;
-      const retriesExhausted =
-        expansion?.status === "error" && expansion.revision >= FULL_MESSAGE_RETRY_REVISION_LIMIT;
-      assistantMessageDisclosure = {
-        expanded: expansion?.status === "loaded",
-        ...(expansion?.status === "loaded"
-          ? { markdown: actionDetails?.markdown, message: expansion.message }
-          : {}),
-        ...(retriesExhausted
-          ? {
-              onRetryFullMessage: () => props.options.onToggleAssistantMessageExpanded?.(messageId),
-            }
-          : {}),
-      };
-    }
-    const entryId = persistedMessageEntryId(props.item.message) ?? undefined;
-    const openFile = props.options.onOpenWorkspaceFile;
-    return {
-      ...props.options,
-      firstBubbleKey:
-        props.options.firstBubbleKey !== undefined
-          ? props.options.firstBubbleKey
-          : (props.group.messages.find((message) => message.hasVisibleContent)?.key ?? null),
-      isStreaming: isStreaming(),
-      entryId,
-      // Tool-row file links carry their message like rendered markdown links, so earlier
-      // messages keep reading their original source; sender-owned links stay session-scoped.
-      ...(entryId && openFile && !props.group.senderSession?.sessionKey
-        ? {
-            onOpenWorkspaceFile: (target: { path: string; line?: number | null }) => {
-              const owned = { ...target, messageEntryId: entryId };
-              openFile(owned);
-            },
-          }
-        : {}),
-      duplicateCount: props.item.duplicateCount ?? 1,
-      showToolCalls: props.options.showToolCalls ?? true,
-      assistantMessageDisclosure,
-      messageActions: actionDetails,
-    };
-  });
-  return (
-    <>
-      <GroupedMessage
-        preparation={prepared().source}
-        messageKey={props.item.key}
-        options={options()}
-        onOpenSidebar={props.options.onOpenSidebar}
-      />
-      <GroupMessageReactions
-        group={props.group}
-        actionDetails={prepared().actions}
-        isStreaming={isStreaming()}
-        options={props.options}
-      />
-    </>
-  );
-}
 
 export function ActivityGroup(props: {
   groups: readonly MessageGroupData[];
@@ -174,25 +57,9 @@ export function ActivityGroup(props: {
     <ChatToolFamilyBoundary
       sources={props.groups.map((group) => group.messages.map((item) => item.message))}
     >
-      <ActivityGroupContent
-        {...props}
-        renderEntries={(overrides) => (
-          <For each={props.groups} keyed={(group) => group.key}>
-            {(group) => (
-              <For each={group().messages} keyed={(item) => item.key}>
-                {(item, index) => (
-                  <PreparedMessage
-                    group={group()}
-                    item={item()}
-                    index={index()}
-                    options={{ ...props.options, toolCardOverrides: overrides() }}
-                  />
-                )}
-              </For>
-            )}
-          </For>
-        )}
-      />
+      <ChatLazyBoundary>
+        <ActivityGroupEntries {...props} />
+      </ChatLazyBoundary>
     </ChatToolFamilyBoundary>
   );
 }
@@ -241,6 +108,37 @@ function PreparedMessageGroupContent(props: {
         />
       )}
     </Show>
+  );
+}
+
+const SessionActivityGroup = lazy(() => import("./chat-message-group-rich.tsx"), {
+  export: "SessionActivityGroup",
+});
+
+export type { NativeMessageGroupOptions } from "./chat-message-group-frame.ts";
+
+function MessageActionsRow(props: {
+  messageKey?: string;
+  details: MessageActionDetails | null | undefined;
+  options: NativeMessageGroupOptions;
+  class?: string;
+}) {
+  let owner: HTMLDivElement | undefined;
+  return (
+    <div
+      ref={(element) => {
+        owner = element;
+      }}
+      class={props.class ?? "chat-group-footer-actions"}
+      data-message-actions-for={props.messageKey}
+    >
+      <MessageActions
+        details={props.details}
+        options={props.options}
+        actionOwner={() => owner}
+        messageKey={props.messageKey}
+      />
+    </div>
   );
 }
 
@@ -509,11 +407,13 @@ function FramedMessageGroup(props: {
             ) : undefined
           }
         >
-          <StreamGroupParts
-            parts={options().activeContinuation!.parts}
-            options={options().activeContinuation!.options}
-            presentation="continuation"
-          />
+          <ChatLazyBoundary>
+            <StreamGroupParts
+              parts={options().activeContinuation!.parts}
+              options={options().activeContinuation!.options}
+              presentation="continuation"
+            />
+          </ChatLazyBoundary>
         </Show>
       </div>
       <Show when={!frame().isTurnBlock}>
@@ -588,57 +488,6 @@ function FramedMessageGroup(props: {
   );
 }
 
-function SessionActivityGroup(props: {
-  group: MessageGroupData;
-  options: NativeMessageGroupOptions;
-}) {
-  const toolsReady = useChatToolReadiness();
-  const options = createMemo(() => resolveFileLinkOwnerOptions(props.group, props.options));
-  return (
-    <ChatSessionActivity
-      group={props.group}
-      options={options()}
-      renderEntry={(item, index) => {
-        const prepared = createMemo(() => {
-          toolsReady();
-          return prepareGroupMessage(props.group, item(), options());
-        });
-        let actionOwner: HTMLDivElement | undefined;
-        return {
-          actionsRef: (element: HTMLDivElement) => {
-            actionOwner = element;
-          },
-          content: (
-            <PreparedMessage
-              group={props.group}
-              item={item()}
-              index={index()}
-              prepared={prepared()}
-              options={{
-                ...options(),
-                isForwarded: true,
-                onToggleUserMessageExpanded: undefined,
-                replyLine: resolveGroupReplyLine(
-                  { ...props.group, messages: [item()] },
-                  options().resolveReplyPreview,
-                ),
-              }}
-            />
-          ),
-          actions: (
-            <MessageActions
-              details={prepared().actions}
-              options={options()}
-              actionOwner={() => actionOwner}
-              messageKey={item().key}
-            />
-          ),
-        };
-      }}
-    />
-  );
-}
-
 export function MessageGroup(props: {
   group: MessageGroupData;
   options: NativeMessageGroupOptions;
@@ -662,7 +511,11 @@ function PreparedMessageGroup(props: {
   return (
     <Show
       when={!isSessionActivityGroup(props.group)}
-      fallback={<SessionActivityGroup group={props.group} options={props.options} />}
+      fallback={
+        <ChatLazyBoundary>
+          <SessionActivityGroup group={props.group} options={props.options} />
+        </ChatLazyBoundary>
+      }
     >
       <Show
         when={

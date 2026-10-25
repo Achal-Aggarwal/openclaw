@@ -3,6 +3,10 @@ import { en } from "./en.ts";
 
 const catalog = {
   chat: {
+    view: {
+      activityDetails: "View activity details",
+      workingDetails: "Agent is working. View details",
+    },
     composer: {
       running: "running",
       composerInput: "Chat composer",
@@ -426,6 +430,7 @@ const catalog = {
 export const registerChatComposerEnglish = Object.assign(
   () => {
     const {
+      view,
       composer,
       queue,
       mentions,
@@ -438,6 +443,7 @@ export const registerChatComposerEnglish = Object.assign(
       ...outboxRecovery
     } = catalog.chat;
     Object.assign(en.chat, outboxRecovery);
+    Object.assign(en.chat.view, view);
     Object.assign(en.chat.composer, composer);
     Object.assign(en.chat.queue, queue);
     Object.assign(en.chat.mentions, mentions);

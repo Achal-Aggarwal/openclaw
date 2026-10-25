@@ -34,7 +34,7 @@ import {
 } from "../../lib/sessions/session-key.ts";
 import type { SwarmRosterHydrator } from "../../lib/sessions/swarm-roster.ts";
 import { SessionUnreadPatchGuard } from "../../lib/sessions/unread.ts";
-import { ChatComposerCapabilityHost } from "./chat-composer-capability-host.tsx";
+import type { ChatComposerCapabilityHost } from "./chat-composer-capability-host.tsx";
 import { projectChatFields } from "./chat-field-projection.ts";
 import {
   CHAT_PANE_LIFECYCLE_CHANGED_EVENT,
@@ -412,7 +412,11 @@ export abstract class ChatPaneStateOwner {
   get runActivity() {
     return this.chatState.projectRunActivity(this.state);
   }
-  readonly composerCapabilities = new ChatComposerCapabilityHost();
+  composerCapabilities: ChatComposerCapabilityHost | undefined = undefined;
+
+  ensureComposerCapabilities(create: () => ChatComposerCapabilityHost) {
+    return (this.composerCapabilities ??= create());
+  }
   readonly transcript = createChatTranscript(() => this.paneId, {
     geometryEventTarget: this.element,
     getComposerFloat: () => (this.usesMobileHost ? this.composerFloat : null),

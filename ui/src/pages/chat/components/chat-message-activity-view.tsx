@@ -2,6 +2,7 @@ import type { JSX } from "@solidjs/web";
 import { createMemo, Show } from "solid-js";
 import { groupToolCalls } from "../../../../../src/chat/tool-call-grouping.js";
 import { Icon } from "../../../components/solid/icon.tsx";
+import { registerChatComposerEnglish } from "../../../i18n/locales/en-chat-composer.ts";
 import type { MessageGroup as MessageGroupData, ToolCard } from "../../../lib/chat/chat-types.ts";
 import {
   readToolApprovalReviewOutcome,
@@ -15,7 +16,7 @@ import {
 import { readPreparedActivity } from "../../../lib/chat/tool-call-grouping.ts";
 import { extractToolCardsCached } from "../../../lib/chat/tool-cards.runtime.ts";
 import { fnv1aUtf16 } from "../../../lib/fnv1a.ts";
-import { t } from "../../../lib/reactive/i18n.ts";
+import { registerEnglishCatalog, t } from "../../../lib/reactive/i18n.ts";
 import { ownSessionLaunchCalls } from "../chat-spawned-subagent.ts";
 import { transcriptRunId } from "../chat-thread-run-identity.ts";
 import { selectActivityHeadline } from "./chat-activity-headline-selection.ts";
@@ -27,6 +28,8 @@ import type { NativeMessageGroupOptions } from "./chat-message-group-frame.ts";
 import { syncToolDisclosureOverflow } from "./chat-tool-card-chrome.tsx";
 import { selectBrowserTabPreviews } from "./chat-tool-cards.runtime.ts";
 import { ToolOutcomeSummary, ToolReviewOutcome } from "./chat-tool-outcome-summary.solid.tsx";
+
+registerEnglishCatalog(registerChatComposerEnglish);
 
 function prepareActivityGroup(
   groups: readonly MessageGroupData[],

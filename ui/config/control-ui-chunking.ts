@@ -70,6 +70,31 @@ export function controlUiStableChunkName(id: string): string | undefined {
   const normalized = normalizeModuleId(id);
 
   switch (controlUiBootManifestKey(id)) {
+    case "ui/src/pages/chat/chat-composer-capability-host.tsx":
+    case "ui/src/pages/chat/composer-library-session.ts":
+      // The open Chat menu owns these; New Session shares only the catalog.
+      return "chat-interaction-runtime";
+    case "ui/src/pages/chat/components/chat-message-group-rich.tsx":
+    case "ui/src/pages/chat/components/chat-session-activity.solid.tsx":
+      return "chat-interaction-runtime";
+    case "ui/src/pages/chat/components/chat-message-bubble-rich.tsx":
+    case "ui/src/pages/chat/components/chat-bubble-activity-view.tsx":
+    case "ui/src/pages/chat/components/chat-message-bubble-tools.tsx":
+    case "ui/src/pages/chat/components/chat-message-attachment-status-solid.tsx":
+    case "ui/src/pages/chat/components/chat-async-question-summary.tsx":
+    case "ui/src/pages/chat/components/chat-message-context-view.tsx":
+    case "ui/src/pages/chat/components/chat-workspace-conflict.tsx":
+      return "chat-interaction-runtime";
+    case "ui/src/pages/chat/components/chat-agent-run-frame.tsx":
+    case "ui/src/pages/chat/components/chat-message-stream-view.tsx":
+      return "chat-interaction-runtime";
+    case "ui/src/pages/chat/components/chat-working-indicator.tsx":
+    case "ui/src/pages/chat/components/chat-working-indicator-branding.tsx":
+    case "ui/src/components/working-phrase-solid.tsx":
+    case "ui/src/pages/chat/components/chat-retry-status.tsx":
+    case "ui/src/pages/chat/components/chat-working-indicator-surprise.ts":
+      // New Session already fetches these menus; keep the indicator off Chat-only chunks.
+      return "composer-invocation-menus";
     case "ui/src/lib/chat/composer-draft-write.runtime.ts":
       // Both routes prefetch this file; distinct module initializers still wait for use.
       return "composer-invocation-menus";

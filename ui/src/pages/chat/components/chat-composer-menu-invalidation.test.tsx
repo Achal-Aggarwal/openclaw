@@ -88,7 +88,7 @@ it.each(["root", "skills", "connectors", "tools:docs", "library:missing"] as con
     expect(observer.takeRecords()).toHaveLength(0);
     expect([...content.querySelectorAll("*")]).toEqual(children);
 
-    const capability = menu.capabilityMenu!;
+    const capability = menu.capabilityMenu!.read()!;
     switch (view) {
       case "root":
         capability.webSearchBaseEnabled = false;
@@ -125,3 +125,36 @@ it.each(["root", "skills", "connectors", "tools:docs", "library:missing"] as con
     }
   },
 );
+
+it("reads capability props only while open and uses current callbacks on reopen", async () => {
+  const initialLoad = vi.fn();
+  const replacementLoad = vi.fn();
+  let capability = makeCapabilities({ onLoadSkills: initialLoad }).read()!;
+  const read = vi.fn(() => capability);
+  const [menu, setMenu] = createSignal(
+    makeMenu({
+      capabilityMenu: { read },
+      toolOverrides: { skills: { focused: false } },
+      onOpenChange: (open) => setMenu((current) => ({ ...current, open })),
+    }),
+  );
+  const view = mountSolid(() => <ChatComposerPlusMenu menu={menu()} />);
+  const trigger = view.container.querySelector<HTMLButtonElement>(
+    ".agent-chat__input-btn--attach",
+  )!;
+  flush();
+  expect(trigger.classList.contains("agent-chat__input-btn--has-overrides")).toBe(true);
+  expect(read).not.toHaveBeenCalled();
+  trigger.click();
+  await waitForSolid(() => expect(initialLoad).toHaveBeenCalledOnce());
+  setMenu((current) => ({ ...current, open: false }));
+  await waitForSolid(() => expect(view.container.querySelector(":popover-open")).toBeNull());
+  read.mockClear();
+  capability = makeCapabilities({ onLoadSkills: replacementLoad }).read()!;
+  setMenu((current) => ({ ...current }));
+  flush();
+  expect(read).not.toHaveBeenCalled();
+  trigger.click();
+  await waitForSolid(() => expect(replacementLoad).toHaveBeenCalledOnce());
+  expect(initialLoad).toHaveBeenCalledOnce();
+});

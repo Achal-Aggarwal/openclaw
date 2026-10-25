@@ -1,5 +1,5 @@
 import type { JSX } from "@solidjs/web";
-import { createMemo, Errored, For, Loading, onSettled } from "solid-js";
+import { createMemo, Show, Errored, For, lazy, Loading, onSettled } from "solid-js";
 import { pathForRoute } from "../../../app-route-paths.ts";
 import { Icon } from "../../../components/solid/icon.tsx";
 import type { MenuEntry, MenuHandle, MenuItem } from "../../../components/solid/menu.tsx";
@@ -43,6 +43,11 @@ import type {
 } from "./chat-composer-plus-menu.types.ts";
 
 registerEnglishCatalog(registerMcpEnglish);
+
+const ChatComposerCapabilityInitializer = lazy(
+  () => import("../chat-composer-capability-host.tsx"),
+  { export: "ChatComposerCapabilityInitializer" },
+);
 
 function rootItems(menu: ChatComposerPlusMenuContentProps): MenuEntry[] {
   const entries: MenuEntry[] = [];
@@ -549,6 +554,56 @@ function menuItems(
 }
 
 export function ChatComposerPlusMenuContent(props: ChatComposerPlusMenuBodyProps) {
+  const resolved = createMemo(() => {
+    const current = props.menu;
+    const capabilityMenu = current.capabilityMenu?.read();
+    if (current.capabilityMenu && !capabilityMenu) {
+      return undefined;
+    }
+    return {
+      ...current,
+      ...capabilityMenu,
+      showCapabilities: capabilityMenu !== undefined,
+      basePath: capabilityMenu?.basePath ?? "",
+      skills: capabilityMenu?.skills ?? null,
+      skillsRead: capabilityMenu?.skillsRead ?? null,
+      mcpServers: capabilityMenu?.mcpServers ?? [],
+      toolsEffectiveResult: capabilityMenu?.toolsEffectiveResult ?? null,
+      toolsEffectiveLoading: capabilityMenu?.toolsEffectiveLoading ?? false,
+      toolsEffectiveError: capabilityMenu?.toolsEffectiveError ?? false,
+      toolAccessMutationBlockedReason: capabilityMenu?.toolAccessMutationBlockedReason ?? null,
+      webSearchBaseEnabled: capabilityMenu?.webSearchBaseEnabled ?? true,
+      mutationBlockedReason: capabilityMenu?.mutationBlockedReason ?? null,
+      canAdmin: capabilityMenu?.canAdmin ?? false,
+      adminBlockedReason: capabilityMenu?.adminBlockedReason ?? null,
+      onLoadSkills: capabilityMenu?.onLoadSkills ?? (() => {}),
+      onPatchToolOverrides: capabilityMenu?.onPatchToolOverrides ?? (() => {}),
+      onNavigate: capabilityMenu?.onNavigate ?? (() => {}),
+    };
+  });
+  return (
+    <Show when={resolved()} fallback={<InitializeCapability {...props} />}>
+      {(menu) => <ResolvedPlusMenuContent {...props} menu={menu()} />}
+    </Show>
+  );
+}
+
+function InitializeCapability(props: ChatComposerPlusMenuBodyProps) {
+  return (
+    <>
+      <Show when={props.menu.capabilityMenu?.initialize}>
+        {(initialize) => <ChatComposerCapabilityInitializer initialize={initialize()} />}
+      </Show>
+      {props.renderItems(() => [
+        { id: "plus-menu-loading", label: t("common.loading"), disabled: true },
+      ])}
+    </>
+  );
+}
+
+function ResolvedPlusMenuContent(
+  props: Omit<ChatComposerPlusMenuBodyProps, "menu"> & { menu: ChatComposerPlusMenuContentProps },
+) {
   const inputs = createMemo(
     () => {
       const view = props.view;
@@ -571,9 +626,11 @@ export function ChatComposerPlusMenuContent(props: ChatComposerPlusMenuBodyProps
     { lazy: true },
   );
   onSettled(() => {
+    props.menu.onLoadSkills();
     props.onReady({
       items,
       select: (item, event) => handleMenuSelection(item, event, props.readMenu(), props),
+      navigate: (value) => props.menu.onNavigate(value === "manage-skills" ? "skills" : "plugins"),
     });
     return () => props.onReady(undefined);
   });

@@ -1,5 +1,5 @@
 import { asNullableRecord as asRecord } from "@openclaw/normalization-core/record-coerce";
-import { createMemo, lazy, Show } from "solid-js";
+import { createMemo, lazy, onSettled, Show } from "solid-js";
 import { createChangeListeners } from "../../../../src/shared/listeners.js";
 import type { GatewayBrowserClient } from "../../api/gateway.ts";
 import type { ConfigSnapshot, GatewaySessionRow, ToolsEffectiveResult } from "../../api/types.ts";
@@ -405,12 +405,8 @@ export class ChatComposerCapabilityHost {
     };
   }
 
-  props(
-    context: ApplicationContext,
-    state: ChatPageHost,
-    session: GatewaySessionRow | undefined,
-    agentId: string,
-  ): ChatComposerCapabilityMenuProps {
+  // Keep admitted reads and dialogs current after the menu closes, without building menu props.
+  synchronize(state: ChatPageHost, agentId: string): () => boolean {
     if (this.client !== state.client || this.connectionEpoch !== state.connectionEpoch) {
       this.client = state.client;
       this.connectionEpoch = state.connectionEpoch;
@@ -434,6 +430,16 @@ export class ChatComposerCapabilityHost {
         ? { client, connectionEpoch, sessionKey, agentId, isCurrent: current }
         : null,
     );
+    return current;
+  }
+
+  props(
+    context: ApplicationContext,
+    state: ChatPageHost,
+    session: GatewaySessionRow | undefined,
+    agentId: string,
+  ): ChatComposerCapabilityMenuProps {
+    const current = this.synchronize(state, agentId);
     const canWriteLibrary = canCallGatewayMethod(
       context.gateway.snapshot,
       "skills.library.activate",
@@ -573,6 +579,15 @@ export class ChatComposerCapabilityHost {
         : {}),
     };
   }
+}
+
+export function ChatComposerCapabilityInitializer(props: {
+  initialize: (create: () => ChatComposerCapabilityHost) => void;
+}) {
+  onSettled(() => {
+    props.initialize(() => new ChatComposerCapabilityHost());
+  });
+  return null;
 }
 
 export type ChatComposerCapabilityDialogsProps = {

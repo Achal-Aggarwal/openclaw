@@ -5,6 +5,7 @@ import type { IconName } from "../../../components/solid/icon.tsx";
 import type { MenuEntry, MenuHandle, MenuItem } from "../../../components/solid/menu.tsx";
 import type { McpServerSummary } from "../../../lib/config/mcp-servers.ts";
 import type { SessionToolOverrides } from "../../../lib/sessions/patch.ts";
+import type { ChatComposerCapabilityHost } from "../chat-composer-capability-host.tsx";
 import type { ComposerLibraryProps } from "../composer-library-session.ts";
 import type { ChatAttachmentControlsProps } from "./chat-attachment-controls.types.ts";
 import type { ChatAttachmentInputHandle } from "./chat-attachment-inputs.ts";
@@ -38,7 +39,7 @@ type ChatComposerRootToggle = {
 export type ChatComposerPlusMenuProps = {
   attachments: ChatAttachmentControlsProps;
   inputHandle: ChatAttachmentInputHandle;
-  capabilityMenu?: ChatComposerCapabilityMenuProps;
+  capabilityMenu?: ChatComposerCapabilityMenuSource;
   disabled: boolean;
   open: boolean;
   view: ChatComposerPlusMenuView;
@@ -46,6 +47,11 @@ export type ChatComposerPlusMenuProps = {
   rootToggles?: readonly ChatComposerRootToggle[];
   onOpenChange: (open: boolean) => void;
   onViewChange: (view: ChatComposerPlusMenuView) => void;
+};
+
+export type ChatComposerCapabilityMenuSource = {
+  initialize?: (create: () => ChatComposerCapabilityHost) => void;
+  read: () => ChatComposerCapabilityMenuProps | undefined;
 };
 
 export type ChatComposerCapabilityMenuProps = {
@@ -79,10 +85,11 @@ export type ChatComposerPlusMenuContentProps = ChatComposerPlusMenuProps &
 export type ChatComposerPlusMenuHandlers = {
   items(): readonly MenuEntry[];
   select(item: MenuItem, event: CustomEvent<MenuItem>): void;
+  navigate(value: string): void;
 };
 
 export type ChatComposerPlusMenuBodyProps = {
-  menu: ChatComposerPlusMenuContentProps;
+  menu: ChatComposerPlusMenuProps;
   view: ChatComposerPlusMenuView;
   readMenu: () => MenuHandle;
   onReady: (handlers: ChatComposerPlusMenuHandlers | undefined) => void;

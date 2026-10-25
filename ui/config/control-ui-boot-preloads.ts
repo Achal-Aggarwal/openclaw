@@ -29,6 +29,7 @@ const chatInteractionEntries = new Set([
   "ui/src/pages/chat/chat-pane-session-operations.ts",
   "ui/src/pages/chat/chat-send-delivery.runtime.ts",
   // Keep the first live reply and common actions to one network round trip.
+  "ui/src/pages/chat/chat-composer-capability-host.tsx",
   "ui/src/pages/chat/chat-live-events.runtime.ts",
   "ui/src/pages/chat/tool-stream.ts",
   "ui/src/pages/chat/chat-command-dispatch.runtime.ts",
@@ -90,6 +91,14 @@ export function collectControlUiBootAssets(
   }
   for (const [route, entry] of [
     ["chat", "ui/src/pages/chat/route-entry.ts"],
+    // First-screen content may need these renderers after history arrives.
+    // Fetch their whole static graph beside the route without evaluating it.
+    ["chat", "ui/src/pages/chat/components/chat-agent-run-frame.tsx"],
+    ["chat", "ui/src/pages/chat/components/chat-message-stream-view.tsx"],
+    ["chat", "ui/src/pages/chat/components/chat-message-group-rich.tsx"],
+    ["chat", "ui/src/pages/chat/components/chat-message-bubble-rich.tsx"],
+    ["chat", "ui/src/pages/chat/components/chat-message-context-view.tsx"],
+    ["chat", "ui/src/pages/chat/components/chat-workspace-conflict.tsx"],
     ["new", "ui/src/pages/new-session/new-session-page-entry.ts"],
   ] as const) {
     const chunk = chunks.find((candidate) =>
