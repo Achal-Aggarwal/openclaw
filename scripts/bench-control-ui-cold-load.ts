@@ -31,6 +31,7 @@ import { captureSessionRowGeneration } from "../src/gateway/session-row-identity
 import { shareSidebarSessionRows } from "../src/gateway/session-row-presentation.js";
 import { normalizeControlUiBuildInfo } from "../ui/src/build-info-normalizers.ts";
 import { isChatHistoryState } from "../ui/src/lib/protocol-validators.generated/history-state.js";
+import type { ChatMessageCache } from "../ui/src/pages/chat/session-message-cache.ts";
 import { createColdLoadProbeInitScript } from "../ui/src/test-helpers/control-ui-cold-load-probes.ts";
 import type { MockGatewayWindow } from "../ui/src/test-helpers/control-ui-e2e-contract.ts";
 import {
@@ -1697,6 +1698,30 @@ try {
       }
     }
     await settle();
+    const longSessionLoadedMessages = values["long-session"]
+      ? await page.evaluate((sessionKey) => {
+          const pane = document.querySelector(".chat-pane-cache__pane--active");
+          const cache: ChatMessageCache | undefined = pane
+            ? Reflect.get(pane, "chatMessagesBySession")
+            : undefined;
+          const entry = cache && [...cache].find(([key]) => key.endsWith(`\u0000${sessionKey}`));
+          if (!entry) {
+            throw new Error("Long-session open requires the active transcript cache owner");
+          }
+          return entry[1].snapshot.messages.length;
+        }, fixture.selectedSessionKey)
+      : undefined;
+    if (values["long-session"]) {
+      const expectedMessages =
+        fixture.longSessionWorkload?.scenario === "paging"
+          ? fixture.longSessionWorkload.initialMessageCount
+          : fixture.counts.transcriptMessages;
+      if (longSessionLoadedMessages !== expectedMessages) {
+        throw new Error(
+          `Long-session open loaded ${longSessionLoadedMessages} messages; expected ${expectedMessages}. Use --first-load to avoid restoring a truncated warm snapshot.`,
+        );
+      }
+    }
     const coverage = values.coverage
       ? (await page.coverage.stopJSCoverage())
           .filter((entry) => URL.parse(entry.url)?.pathname.startsWith("/assets/"))
@@ -2672,6 +2697,7 @@ try {
       streaming,
       sessionSwitch,
       longSession,
+      longSessionLoadedMessages,
       criticalPath,
       warmReload,
       historyValidatorRequests: historyValidatorRequests - validatorRequestsBeforeReload,

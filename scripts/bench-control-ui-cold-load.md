@@ -13,6 +13,12 @@ Playwright waits for the active composer to be visible, enabled, and editable,
 focuses it, and verifies focus before the initial metrics settle and save.
 The init script records that real focus event; it does not focus from a rendering callback.
 
+Use `--first-load` for full-history renderer stress comparisons. The open boundary
+checks the actual loaded transcript count against the fixture (or the initial
+page size for `paging`); warm restores can otherwise contain only the latest 80
+messages. Full-history scenarios intentionally return all records in their
+synthetic startup response. Use `paging` to exercise bounded history responses.
+
 `--long-session-scenario` selects a dedicated workload while retaining the same
 production server, browser, fixture clock, network profile, and paired-run loop:
 
