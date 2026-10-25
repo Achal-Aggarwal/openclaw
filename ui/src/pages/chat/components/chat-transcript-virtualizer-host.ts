@@ -160,6 +160,7 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
     );
   };
   private rowKeys: readonly string[] = [];
+  private acceptedRows: readonly TranscriptRow[] | null = null;
   private rowIndexesByKey = new Map<string, number>();
   private messageRowKeysById: ReadonlyMap<string, string> = new Map();
   private readonly prependAnchor = new TranscriptPrependAnchor(
@@ -203,9 +204,10 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
       invalidate,
     });
     this.virtualizer = new Virtualizer({
-      onChange: () => {
+      onChange: (_instance, sync) => {
         invalidate();
-        this.scheduleEndReconcile();
+        // Offset and compensated resize owners already record and reconcile their geometry.
+        return sync ? undefined : this.scheduleEndReconcile();
       },
       count: 0,
       getScrollElement: () => this.scrollElement,
@@ -253,11 +255,7 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
       () => this.scrollElement,
       this.virtualizer,
       () => this.rowRefs.elements,
-      () => {
-        if (!this.initialRange.pending) {
-          this.offsetState.syncNativeOffset?.();
-        }
-      },
+      () => !this.initialRange.pending && this.offsetState.syncNativeOffset?.(),
     );
     this.rowRefs = new TranscriptRowRefs(this.virtualizer, {
       isCurrentRow: (element, key) =>
@@ -417,6 +415,7 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
     this.messageElements.dispose();
     this.rowRefs.clear();
     this.rowKeys = [];
+    this.acceptedRows = null;
     this.rowIndexesByKey.clear();
     this.messageRowKeysById = new Map();
     this.prependAnchor.reset();
@@ -472,8 +471,9 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
     const { rows, renderRow, announcement, announce, overlay, header, messageRows, renderKeyRows } =
       snapshot;
     const rowModelChanged =
-      rows.length !== this.rowKeys.length ||
-      rows.some((row, index) => row.key !== this.rowKeys[index]);
+      rows !== this.acceptedRows &&
+      (rows.length !== this.rowKeys.length ||
+        rows.some((row, index) => row.key !== this.rowKeys[index]));
     const nextKeys = rowModelChanged ? rows.map((row) => row.key) : this.rowKeys;
     const virtualizer = this.virtualizer;
     const nextRowKeys = rowModelChanged
@@ -488,6 +488,7 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
           snapshot.entryKeys,
           announce && !this.offsetState.pendingScrollOffset,
         );
+        this.acceptedRows = rows;
         this.messageRowKeysById = messageRows;
         this.prependAnchor.committedMessageRows = renderKeyRows;
         this.renderPreviousRows = () => this.renderCommittedRows(snapshot, false);
@@ -721,7 +722,6 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
       ...this.virtualizer.options,
       count: nextKeys.length,
       getItemKey: (index) => nextKeys[index]!,
-      rangeExtractor: (range) => this.initialRange.extract(range),
       scrollMargin,
     });
   }

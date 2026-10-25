@@ -1,5 +1,25 @@
 # Team-scale Control UI cold-load benchmark
 
+## Long sessions
+
+`--long-session --transcript-messages 2000 --face chat` uses a mixed synthetic
+transcript with Markdown, code, tables, tool calls/results, and images. It adds
+switch-out/return, end-to-end scrolling, transcript search, and retained-memory
+measurements to the existing open/streaming measurements. The other session
+contains 400 messages. Run the same workload with `--transcript-messages 400`
+for the size control, and add `--streaming-reply` for bottom-follow behavior.
+
+Acceptance: the 2,000-message open and switch should take at most 1.5 times the
+400-message control; fast scrolling should have no task over 50 ms or blank
+viewport; live DOM/retained heap should stay bounded by the rendered window.
+A candidate must improve an attributable CPU or latency cell by at least 5%
+without correctness regressions. Use ten serial interleaved base/head pairs,
+report median/p95/range and host load, and include base/base controls on a loaded
+host. If those controls are noisy, use twenty pairs and thread CPU plus work
+counts. Run localhost and `--network-latency-ms 100 --download-kbps 10000`
+separately; mock RPC delay uses `--latency-ms 100`. These fixtures measure the
+production renderer and synthetic transport, not real provider latency.
+
 ## Media load, remount, and disposal
 
 `bench-control-ui-media.ts` compares **already-built** base and head bundles with

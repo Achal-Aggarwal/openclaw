@@ -34,7 +34,7 @@ afterEach(resetTranscriptTestDom);
 it("updates rail and end position without pane renders until the virtual range changes", async () => {
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
   const flushFrame = stubAnimationFrames();
-  stubRailVisibility();
+  const publishVisibility = stubRailVisibility();
   transcriptDomState.measuredRowHeight = 120;
   const host = new RailScrollTestHost();
   const container = host.transcriptRoot;
@@ -259,6 +259,16 @@ it("updates rail and end position without pane renders until the virtual range c
     ).not.toBe(firstRowBefore);
     expect(container.querySelector('[data-virtual-row-key="row-35"]')).not.toBeNull();
     expectCurrent("row-39");
+    scrollTo(70);
+    measureRail();
+    await settleUpdates();
+    await settleUpdates(true);
+    // Intersection delivery order is independent of the transcript's message order.
+    for (const id of ["row-4", "row-2", "row-3"]) {
+      publishVisibility(container.querySelector<HTMLElement>(`[data-entry-id="${id}"]`)!);
+    }
+    await settleUpdates(true);
+    expectCurrent("row-3");
     host.remove();
     renderedAt = host.committedRenders;
     scrollTo(70);

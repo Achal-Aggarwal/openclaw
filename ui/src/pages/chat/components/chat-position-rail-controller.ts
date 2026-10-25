@@ -69,6 +69,7 @@ export function createPositionRail(props: PositionRailParams) {
   let pendingProjectionChange = false;
   let markerIdsByMessageId: ReadonlyMap<string, string> = new Map();
   let positionMessageIds: string[] = [];
+  let positionMessageIndexes = new Map<string, number>();
   let markersChanged = true;
   const markerElements = new Map<string, HTMLElement>();
   let transcriptElement: HTMLElement | undefined;
@@ -128,7 +129,11 @@ export function createPositionRail(props: PositionRailParams) {
         visibleMessageIds.add(message.messageId);
       }
     }
-    const visibleOrder = positionMessageIds.filter((id) => visibleMessageIds.has(id));
+    const visibleOrder = [...visibleMessageIds]
+      .filter((id) => positionMessageIndexes.has(id))
+      .toSorted(
+        (left, right) => positionMessageIndexes.get(left)! - positionMessageIndexes.get(right)!,
+      );
     const activeMessageId = session?.activeMessageId(
       visibleOrder.length ? visibleOrder : positionMessageIds,
     );
@@ -554,6 +559,7 @@ export function createPositionRail(props: PositionRailParams) {
       targetsChanged = true;
       markerIdsByMessageId = positions.markerIdsByMessageId;
       positionMessageIds = [...positions.markerIdsByMessageId.keys()];
+      positionMessageIndexes = new Map(positionMessageIds.map((id, index) => [id, index]));
     }
     const count = markers.length;
     if (count === 0) {

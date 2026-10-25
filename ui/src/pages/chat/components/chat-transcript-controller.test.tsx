@@ -20,6 +20,7 @@ import {
   TranscriptTestHost,
 } from "../test-helpers/chat-transcript-native.tsx";
 import { createChatTranscript } from "./chat-transcript-controller.ts";
+import { TranscriptEndAnchor } from "./chat-transcript-end-anchor.ts";
 import {
   flushDeferredRowPrune,
   installTranscriptDomMocks,
@@ -202,6 +203,78 @@ it("updates the visible range on native scroll without a parent render", async (
   expect(Number(transcriptRows(container)[0]?.dataset.index)).toBeGreaterThan(0);
 });
 
+it("reads only mounted row keys when rendering an unchanged 2,000-row transcript", async () => {
+  let keyReads = 0;
+  const rows: TestContentRow[] = Array.from({ length: 2_000 }, (_, index) => ({
+    kind: "content",
+    get key() {
+      keyReads += 1;
+      return `row-${index}`;
+    },
+    content: <div>Message {index}</div>,
+  }));
+  const { container, renderRows } = await mountTestTranscript("unchanged-row-model", rows);
+  keyReads = 0;
+  renderRows(rows);
+  expect(keyReads).toBeLessThan(100);
+
+  rows.at(-1)!.content = <div>Updated final message</div>;
+  renderRows(rows);
+  expect(container.textContent).toContain("Updated final message");
+});
+
+it("records native end position without reconciling unchanged scroll geometry", async () => {
+  const flushFrames = stubAnimationFrames();
+  transcriptDomState.measuredRowHeight = 120;
+  const rows = numberedContentRows(40);
+  const { container, transcript, session, renderRows } = await mountTestTranscript(
+    "native-end-geometry",
+    rows,
+  );
+  session.setContentReady(true);
+  renderRows(rows);
+  await waitForSolid(() => {
+    flushFrames();
+    flush();
+    expect(transcript.isPositionSettled).toBe(true);
+  });
+  flushFrames();
+  await flushDeferredRowPrune();
+  flushFrames();
+  const reconcile = vi.spyOn(TranscriptEndAnchor.prototype, "reconcile");
+  const recordViewport = vi.spyOn(TranscriptEndAnchor.prototype, "recordViewport");
+  const settle = async () => {
+    await flushDeferredRowPrune();
+    flushFrames();
+    await flushDeferredRowPrune();
+  };
+
+  scroll(container, 2400);
+  await settle();
+  expect(recordViewport.mock.results.at(-1)?.value).toBe(false);
+  expect(reconcile).not.toHaveBeenCalled();
+
+  // Growth above the reader still needs the compensation's post-commit end check.
+  const before = container.scrollTop;
+  emitSize(transcriptRows(container)[0]!, 150);
+  await settle();
+  expect(container.scrollTop).toBe(before + 30);
+  expect(reconcile).toHaveBeenCalled();
+
+  scroll(container, container.scrollHeight - container.clientHeight);
+  await settle();
+  expect(recordViewport.mock.results.at(-1)?.value).toBe(true);
+  reconcile.mockClear();
+  const previousEnd = container.scrollTop;
+  // The old sizer clamps this correction until the measured extent commits.
+  emitSize(transcriptRows(container)[0]!, 160);
+  await settle();
+  expect(container.scrollTop).toBe(previousEnd + 40);
+  expect(container.scrollHeight - container.clientHeight - container.scrollTop).toBe(0);
+  expect(recordViewport.mock.results.at(-1)?.value).toBe(true);
+  expect(reconcile).toHaveBeenCalled();
+});
+
 it("keeps retained MCP rows and the virtual row model atomic through teardown", async () => {
   const teardownPending = createDeferred();
   transcriptDomState.measuredRowHeight = 180;
@@ -221,6 +294,8 @@ it("keeps retained MCP rows and the virtual row model atomic through teardown", 
   expect(transcriptSize(container)).toBe(540);
   stubMcpAppLifecycle(container, () => teardownPending.promise);
 
+  renderRows(regroupedRows);
+  // Reusing a blocked candidate must not promote it ahead of the displayed model.
   renderRows(regroupedRows);
   const retainedRows = transcriptRows(container);
   expect(retainedRows.map((row) => row.dataset.virtualRowKey)).toEqual([

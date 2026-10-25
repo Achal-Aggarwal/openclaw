@@ -1,8 +1,5 @@
 import type { Buffer } from "node:buffer";
-import type {
-  SessionCatalog,
-  SessionsCatalogHostEvent,
-} from "../../../packages/gateway-protocol/src/schema/sessions-catalog.js";
+import type { SessionsCatalogHostEvent } from "../../../packages/gateway-protocol/src/schema/sessions-catalog.js";
 import type { AgentsListResult, PresenceEntry } from "../api/types.ts";
 import type { PresencePayload } from "../app/user-profile.ts";
 import type { BoardSnapshot } from "../lib/board/types.ts";
@@ -65,6 +62,7 @@ type FixtureOptions = {
   largeSnapshot?: boolean;
   offRosterSession?: boolean;
   transcriptMessages?: number;
+  richTranscript?: boolean;
   dashboardMcpApp?: { font: Buffer };
   /** Opt into a scripted HTML dashboard with an independently fetched web font. */
   dashboardWidgetFontUrl?: string;
@@ -102,17 +100,28 @@ export function createControlUiTeamScaleFixture(options: FixtureOptions = {}) {
     },
   );
   const assets = new Map<string, FixtureAsset>(avatarAssets);
-  const { sessions, pinnedRows, pinnedKeys, selectedSessionKey, sidebarPersistentChildren } =
-    createTeamScaleSessionInventory({
-      now,
-      people,
-      counts,
-      offRosterSession: options.offRosterSession,
-      sidebarPersistentChildren: options.sidebarPersistentChildren,
-    });
+  const {
+    sessions,
+    pinnedRows,
+    pinnedKeys,
+    selectedSessionKey,
+    sidebarPersistentChildren,
+    catalogs,
+  } = createTeamScaleSessionInventory({
+    now,
+    people,
+    counts,
+    offRosterSession: options.offRosterSession,
+    sidebarPersistentChildren: options.sidebarPersistentChildren,
+  });
   const duplicateReads = options.duplicateBootReads
     ? createTeamScaleDuplicateReadFixture(selectedSessionKey, now)
     : undefined;
+  if (options.richTranscript) {
+    // Keep the short comparison transcript in the always-visible pinned roster.
+    pinnedRows[0]!.boardFace = "chat";
+    pinnedRows[1]!.boardFace = "chat";
+  }
   pinnedRows[0]!.sharingRole = "admin";
   pinnedRows[0]!.visibility = "shared";
   if (duplicateReads) {
@@ -170,6 +179,7 @@ export function createControlUiTeamScaleFixture(options: FixtureOptions = {}) {
     inlineWidgets: counts.inlineWidgets,
     now,
     largeSnapshot: options.largeSnapshot,
+    richTranscript: options.richTranscript,
     attachments: duplicateReads?.attachments,
   });
   const configuredHistory =
@@ -191,27 +201,6 @@ export function createControlUiTeamScaleFixture(options: FixtureOptions = {}) {
             : {}),
         }
       : undefined;
-  const catalogs: SessionCatalog[] = ["codex", "claude"].map((id, catalogIndex) => ({
-    id,
-    label: id === "codex" ? "Codex" : "Claude Code",
-    capabilities: { continueSession: true, archive: true },
-    hosts: Array.from({ length: 3 }, (_host, hostIndex) => ({
-      hostId: `node:fixture-${catalogIndex * 3 + hostIndex + 1}`,
-      label: `Fixture workstation ${catalogIndex * 3 + hostIndex + 1}`,
-      kind: "node",
-      connected: true,
-      sessions: Array.from({ length: counts.catalogSessionsPerHost }, (_session, index) => ({
-        threadId: `fixture-thread-${catalogIndex}-${hostIndex}-${index}`,
-        name: `Synthetic code review ${hostIndex + 1}.${index + 1}`,
-        cwd: `/workspace/project-${(index % 5) + 1}`,
-        updatedAt: now - index * 1_000,
-        status: "stored",
-        archived: false,
-        canContinue: true,
-        canArchive: true,
-      })),
-    })),
-  }));
   const presenceEntries: PresenceEntry[] = people.map((person) => ({
     instanceId: person.instanceId,
     mode: person.mode,
@@ -356,6 +345,20 @@ export function createControlUiTeamScaleFixture(options: FixtureOptions = {}) {
     sessions,
     presenceUsers: people,
     historyMessages,
+    ...(options.richTranscript
+      ? {
+          sessionTranscripts: {
+            [pinnedKeys[1]!]: {
+              messages: createTeamScaleHistoryFixture({
+                messageCount: 400,
+                inlineWidgets: 0,
+                now,
+                richTranscript: true,
+              }).historyMessages,
+            },
+          },
+        }
+      : {}),
     sessionReactions: {
       [selectedSessionKey]: Object.fromEntries(
         messageIds.map((id) => [

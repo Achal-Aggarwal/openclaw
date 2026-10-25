@@ -89,6 +89,7 @@ import {
   summarizeLongTaskCpuProfiles,
   type InteractionStyleSheet,
 } from "./lib/control-ui-interaction-trace.ts";
+import { probeLongSession } from "./lib/control-ui-long-session-probe.ts";
 import { probeColdLoadOverlays } from "./lib/control-ui-overlay-probe.ts";
 import { warmReloadProbe } from "./lib/control-ui-warm-reload-probe.ts";
 import {
@@ -251,6 +252,7 @@ const { values } = parseArgs({
     "connect-not-before-ms": { type: "string" },
     "latency-profile": { type: "string" },
     "transcript-messages": { type: "string" },
+    "long-session": { type: "boolean", default: false },
     "overlay-probe": { type: "boolean", default: false },
     untraced: { type: "boolean", default: false },
     "filmstrip-only": { type: "boolean", default: false },
@@ -473,12 +475,19 @@ const face = values.face;
 if (face !== "chat" && face !== "dashboard") {
   throw new Error("Expected face chat or dashboard");
 }
+if (values["long-session"] && (face !== "chat" || values["large-snapshot"])) {
+  throw new Error("long-session requires the chat face and its mixed transcript fixture");
+}
 if (values["chat-dashboard-route"] && face !== "dashboard") {
   throw new Error("chat-dashboard-route requires the dashboard face");
 }
 const captureMs = Number(values["capture-ms"]);
 const transcriptMessages =
-  values["transcript-messages"] === undefined ? undefined : Number(values["transcript-messages"]);
+  values["transcript-messages"] === undefined
+    ? values["long-session"]
+      ? 2_000
+      : undefined
+    : Number(values["transcript-messages"]);
 const streamingBurstSize = Number(values["streaming-burst-size"]);
 const streamingRate = Number(values["streaming-rate"]);
 if (!Number.isFinite(streamingRate) || streamingRate <= 0) {
@@ -665,6 +674,7 @@ const fixture = createControlUiTeamScaleFixture({
   largeSnapshot: values["large-snapshot"],
   offRosterSession: values["off-roster-route"],
   transcriptMessages,
+  richTranscript: values["long-session"],
   dashboardWidgetFontUrl: dashboardFont
     ? `http://127.0.0.1:${address.port}${dashboardFontPath}`
     : undefined,
@@ -1533,7 +1543,12 @@ try {
     }
     let collectedTrace = rawTrace;
     cdp.on("Tracing.dataCollected", (data) => collectedTrace.push(...data.value));
-    if (cpuProfile || values["critical-path"] || values["thread-cpu-time"]) {
+    if (
+      cpuProfile ||
+      values["critical-path"] ||
+      values["thread-cpu-time"] ||
+      values["long-session"]
+    ) {
       await cdp.send("Performance.enable", { timeDomain: performanceTimeDomain });
     }
     if (traced || cpuProfile) {
@@ -2427,6 +2442,26 @@ try {
             : undefined,
         )
       : undefined;
+    if (values["long-session"] && sidebarView !== "sessions") {
+      await page.locator('[data-navigation-view="sessions"]').click();
+    }
+    if (values["long-session"] && cpuProfile) {
+      await cdp.send("Profiler.start");
+    }
+    const longSession = values["long-session"]
+      ? await probeLongSession({
+          page,
+          cdp,
+          artifactDir,
+          prefix: `run-${run + 1}`,
+          sessionKey: fixture.selectedSessionKey,
+          otherSessionKey: fixture.pinnedKeys[1]!,
+          captureHeap: run < bundleSlots.length && !cpuProfile,
+        })
+      : undefined;
+    if (values["long-session"] && cpuProfile) {
+      await recordCpu("long-session", (await cdp.send("Profiler.stop")).profile);
+    }
     let sessionSwitch;
     if (values["session-switch"]) {
       if (sidebarView !== "sessions") {
@@ -2583,6 +2618,7 @@ try {
       live,
       streaming,
       sessionSwitch,
+      longSession,
       criticalPath,
       warmReload,
       historyValidatorRequests: historyValidatorRequests - validatorRequestsBeforeReload,
