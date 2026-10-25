@@ -25,8 +25,6 @@ const sharedInteractionEntries = new Set([
   "ui/src/components/app-sidebar-online.tsx",
 ]);
 const chatInteractionEntries = new Set([
-  // Reset confirmation opens without another round trip, but stays unevaluated during boot.
-  "ui/src/pages/chat/chat-board-reset-confirmation.tsx",
   // JSON trees belong to transcripts; New Session has no code blocks to prepare.
   "ui/src/components/markdown-json-parser.runtime.ts",
   // Warm disk records decode without another round trip; empty storage stays unevaluated.

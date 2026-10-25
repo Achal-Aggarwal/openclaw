@@ -74,8 +74,8 @@ export function controlUiStableChunkName(id: string): string | undefined {
     case "ui/src/components/solid/modal-dialog.tsx":
     case "ui/src/components/solid/modal-dialog.css":
     case "ui/src/components/solid/modal-scroll-lock.css":
-      // Both routes use dialogs without importing each other's boot renderers.
-      return "modal-runtime";
+      // Creation already fetches these controls; other dialogs avoid the full New route.
+      return "route-controls-runtime";
     case "ui/src/components/markdown-json-parser.runtime.ts":
       return "markdown-json-runtime";
     case "ui/src/pages/chat/session-snapshot-decoder.ts":

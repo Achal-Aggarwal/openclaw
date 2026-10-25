@@ -100,6 +100,7 @@ describe("Control UI build chunking", () => {
     const modulePath = (relative: string) => new URL(relative, import.meta.url).pathname;
     const chat = modulePath("../pages/chat/chat-pane.tsx");
     const newSession = modulePath("../pages/new-session/new-session-page.tsx");
+    const newSessionEntry = modulePath("../pages/new-session/new-session-page-entry.ts");
     const optional = modulePath("../components/assistant-panel-content-solid.tsx");
     const devices = modulePath("../pages/devices/devices-page.tsx");
     const talk = modulePath("../pages/talk/talk-page.tsx");
@@ -135,8 +136,9 @@ describe("Control UI build chunking", () => {
     const sources = new Map([
       [
         entry,
-        `export const chat = () => import(${JSON.stringify(chat)}); export const newSession = () => import(${JSON.stringify(newSession)}); export const devices = () => import(${JSON.stringify(devices)}); export const talk = () => import(${JSON.stringify(talk)}); export const plugins = () => import(${JSON.stringify(pluginLoader)}); export const mutate = () => import(${JSON.stringify(mutations)}); export const copy = () => import(${JSON.stringify(copy)}); export const online = () => import(${JSON.stringify(online)}); export const deliver = () => import(${JSON.stringify(delivery)}); export const payloads = () => import(${JSON.stringify(payloads)}); export const live = () => import(${JSON.stringify(live)}); export const tools = () => import(${JSON.stringify(tools)});`,
+        `export const chat = () => import(${JSON.stringify(chat)}); export const newSession = () => import(${JSON.stringify(newSessionEntry)}); export const devices = () => import(${JSON.stringify(devices)}); export const talk = () => import(${JSON.stringify(talk)}); export const plugins = () => import(${JSON.stringify(pluginLoader)}); export const mutate = () => import(${JSON.stringify(mutations)}); export const copy = () => import(${JSON.stringify(copy)}); export const online = () => import(${JSON.stringify(online)}); export const deliver = () => import(${JSON.stringify(delivery)}); export const payloads = () => import(${JSON.stringify(payloads)}); export const live = () => import(${JSON.stringify(live)}); export const tools = () => import(${JSON.stringify(tools)});`,
       ],
+      [newSessionEntry, `export { NewSession, modal } from ${JSON.stringify(newSession)};`],
       [
         chat,
         `import ${JSON.stringify(sharedStyle)}; import ${JSON.stringify(transcriptStyle)}; import { label } from ${JSON.stringify(sharedUi)}; import { action } from ${JSON.stringify(pluginActions)}; import { patch } from ${JSON.stringify(mutations)}; export { version } from ${JSON.stringify(inlineView)}; export { skeleton } from ${JSON.stringify(skeleton)}; export class Chat { label = patch(action(label)); } export const openPanel = () => import(${JSON.stringify(optional)}); export const reset = () => import(${JSON.stringify(reset)});`,
@@ -271,7 +273,7 @@ describe("Control UI build chunking", () => {
     expect(staticImports(newSessionChunk.fileName)).not.toContain(chatChunk.fileName);
     const modalChunk = chunks.find((chunk) => modalView in chunk.modules)!;
     const resetChunk = chunks.find((chunk) => reset in chunk.modules)!;
-    expect(modalChunk.fileName).toContain("modal-runtime");
+    expect(modalChunk.fileName).toContain("route-controls-runtime");
     expect(Object.keys(modalChunk.modules)).toContain(modalStyle);
     expect(Object.keys(modalChunk.modules)).toContain(modalScrollStyle);
     expect(staticImports(chatChunk.fileName)).not.toContain(modalChunk.fileName);
@@ -301,7 +303,9 @@ describe("Control UI build chunking", () => {
     expect(boot.new).toContain(copyChunk.fileName);
     expect(boot.chat).toContain(liveChunk.fileName);
     expect(boot.new).not.toContain(liveChunk.fileName);
-    expect(boot.chat).toContain(modalChunk.fileName);
+    expect(boot.chat).not.toContain(modalChunk.fileName);
+    expect(boot.chat).not.toContain(resetChunk.fileName);
+    expect(boot.new).toContain(modalChunk.fileName);
     expect(boot.chat).not.toContain(newSessionChunk.fileName);
     expect(boot.initial).not.toContain(copyChunk.fileName);
     expect(boot.initial).not.toContain(liveChunk.fileName);
