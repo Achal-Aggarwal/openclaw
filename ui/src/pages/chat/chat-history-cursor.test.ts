@@ -1,12 +1,13 @@
 // @vitest-environment node
 import { asOptionalRecord } from "@openclaw/normalization-core/record-coerce";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import type { AgentActivityItem } from "../../../../packages/gateway-protocol/src/schema/logs-chat.js";
 import { createDeferred } from "../../../../test/helpers/promise.js";
 import type { GatewaySessionRow } from "../../api/types.ts";
 import type { ChatQueueItem } from "../../lib/chat/chat-types.ts";
 import { extractText } from "../../lib/chat/message-extract.ts";
 import { captureChatOutboxAdmission } from "../../lib/chat/outbox-store.ts";
+import { prepareChatToolFamily } from "../../lib/chat/tool-family.ts";
 import { createStorageMock } from "../../test-helpers/storage.ts";
 import { handleChatGatewayEvent } from "./chat-gateway.ts";
 import { event, toolEvent } from "./chat-history.inflight.test-support.ts";
@@ -64,6 +65,11 @@ const fallback = (text: string, itemId: string) => ({
   source: "segment",
 });
 const toolCall = (id: string, name: string) => ({ type: "toolCall", id, name, arguments: {} });
+beforeAll(async () => {
+  await prepareChatToolFamily([
+    message("assistant", [toolCall("prepared-corpus", "exec")], "prepared-corpus", 1),
+  ]);
+});
 const cachedSnapshot = (state: ReturnType<typeof createState>) =>
   readChatSessionSnapshot(state.chatMessagesBySession!, state, { sessionKey: state.sessionKey });
 

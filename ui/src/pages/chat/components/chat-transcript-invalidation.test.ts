@@ -1,7 +1,7 @@
 /* @vitest-environment jsdom */
 import { expectDefined } from "@openclaw/normalization-core/expect";
 import { createComponent } from "solid-js";
-import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { resolveThemeBranding } from "../../../../../packages/gateway-protocol/src/theme.ts";
 import { resolveControlUiAuthToken } from "../../../app/control-ui-auth.ts";
 import { currentThemeBranding, setCurrentThemeBranding } from "../../../app/theme-branding.ts";
@@ -9,6 +9,7 @@ import { resolveAvatarHat } from "../../../components/agent-avatar-hat.ts";
 import type { BoardProvider } from "../../../lib/board/provider.ts";
 import * as draftStore from "../../../lib/chat/composer-draft-store.runtime.ts";
 import * as messageNormalizer from "../../../lib/chat/message-normalizer.ts";
+import { prepareChatToolPresentation } from "../../../lib/chat/tool-family.ts";
 import * as videoPoster from "../../../lib/media/video-poster.ts";
 import { PRESENTATION_CHANGED_EVENT } from "../../../lib/presentation.ts";
 import { projectOwner } from "../../../lib/reactive/projection.ts";
@@ -62,6 +63,11 @@ const msg = <Content>(role: string, content: Content, timestamp = 1_000, extra =
   content,
   timestamp,
   ...extra,
+});
+beforeAll(async () => {
+  await prepareChatToolPresentation([
+    msg("toolResult", "Read complete", 1_000, { toolCallId: "prepared-corpus", toolName: "read" }),
+  ]);
 });
 const find = (root: ParentNode, selector: string) => root.querySelector<HTMLElement>(selector);
 const required = (root: ParentNode, selector: string) =>

@@ -3,8 +3,12 @@ import { createMemo, For, Show } from "solid-js";
 import { unwrapToolCallForDisplay } from "../../../../../src/agents/tool-display-call.js";
 import { Icon } from "../../../components/solid/icon.tsx";
 import type { MessageGroup } from "../../../lib/chat/chat-types.ts";
-import { describeToolGroup, readPreparedActivity } from "../../../lib/chat/tool-call-grouping.ts";
-import { extractToolCardsCached, resolveToolCardOutcome } from "../../../lib/chat/tool-cards.ts";
+import { describeToolGroup } from "../../../lib/chat/tool-call-grouping.runtime.ts";
+import { readPreparedActivity } from "../../../lib/chat/tool-call-grouping.ts";
+import {
+  extractToolCardsCached,
+  resolveToolCardOutcome,
+} from "../../../lib/chat/tool-cards.runtime.ts";
 import { resolveToolDisplayIdentity } from "../../../lib/chat/tool-display-identity.ts";
 import { formatDurationLong } from "../../../lib/format-duration.ts";
 import { t } from "../../../lib/reactive/i18n.ts";

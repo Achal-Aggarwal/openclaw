@@ -1,6 +1,7 @@
 import { createComponent, createSignal } from "solid-js";
-import { describe, expect, it, onTestFinished, vi } from "vitest";
+import { beforeAll, describe, expect, it, onTestFinished, vi } from "vitest";
 import type { GatewaySessionRow } from "../../api/types.ts";
+import { prepareChatToolFamily } from "../../lib/chat/tool-family.ts";
 import { mountSolid } from "../../test-helpers/mount-solid.ts";
 import { flush } from "../../test-helpers/solid-settle.ts";
 import { listSubagents, projectSubagentStatus } from "./chat-subagent-wait.ts";
@@ -91,6 +92,10 @@ const messages = [
     content: [{ type: "text", text: '{"status":"yielded"}' }],
   },
 ];
+
+beforeAll(async () => {
+  await prepareChatToolFamily(messages);
+});
 
 describe("chat waiting on subagents", () => {
   it("keeps Details activity scoped to current runs and independent of transcript search", () => {

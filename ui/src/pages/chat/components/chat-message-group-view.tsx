@@ -4,6 +4,7 @@ import { personActivityLink } from "../../../components/person-activity-link.ts"
 import type { MessageGroup as MessageGroupData } from "../../../lib/chat/chat-types.ts";
 import { messageClientSourcesLabel } from "../../../lib/chat/message-client-source.ts";
 import { normalizeRoleForGrouping } from "../../../lib/chat/message-normalizer.ts";
+import { loadChatToolPresentation } from "../../../lib/chat/tool-family.ts";
 import { listen } from "../../../lib/reactive/listener.ts";
 import { ChatAvatar, ForwardedAvatar } from "../chat-avatar.ts";
 import { persistedMessageEntryId } from "../chat-thread-items.ts";
@@ -11,7 +12,6 @@ import { hasForwardedSource, isSessionActivityGroup } from "../chat-turn-boundar
 import { ChatAuthorAvatar } from "./chat-author-avatar.ts";
 import { BrowserTabPreviews } from "./chat-browser-tab-previews.tsx";
 import { ForwardedAttribution } from "./chat-forwarded-attribution.tsx";
-import { ChatLazyBoundary } from "./chat-lazy-boundary.tsx";
 import type { GroupedMessageOptions } from "./chat-message-bubble-options.ts";
 import { GroupedMessage } from "./chat-message-bubble-view.tsx";
 import { RewindButton } from "./chat-message-confirmation-view.tsx";
@@ -46,9 +46,10 @@ import { ReplyLineView, ReplyLineConnector } from "./chat-reply-attribution.tsx"
 import type { ReplyConnectorElements } from "./chat-reply-connector.tsx";
 import { ChatSessionActivity } from "./chat-session-activity.solid.tsx";
 import { selectBrowserTabPreviews } from "./chat-tool-cards.ts";
+import { ChatToolFamilyBoundary, useChatToolReadiness } from "./chat-tool-family-boundary.tsx";
 import { TurnRecapRow } from "./chat-turn-recap-view.tsx";
 
-const ActivityGroupContent = lazy(() => import("./chat-message-activity-view.tsx"), {
+const ActivityGroupContent = lazy(() => loadChatToolPresentation(), {
   export: "ActivityGroupContent",
 });
 
@@ -86,9 +87,11 @@ function PreparedMessage(props: {
   options: NativeMessageGroupOptions & Pick<GroupedMessageOptions, "replyLine">;
   prepared?: ReturnType<typeof prepareGroupMessage>;
 }) {
-  const prepared = createMemo(
-    () => props.prepared ?? prepareGroupMessage(props.group, props.item, props.options),
-  );
+  const toolsReady = useChatToolReadiness();
+  const prepared = createMemo(() => {
+    toolsReady();
+    return props.prepared ?? prepareGroupMessage(props.group, props.item, props.options);
+  });
   const isStreaming = () =>
     props.group.isStreaming && props.index === props.group.messages.length - 1;
   const options = createMemo(() => {
@@ -165,7 +168,9 @@ export function ActivityGroup(props: {
   presentation: "standalone" | "continuation";
 }) {
   return (
-    <ChatLazyBoundary>
+    <ChatToolFamilyBoundary
+      sources={props.groups.map((group) => group.messages.map((item) => item.message))}
+    >
       <ActivityGroupContent
         {...props}
         renderEntries={(overrides) => (
@@ -185,7 +190,7 @@ export function ActivityGroup(props: {
           </For>
         )}
       />
-    </ChatLazyBoundary>
+    </ChatToolFamilyBoundary>
   );
 }
 
@@ -193,7 +198,22 @@ export function MessageGroupContent(props: {
   group: MessageGroupData;
   options: NativeMessageGroupOptions;
 }) {
-  const options = createMemo(() => resolveFileLinkOwnerOptions(props.group, props.options));
+  return (
+    <ChatToolFamilyBoundary sources={[props.group.messages.map((item) => item.message)]}>
+      <PreparedMessageGroupContent {...props} />
+    </ChatToolFamilyBoundary>
+  );
+}
+
+function PreparedMessageGroupContent(props: {
+  group: MessageGroupData;
+  options: NativeMessageGroupOptions;
+}) {
+  const toolsReady = useChatToolReadiness();
+  const options = createMemo(() => {
+    toolsReady();
+    return resolveFileLinkOwnerOptions(props.group, props.options);
+  });
   return (
     <Show
       when={!isActivityMessageGroup(props.group, options().bubbleMode)}
@@ -425,8 +445,12 @@ function FramedMessageGroup(props: {
   group: MessageGroupData;
   options: NativeMessageGroupOptions;
 }) {
+  const toolsReady = useChatToolReadiness();
   const replyElements: ReplyConnectorElements = {};
-  const frame = createMemo(() => prepareMessageGroupFrame(props.group, props.options));
+  const frame = createMemo(() => {
+    toolsReady();
+    return prepareMessageGroupFrame(props.group, props.options);
+  });
   const options = () => frame().options;
   const media = globalThis.matchMedia?.(
     "(max-width: 768px), (max-width: 932px) and (max-height: 500px) and (orientation: landscape)",
@@ -564,13 +588,17 @@ function SessionActivityGroup(props: {
   group: MessageGroupData;
   options: NativeMessageGroupOptions;
 }) {
+  const toolsReady = useChatToolReadiness();
   const options = createMemo(() => resolveFileLinkOwnerOptions(props.group, props.options));
   return (
     <ChatSessionActivity
       group={props.group}
       options={options()}
       renderEntry={(item, index) => {
-        const prepared = createMemo(() => prepareGroupMessage(props.group, item(), options()));
+        const prepared = createMemo(() => {
+          toolsReady();
+          return prepareGroupMessage(props.group, item(), options());
+        });
         let actionOwner: HTMLDivElement | undefined;
         return {
           actionsRef: (element: HTMLDivElement) => {
@@ -611,7 +639,22 @@ export function MessageGroup(props: {
   group: MessageGroupData;
   options: NativeMessageGroupOptions;
 }) {
-  const options = createMemo(() => resolveFileLinkOwnerOptions(props.group, props.options));
+  return (
+    <ChatToolFamilyBoundary sources={[props.group.messages.map((item) => item.message)]}>
+      <PreparedMessageGroup {...props} />
+    </ChatToolFamilyBoundary>
+  );
+}
+
+function PreparedMessageGroup(props: {
+  group: MessageGroupData;
+  options: NativeMessageGroupOptions;
+}) {
+  const toolsReady = useChatToolReadiness();
+  const options = createMemo(() => {
+    toolsReady();
+    return resolveFileLinkOwnerOptions(props.group, props.options);
+  });
   return (
     <Show
       when={!isSessionActivityGroup(props.group)}

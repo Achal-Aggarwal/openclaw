@@ -8,7 +8,7 @@ import type { ApplicationContext } from "../../../app/context.ts";
 import type { ApplicationGatewaySnapshot } from "../../../app/gateway.ts";
 import type { BrowserTabTarget } from "../../../components/browser/browser-target.ts";
 import { BROWSER_PANEL_TOGGLE_EVENT } from "../../../components/panel-toggle-contract.ts";
-import { latestBrowserTabCards } from "../../../lib/chat/browser-tab-preview.ts";
+import { latestBrowserTabCards } from "../../../lib/chat/browser-tab-selection.runtime.ts";
 import type { MessageGroup } from "../../../lib/chat/chat-types.ts";
 import { ApplicationProvider } from "../../../lib/reactive/context.ts";
 import { gatewayHelloForMethods } from "../../../test-helpers/gateway-methods.ts";

@@ -1,7 +1,8 @@
 /* @vitest-environment jsdom */
 
-import { describe, expect, it, onTestFinished, vi } from "vitest";
+import { beforeAll, describe, expect, it, onTestFinished, vi } from "vitest";
 import { projectAgentToolActivity } from "../../../../../src/infra/agent-activity-events.js";
+import { prepareChatToolPresentation } from "../../../lib/chat/tool-family.ts";
 import { ApplicationProvider } from "../../../lib/reactive/context.ts";
 import { prepareChatHistoryFixture } from "../../../test-helpers/chat-activity-fixtures.ts";
 import { mountSolid } from "../../../test-helpers/solid-render.tsx";
@@ -25,6 +26,12 @@ import {
   type TestMessage,
 } from "./chat-message.test-support.ts";
 import { settleToolBridges } from "./chat-tool-render.test-support.ts";
+
+beforeAll(async () => {
+  await prepareChatToolPresentation([
+    createToolResultMessage("prepared-corpus", "read", "Evidence"),
+  ]);
+});
 
 const harness = createChatMessageHarness();
 const {

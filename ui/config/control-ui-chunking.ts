@@ -20,15 +20,8 @@ const controlUiBootModules = JSON.parse(
 
 const chatVisibleModules = new Set([
   "ui/src/pages/chat/components/chat-tool-card-chrome.tsx",
-  "ui/src/pages/chat/components/chat-tool-outcome-summary.solid.tsx",
-  "ui/src/pages/chat/components/chat-tool-render-model.ts",
   "ui/src/pages/chat/components/chat-message-bubble-tools.tsx",
-  "ui/src/pages/chat/components/chat-permission-card.tsx",
-  "ui/src/pages/chat/components/chat-tool-content.solid.tsx",
-  "ui/src/pages/chat/components/chat-tool-cards.solid.tsx",
-  "ui/src/pages/chat/components/chat-message-activity-operation.tsx",
   "ui/src/pages/chat/components/chat-diff-stat.solid.tsx",
-  "ui/src/pages/chat/components/chat-tool-row-presentation.ts",
   "ui/src/lib/chat/tool-display-identity.ts",
   "ui/src/lib/chat/tool-call-input.ts",
   "src/agents/tool-display-name.ts",
@@ -77,6 +70,32 @@ export function controlUiStableChunkName(id: string): string | undefined {
   const normalized = normalizeModuleId(id);
 
   switch (controlUiBootManifestKey(id)) {
+    case "ui/src/pages/chat/chat-tool-family-runtime.ts":
+    case "ui/src/pages/chat/chat-tool-activity-coalesce.runtime.ts":
+    case "ui/src/pages/chat/chat-sessions-yield.runtime.ts":
+    case "ui/src/lib/chat/tool-cards.runtime.ts":
+    case "ui/src/lib/chat/tool-call-grouping.runtime.ts":
+    case "ui/src/lib/chat/browser-tab-selection.runtime.ts":
+    case "ui/src/lib/chat/source-previews.ts":
+    case "ui/src/pages/chat/components/chat-tool-cards.runtime.ts":
+    case "ui/src/pages/chat/components/chat-tool-render-model.ts":
+      return "chat-tool-data";
+    case "ui/src/pages/chat/chat-tool-presentation.runtime.ts":
+    case "ui/src/pages/chat/components/chat-tool-card-row.solid.tsx":
+    case "ui/src/pages/chat/components/chat-tool-outcome-summary.solid.tsx":
+    case "ui/src/pages/chat/components/chat-permission-card.tsx":
+    case "ui/src/pages/chat/components/chat-tool-content.solid.tsx":
+    case "ui/src/pages/chat/components/chat-tool-expanded.solid.tsx":
+    case "ui/src/pages/chat/components/chat-tool-cards.solid.tsx":
+    case "ui/src/pages/chat/components/chat-message-activity-operation.tsx":
+    case "ui/src/pages/chat/components/chat-message-activity-view.tsx":
+    case "ui/src/pages/chat/components/chat-tool-row-presentation.ts":
+    case "ui/src/pages/chat/components/chat-work-group-summary.tsx":
+      // Tool messages prepare this family before projection; plain chat never requests it.
+      return "chat-tool-runtime";
+    case "ui/src/pages/chat/components/chat-agent-run-frame.tsx":
+      // Text-only runs also use this shell, independently of tool presentation.
+      return "chat-run-frame";
     case "ui/src/pages/chat/components/chat-details-people.css":
     case "ui/src/pages/chat/components/chat-outputs.css":
     case "ui/src/pages/chat/components/chat-details-environment-desktop.css":

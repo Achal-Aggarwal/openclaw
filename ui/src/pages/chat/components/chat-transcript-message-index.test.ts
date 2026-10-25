@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { prepareChatToolFamily } from "../../../lib/chat/tool-family.ts";
 import { chatItemGroups } from "../chat-agent-run-grouping.ts";
 import { resetWorkingProgress } from "../chat-progress.ts";
 import { buildChatItems, type BuildChatItemsProps } from "../chat-thread-build.ts";
@@ -35,6 +36,9 @@ function makeTool(
     __openclaw: { id, seq, runId, turnBoundary },
   };
 }
+beforeAll(async () => {
+  await prepareChatToolFamily([makeTool("prepared-corpus", 1, "run-1", 1)]);
+});
 const partial = makeMessage("partial", 2);
 const history = [makeMessage("question", 1, { role: "user" }), partial];
 

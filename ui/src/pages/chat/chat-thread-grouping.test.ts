@@ -1,7 +1,8 @@
 // @vitest-environment node
-import { beforeEach, expect, it } from "vitest";
+import { beforeAll, beforeEach, expect, it } from "vitest";
 import type { MessageClientSource } from "../../../../src/chat/message-client-source.js";
 import type { ChatQueueItem, MessageGroup } from "../../lib/chat/chat-types.ts";
+import { prepareChatToolFamily } from "../../lib/chat/tool-family.ts";
 import { coalesceAgentRunFrames } from "./chat-agent-run-grouping.ts";
 import { assistantGroupCanOwnActiveRunStatus } from "./chat-assistant-reply.ts";
 import {
@@ -83,6 +84,9 @@ function expectHistory(messages: unknown[], shown: number[], folded: number[]) {
     }
   }
 }
+beforeAll(async () => {
+  await prepareChatToolFamily([tool("prepared-corpus", 1)]);
+});
 beforeEach(() => resetChatThreadState());
 
 it("keeps provider speech separate from answer ownership and completed-work rollups", () => {

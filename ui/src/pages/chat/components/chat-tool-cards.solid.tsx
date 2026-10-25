@@ -1,6 +1,6 @@
 import type { ProgressCardStep } from "@openclaw/gateway-protocol";
 import { asNullableRecord } from "@openclaw/normalization-core/record-coerce";
-import { For, Show, createMemo, lazy } from "solid-js";
+import { For, Show, createMemo } from "solid-js";
 import { readNodePermissionRequest } from "../../../../../packages/gateway-protocol/src/node-permissions.js";
 import { unwrapToolCallForDisplay } from "../../../../../src/agents/tool-display-call.js";
 import { Icon } from "../../../components/solid/icon.tsx";
@@ -8,25 +8,27 @@ import { registerChatToolLabelsEnglish } from "../../../i18n/locales/en-chat-too
 import type { ToolCard, ToolCardOutcome } from "../../../lib/chat/chat-types.ts";
 import { readToolApprovalReviews } from "../../../lib/chat/tool-approval-reviews.ts";
 import { resolveToolCallInput } from "../../../lib/chat/tool-call-input.ts";
-import { resolveToolCardDisplay, resolveToolCardOutcome } from "../../../lib/chat/tool-cards.ts";
+import {
+  resolveToolCardDisplay,
+  resolveToolCardOutcome,
+} from "../../../lib/chat/tool-cards.runtime.ts";
 import { resolveToolDisplayIdentity } from "../../../lib/chat/tool-display-identity.ts";
 import { pathDisplayName } from "../../../lib/path-display.ts";
 import { t, registerEnglishCatalog } from "../../../lib/reactive/i18n.ts";
-import { PluginSurface } from "../../../plugins/control-ui-view.solid.tsx";
 import "./browser-tab-card.css";
+import { PluginSurface } from "../../../plugins/control-ui-view.solid.tsx";
 import { DiffStatChips } from "./chat-diff-stat.solid.tsx";
 import { ChatImportBoundary } from "./chat-import-boundary.tsx";
 import { ChatPermissionCard } from "./chat-permission-card.tsx";
 import { ToolIcon } from "./chat-tool-card-chrome.tsx";
+import { ToolCardRow } from "./chat-tool-card-row.solid.tsx";
 import type { ToolCardProps } from "./chat-tool-card-types.ts";
-import { ExpandedToolCardContent } from "./chat-tool-content.solid.tsx";
+import { ExpandedToolCardContent } from "./chat-tool-expanded.solid.tsx";
 import { ToolOutcomeSummary } from "./chat-tool-outcome-summary.solid.tsx";
 import { toolResultSurfaceProps } from "./chat-tool-render-model.ts";
 import { resolveToolRowVerb } from "./chat-tool-row-presentation.ts";
 
 registerEnglishCatalog(registerChatToolLabelsEnglish);
-
-const ToolCardRow = lazy(() => import("./chat-tool-card-row.solid.tsx"), { export: "ToolCardRow" });
 
 function progressReceiptSteps(value: unknown): ProgressCardStep[] {
   if (!Array.isArray(value)) {

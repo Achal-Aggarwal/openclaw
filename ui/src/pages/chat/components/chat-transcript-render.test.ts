@@ -1,11 +1,12 @@
 import { expectDefined } from "@openclaw/normalization-core";
 /* @vitest-environment jsdom */
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { resolveThemeBranding } from "../../../../../packages/gateway-protocol/src/theme.ts";
 import type { GatewaySessionRow, SessionsListResult } from "../../../api/types.ts";
 import { currentThemeBranding, setCurrentThemeBranding } from "../../../app/theme-branding.ts";
 import { resolveAvatarHat } from "../../../components/agent-avatar-hat.ts";
-import { latestBrowserTabCards } from "../../../lib/chat/browser-tab-preview.ts";
+import { latestBrowserTabCards } from "../../../lib/chat/browser-tab-selection.runtime.ts";
+import { prepareChatToolPresentation } from "../../../lib/chat/tool-family.ts";
 import { createTestGatewayClient } from "../../../test-helpers/gateway-client.ts";
 import { gatewayHelloForMethods } from "../../../test-helpers/gateway-methods.ts";
 import {
@@ -37,6 +38,15 @@ import {
   threadProps,
   transcriptMessage as message,
 } from "./chat-transcript.test-support.ts";
+
+beforeAll(async () => {
+  await prepareChatToolPresentation([
+    message("toolResult", "Read complete", 1_000, {
+      toolCallId: "prepared-corpus",
+      toolName: "read",
+    }),
+  ]);
+});
 
 const cleanups = new Set<() => void>();
 function threadFixture(
@@ -468,7 +478,7 @@ describe("chat transcript rendering", () => {
       message("assistant", "Done.", 3_000),
     ];
     const props = threadProps("pane-browser-work", "agent:main:dashboard:browser", messages, {
-      latestBrowserTabs: latestBrowserTabCards(messages, []),
+      readLatestBrowserTabs: () => latestBrowserTabCards(messages, []),
       showToolCalls: true,
     });
     const capture = vi.fn(async () => {

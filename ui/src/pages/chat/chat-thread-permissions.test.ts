@@ -1,8 +1,9 @@
 /* @vitest-environment jsdom */
-import { expect, it, onTestFinished, vi } from "vitest";
+import { beforeAll, expect, it, onTestFinished, vi } from "vitest";
 import type { ApplicationContext } from "../../app/context.ts";
 import { createNativeDeviceSettingsCapability } from "../../app/native-device-settings.ts";
 import { extractToolCardsCached } from "../../lib/chat/tool-cards.ts";
+import { prepareChatToolPresentation } from "../../lib/chat/tool-family.ts";
 import { createNativeDeviceSettingsSnapshot } from "../../test-helpers/native-device-settings.ts";
 import { createSolidApplicationContextProvider } from "../../test-helpers/solid-application-context.tsx";
 import { groupMessages } from "./chat-thread-grouping.ts";
@@ -11,6 +12,10 @@ import { createMessageGroupHarness } from "./components/chat-message-native.test
 import { settleToolBridges } from "./components/chat-tool-render.test-support.ts";
 import { agentEvent, createHost } from "./tool-stream.test-helpers.ts";
 import { handleAgentEvent } from "./tool-stream.ts";
+
+beforeAll(async () => {
+  await prepareChatToolPresentation([{ role: "toolResult", toolName: "nodes", content: "" }]);
+});
 
 const permissionMissing = {
   nodeId: "example-mac",

@@ -1,6 +1,7 @@
 // @vitest-environment node
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 import { extractToolCardsCached } from "../../lib/chat/tool-cards.ts";
+import { prepareChatToolFamily } from "../../lib/chat/tool-family.ts";
 import {
   emptyAssistantAcknowledgment,
   emptyAssistantHistory,
@@ -49,6 +50,10 @@ const nestedHistory = [
 const pendingHandoff = { timestamp: 2_000, runId: "parent-run" };
 // A confirmed handoff leaves one structural item behind and nothing to draw.
 const silentBoundary = expect.objectContaining({ kind: "notice", handoffBoundary: true, text: "" });
+
+beforeAll(async () => {
+  await prepareChatToolFamily(separateHistory, nestedHistory);
+});
 
 describe("sessions_yield transcript projection", () => {
   it.each([["nested exec activity", nestedHistory]])(

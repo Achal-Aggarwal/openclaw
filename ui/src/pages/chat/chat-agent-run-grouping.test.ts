@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 import type { MessageGroup } from "../../lib/chat/chat-types.ts";
+import { prepareChatToolFamily } from "../../lib/chat/tool-family.ts";
 import { coalesceAgentRunFrames } from "./chat-agent-run-grouping.ts";
 import { message as chatMessage } from "./chat-thread-fixtures.test-support.ts";
 import { groupMessages } from "./chat-thread-grouping.ts";
@@ -8,6 +9,10 @@ import type {
   StreamRunRenderItem,
   WorkGroupRenderItem,
 } from "./chat-turn-presentation.ts";
+
+beforeAll(async () => {
+  await prepareChatToolFamily([chatMessage("toolResult", "Evidence", 1)]);
+});
 
 function group(
   role: "assistant" | "tool" | "user",

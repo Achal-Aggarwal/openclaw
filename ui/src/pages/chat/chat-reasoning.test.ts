@@ -1,6 +1,7 @@
 /* @vitest-environment jsdom */
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, expect, it, vi } from "vitest";
 import { extractThinkingCached } from "../../lib/chat/message-extract.ts";
+import { prepareChatToolPresentation } from "../../lib/chat/tool-family.ts";
 import { waitForSolid } from "../../test-helpers/solid-settle.ts";
 import { createComposerContainer } from "./chat-composer.test-support.ts";
 import { handleChatGatewayEvent } from "./chat-gateway.ts";
@@ -44,6 +45,15 @@ function transcriptRow<T extends { id: string; seq: number }>(
 ) {
   return { role: "assistant", timestamp: identity.seq, content, __openclaw: identity, ...fields };
 }
+
+beforeAll(async () => {
+  await prepareChatToolPresentation([
+    transcriptRow([{ type: "toolCall", id: "prepared-corpus", name: "read", arguments: {} }], {
+      id: "prepared-corpus",
+      seq: 1,
+    }),
+  ]);
+});
 
 beforeEach(() => {
   vi.useFakeTimers();

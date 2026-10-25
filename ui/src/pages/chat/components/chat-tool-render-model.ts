@@ -3,7 +3,7 @@ import { summarizeAgentActivity } from "../../../../../src/agents/agent-activity
 import type { ControlUiSurfaceProps } from "../../../../../src/plugin-sdk/control-ui.js";
 import type { ToolCard } from "../../../lib/chat/chat-types.ts";
 import type { ToolCallView } from "../../../lib/chat/tool-call-view.ts";
-import { isToolCardError, isToolCardSkipped } from "../../../lib/chat/tool-cards.ts";
+import { isToolCardError, isToolCardSkipped } from "../../../lib/chat/tool-cards.runtime.ts";
 import type { SubagentRowContext } from "../chat-spawned-subagent.ts";
 import type { PluginToolIcons } from "../chat-tool-icon-controller.ts";
 import type { SidebarContent } from "./chat-sidebar-content-types.ts";

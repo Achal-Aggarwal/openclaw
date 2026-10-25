@@ -6,6 +6,7 @@ import type { ApplicationContext } from "../../app/context.ts";
 import { createSidebarNarration } from "../../components/app-sidebar-session-narration.ts";
 import { readSidebarToolActivity } from "../../components/sidebar-tool-activity.ts";
 import { resolveToolDisplayIdentity } from "../../lib/chat/tool-display-identity.ts";
+import { prepareChatToolFamily } from "../../lib/chat/tool-family.ts";
 import { formatUiError } from "../../lib/format-error.ts";
 import { listen } from "../../lib/reactive/listener.ts";
 import type { SessionMethodAccess } from "../../lib/session-method-access.ts";
@@ -431,7 +432,7 @@ export class SubagentsPanelData {
         this,
         { isCurrent: current },
       )
-        .then((history) => {
+        .then(async (history) => {
           if (
             !current() ||
             isHistoryCursor(history) ||
@@ -439,6 +440,13 @@ export class SubagentsPanelData {
             historySessionId(history) !== row.sessionId
           ) {
             return;
+          }
+          const readiness = prepareChatToolFamily(history.messages ?? []);
+          if (readiness !== true) {
+            await readiness;
+            if (!current() || !row.sessionId || historySessionId(history) !== row.sessionId) {
+              return;
+            }
           }
           const snapshot = readSubagentActivitySnapshot(history);
           for (const [id, item] of metrics.calls) {

@@ -27,6 +27,10 @@ const chatInteractionEntries = new Set([
   "ui/src/pages/chat/tool-stream.ts",
   "ui/src/pages/chat/chat-command-dispatch.runtime.ts",
   "ui/src/pages/chat/chat-pane-session-operations.runtime.ts",
+  // Download common tool presentation without evaluating it for plain transcripts.
+  "ui/src/pages/chat/chat-tool-family-runtime.ts",
+  "ui/src/pages/chat/chat-tool-presentation.runtime.ts",
+  "ui/src/pages/chat/components/chat-agent-run-frame.tsx",
   // Image viewers and provider-review dialogs load only when their own UI is needed.
 ]);
 

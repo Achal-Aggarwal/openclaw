@@ -1,5 +1,6 @@
 /* @vitest-environment jsdom */
-import { afterEach, beforeEach, expect, it } from "vitest";
+import { afterEach, beforeAll, beforeEach, expect, it } from "vitest";
+import { prepareChatToolFamily } from "../../../lib/chat/tool-family.ts";
 import { createTestTranscript } from "../chat-view.test-helpers.ts";
 import { message } from "./chat-position-rail.test-support.ts";
 import { projectChatTranscript } from "./chat-transcript-projection.ts";
@@ -12,6 +13,9 @@ import {
 function toolResult(id: string, text: string, seq: number, toolCallId = "read-1") {
   return { ...message(id, "toolResult", text, seq, "run-1"), toolName: "read", toolCallId };
 }
+beforeAll(async () => {
+  await prepareChatToolFamily([toolResult("prepared-corpus", "Evidence", 1)]);
+});
 const imageContent = [
   { type: "image", source: { type: "base64", media_type: "image/png", data: "AA==" } },
 ];

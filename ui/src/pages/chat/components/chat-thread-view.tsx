@@ -44,6 +44,7 @@ import {
   registerTranscriptElement,
   type ChatThreadProps,
 } from "./chat-thread-interactions.ts";
+import { ChatToolFamilyBoundary, useChatToolReadiness } from "./chat-tool-family-boundary.tsx";
 import type { ChatTranscript } from "./chat-transcript-controller.ts";
 import { projectChatTranscript } from "./chat-transcript-projection.ts";
 import { resolveAssistantDisplayAvatar } from "./chat-welcome.ts";
@@ -63,11 +64,27 @@ function navigateCronRunLink(event: Event, props: ChatThreadProps): boolean {
   return true;
 }
 
-export function ChatThread(input: {
+type ChatThreadInput = {
   props: ChatThreadProps;
   transcript: ChatTranscript;
   bindViewport?: (element: HTMLDivElement) => () => void;
-}) {
+};
+
+export function ChatThread(input: ChatThreadInput) {
+  const pendingMessages = createMemo(
+    () => input.props.pendingInputs?.map((pending) => pending.message) ?? [],
+  );
+  return (
+    <ChatToolFamilyBoundary
+      sources={[input.props.messages, input.props.toolMessages, pendingMessages()]}
+    >
+      <PreparedChatThread {...input} />
+    </ChatToolFamilyBoundary>
+  );
+}
+
+function PreparedChatThread(input: ChatThreadInput) {
+  const toolsReady = useChatToolReadiness();
   const mobile = useContext(ChatConversationMobile);
   let root: HTMLDivElement | undefined;
   const historyIntent = (event: Event) => input.props.onHistoryIntent?.(event);
@@ -112,6 +129,7 @@ export function ChatThread(input: {
     },
   );
   const current = createMemo(() => {
+    toolsReady();
     const searchState = search().read();
     const { session } = presentation();
     const projection = projectChatTranscript(input.props, session, searchState);

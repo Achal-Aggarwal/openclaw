@@ -15,7 +15,8 @@ import {
   type Accessor,
 } from "solid-js";
 import type { MessageGroup as MessageGroupData } from "../../../lib/chat/chat-types.ts";
-import { extractChatSourcePreviews } from "../../../lib/chat/source-previews.ts";
+import { loadChatToolPresentation, readChatToolFamily } from "../../../lib/chat/tool-family.ts";
+import { hasToolMessageDemand } from "../../../lib/chat/tool-message-demand.ts";
 import { t } from "../../../lib/reactive/i18n.ts";
 import {
   agentRunFrameActiveStatusParts,
@@ -40,8 +41,10 @@ import {
 } from "./chat-message-stream-view.tsx";
 import { resolveGroupReplyLine } from "./chat-reply-attribution.ts";
 import { selectWorkGroupBrowserTabPreviews } from "./chat-tool-cards.ts";
-import { WorkGroupSummary } from "./chat-work-group-summary.tsx";
+import { ChatToolFamilyBoundary, useChatToolReadiness } from "./chat-tool-family-boundary.tsx";
 import "../../../styles/chat/source-previews.css";
+
+const WorkGroupSummary = lazy(() => loadChatToolPresentation(), { export: "WorkGroupSummary" });
 
 const ChatSourcePreviews = lazy(() => import("./chat-source-previews.tsx"), {
   export: "ChatSourcePreviews",
@@ -223,15 +226,17 @@ function prepareFrame(frame: AgentRunFrameRenderItem, opts: AgentRunFrameOptions
     ),
     opts.renderGroupOptions(shell),
   );
-  const sourcePreviews = actionOwner
-    ? extractChatSourcePreviews({
-        groups,
-        answer: actionOwner.message,
-        runId: frame.runId,
-        basePath: opts.basePath,
-        sessionPublicOrigin: opts.sessionPublicOrigin,
-      })
-    : [];
+  const sourcePreviews =
+    actionOwner &&
+    groups.some((group) => group.messages.some((item) => hasToolMessageDemand(item.message)))
+      ? readChatToolFamily().extractChatSourcePreviews({
+          groups,
+          answer: actionOwner.message,
+          runId: frame.runId,
+          basePath: opts.basePath,
+          sessionPublicOrigin: opts.sessionPublicOrigin,
+        })
+      : [];
   return {
     shell,
     actionOwner,
@@ -245,15 +250,29 @@ function prepareFrame(frame: AgentRunFrameRenderItem, opts: AgentRunFrameOptions
 
 export function AgentRunFrame(props: FrameProps) {
   const statusParts = createMemo(() => agentRunFrameActiveStatusParts(props.frame));
+  const messages = createMemo(() =>
+    chatItemGroups(props.frame).flatMap((group) => group.messages.map((item) => item.message)),
+  );
   return (
-    <Show when={statusParts()} fallback={<RunFrame frame={props.frame} options={props.options} />}>
+    <Show
+      when={statusParts()}
+      fallback={
+        <ChatToolFamilyBoundary sources={[messages()]}>
+          <RunFrame frame={props.frame} options={props.options} />
+        </ChatToolFamilyBoundary>
+      }
+    >
       {(parts) => <StreamGroup parts={parts()} options={props.options.streamOptions} />}
     </Show>
   );
 }
 
 function RunFrame(props: FrameProps) {
-  const state = createMemo(() => prepareFrame(props.frame, props.options));
+  const toolsReady = useChatToolReadiness();
+  const state = createMemo(() => {
+    toolsReady();
+    return prepareFrame(props.frame, props.options);
+  });
   const timedWork = createMemo(() => {
     const recap = props.options.turnRecap;
     const work = props.frame.parts.find(

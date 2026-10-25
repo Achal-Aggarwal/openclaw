@@ -1,6 +1,8 @@
 // @vitest-environment node
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 import type { MessageGroup } from "../../lib/chat/chat-types.ts";
+import { prepareChatToolFamily } from "../../lib/chat/tool-family.ts";
+import { toolResult } from "./chat-thread-fixtures.test-support.ts";
 import { groupMessages } from "./chat-thread-grouping.ts";
 import { createProps, type CachedChatItemsProps } from "./chat-thread.test-support.ts";
 import {
@@ -13,6 +15,10 @@ import {
 
 // A handoff makes the pane reload history: stored rows replace the live ones
 // under other message keys, and the handed-off run's live rows linger briefly.
+
+beforeAll(async () => {
+  await prepareChatToolFamily([toolResult("prepared-corpus", "read", "Evidence", 1)]);
+});
 
 function preparedGroup(key: string, message: unknown): MessageGroup {
   const [group] = groupMessages([{ kind: "message", key, message }]);

@@ -3,10 +3,7 @@ import type { SessionObserverDigest } from "../../../../packages/gateway-protoco
 import type { ControlUiSessionPullRequest } from "../../../../src/gateway/control-ui-contract.js";
 import type { ControlUiPanel } from "../../../../src/plugin-sdk/control-ui.js";
 import type { ControlUiLinkReaderDescriptor } from "../../../../src/shared/control-ui-link-reader.js";
-import type {
-  BrowserTabSelection,
-  BrowserTabTarget,
-} from "../../components/browser/browser-target.ts";
+import type { BrowserTabSelection } from "../../components/browser/browser-target.ts";
 import type { HostDesktopRuntimeConfig } from "../../components/desktop/host-desktop-setup.ts";
 import type { ChatAttachment } from "../../lib/chat/chat-types.ts";
 import type { PresentationValue } from "../../lib/presentation.ts";
@@ -81,8 +78,8 @@ export type SidebarPanelDefinitionParams = {
   terminalTabsInHeader: boolean;
   onCloseTerminal?: () => void;
   browserRefreshOnPresentation: boolean;
-  preferredBrowserTab?: BrowserTabSelection;
-  sessionBrowserTabs?: BrowserTabTarget[];
+  readBrowserTabs: () => ReadonlyMap<string, BrowserTabSelection>;
+  browserTabMessages: readonly (readonly unknown[])[];
   desktopPresented: PresentationValue;
   desktopExpanded?: boolean;
   onToggleDesktopExpanded?: () => void;

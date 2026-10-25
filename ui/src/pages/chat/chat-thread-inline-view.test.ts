@@ -1,8 +1,9 @@
 // @vitest-environment node
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 import type { PluginInlineViewBlock } from "../../../../src/shared/plugin-inline-view.js";
 import { extractTextCached } from "../../lib/chat/message-extract.ts";
 import { normalizeMessage } from "../../lib/chat/message-normalizer.ts";
+import { prepareChatToolFamily } from "../../lib/chat/tool-family.ts";
 import { buildChatItems } from "./chat-thread-build.ts";
 import { createProps } from "./chat-thread.test-support.ts";
 
@@ -23,6 +24,9 @@ const result = (id: string, timestamp: number) => ({
   timestamp,
   content: [{ type: "text", text: "Showing " + id }],
   details: { pluginView: block(id) },
+});
+beforeAll(async () => {
+  await prepareChatToolFamily([result("prepared-corpus", 1)]);
 });
 function inlineRows(props: Parameters<typeof buildChatItems>[0]) {
   return buildChatItems(props)

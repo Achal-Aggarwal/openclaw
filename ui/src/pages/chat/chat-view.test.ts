@@ -2,7 +2,7 @@
 
 import { expectDefined } from "@openclaw/normalization-core";
 import { createComponent, createSignal } from "solid-js";
-import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { createDeferred } from "../../../../test/helpers/promise.js";
 import type {
   GatewaySessionRow,
@@ -13,6 +13,7 @@ import type {
 import { i18n, t } from "../../i18n/index.ts";
 import type { ChatAttachment, ChatQueueItem, MessageGroup } from "../../lib/chat/chat-types.ts";
 import { buildFallbackSlashCommands, replaceSlashCommands } from "../../lib/chat/commands.ts";
+import { prepareChatToolPresentation } from "../../lib/chat/tool-family.ts";
 import type {
   SessionPatchOptions,
   SessionPatchResult,
@@ -45,6 +46,7 @@ import { createChatModelSetupBanner } from "./chat-model-setup.ts";
 import { applyChatPendingInputs, getChatPendingInputs } from "./chat-pending-inputs.ts";
 import * as chatProgress from "./chat-progress.ts";
 import { switchChatModel, switchChatSetting } from "./chat-session.ts";
+import { toolResult } from "./chat-thread-fixtures.test-support.ts";
 import { groupMessages } from "./chat-thread-grouping.ts";
 import * as chatThread from "./chat-thread.ts";
 import { resetChatViewState } from "./chat-view-state.test-support.ts";
@@ -98,6 +100,10 @@ import {
   workspaceConflictPathForDisplay,
   workspaceResultConflictFromTranscript,
 } from "./workspace-conflict.ts";
+
+beforeAll(async () => {
+  await prepareChatToolPresentation([toolResult("prepared-corpus", "read", "Evidence", 1)]);
+});
 
 const registeredAttachmentPayloads = new Map<
   string,
