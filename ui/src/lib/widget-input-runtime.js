@@ -72,8 +72,7 @@
   new ResizeObserver(reportSize).observe(document.body);
   // This opaque document owns its sole handler for the document lifetime.
   // It cannot import the host UI listener primitive; generated scripts never run here.
-  // eslint-disable-next-line unicorn/prefer-add-event-listener
-  window.onmessage = (event) => {
+  window.addEventListener("message", (event) => {
     if (event.source !== host) {
       return;
     }
@@ -93,6 +92,6 @@
       }
       document.documentElement.style.colorScheme = data.mode === "light" ? "light" : "dark";
     }
-  };
+  });
   host.postMessage({ type: "openclaw:widget-input-ready" }, "*");
 })();
