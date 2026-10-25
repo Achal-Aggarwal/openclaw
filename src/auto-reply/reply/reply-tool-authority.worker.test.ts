@@ -10,6 +10,7 @@ import { withPreparedEmbeddedRunToolAuthority } from "../../agents/harness/tool-
 import * as capabilityReads from "../../agents/subagents/spawn/subagent-session-store.js";
 import { setRuntimeConfigSnapshot } from "../../config/runtime-snapshot.js";
 import type { SessionEntry } from "../../config/sessions.js";
+import { resolveSessionStorePathCore } from "../../config/sessions/paths.js";
 import {
   patchSessionEntryCore,
   upsertSessionEntryCore,
@@ -442,6 +443,46 @@ it.each([
     });
   },
 );
+
+it("prepares a child harness turn after inherited capability metadata changes", async () => {
+  await withState(async (state, config) => {
+    setRuntimeConfigSnapshot(config);
+    const sessionKey = "agent:main:subagent:follow-up";
+    const sessionId = "follow-up";
+    const scope = { agentId: "main", sessionKey };
+    await seed(sessionKey, {
+      sessionId,
+      spawnedBy: "agent:main:main",
+      spawnDepth: 1,
+      inheritedToolPolicyVersion: 1,
+      inheritedToolAllow: ["read"],
+      model: "previous-model",
+    });
+    const storePath = resolveSessionStorePathCore(undefined, { agentId: "main" });
+    const { admission, submit } = await prepareEmbedded(state, config, "child-follow-up", {
+      sessionKey,
+      sessionId,
+      sessionFile: state.statePath("follow-up.jsonl"),
+    });
+    const submitTurn = vi.fn(async () => "submitted");
+    try {
+      await capabilityReads.withPreparedSessionCapabilityRead(
+        () => {
+          const store = capabilityReads.createSubagentSessionStore(storePath, "main");
+          expect(store.get(sessionKey)?.sessionId).toBe(sessionId);
+          return (async () => {
+            await patchSessionEntryCore(scope, () => ({ model: "current-model" }));
+            await expect(submit(submitTurn)).resolves.toBe("submitted");
+            expect(submitTurn).toHaveBeenCalledOnce();
+          })();
+        },
+        { retain: true },
+      );
+    } finally {
+      admission.close();
+    }
+  });
+});
 
 it("propagates a lineage database failure before submitTurn", async () => {
   await withState(async (state, config) => {
