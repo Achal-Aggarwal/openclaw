@@ -137,6 +137,8 @@ describe("renderAgents", () => {
         />
       );
     });
+    // Settle the lazy panel import before timing the catalog loading assertion.
+    await vi.dynamicImportSettled();
     await waitForSolid(() =>
       expect(
         mounted.container.querySelector(
