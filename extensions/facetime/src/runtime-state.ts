@@ -189,6 +189,7 @@ export class ActiveFaceTimeCall {
 
 export class FaceTimeCallRegistry {
   #active: ActiveFaceTimeCall | undefined;
+  #callWaiters = new Set<(call: ActiveFaceTimeCall) => void>();
 
   get active(): ActiveFaceTimeCall | undefined {
     return this.#active;
@@ -212,11 +213,44 @@ export class FaceTimeCallRegistry {
     return this.get(identity) !== undefined;
   }
 
+  waitForCall(
+    identity: string | undefined,
+    timeoutMs: number,
+  ): Promise<ActiveFaceTimeCall | undefined> {
+    const current = identity === undefined ? this.active : this.get(identity);
+    if (current) {
+      return Promise.resolve(current);
+    }
+    const key = identity === undefined ? undefined : normalizeCallIdentity(identity);
+    return new Promise((resolve) => {
+      const accept = (call: ActiveFaceTimeCall) => {
+        if (key !== undefined && !call.aliases.has(key)) {
+          return;
+        }
+        clearTimeout(timer);
+        this.#callWaiters.delete(accept);
+        resolve(call);
+      };
+      const timer = setTimeout(() => {
+        this.#callWaiters.delete(accept);
+        resolve(undefined);
+      }, timeoutMs);
+      this.#callWaiters.add(accept);
+    });
+  }
+
+  #publishCall(call: ActiveFaceTimeCall): void {
+    for (const accept of this.#callWaiters) {
+      accept(call);
+    }
+  }
+
   create(call: ActiveFaceTimeCall): void {
     if (this.#active && this.#active.phase !== "closed") {
       throw new Error("another FaceTime call lifecycle is already active");
     }
     this.#active = call;
+    this.#publishCall(call);
   }
 
   retainAlias(call: ActiveFaceTimeCall, identity: string): void {
@@ -224,6 +258,7 @@ export class FaceTimeCallRegistry {
       throw new Error("cannot retain an alias for an inactive FaceTime call");
     }
     call.aliases.add(normalizeCallIdentity(identity));
+    this.#publishCall(call);
   }
 
   close(call: ActiveFaceTimeCall): void {

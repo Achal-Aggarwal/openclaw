@@ -1,4 +1,3 @@
-import { createHook } from "node:async_hooks";
 import { once } from "node:events";
 import net from "node:net";
 import { createInterface } from "node:readline";
@@ -292,7 +291,6 @@ describe("FaceTime production authority boundary", () => {
       let registrations = 0;
       let onCallRegistered: (() => void) | undefined;
       const countWaits = process.env.POLLWAITS_FACETIME_COUNTS !== "0";
-      const timerIDs = new Set<number>();
       const registrationStack = () => {
         const stack = new Error().stack ?? "";
         return (
@@ -340,19 +338,33 @@ describe("FaceTime production authority boundary", () => {
         publish(this);
         return result;
       });
-      const hook = createHook({
-        init(id, type) {
-          if (measuring && current && type === "Timeout" && registrationStack()) {
-            current.timerAllocations += 1;
-            timerIDs.add(id);
-          }
-        },
-        before(id) {
-          if (measuring && current && timerIDs.delete(id)) {
-            current.timerFires += 1;
-          }
-        },
-      });
+      const schedule = globalThis.setTimeout;
+      const timerSpy = countWaits
+        ? vi.spyOn(globalThis, "setTimeout").mockImplementation((callback, delay, ...args) => {
+            if (!measuring || !current) {
+              return schedule(callback, delay, ...args);
+            }
+            const stack = new Error().stack ?? "";
+            const registrationTimer =
+              (stack.includes("/src/utils/sleep.") &&
+                stack.includes("/facetime/src/runtime.") &&
+                /\bhangup\b/.test(stack)) ||
+              (stack.includes("/facetime/src/runtime-state.") && /\bwaitForCall\b/.test(stack));
+            const row = measuring && registrationTimer ? current : undefined;
+            if (!row) {
+              return schedule(callback, delay, ...args);
+            }
+            row.timerAllocations += 1;
+            return schedule(
+              function (this: unknown, ...firedArgs: unknown[]) {
+                row.timerFires += 1;
+                Reflect.apply(callback, this, firedArgs);
+              },
+              delay,
+              ...args,
+            );
+          })
+        : undefined;
       // Acquisition still creates the real PluginInstance and captures its source.
       // Return the same source's Vitest module so native-edge mocks remain effective.
       const createLoader = loaderRuntime.createPluginModuleLoader;
@@ -487,9 +499,6 @@ describe("FaceTime production authority boundary", () => {
         });
         const samples = Number(process.env.POLLWAITS_FACETIME_SAMPLES ?? "6");
         expect(Number.isSafeInteger(samples) && samples >= 1 && samples <= 20).toBe(true);
-        if (countWaits) {
-          hook.enable();
-        }
         for (let sample = 0; sample < samples; sample += 1) {
           current = undefined;
           cleared = Promise.withResolvers<void>();
@@ -523,7 +532,6 @@ describe("FaceTime production authority boundary", () => {
             timerFires: 0,
             actions: {},
           };
-          timerIDs.clear();
           measuring = true;
           startedAt = performance.now();
           const outcome = client
@@ -581,7 +589,7 @@ describe("FaceTime production authority boundary", () => {
           }
         }
       } finally {
-        hook.disable();
+        timerSpy?.mockRestore();
         measuring = false;
         try {
           if (client) {

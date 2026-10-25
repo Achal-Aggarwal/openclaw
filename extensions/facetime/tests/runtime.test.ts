@@ -441,6 +441,52 @@ describe("FaceTime runtime call sequencing", () => {
     await runtime.stop();
   });
 
+  it("starts carrier hangup when a requested alias arrives before the polling interval", async () => {
+    const { runtime } = await startActiveCall();
+    mocks.helper.safetyMute.mockClear();
+    vi.useFakeTimers();
+    const hangingUp = runtime.hangup({ callUUID: " LATE-ALIAS " });
+    void hangingUp.catch(() => undefined);
+    try {
+      await mocks.helperParams?.onMessage(incomingCall(1, { conversation_uuid: "late-alias" }));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(mocks.helper.safetyMute).toHaveBeenCalledWith("call-1");
+      await vi.advanceTimersByTimeAsync(100);
+      await expect(hangingUp).resolves.toEqual({ callUUID: "call-1" });
+    } finally {
+      await vi.advanceTimersByTimeAsync(3_000);
+      await hangingUp.catch(() => undefined);
+      vi.useRealTimers();
+      await runtime.stop();
+    }
+  });
+
+  it("keeps an unmatched hangup bounded after stopping and ignores later status", async () => {
+    const runtime = await createRuntime();
+    vi.useFakeTimers();
+    const hangingUp = runtime.hangup({ callUUID: "missing-call" });
+    void hangingUp.catch(() => undefined);
+    let settled = false;
+    void hangingUp.catch(() => {
+      settled = true;
+    });
+    try {
+      await runtime.stop();
+      await mocks.helperParams?.onMessage(incomingCall(1));
+      await vi.advanceTimersByTimeAsync(2_749);
+      expect(settled).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      await expect(hangingUp).rejects.toThrow("no active FaceTime call to hang up");
+      expect(mocks.helper.safetyMute).not.toHaveBeenCalled();
+      expect(mocks.helper.leaveCall).not.toHaveBeenCalled();
+    } finally {
+      await vi.advanceTimersByTimeAsync(3_000);
+      await hangingUp.catch(() => undefined);
+      vi.useRealTimers();
+      await runtime.stop();
+    }
+  });
+
   it("fences an in-flight unmute before transmission when hangup starts", async () => {
     const talk = createTalkDriver({});
     mocks.startTalk.mockResolvedValueOnce(talk);

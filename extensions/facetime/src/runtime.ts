@@ -2,7 +2,6 @@ import { randomUUID } from "node:crypto";
 import type { OpenClawConfig } from "openclaw/plugin-sdk/config-contracts";
 import { formatErrorMessage } from "openclaw/plugin-sdk/error-runtime";
 import type { PluginRuntime, RuntimeLogger } from "openclaw/plugin-sdk/plugin-runtime";
-import { sleep } from "openclaw/plugin-sdk/runtime-env";
 import { normalizeFaceTimeCallEvent } from "./call-events.js";
 import { resolveFaceTimeConfig, validateFaceTimeConfig, type FaceTimeConfig } from "./config.js";
 import { installFaceTimeDriver } from "./driver-setup.js";
@@ -33,8 +32,6 @@ import { terminateExactCarrierProcesses } from "./runtime-carrier-process.js";
 import {
   reconcilePendingFaceTimeCarrier,
   hasDialHelperConfirmation,
-  OUTBOUND_RECONCILE_ATTEMPTS,
-  OUTBOUND_RECONCILE_INTERVAL_MS,
   retainOutboundDialHelperPeers,
   readOutboundCallUUID,
   readOutboundProxyIdentifier,
@@ -57,6 +54,7 @@ export type FaceTimeRuntime = {
 };
 
 const OUTBOUND_RECONCILE_DELAY_MS = 1_000;
+const CALL_REGISTRATION_TIMEOUT_MS = 2_750;
 
 export async function createFaceTimeRuntime(params: {
   config: FaceTimeConfig;
@@ -503,11 +501,7 @@ export async function createFaceTimeRuntime(params: {
         typeof hangupParams?.callUUID === "string" && hangupParams.callUUID.trim()
           ? hangupParams.callUUID.trim()
           : undefined;
-      const findCall = () =>
-        requestedCallUUID
-          ? calls.get(requestedCallUUID)
-          : ([...calls.values()].find((candidate) => candidate.talk) ?? [...calls.values()][0]);
-      let call = findCall();
+      let call = requestedCallUUID ? calls.get(requestedCallUUID) : calls.active;
       if (!call) {
         if (
           !requestedCallUUID ||
@@ -522,14 +516,8 @@ export async function createFaceTimeRuntime(params: {
             };
           }
         }
-        // The helper emits active status before acknowledging the dial. Let
-        // that async event handler finish registering the call, then re-read.
-        for (let attempt = 0; attempt < OUTBOUND_RECONCILE_ATTEMPTS && !call; attempt += 1) {
-          call = findCall();
-          if (!call && attempt + 1 < OUTBOUND_RECONCILE_ATTEMPTS) {
-            await sleep(OUTBOUND_RECONCILE_INTERVAL_MS);
-          }
-        }
+        // The status handler may still be registering the call or its requested alias.
+        call = await calls.waitForCall(requestedCallUUID, CALL_REGISTRATION_TIMEOUT_MS);
       }
       if (!call) {
         throw new Error("no active FaceTime call to hang up");
