@@ -47,13 +47,6 @@ export function nullable<T>(reader: SnapshotReader<T>): SnapshotReader<T | null>
   return { parse: (value) => (value === null ? null : reader.parse(value)) };
 }
 
-export function defaulted<T>(
-  reader: SnapshotReader<T>,
-  fallback: () => NoInfer<T>,
-): SnapshotReader<T> {
-  return { parse: (value) => (value === undefined ? fallback() : reader.parse(value)) };
-}
-
 export function refine<T>(
   reader: SnapshotReader<T>,
   check: (value: T) => boolean,

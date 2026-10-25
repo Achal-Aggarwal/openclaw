@@ -257,7 +257,7 @@ describe("persistent chat session snapshots", () => {
     },
   );
 
-  it("restores legacy sidebar presence defaults", async () => {
+  it("retires the previous sidebar projection", async () => {
     const store = makeStore(undefined, true);
     const sidebarKey = `${key("").split("\u0000")[0]}\u0000sidebar:operator`;
     expect(await store.writeSidebar(sidebarKey, sidebarSnapshot, parseSidebarSnapshot)).toBe(true);
@@ -271,8 +271,7 @@ describe("persistent chat session snapshots", () => {
       undefined,
       SIDEBAR,
     );
-    const restored = await store.readSidebar(sidebarKey, parseSidebarSnapshot);
-    expect(restored).toMatchObject({ peoplePresenceFilter: "online", offlineUsers: [] });
+    expect(await store.readSidebar(sidebarKey, parseSidebarSnapshot)).toBeNull();
   });
 
   it("retires one Gateway cache without touching another Gateway or account", async () => {

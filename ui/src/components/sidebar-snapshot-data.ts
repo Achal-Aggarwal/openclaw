@@ -71,9 +71,9 @@ const sessionFields = {
   childLoadParentKeys: json.optional(json.array(sessionKey)),
   icon: optionalText,
   color: optionalText,
-  pinned: json.optional(json.boolean),
+  pinned: json.boolean,
   archived: json.optional(json.boolean),
-  isChild: json.optional(json.boolean),
+  isChild: json.boolean,
   category: optionalText,
   boardFace: json.optional(json.enumeration(["chat", "dashboard"])),
   incognito: json.optional(json.literal(false)),
@@ -171,19 +171,13 @@ export const sidebarSnapshotSchema = json.object({
   ),
   peopleSortMode: json.enumeration(["presence", "running", "open", "name"]),
   peopleStatusFilter: json.enumeration(["all", "running"]),
-  peoplePresenceFilter: json.defaulted(
-    json.enumeration(["online", "all"]),
-    (): "online" => "online",
-  ),
-  offlineUsers: json.defaulted(
-    json.array(
-      json.object({
-        ...userFields,
-        watchedSessions: json.array(text, 0),
-        entries: json.array(json.never, 0),
-      }),
-    ),
-    () => [],
+  peoplePresenceFilter: json.enumeration(["online", "all"]),
+  offlineUsers: json.array(
+    json.object({
+      ...userFields,
+      watchedSessions: json.array(text, 0),
+      entries: json.array(json.never, 0),
+    }),
   ),
   ownerId: json.nullable(text),
   involvingMe: json.boolean,

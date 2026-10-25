@@ -554,8 +554,10 @@ suite.define(() => {
                 expect(finalRows).not.toContain(key);
               }
             } else {
-              expect(presentation.handoffChanges.glyphs).toBe(changedPin ? 1 : 0);
-              expect(presentation.handoffChanges.badges).toBe(changedPin ? 1 : 0);
+              if (!changedPin) {
+                expect(presentation.handoffChanges.glyphs).toBe(0);
+                expect(presentation.handoffChanges.badges).toBe(0);
+              }
               const firstPresentation = presentation.frames.find(
                 (frame: { cached: boolean }) => frame.cached,
               );
@@ -585,6 +587,29 @@ suite.define(() => {
               for (const frame of presentation.frames) {
                 if (!frame.cached)
                   expect(facts(frame, true)).toEqual(facts(firstPresentation, true));
+              }
+              if (changedPin) {
+                // Off-roster pins retain their snapshot until their own descriptor arrives.
+                const pinFrames: Array<{
+                  at: number;
+                  facts: ReturnType<typeof facts>[number] | undefined;
+                }> = presentation.frames.map(
+                  (frame: Parameters<typeof facts>[0] & { at: number }) => ({
+                    at: frame.at,
+                    facts: facts(frame).find((row) => row.key === changedPin.key),
+                  }),
+                );
+                const changes = pinFrames.filter(
+                  (frame, index) =>
+                    index > 0 &&
+                    JSON.stringify(frame.facts) !== JSON.stringify(pinFrames[index - 1]!.facts),
+                );
+                expect(changes).toHaveLength(1);
+                const descriptor = presentation.describes.find(
+                  (entry: { key: string }) => entry.key === changedPin.key,
+                );
+                expect(descriptor?.receivedAt).toBeDefined();
+                expect(changes[0]!.at).toBeGreaterThanOrEqual(descriptor.receivedAt);
               }
               expect(finalRows).toEqual(expected);
               expect(visibleGeometry(await geometry())).toEqual(expectedGeometry);

@@ -23,7 +23,11 @@ function captureRoster(rows: Parameters<typeof sessionsResult>[0]) {
   });
 }
 function displayRow(key: string, label: string, pinned = false) {
-  return restoreSnapshotSession(model, { key, label, pinned, children: [] }, pinned ? key : "");
+  return restoreSnapshotSession(
+    model,
+    { key, label, pinned, isChild: false, children: [] },
+    pinned ? key : "",
+  );
 }
 
 it("reuses the canonical header without restoring authority", () => {
@@ -106,7 +110,12 @@ it("roundtrips hidden-run child queries without retaining incognito parent keys"
   expect(
     parseSidebarSnapshot({
       ...captured,
-      sections: [{ ...captured.sections[0], rows: [{ key: parent.key, children: [] }] }],
+      sections: [
+        {
+          ...captured.sections[0],
+          rows: [{ key: parent.key, pinned: false, isChild: false, children: [] }],
+        },
+      ],
     }),
   ).not.toBeNull();
   expect(
@@ -211,6 +220,8 @@ it("roundtrips avatar identities and revisions without retaining image payloads"
     pinnedSessions: [
       {
         key: "agent:main:thread",
+        pinned: true,
+        isChild: false,
         children: [],
         facts: {
           owner: { ...owner, imageBytes: [1, 2, 3], dataUrl: "data:image/png;base64,AQID" },

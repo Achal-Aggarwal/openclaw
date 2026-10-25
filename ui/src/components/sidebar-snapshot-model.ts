@@ -1,6 +1,5 @@
 import { isIncognitoSessionKey } from "../../../src/shared/incognito-session-key.js";
 import { resolveSessionDisplayName, type SessionDisplayRow } from "../lib/session-display.ts";
-import { resolveUiSessionRowAgentId } from "../lib/sessions/session-key.ts";
 import type { SidebarVisibleSections } from "./app-sidebar-session-projection.ts";
 import type { SidebarRecentSession } from "./app-sidebar-session-types.ts";
 import type { SidebarSnapshotModel, SidebarSnapshotSession } from "./sidebar-snapshot-data.ts";
@@ -49,7 +48,7 @@ export function snapshotSessions(
             ? undefined
             : row.label,
         pinned: row.pinned,
-        isChild: row.isChild || undefined,
+        isChild: row.isChild,
         facts: {
           unread: row.unread || undefined,
           status: row.isChild ? row.status : undefined,
@@ -117,16 +116,10 @@ export function restoreSnapshotSession(
   const header = model.roster?.result.sessions.find((entry) => entry.key === row.key);
   const label = row.label ?? resolveSessionDisplayName(row.key, header);
   return {
-    ...header,
     ...row,
-    key: row.key,
     label,
     renameValue: label,
-    agentId: row.agentId ?? resolveUiSessionRowAgentId(row, model.brand.agentId ?? "main"),
-    pinned: row.pinned ?? false,
-    isChild: row.isChild ?? false,
     snapshot: facts,
-    owner: undefined,
     active: row.key === selected,
     visuallyActive: row.key === selected,
     hasActiveRun: false,

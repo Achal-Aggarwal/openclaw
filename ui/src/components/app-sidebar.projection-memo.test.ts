@@ -60,6 +60,7 @@ async function mount(rows: GatewaySessionRow[]) {
   sessions.publishList({
     result: {
       ...sessions.sessions.state.result!,
+      sessions: rows,
       count: rows.length,
       owners: [ada, bob],
     },

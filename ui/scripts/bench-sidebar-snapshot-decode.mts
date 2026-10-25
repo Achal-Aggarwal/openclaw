@@ -11,7 +11,7 @@ if (!baseRoot || !baseInput || !candidateInput || !output)
   throw new Error("Expected four decode comparison paths");
 const transport = json.object({
   records: json.array(json.object({ sessionKey: json.text, model: json.unknown })),
-  blobs: json.defaulted(
+  blobs: json.optional(
     json.array(
       json.object({
         sessionKey: json.text,
@@ -20,7 +20,6 @@ const transport = json.object({
         bytes: json.array(json.number),
       }),
     ),
-    () => [],
   ),
 });
 const inputs = await Promise.all(
@@ -73,7 +72,7 @@ try {
           const model = record.model;
           if (typeof model !== "object" || model === null) throw new Error("Missing sidebar model");
           const images: Blob[] = [];
-          for (const image of input.blobs) {
+          for (const image of input.blobs ?? []) {
             const targets: unknown = Reflect.get(model, "avatarImages");
             const target: unknown = Array.isArray(targets) ? targets[image.index] : undefined;
             if (
