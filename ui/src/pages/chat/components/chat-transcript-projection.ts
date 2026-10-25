@@ -498,10 +498,11 @@ export function projectChatTranscript(
             basePath: props.basePath,
             sessionPublicOrigin: props.sessionPublicOrigin,
             streamOptions: streamGroupOptions,
+            workPreviews,
             renderGroupOptions,
             isWorkExpanded: (key) => expandedToolCards.get(key) ?? false,
             onToggleWork: toggleToolCardExpanded,
-            turnRecap: recapForGroup(item.key),
+            turnRecap: recapForGroup(item.fragment?.source.key ?? item.key),
           },
         };
       }

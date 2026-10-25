@@ -8,6 +8,42 @@ switch-out/return, end-to-end scrolling, transcript search, and retained-memory
 measurements to the existing open/streaming measurements. The other session
 contains 400 messages. Run the same workload with `--transcript-messages 400`
 for the size control, and add `--streaming-reply` for bottom-follow behavior.
+Open-to-interactive is `presentation.firstComposerFocusMs`: after navigation,
+Playwright waits for the active composer to be visible, enabled, and editable,
+focuses it, and verifies focus before the initial metrics settle and save.
+The init script records that real focus event; it does not focus from a rendering callback.
+
+`--long-session-scenario` selects a dedicated workload while retaining the same
+production server, browser, fixture clock, network profile, and paired-run loop:
+
+| Scenario          | Workload and assertions                                                                                                                                                                                                                                                                                                                                                                                                              |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `mixed` (default) | Mixed messages, session switches, local transcript search, scrolling, and memory. Supports `--streaming-reply`.                                                                                                                                                                                                                                                                                                                      |
+| `paging`          | The initial response contains at most 80 records. Upward wheel input loads older pages through the real UI owner, with exact 1,000-record/3 MiB request contracts. At 2,000 records the pages contain 80 + 1,000 + 920; at 400 they contain 80 + 320. Each response is held until its reading anchor is sampled; every sampled frame must stay within two pixels. The oldest entry must render and the exhausted sentinel disappear. |
+| `single-run`      | One dashboard prompt, assistant/tool pairs sharing one run identity, and one final answer. Records default collapsed work, expansion, scroll endpoints, collapse, DOM size, and retained heap.                                                                                                                                                                                                                                       |
+| `direct-run`      | The same single run on a direct-session key, preserving its normally expanded commentary. Records initial retention and end-to-end scrolling without requiring a disclosure.                                                                                                                                                                                                                                                         |
+
+For example, add `--long-session-scenario paging` to the mixed-workload command
+above, then run `single-run` and `direct-run` separately. Dedicated modes require
+unchanged history; streaming, live events, and the separate session-switch phase
+belong to `mixed`. Single-run modes require at least two messages. Their first and
+final entry identities must render at the scroll endpoints; DOM counts are
+measurements, so a bounded inner window can pass without mounting every message.
+Expansion/collapse timings end after the asserted disclosure/entry DOM and two
+rendering opportunities, not a compositor paint acknowledgment. Scroll trajectories
+begin with real wheel input to retire placement/follow commands through the reader-input owner.
+One long-task observer covers hover, wheel admission, the trajectory, and two
+settling frames; the endpoint is checked again after those final frames.
+Collapse starts
+after an unmeasured return to the disclosure, which may be unmounted while reading
+the bottom of a virtualized run. Long-task
+observers cover these actions; the paging anchor also records eight frames after
+history publication. Explicit GC and optional retained heap snapshots run outside
+the timed intervals. Deep snapshots are limited to the first sample of each
+compared bundle, and are disabled during CPU profiling. The remote profile throttles
+synthetic JSON RPC replies and HTTP independently, without modeling WebSocket
+compression or framing; snapshots from the first sample per bundle are streamed
+to count detached native nodes, while subsequent samples use GC and DOM counters.
 
 Acceptance: the 2,000-message open and switch should take at most 1.5 times the
 400-message control; fast scrolling should have no task over 50 ms or blank

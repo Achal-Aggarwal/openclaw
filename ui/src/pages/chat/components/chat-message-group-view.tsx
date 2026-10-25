@@ -488,7 +488,7 @@ function FramedMessageGroup(props: {
           />
         </Show>
       </div>
-      <Show when={!frame().isTurnBlock}>
+      <Show when={!frame().isTurnBlock && options().frameFooter !== false}>
         <Show
           when={!props.group.isStreaming && !options().activeContinuation}
           fallback={<div class="chat-group-footer" aria-hidden="true" />}

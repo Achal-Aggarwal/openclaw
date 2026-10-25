@@ -20,7 +20,6 @@ import { TranscriptEndAnchor } from "./chat-transcript-end-anchor.ts";
 import {
   initialTranscriptRect,
   isTranscriptRangeCommitted,
-  measureTranscriptRow,
   createPositionRailGutter,
 } from "./chat-transcript-geometry.ts";
 import { reconcileTranscriptHeaderMargin } from "./chat-transcript-header.ts";
@@ -118,15 +117,11 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
     return this.threadInnerElement;
   }
   // Keep one ref per root and row so redraws do not repeat attachment work.
+  private scrollElementAttachQueued = false;
   readonly scrollElementRef = (element?: Element) => {
     this.threadInnerElement = element instanceof HTMLDivElement ? element : null;
     // A retained root can move to another host without changing its identity.
-    this.queueScrollElementAttach();
-  };
-  // Sidebar hosts commit after the pane's update. Attach from the stable DOM
-  // ref so a foreign-host re-stamp cannot leave the virtualizer detached.
-  private scrollElementAttachQueued = false;
-  private queueScrollElementAttach(): void {
+    // Attach after commit so a foreign host cannot leave the virtualizer detached.
     if (this.scrollElementAttachQueued) {
       return;
     }
@@ -141,7 +136,7 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
         this.invalidate();
       }
     });
-  }
+  };
   private readonly rowRefs: TranscriptRowRefs;
   private readonly captureInteractionResize = (event: Event) => {
     const anchor = resolveChatTranscriptInteractionAnchor(event);
@@ -204,14 +199,14 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
       invalidate,
     });
     this.virtualizer = new Virtualizer({
-      onChange: (_instance, sync) => {
+      onChange: () => {
         invalidate();
-        // Offset and compensated resize owners already record and reconcile their geometry.
-        return sync ? undefined : this.scheduleEndReconcile();
+        this.scheduleEndReconcile();
       },
       count: 0,
       getScrollElement: () => this.scrollElement,
-      estimateSize: () => CHAT_TRANSCRIPT_ESTIMATED_ROW_PX,
+      estimateSize: (index) =>
+        this.acceptedRows?.[index]?.estimatedSize ?? CHAT_TRANSCRIPT_ESTIMATED_ROW_PX,
       initialRect: initialTranscriptRect(),
       initialOffset: initialOffset ?? Number.MAX_SAFE_INTEGER,
       anchorTo: "end",
@@ -241,7 +236,7 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
           instance,
           callback,
         ),
-      measureElement: measureTranscriptRow,
+      measureElement: (element, entry) => this.presentation.measureElement(element, entry),
       rangeExtractor: (range) => this.initialRange.extract(range),
       // Virtual distance omits real padding, pinning readers ~80px up past scroll.ts's follow-lock.
       // scheduleCommittedChatScroll owns end-follow on content changes and source: "resize".

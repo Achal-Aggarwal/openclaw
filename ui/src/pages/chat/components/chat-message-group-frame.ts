@@ -35,6 +35,8 @@ import { NO_REPLY_LINE, resolveGroupReplyLine } from "./chat-reply-attribution.t
 
 export type NativeMessageGroupOptions = Omit<RenderMessageGroupOptions, "frameContent"> & {
   frameContent?: JSX.Element[];
+  frameHeader?: boolean;
+  frameFooter?: boolean;
 };
 
 export type GroupMessage = MessageGroupData["messages"][number];
@@ -214,6 +216,7 @@ export function prepareMessageGroupFrame(
     (isPeerGroup || Boolean(preparedMessages[lastMessageIndex]?.source.displayMarkdown));
   const hasAvatar =
     showAvatar &&
+    opts.frameHeader !== false &&
     !isTurnBlock &&
     avatarPlacement === "gutter" &&
     (isForwarded || normalizedRole !== "assistant" || opts.showAssistantAvatar !== false);
@@ -255,6 +258,7 @@ export function prepareMessageGroupFrame(
         "chat-group--forwarded": isForwarded,
         "chat-group--sender-tint": senderHue !== null,
         "chat-group--reply": holdsReplyRow,
+        "chat-group--frame-fragment": opts.frameFooter === false,
       },
     ],
     style: senderHue === null ? undefined : `--chat-sender-hue: ${senderHue}`,

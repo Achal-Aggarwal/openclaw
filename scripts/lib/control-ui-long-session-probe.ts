@@ -1,11 +1,131 @@
-import { closeSync, openSync, writeSync } from "node:fs";
-import { readFile, writeFile } from "node:fs/promises";
+import { closeSync, openSync, readSync, writeSync } from "node:fs";
+import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { CDPSession, Page } from "playwright";
+import type { ControlUiMockGateway } from "../../ui/src/test-helpers/control-ui-e2e-contract.ts";
+import type { LongSessionWorkload } from "../../ui/src/test-helpers/control-ui-team-scale-history-fixture.ts";
 
 const paneSelector = ".chat-pane-cache__pane--active";
 const needle = "long-session-search-needle";
 const cpuMetrics = ["TaskDuration", "ScriptDuration", "LayoutDuration", "RecalcStyleDuration"];
+
+/** Read only metadata and numeric nodes; large edge/string tables never enter the JS heap. */
+function countDetachedHeapNodes(file: string) {
+  const fd = openSync(file, "r");
+  const buffer = Buffer.allocUnsafe(64 * 1024);
+  try {
+    let header = "";
+    let start = 0;
+    let length = 0;
+    while (true) {
+      length = readSync(fd, buffer);
+      if (!length) {
+        throw new Error("Heap snapshot lacks nodes");
+      }
+      const previousLength = header.length;
+      header += buffer.toString("utf8", 0, length);
+      const marker = /,\s*"nodes"\s*:\s*\[/u.exec(header);
+      if (marker) {
+        start = marker.index + marker[0].length - previousLength;
+        header = header.slice(0, marker.index);
+        break;
+      }
+    }
+    // SAFETY: Only Chromium's schema/count metadata is parsed, before the numeric nodes table.
+    const { snapshot } = JSON.parse(`${header}}`) as {
+      snapshot: {
+        meta: { node_fields: string[]; node_types: (string[] | string)[] };
+        node_count: number;
+      };
+    };
+    const fields = snapshot.meta.node_fields;
+    const typeAt = fields.indexOf("type");
+    const sizeAt = fields.indexOf("self_size");
+    const detachedAt = fields.indexOf("detachedness");
+    const types = snapshot.meta.node_types[typeAt];
+    const count = snapshot.node_count;
+    if (
+      !fields.length ||
+      new Set(fields).size !== fields.length ||
+      snapshot.meta.node_types.length !== fields.length ||
+      !Array.isArray(types) ||
+      !types.includes("native") ||
+      typeAt < 0 ||
+      sizeAt < 0 ||
+      detachedAt < 0 ||
+      !Number.isSafeInteger(count) ||
+      count < 0 ||
+      !Number.isSafeInteger(count * fields.length)
+    ) {
+      throw new Error("Heap snapshot lacks valid node fields, count or DOM detachedness");
+    }
+    let values = 0;
+    let value = 0;
+    let digits = false;
+    let expectValue = true;
+    let type = 0;
+    let size = 0;
+    let detached = 0;
+    let detachedNodes = 0;
+    let detachedBytes = 0;
+    const consume = () => {
+      if (!Number.isSafeInteger(value) || values >= count * fields.length) {
+        throw new Error("Invalid heap snapshot node value or count");
+      }
+      const field = values++ % fields.length;
+      if (field === typeAt) {
+        type = value;
+      }
+      if (field === sizeAt) {
+        size = value;
+      }
+      if (field === detachedAt) {
+        detached = value;
+      }
+      if (field === fields.length - 1 && types[type] === "native" && detached === 2) {
+        detachedNodes++;
+        detachedBytes += size;
+      }
+      value = 0;
+      digits = false;
+      expectValue = false;
+    };
+    while (true) {
+      for (let index = start; index < length; index++) {
+        const char = buffer[index]!;
+        if (char >= 48 && char <= 57) {
+          if (!expectValue) {
+            throw new Error("Heap snapshot node values require commas");
+          }
+          value = value * 10 + char - 48;
+          digits = true;
+          continue;
+        }
+        if (digits) {
+          consume();
+        }
+        if (char === 93) {
+          if ((expectValue && values > 0) || values !== count * fields.length) {
+            throw new Error("Heap snapshot node count mismatch");
+          }
+          return { detachedNodes, detachedBytes };
+        }
+        if (char === 44 && !expectValue) {
+          expectValue = true;
+        } else if (char !== 32 && char !== 9 && char !== 10 && char !== 13) {
+          throw new Error("Invalid heap snapshot nodes array");
+        }
+      }
+      start = 0;
+      length = readSync(fd, buffer);
+      if (!length) {
+        throw new Error("Truncated heap snapshot nodes array");
+      }
+    }
+  } finally {
+    closeSync(fd);
+  }
+}
 
 /** Caller owns the production server, synthetic fixture, and enabled Performance CDP domain. */
 export async function probeLongSession(options: {
@@ -16,6 +136,7 @@ export async function probeLongSession(options: {
   sessionKey: string;
   otherSessionKey: string;
   captureHeap?: boolean;
+  workload?: LongSessionWorkload;
 }) {
   const {
     page,
@@ -25,6 +146,7 @@ export async function probeLongSession(options: {
     sessionKey,
     otherSessionKey,
     captureHeap = true,
+    workload = { scenario: "mixed" },
   } = options;
   const pane = page.locator(paneSelector);
   const composer = pane.locator(".agent-chat__composer-combobox textarea");
@@ -108,6 +230,8 @@ export async function probeLongSession(options: {
       documentElements: document.querySelectorAll("*").length,
       transcriptElements: active.querySelectorAll(".chat-thread *").length,
       renderedRows: active.querySelectorAll(".chat-virtual-row").length,
+      bubbles: active.querySelectorAll(".chat-bubble").length,
+      toolRows: active.querySelectorAll(".chat-tool-row").length,
     }));
     if (!captureHeap) {
       return {
@@ -129,27 +253,7 @@ export async function probeLongSession(options: {
       cdp.off("HeapProfiler.addHeapSnapshotChunk", onChunk);
       closeSync(fd);
     }
-    // SAFETY: This file is the unmodified heap snapshot just emitted by this CDP session.
-    const heap = JSON.parse(await readFile(file, "utf8")) as {
-      snapshot: { meta: { node_fields: string[]; node_types: (string[] | string)[] } };
-      nodes: number[];
-    };
-    const fields = heap.snapshot.meta.node_fields;
-    const typeAt = fields.indexOf("type");
-    const sizeAt = fields.indexOf("self_size");
-    const types = heap.snapshot.meta.node_types[typeAt];
-    const detachedAt = fields.indexOf("detachedness");
-    if (!Array.isArray(types) || detachedAt < 0 || typeAt < 0 || sizeAt < 0) {
-      throw new Error("Heap snapshot lacks DOM detachedness");
-    }
-    let detachedNodes = 0;
-    let detachedBytes = 0;
-    for (let index = 0; index < heap.nodes.length; index += fields.length) {
-      if (types[heap.nodes[index + typeAt]!] === "native" && heap.nodes[index + detachedAt] === 2) {
-        detachedNodes++;
-        detachedBytes += heap.nodes[index + sizeAt]!;
-      }
-    }
+    const { detachedNodes, detachedBytes } = countDetachedHeapNodes(file);
     return {
       beforeGc: before,
       afterGc: after,
@@ -161,65 +265,27 @@ export async function probeLongSession(options: {
   };
   await ready(sessionKey);
   const initialMemory = await memory("initial");
-  const switchTo = (key: string) =>
-    measure(async () => {
-      const link = page.locator(
-        `.sidebar-recent-session[data-session-key=${JSON.stringify(key)}] a.sidebar-recent-session__link`,
-      );
-      await link.waitFor({ state: "visible" });
-      const start = await page.evaluate(() => performance.now());
-      await link.click();
-      await visible(key);
-      const visibleMs = await page.evaluate((origin) => performance.now() - origin, start);
-      await ready(key);
-      return { sessionKey: key, visibleMs };
-    });
-  const switchOut = await switchTo(otherSessionKey);
-  const switchIn = await switchTo(sessionKey);
-  const search = await measure(async () => {
-    const shortcut = await page.evaluate(() =>
-      /Mac|iPhone|iPad|iPod/.test(navigator.platform) ? "Meta+f" : "Control+f",
-    );
-    await page.keyboard.press(shortcut);
-    const input = pane.getByRole("textbox", { name: "Search messages", exact: true });
-    await input.fill(needle);
-    await pane
-      .locator(".chat-thread")
-      .getByText(needle, { exact: false })
-      .first()
-      .waitFor({ state: "visible" });
-    return { query: needle, renderedRows: await pane.locator(".chat-virtual-row").count() };
-  });
-  await page.screenshot({ path: path.join(artifactDir, `${prefix}.search.png`) });
-  const clearSearch = await measure(async () => {
-    await pane.getByRole("button", { name: "Close search", exact: true }).click();
-    await pane.locator(".agent-chat__search-bar").waitFor({ state: "detached" });
-    await ready(sessionKey);
-  });
-  const scroll = (direction: "top" | "bottom") =>
-    measure(() =>
-      pane.locator(".chat-thread").evaluate(async (thread, destination) => {
-        if (!(thread instanceof HTMLElement)) {
-          throw new Error("Transcript is not an HTML scroll element");
-        }
-        const scroller = thread;
-        const longTasks: Array<{ startMs: number; durationMs: number }> = [];
-        const observer = new PerformanceObserver((list) => {
-          for (const entry of list.getEntries()) {
-            longTasks.push({ startMs: entry.startTime, durationMs: entry.duration });
+  const scroll = async (direction: "top" | "bottom") => {
+    const thread = pane.locator(".chat-thread");
+    const { value, longTasks, maxLongTaskMs, ...timing } = await measureRendered(
+      async () => {
+        await thread.hover();
+        // Reader input retires initial placement and follow commands before the trajectory.
+        await page.mouse.wheel(0, direction === "top" ? -1 : 1);
+        return thread.evaluate(async (element, destination) => {
+          if (!(element instanceof HTMLElement)) {
+            throw new Error("Transcript is not an HTML scroll element");
           }
-        });
-        observer.observe({ type: "longtask" });
-        const frames: Array<{
-          intervalMs: number;
-          coverage: number;
-          rows: number;
-          scrollTop: number;
-          scrollHeight: number;
-        }> = [];
-        let previous = performance.now();
-        const startTop = scroller.scrollTop;
-        try {
+          const scroller = element;
+          const frames: Array<{
+            intervalMs: number;
+            coverage: number;
+            rows: number;
+            scrollTop: number;
+            scrollHeight: number;
+          }> = [];
+          let previous = performance.now();
+          const startTop = scroller.scrollTop;
           for (let frame = 0; frame <= 60; frame++) {
             const now = await new Promise<number>(requestAnimationFrame);
             const viewport = scroller.getBoundingClientRect();
@@ -255,45 +321,341 @@ export async function probeLongSession(options: {
               scroller.scrollTop = startTop + ((target - startTop) * (frame + 1)) / 60;
             }
           }
-          await new Promise(requestAnimationFrame);
-          for (const entry of observer.takeRecords()) {
+          const distance =
+            destination === "top"
+              ? scroller.scrollTop
+              : scroller.scrollHeight - scroller.clientHeight - scroller.scrollTop;
+          if (distance > 2) {
+            throw new Error(`Scroll did not reach ${destination}: ${distance}px remaining`);
+          }
+          return {
+            direction: destination,
+            frames,
+            blankFrames: frames.filter((frame) => frame.coverage === 0).length,
+            maxRows: Math.max(...frames.map((frame) => frame.rows)),
+            frameGapsOver50Ms: frames.filter((frame) => frame.intervalMs > 50).length,
+            estimatedDroppedFrames60Hz: frames.reduce(
+              (sum, frame) => sum + Math.max(0, Math.round(frame.intervalMs / (1000 / 60)) - 1),
+              0,
+            ),
+          };
+        }, direction);
+      },
+      async () => {
+        await thread.evaluate((scroller, destination) => {
+          const distance =
+            destination === "top"
+              ? scroller.scrollTop
+              : scroller.scrollHeight - scroller.clientHeight - scroller.scrollTop;
+          if (distance > 2) {
+            throw new Error(`Scroll did not settle at ${destination}: ${distance}px remaining`);
+          }
+        }, direction);
+      },
+    );
+    return { ...timing, result: { ...value, longTasks, maxLongTaskMs } };
+  };
+  const renderFrames = (count = 2) =>
+    page.evaluate(async (total) => {
+      for (let frame = 0; frame < total; frame++) {
+        await new Promise(requestAnimationFrame);
+      }
+    }, count);
+  const measureRendered = async <T>(
+    action: () => Promise<T>,
+    afterRender?: () => Promise<void>,
+  ) => {
+    const measured = await measure(async () => {
+      await page.evaluate(() => {
+        const longTasks: Array<{ startMs: number; durationMs: number }> = [];
+        const observer = new PerformanceObserver((list) => {
+          for (const entry of list.getEntries()) {
             longTasks.push({ startMs: entry.startTime, durationMs: entry.duration });
           }
-        } finally {
-          observer.disconnect();
+        });
+        observer.observe({ type: "longtask" });
+        Reflect.set(window, "__longSessionAction", { observer, longTasks });
+      });
+      try {
+        const value = await action();
+        await renderFrames();
+        if (afterRender) {
+          await afterRender();
         }
-        const distance =
-          destination === "top"
-            ? scroller.scrollTop
-            : scroller.scrollHeight - scroller.clientHeight - scroller.scrollTop;
-        if (distance > 2) {
-          throw new Error(`Scroll did not reach ${destination}: ${distance}px remaining`);
-        }
-        return {
-          direction: destination,
-          frames,
-          longTasks,
-          maxLongTaskMs: Math.max(0, ...longTasks.map((entry) => entry.durationMs)),
-          blankFrames: frames.filter((frame) => frame.coverage === 0).length,
-          maxRows: Math.max(...frames.map((frame) => frame.rows)),
-          frameGapsOver50Ms: frames.filter((frame) => frame.intervalMs > 50).length,
-          estimatedDroppedFrames60Hz: frames.reduce(
-            (sum, frame) => sum + Math.max(0, Math.round(frame.intervalMs / (1000 / 60)) - 1),
-            0,
-          ),
-        };
-      }, direction),
+        const sample = await page.evaluate(() => {
+          // SAFETY: The action installs this document-scoped observer before its first effect.
+          const state = Reflect.get(window, "__longSessionAction") as {
+            observer: PerformanceObserver;
+            longTasks: Array<{ startMs: number; durationMs: number }>;
+          };
+          for (const entry of state.observer.takeRecords()) {
+            state.longTasks.push({ startMs: entry.startTime, durationMs: entry.duration });
+          }
+          return {
+            longTasks: state.longTasks,
+            maxLongTaskMs: Math.max(0, ...state.longTasks.map((entry) => entry.durationMs)),
+          };
+        });
+        return { value, ...sample };
+      } finally {
+        await page.evaluate(() => {
+          Reflect.get(window, "__longSessionAction")?.observer.disconnect();
+          Reflect.deleteProperty(window, "__longSessionAction");
+        });
+      }
+    });
+    const { result, ...timing } = measured;
+    return { ...timing, ...result };
+  };
+  const save = async <T extends object>(result: T) => {
+    const report = {
+      measurement:
+        "Synthetic production UI; automation-to-visible/focus wall time and CDP duration deltas. Dedicated actions end after their DOM identity assertions and two rendering opportunities, not compositor presentation. Scroll includes real wheel admission, 60-frame native scrollTop trajectories, two rendering opportunities and a final endpoint check; one observer covers that entire action. Geometric row coverage is not compositor paint proof. Explicit GC and heap snapshots are outside action timings. CPU includes measurement overhead; compare identical paired instrumentation.",
+      scenario: workload.scenario,
+      sessionKey,
+      initialMemory,
+      ...result,
+    };
+    await writeFile(
+      path.join(artifactDir, `${prefix}.long-session.json`),
+      JSON.stringify(report, null, 2),
     );
+    return report;
+  };
+  const entry = (id: string) => pane.locator(`.chat-bubble[data-entry-id=${JSON.stringify(id)}]`);
+  if (workload.scenario === "paging") {
+    const loadedCount = await pane.evaluate(
+      (host) => Reflect.get(host, "state").chatMessages.length,
+    );
+    if (loadedCount !== workload.initialMessageCount) {
+      throw new Error(
+        `Paging started with ${loadedCount} records; expected ${workload.initialMessageCount}`,
+      );
+    }
+    const stages = [];
+    for (const expectedPage of workload.pages) {
+      const thread = pane.locator(".chat-thread");
+      await thread.hover();
+      await page.mouse.wheel(0, -1_000_000);
+      const request = await page.waitForFunction(
+        ({ key, offset }) => {
+          const gateway: ControlUiMockGateway = Reflect.get(window, "openclawControlUiE2eGateway");
+          return gateway.findRequests("chat.history", { sessionKey: key, offset })[0];
+        },
+        { key: sessionKey, offset: expectedPage.offset },
+      );
+      const recorded = await request.jsonValue();
+      await request.dispose();
+      if (!recorded) {
+        throw new Error("Older history request was not recorded");
+      }
+      if (
+        Reflect.get(recorded.params ?? {}, "limit") !== 1000 ||
+        Reflect.get(recorded.params ?? {}, "maxBytes") !== 3 * 1024 * 1024
+      ) {
+        throw new Error(
+          "Older history request did not use its production 1000-record/3MiB page contract",
+        );
+      }
+      const anchor = entry(expectedPage.anchorEntryId);
+      await anchor.waitFor({ state: "visible" });
+      await renderFrames();
+      const before = await anchor.boundingBox();
+      if (!before) {
+        throw new Error("History anchor has no visible box");
+      }
+      const anchorSample = await anchor.evaluateHandle((original) => {
+        const owner = original.closest("openclaw-chat-pane");
+        const selector = `.chat-bubble[data-entry-id="${CSS.escape(original.getAttribute("data-entry-id")!)}"]`;
+        const state = { stop: false, positions: [] as Array<number | null> };
+        void (async () => {
+          while (!state.stop) {
+            state.positions.push(
+              owner?.querySelector(selector)?.getBoundingClientRect().top ?? null,
+            );
+            await new Promise(requestAnimationFrame);
+          }
+        })();
+        return state;
+      });
+      try {
+        const timing = await measureRendered(async () => {
+          await page.evaluate(
+            ({ key, offset }) => {
+              const gateway: ControlUiMockGateway = Reflect.get(
+                window,
+                "openclawControlUiE2eGateway",
+              );
+              gateway.resolveDeferred("chat.history", undefined, {
+                match: { sessionKey: key, offset },
+              });
+            },
+            { key: sessionKey, offset: expectedPage.offset },
+          );
+          await page.waitForFunction(
+            ({ selector, count }) =>
+              Reflect.get(document.querySelector(selector)!, "state").chatMessages.length === count,
+            { selector: paneSelector, count: expectedPage.loadedMessages },
+          );
+          // Trace eight post-publication frames rather than just the final anchor position.
+          await renderFrames(8);
+        });
+        const positions = await anchorSample.evaluate((state) => {
+          state.stop = true;
+          return state.positions;
+        });
+        const maxDisplacementPx = Math.max(
+          ...positions.map((top) => (top === null ? Infinity : Math.abs(top - before.y))),
+        );
+        if (maxDisplacementPx > 2) {
+          throw new Error(`History prepend displaced the reading anchor by ${maxDisplacementPx}px`);
+        }
+        stages.push({
+          ...expectedPage,
+          ...timing,
+          positions,
+          maxDisplacementPx,
+          memory: await memory(`history-${expectedPage.offset}`),
+        });
+      } finally {
+        await anchorSample.evaluate((state) => {
+          state.stop = true;
+        });
+        await anchorSample.dispose();
+      }
+      await page.screenshot({
+        path: path.join(artifactDir, `${prefix}.history-${expectedPage.offset}.png`),
+      });
+    }
+    await pane.locator(".chat-thread").hover();
+    await page.mouse.wheel(0, -1_000_000);
+    await entry(workload.firstEntryId).waitFor({ state: "visible" });
+    await pane.locator(".chat-history-sentinel").waitFor({ state: "detached" });
+    const offsets = await page.evaluate((key) => {
+      const gateway: ControlUiMockGateway = Reflect.get(window, "openclawControlUiE2eGateway");
+      return gateway
+        .findRequests("chat.history", { sessionKey: key })
+        .map((request) => Reflect.get(request.params ?? {}, "offset"))
+        .filter((offset) => typeof offset === "number");
+    }, sessionKey);
+    if (
+      JSON.stringify(offsets) !==
+      JSON.stringify(workload.pages.map((expectedPage) => expectedPage.offset))
+    ) {
+      throw new Error(`Unexpected older history request offsets: ${JSON.stringify(offsets)}`);
+    }
+    const scrollBottom = await scroll("bottom");
+    return save({
+      messageCount: workload.messageCount,
+      stages,
+      offsets,
+      scrollBottom,
+      finalMemory: await memory("after-scroll"),
+    });
+  }
+  if (workload.scenario === "single-run" || workload.scenario === "direct-run") {
+    await entry(workload.lastEntryId).waitFor({ state: "visible" });
+    let disclosure;
+    if (workload.scenario === "single-run") {
+      const summary = pane.locator(".chat-work-group .chat-activity-group__summary");
+      if (
+        (await summary.count()) !== 1 ||
+        (await summary.getAttribute("aria-expanded")) !== "false"
+      ) {
+        throw new Error("Single-run dashboard must start with one collapsed work disclosure");
+      }
+      const expand = await measureRendered(async () => {
+        await summary.click();
+        await page.waitForFunction(
+          (selector) =>
+            document
+              .querySelector(`${selector} .chat-work-group .chat-activity-group__summary`)
+              ?.getAttribute("aria-expanded") === "true",
+          paneSelector,
+        );
+        await entry(workload.firstOutputEntryId).waitFor({ state: "visible" });
+      });
+      disclosure = { expand, expandedMemory: await memory("expanded") };
+      await page.screenshot({ path: path.join(artifactDir, `${prefix}.expanded.png`) });
+    }
+    const scrollTop = await scroll("top");
+    await entry(workload.firstEntryId).waitFor({ state: "visible" });
+    const scrollBottom = await scroll("bottom");
+    await entry(workload.lastEntryId).waitFor({ state: "visible" });
+    const afterScroll = await memory("after-scroll");
+    await page.screenshot({ path: path.join(artifactDir, `${prefix}.bottom.png`) });
+    let collapse;
+    if (workload.scenario === "single-run") {
+      // A fragmented run does not retain its offscreen disclosure at the bottom.
+      await pane.locator(".chat-thread").evaluate((thread) => {
+        thread.scrollTop = 0;
+      });
+      await pane
+        .locator(".chat-work-group .chat-activity-group__summary")
+        .waitFor({ state: "visible" });
+      collapse = await measureRendered(async () => {
+        await pane.locator(".chat-work-group .chat-activity-group__summary").click();
+        await page.waitForFunction(
+          (selector) =>
+            document
+              .querySelector(`${selector} .chat-work-group .chat-activity-group__summary`)
+              ?.getAttribute("aria-expanded") === "false",
+          paneSelector,
+        );
+        await entry(workload.lastEntryId).waitFor({ state: "visible" });
+      });
+    }
+    return save({
+      messageCount: workload.messageCount,
+      disclosure,
+      scrollTop,
+      scrollBottom,
+      afterScroll,
+      collapse,
+      finalMemory: collapse ? await memory("final") : afterScroll,
+    });
+  }
+  const switchTo = (key: string) =>
+    measure(async () => {
+      const link = page.locator(
+        `.sidebar-recent-session[data-session-key=${JSON.stringify(key)}] a.sidebar-recent-session__link`,
+      );
+      await link.waitFor({ state: "visible" });
+      const start = await page.evaluate(() => performance.now());
+      await link.click();
+      await visible(key);
+      const visibleMs = await page.evaluate((origin) => performance.now() - origin, start);
+      await ready(key);
+      return { sessionKey: key, visibleMs };
+    });
+  const switchOut = await switchTo(otherSessionKey);
+  const switchIn = await switchTo(sessionKey);
+  const search = await measure(async () => {
+    const shortcut = await page.evaluate(() =>
+      /Mac|iPhone|iPad|iPod/.test(navigator.platform) ? "Meta+f" : "Control+f",
+    );
+    await page.keyboard.press(shortcut);
+    const input = pane.getByRole("textbox", { name: "Search messages", exact: true });
+    await input.fill(needle);
+    await pane
+      .locator(".chat-thread")
+      .getByText(needle, { exact: false })
+      .first()
+      .waitFor({ state: "visible" });
+    return { query: needle, renderedRows: await pane.locator(".chat-virtual-row").count() };
+  });
+  await page.screenshot({ path: path.join(artifactDir, `${prefix}.search.png`) });
+  const clearSearch = await measure(async () => {
+    await pane.getByRole("button", { name: "Close search", exact: true }).click();
+    await pane.locator(".agent-chat__search-bar").waitFor({ state: "detached" });
+    await ready(sessionKey);
+  });
   const scrollTop = await scroll("top");
   const scrollBottom = await scroll("bottom");
   const finalMemory = await memory("after-scroll");
   await page.screenshot({ path: path.join(artifactDir, `${prefix}.bottom.png`) });
-  const report = {
-    measurement:
-      "Synthetic production UI; automation-to-visible/focus wall time, CDP duration deltas, 60-frame native scrollTop trajectories. Geometric row coverage is not compositor paint proof. Heap snapshots and explicit GC are outside action timings. CPU includes measurement overhead; compare paired runs with identical instrumentation.",
-    sessionKey,
+  return save({
     otherSessionKey,
-    initialMemory,
     switchOut,
     switchIn,
     search,
@@ -301,10 +663,5 @@ export async function probeLongSession(options: {
     scrollTop,
     scrollBottom,
     finalMemory,
-  };
-  await writeFile(
-    path.join(artifactDir, `${prefix}.long-session.json`),
-    JSON.stringify(report, null, 2),
-  );
-  return report;
+  });
 }

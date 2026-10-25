@@ -9,9 +9,10 @@ import type { GuardedTranscriptItem } from "./chat-transcript-render-guard.ts";
 
 export type TranscriptContent = GuardedTranscriptItem | JSX.Element;
 
-export type TranscriptRow<T = unknown> =
+export type TranscriptRow<T = unknown> = { estimatedSize?: number } & (
   | { kind: "item"; key: string; item: T }
-  | { kind: "content"; key: string; content: TranscriptContent };
+  | { kind: "content"; key: string; content: TranscriptContent }
+);
 
 export type TranscriptLayoutProps = {
   applicationContext?: ApplicationContext;

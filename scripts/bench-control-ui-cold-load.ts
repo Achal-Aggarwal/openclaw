@@ -52,6 +52,7 @@ import {
   createStreamingReplyProbeInitScript,
 } from "../ui/src/test-helpers/control-ui-streaming-reply.ts";
 import { createControlUiTeamScaleFixture } from "../ui/src/test-helpers/control-ui-team-scale-fixture.ts";
+import { LONG_SESSION_SCENARIOS } from "../ui/src/test-helpers/control-ui-team-scale-history-fixture.ts";
 import { startControlUiBenchGatewayServer } from "./lib/control-ui-bench-gateway-server.ts";
 import { resolveColdLoadLatency } from "./lib/control-ui-bench-latency.ts";
 import {
@@ -253,6 +254,7 @@ const { values } = parseArgs({
     "latency-profile": { type: "string" },
     "transcript-messages": { type: "string" },
     "long-session": { type: "boolean", default: false },
+    "long-session-scenario": { type: "string", default: "mixed" },
     "overlay-probe": { type: "boolean", default: false },
     untraced: { type: "boolean", default: false },
     "filmstrip-only": { type: "boolean", default: false },
@@ -476,7 +478,23 @@ if (face !== "chat" && face !== "dashboard") {
   throw new Error("Expected face chat or dashboard");
 }
 if (values["long-session"] && (face !== "chat" || values["large-snapshot"])) {
-  throw new Error("long-session requires the chat face and its mixed transcript fixture");
+  throw new Error("long-session requires the chat face and its dedicated transcript fixture");
+}
+const longSessionScenario = LONG_SESSION_SCENARIOS.find(
+  (scenario) => scenario === values["long-session-scenario"],
+);
+if (!longSessionScenario || (longSessionScenario !== "mixed" && !values["long-session"])) {
+  throw new Error(
+    "long-session-scenario requires long-session and mixed, paging, single-run, or direct-run",
+  );
+}
+if (
+  longSessionScenario !== "mixed" &&
+  (values["streaming-reply"] || values["live-events"] || values["session-switch"])
+) {
+  throw new Error(
+    "Dedicated paging and single-run diagnostics require an unchanged history; use mixed for streaming, live-events, and session-switch",
+  );
 }
 if (values["chat-dashboard-route"] && face !== "dashboard") {
   throw new Error("chat-dashboard-route requires the dashboard face");
@@ -488,6 +506,12 @@ const transcriptMessages =
       ? 2_000
       : undefined
     : Number(values["transcript-messages"]);
+if (
+  (longSessionScenario === "single-run" || longSessionScenario === "direct-run") &&
+  (transcriptMessages ?? 0) < 2
+) {
+  throw new Error("Single-run diagnostics require at least a prompt and a final answer");
+}
 const streamingBurstSize = Number(values["streaming-burst-size"]);
 const streamingRate = Number(values["streaming-rate"]);
 if (!Number.isFinite(streamingRate) || streamingRate <= 0) {
@@ -675,6 +699,7 @@ const fixture = createControlUiTeamScaleFixture({
   offRosterSession: values["off-roster-route"],
   transcriptMessages,
   richTranscript: values["long-session"],
+  longSessionScenario: values["long-session"] ? longSessionScenario : undefined,
   dashboardWidgetFontUrl: dashboardFont
     ? `http://127.0.0.1:${address.port}${dashboardFontPath}`
     : undefined,
@@ -1108,7 +1133,7 @@ try {
     ? `\n(${installRotatingBoardTickets.toString()})(${JSON.stringify(fixture.board)}, window.openclawControlUiE2eGateway);`
     : "";
   await page.addInitScript({
-    content: `;(() => { if (window !== window.top || location.protocol === "about:") return; const __name = (fn) => fn; (${installWidgetReadiness.toString()})(); ${createControlUiMockGatewayInitScript(prepared.scenario)}\n${rigProbeScript}\nwindow.__teamScaleSidebarLists = { apply: (mutation) => window.__teamScaleMutate(mutation) }; window.openclawControlUiE2eGateway.setRequestHandler("sessions.list", async ({ params, respond }) => respond(await window.__teamScaleList(params))); window.openclawControlUiE2eGateway.setRequestHandler("cron.list", async ({ params, respond }) => respond(await window.__teamScaleCronList(params)));\n${boardTickets}\n${createColdLoadProbeInitScript({ latencyMs, downloadKbps: values["critical-path"] ? downloadKbps : undefined, methodLatencyMs, sidebarQueryLatencyMs, omitHelloSelfPresence: values["omit-hello-self-presence"], connectNotBeforeMs, frameGapMs, events: fixture.events, liveEvents: fixture.liveEvents, liveHistory: fixture.liveHistory, ownerProbes: !cpuProfile && !allocations && !values["session-event-churn"], sidebarCounters: !cpuProfile })}\n${streamingReply ? createStreamingReplyProbeInitScript() : ""}\n${extraInitScripts.join("\n")}\n${warmProbes} })();`,
+    content: `;(() => { if (window !== window.top || location.protocol === "about:") return; const __name = (fn) => fn; (${installWidgetReadiness.toString()})(); ${createControlUiMockGatewayInitScript(prepared.scenario)}\n${rigProbeScript}\nwindow.__teamScaleSidebarLists = { apply: (mutation) => window.__teamScaleMutate(mutation) }; window.openclawControlUiE2eGateway.setRequestHandler("sessions.list", async ({ params, respond }) => respond(await window.__teamScaleList(params))); window.openclawControlUiE2eGateway.setRequestHandler("cron.list", async ({ params, respond }) => respond(await window.__teamScaleCronList(params)));\n${boardTickets}\n${createColdLoadProbeInitScript({ latencyMs, downloadKbps: values["critical-path"] || values["long-session"] ? downloadKbps : undefined, methodLatencyMs, sidebarQueryLatencyMs, omitHelloSelfPresence: values["omit-hello-self-presence"], connectNotBeforeMs, frameGapMs, events: fixture.events, liveEvents: fixture.liveEvents, liveHistory: fixture.liveHistory, ownerProbes: !cpuProfile && !allocations && !values["session-event-churn"], sidebarCounters: !cpuProfile })}\n${streamingReply ? createStreamingReplyProbeInitScript() : ""}\n${extraInitScripts.join("\n")}\n${warmProbes} })();`,
   });
   if (values["critical-path"]) {
     await page.addInitScript({
@@ -1221,12 +1246,26 @@ try {
           .getByText("Team metric 1", { exact: true })
           .waitFor();
       }
-      await page
-        .frameLocator(".chat-tool-card__preview-frame")
-        .last()
-        .frameLocator("iframe")
-        .getByText("Team metric 12", { exact: true })
-        .waitFor();
+      if (
+        fixture.longSessionWorkload.scenario === "single-run" ||
+        fixture.longSessionWorkload.scenario === "direct-run"
+      ) {
+        await page
+          .locator(
+            `.chat-pane-cache__pane--active .chat-bubble[data-entry-id="${fixture.longSessionWorkload.lastEntryId}"]`,
+          )
+          .waitFor({ state: "visible" });
+        await page
+          .locator(".chat-pane-cache__pane--active .agent-chat__composer-combobox textarea")
+          .waitFor({ state: "visible" });
+      } else {
+        await page
+          .frameLocator(".chat-tool-card__preview-frame")
+          .last()
+          .frameLocator("iframe")
+          .getByText("Team metric 12", { exact: true })
+          .waitFor();
+      }
       if (face === "dashboard") {
         await page.waitForFunction(() => {
           const ready = Reflect.get(window, "__readWidgetReadiness")();
@@ -1643,6 +1682,19 @@ try {
       await page.goto(url, { waitUntil: "domcontentloaded" });
     } else {
       await page.reload({ waitUntil: "domcontentloaded" });
+    }
+    if (values["long-session"]) {
+      const selector = ".chat-pane-cache__pane--active .agent-chat__composer-combobox textarea";
+      const composer = page.locator(selector);
+      await composer.waitFor({ state: "visible" });
+      await page.waitForFunction((targetSelector) => {
+        const input = document.querySelector<HTMLTextAreaElement>(targetSelector);
+        return input && !input.disabled && !input.readOnly;
+      }, selector);
+      await composer.focus();
+      if (!(await composer.evaluate((input) => input === document.activeElement))) {
+        throw new Error("Long-session composer did not accept focus during open");
+      }
     }
     await settle();
     const coverage = values.coverage
@@ -2456,6 +2508,7 @@ try {
           prefix: `run-${run + 1}`,
           sessionKey: fixture.selectedSessionKey,
           otherSessionKey: fixture.pinnedKeys[1]!,
+          workload: fixture.longSessionWorkload,
           captureHeap: run < bundleSlots.length && !cpuProfile,
         })
       : undefined;
@@ -2713,6 +2766,7 @@ try {
         cpuThrottle,
         comparisonBundleDirs,
         fixture: fixture.counts,
+        longSessionScenario: values["long-session"] ? longSessionScenario : undefined,
         sidebarView,
         sidebarAvatars: values["sidebar-avatars"],
         sidebarExpanded: values["sidebar-expanded"],

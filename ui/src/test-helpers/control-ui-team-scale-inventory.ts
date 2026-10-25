@@ -36,10 +36,12 @@ export function createTeamScaleSessionInventory({
   people,
   counts,
   offRosterSession = false,
+  directSelectedSession = false,
   sidebarPersistentChildren = false,
 }: {
   now: number;
   offRosterSession?: boolean;
+  directSelectedSession?: boolean;
   sidebarPersistentChildren?: boolean;
   people: ControlUiMockPresenceUser[];
   counts: Record<
@@ -61,7 +63,7 @@ export function createTeamScaleSessionInventory({
       key:
         index === 0
           ? "agent:main:main"
-          : `agent:main:${pinned ? "dashboard" : "chat"}:00000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
+          : `agent:main:${pinned && !(directSelectedSession && index === counts.sessions - counts.pinned) ? "dashboard" : "chat"}:00000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
       ...(index === 0 ? { isMain: true } : {}),
       sessionId: `team-session-${index + 1}`,
       childOwnerSessionKeys: [],

@@ -10,7 +10,7 @@ import type { ChatSessionScrollPosition } from "../scroll.ts";
 import type { ChatHistoryBoundaryProps } from "./chat-history-boundary.tsx";
 import type { ChatMessageEntryAnimations } from "./chat-message-entry.ts";
 import type { TranscriptAnnouncement } from "./chat-transcript-announcement.ts";
-import { readConnectedTranscriptRows } from "./chat-transcript-geometry.ts";
+import { measureTranscriptRow, readConnectedTranscriptRows } from "./chat-transcript-geometry.ts";
 import type {
   ComposerActivityLayout,
   TranscriptLayoutOwner,
@@ -116,6 +116,11 @@ export function createTranscriptPresentation(
   };
 
   const presentation = {
+    measureElement(element: HTMLElement, entry: ResizeObserverEntry | undefined) {
+      // ResizeObserver can run before the reader's native scroll event.
+      beforeMeasure();
+      return measureTranscriptRow(element, entry, virtualizer);
+    },
     measureRows: () => readConnectedRows()?.() ?? false,
     measureRowsWithoutScrollAdjustment() {
       const adjustScroll = virtualizer.shouldAdjustScrollPositionOnItemSizeChange;

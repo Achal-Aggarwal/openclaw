@@ -95,6 +95,143 @@ const replyFrameShape = (outcome: unknown, ...parts: unknown[]) => ({
   parts,
 });
 
+describe("long completed runs", () => {
+  function longRun(extra: unknown[] = []) {
+    return [
+      history[0],
+      ...Array.from({ length: 100 }, (_, index) => [
+        makeMessage(`step-${index}`, index * 2 + 2, {
+          phase: "commentary",
+          stopReason: "toolUse",
+          content: [
+            { type: "text", text: `Inspecting file ${index}` },
+            {
+              type: "toolCall",
+              id: `tool-${index}`,
+              name: "read",
+              arguments: { path: `file-${index}.md` },
+            },
+          ],
+        }),
+        makeTool(`tool-${index}`, index * 2 + 3, "run-1", index * 20 + 30),
+      ]).flat(),
+      ...extra,
+      finalAnswer("long-answer", 300),
+    ];
+  }
+
+  it.each([sessionKey, "agent:main:telegram:direct:42"])(
+    "windows completed work and maps distant replies to their own row in %s",
+    (key) => {
+      const chain = projectHistory(longRun(), { sessionKey: key });
+      const frame = onlyFrame(chain);
+      const expanded = new Map<string, boolean>();
+      for (const part of frame.parts) {
+        if (part.kind === "work-group") {
+          setExpansionState(expanded, part.key, true);
+        }
+      }
+      const index = indexFor(chain, expanded);
+      const rows = index.rows.filter((row) => row.kind === "item");
+      const workRows = rows.filter((row) => row.item.kind === "agent-run-frame");
+      expect(workRows.length).toBeGreaterThan(1);
+      expect(index.messageRowKeysById.get("step-0")).not.toBe(
+        index.messageRowKeysById.get("step-99"),
+      );
+      expect(index.messageRowKeysById.get("long-answer")).toBe(frame.key);
+      expect(rows.at(-1)?.key).toBe(frame.key);
+      for (const row of workRows) {
+        const parts = row.item.kind === "agent-run-frame" ? row.item.parts : [];
+        const content = parts.filter((part) => part.kind !== "work-group");
+        expect(
+          chatItemGroups({ ...frame, parts: content }).reduce(
+            (count, group) => count + group.messages.length,
+            0,
+          ),
+        ).toBeLessThanOrEqual(8);
+      }
+      const summary = rows.find(
+        (row) => row.item.kind === "agent-run-frame" && row.item.parts[0]?.kind === "work-group",
+      );
+      if (summary) {
+        const collapsed = indexFor(chain);
+        expect(collapsed.rows.some((row) => row.key === summary.key)).toBe(true);
+      }
+    },
+  );
+
+  it("keeps widget-bearing completed runs in the retained frame", () => {
+    const canvas = makeMessage("canvas", 250, {
+      content: [
+        {
+          type: "canvas",
+          preview: {
+            kind: "canvas",
+            surface: "assistant_message",
+            render: "url",
+            viewId: "cv_long_run",
+            url: "/__openclaw__/canvas/documents/cv_long_run/index.html",
+          },
+        },
+      ],
+    });
+    const messages = longRun([canvas]);
+    const key = "agent:main:telegram:direct:42";
+    const activeChain = projectHistory(messages.slice(0, -1), {
+      sessionKey: key,
+      runWorking: true,
+      runId: "run-1",
+      activeRunId: "run-1",
+      streamStartedAt: 1_000,
+    });
+    const activeFrame = onlyFrame(activeChain);
+    expect(activeFrame.outcome.kind).toBe("active");
+    expect(indexFor(activeChain).messageRowKeysById.get("canvas")).toBe(activeFrame.key);
+    const chain = projectHistory(messages, {
+      sessionKey: key,
+    });
+    const frame = onlyFrame(chain);
+    expect(frame.key).toBe(activeFrame.key);
+    expect(
+      indexFor(chain).rows.filter((row) => row.kind === "item" && row.item === frame),
+    ).toHaveLength(1);
+    expect(indexFor(chain).messageRowKeysById.get("canvas")).toBe(frame.key);
+  });
+
+  it("retains the answer row when completed work follows the final answer", () => {
+    const chain = projectHistory([...longRun(), makeTool("late-tool", 301, "run-1", 4_000)], {
+      sessionKey: "agent:main:telegram:direct:42",
+    });
+    const frame = onlyFrame(chain);
+    expect(frame.outcome).toMatchObject({
+      kind: "completed",
+      actionOwner: { message: { __openclaw: { id: "long-answer" } } },
+    });
+    expect(indexFor(chain).messageRowKeysById.get("long-answer")).toBe(frame.key);
+    expect(
+      indexFor(chain)
+        .rows.filter((row) => row.kind === "item")
+        .map((row) => row.key),
+    ).toEqual([chain.transcriptItems[0]!.key, frame.key]);
+  });
+
+  it("retains the summary row when completed work has no answer", () => {
+    const chain = projectHistory(longRun().slice(0, -1));
+    const frame = onlyFrame(chain);
+    expect(frame.outcome).toEqual({ kind: "completed", actionOwner: null });
+    const collapsed = indexFor(chain);
+    const expanded = new Map<string, boolean>();
+    for (const part of frame.parts) {
+      if (part.kind === "work-group") {
+        setExpansionState(expanded, part.key, true);
+      }
+    }
+    expect(indexFor(chain, expanded).rows.map((row) => row.key)).toEqual(
+      collapsed.rows.map((row) => row.key),
+    );
+  });
+});
+
 it.each([
   { key: sessionKey, working: true, projected: false, untagged: false },
   { key: sessionKey, working: true, projected: true, untagged: false },

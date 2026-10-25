@@ -11,7 +11,10 @@ import {
   type TeamScaleLiveEvent,
 } from "./control-ui-sidebar-list-fixture.ts";
 import { withTeamScaleConfig } from "./control-ui-team-scale-config.ts";
-import { createTeamScaleHistoryFixture } from "./control-ui-team-scale-history-fixture.ts";
+import {
+  createTeamScaleHistoryFixture,
+  type LongSessionScenario,
+} from "./control-ui-team-scale-history-fixture.ts";
 import {
   createTeamScaleCronInventory,
   createTeamScaleSessionInventory,
@@ -63,6 +66,7 @@ type FixtureOptions = {
   offRosterSession?: boolean;
   transcriptMessages?: number;
   richTranscript?: boolean;
+  longSessionScenario?: LongSessionScenario;
   dashboardMcpApp?: { font: Buffer };
   /** Opt into a scripted HTML dashboard with an independently fetched web font. */
   dashboardWidgetFontUrl?: string;
@@ -74,6 +78,10 @@ type FixtureOptions = {
 export function createControlUiTeamScaleFixture(options: FixtureOptions = {}) {
   const counts = {
     ...TEAM_SCALE_COUNTS,
+    inlineWidgets:
+      options.longSessionScenario === "single-run" || options.longSessionScenario === "direct-run"
+        ? 0
+        : TEAM_SCALE_COUNTS.inlineWidgets,
     transcriptMessages:
       options.transcriptMessages ??
       (options.largeSnapshot ? 1_100 : TEAM_SCALE_COUNTS.transcriptMessages),
@@ -112,6 +120,7 @@ export function createControlUiTeamScaleFixture(options: FixtureOptions = {}) {
     people,
     counts,
     offRosterSession: options.offRosterSession,
+    directSelectedSession: options.longSessionScenario === "direct-run",
     sidebarPersistentChildren: options.sidebarPersistentChildren,
   });
   const duplicateReads = options.duplicateBootReads
@@ -174,33 +183,23 @@ export function createControlUiTeamScaleFixture(options: FixtureOptions = {}) {
     now,
     selectedSessionKey,
   );
-  const { messageIds, historyMessages } = createTeamScaleHistoryFixture({
+  const {
+    messageIds,
+    historyMessages,
+    workload: longSessionWorkload,
+    pagination,
+    configuredHistory,
+  } = createTeamScaleHistoryFixture({
     messageCount: counts.transcriptMessages,
     inlineWidgets: counts.inlineWidgets,
     now,
     largeSnapshot: options.largeSnapshot,
     richTranscript: options.richTranscript,
+    longSessionScenario: options.longSessionScenario,
+    session: pinnedRows[0]!,
+    historyStateReceipt: options.historyStateReceipt,
     attachments: duplicateReads?.attachments,
   });
-  const configuredHistory =
-    options.largeSnapshot || options.historyStateReceipt
-      ? {
-          messages: historyMessages,
-          sessionId: pinnedRows[0]!.sessionId,
-          sessionInfo: pinnedRows[0]!,
-          hasMore: false,
-          totalMessages: counts.transcriptMessages,
-          metadata: { commands: [], models: [] },
-          ...(options.historyStateReceipt
-            ? {
-                stateRevision: {
-                  sessionInfo: "fixture-session-v1",
-                  commands: "fixture-commands-v1",
-                },
-              }
-            : {}),
-        }
-      : undefined;
   const presenceEntries: PresenceEntry[] = people.map((person) => ({
     instanceId: person.instanceId,
     mode: person.mode,
@@ -345,6 +344,7 @@ export function createControlUiTeamScaleFixture(options: FixtureOptions = {}) {
     sessions,
     presenceUsers: people,
     historyMessages,
+    ...(pagination ? { deferredRequests: pagination.deferredRequests } : {}),
     ...(options.richTranscript
       ? {
           sessionTranscripts: {
@@ -407,6 +407,7 @@ export function createControlUiTeamScaleFixture(options: FixtureOptions = {}) {
       ...(configuredHistory
         ? { "chat.startup": configuredHistory, "chat.history": configuredHistory }
         : {}),
+      ...pagination?.methodResponses,
       ...duplicateReads?.methodResponses,
       "agents.list": agents,
       "agent.identity.get": {
@@ -676,6 +677,7 @@ export function createControlUiTeamScaleFixture(options: FixtureOptions = {}) {
   }
   return {
     scenario,
+    longSessionWorkload,
     board,
     selectedSessionKey,
     sidebarPersistentChildren,
