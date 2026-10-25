@@ -2,6 +2,7 @@ import type { WebClient, WebClientOptions } from "@slack/web-api";
 import { logVerbose } from "openclaw/plugin-sdk/runtime-env";
 import { normalizeOptionalString } from "openclaw/plugin-sdk/string-coerce-runtime";
 import { getSlackListenerWriteClient } from "../client.js";
+import type { SlackMonitorContext } from "./context.js";
 import type { SlackInstallationIdentity } from "./enterprise-install.js";
 
 export type SlackEventScope = Readonly<{
@@ -83,4 +84,28 @@ export function resolveSlackMonitorEventScope(params: {
     client: params.client,
     ...(writeClient ? { writeClient } : {}),
   };
+}
+
+export function resolveSlackInteractionEventScope(
+  ctx: SlackMonitorContext,
+  args: Pick<Parameters<typeof resolveSlackMonitorEventScope>[0], "body" | "context" | "client">,
+  kind: "action" | "shortcut" | "view_submission" | "view_closed",
+): SlackEventScope | null | undefined {
+  const eventScope = resolveSlackMonitorEventScope({
+    ctx,
+    body: args.body,
+    context: args.context,
+    client: args.client,
+    onDrop: (reason) => ctx.runtime.log?.(`slack:interaction drop ${kind} ${reason}`),
+  });
+  if (eventScope === null) {
+    return null;
+  }
+  if (ctx.shouldDropMismatchedSlackEvent?.(args.body)) {
+    ctx.runtime.log?.(
+      `slack:interaction drop ${kind === "action" ? "block action" : kind} payload (mismatched app/team)`,
+    );
+    return null;
+  }
+  return eventScope;
 }
