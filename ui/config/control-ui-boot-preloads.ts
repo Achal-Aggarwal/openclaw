@@ -16,6 +16,11 @@ const sharedInteractionEntries = new Set([
   "ui/src/components/app-sidebar-online.tsx",
 ]);
 const chatInteractionEntries = new Set([
+  // Cached rows need these bytes at first use, without evaluating them during boot.
+  "ui/src/pages/chat/components/chat-message-activity-view.tsx",
+  "ui/src/pages/chat/components/chat-divider.tsx",
+  "ui/src/pages/chat/components/chat-tool-card-row.solid.tsx",
+  "ui/src/pages/chat/components/chat-source-previews.tsx",
   "ui/src/pages/chat/components/chat-context-breakdown.tsx",
   "ui/src/components/markdown-live.ts",
   // Cached environment facts reveal without another network round trip.
