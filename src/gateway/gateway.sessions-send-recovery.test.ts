@@ -360,6 +360,7 @@ it.for(["SIGTERM", "SIGKILL"] as const)(
         const preferencesBefore = await request("users.prefs.get", { keys: ["ui.themeMode"] });
         expect(preferencesBefore).toEqual({ status: "ok", entries: {} });
         const sessionIds = new Map<string, string>();
+        // Held turns must not also stall unrelated background title-model requests.
         for (const key of [
           target,
           steerTarget,
@@ -372,6 +373,7 @@ it.for(["SIGTERM", "SIGKILL"] as const)(
           const created = await request<{ sessionId: string }>("sessions.create", {
             key,
             agentId: "main",
+            displayName: "Recovery fixture",
             communication: { send: "always", receive: "always" },
           });
           sessionIds.set(key, created.sessionId);
