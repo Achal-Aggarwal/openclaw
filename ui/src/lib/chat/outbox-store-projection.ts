@@ -12,7 +12,7 @@ import {
   storedChatOutboxItemNeedsReview,
   subscribeChatOutboxAttentionChanges,
 } from "./outbox-owner-registry.ts";
-import { outboxPayloadMatchesOwner } from "./outbox-payload-store.runtime.ts";
+import { outboxPayloadMatchesOwner } from "./outbox-payload-owner.ts";
 import type { StoredComposerSession } from "./outbox-store-codec.ts";
 import type { StoredChatOutboxScope } from "./outbox-store-scope.ts";
 import {

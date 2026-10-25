@@ -1,6 +1,6 @@
 import type { ChatQueueItem } from "../../lib/chat/chat-types.ts";
 import { readHumanMentions } from "../../lib/chat/human-mentions.ts";
-import { outboxPayloadMatchesOwner } from "../../lib/chat/outbox-payload-store.runtime.ts";
+import { outboxPayloadMatchesOwner } from "../../lib/chat/outbox-payload-owner.ts";
 import {
   captureDraftReplacement,
   nextDraftRevision,

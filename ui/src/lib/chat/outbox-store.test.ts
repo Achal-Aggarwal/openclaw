@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { createStorageMock } from "../../test-helpers/storage.ts";
 import type { ChatQueueItem } from "./chat-types.ts";
-import { outboxStorageScope } from "./outbox-payload-store.runtime.ts";
+import { outboxStorageScope } from "./outbox-payload-owner.ts";
 import {
   captureChatOutboxRecoveryDestination,
   discardChatOutboxRecovery,

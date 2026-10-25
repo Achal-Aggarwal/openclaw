@@ -13,7 +13,7 @@ import { canSubmitBeforeChatHistory, parseSlashCommand } from "../../lib/chat/co
 import { extractCompanionCommandQuestion } from "../../lib/chat/companion-question.ts";
 import { resolveCurrentUserIdentity } from "../../lib/chat/current-user-identity.ts";
 import { trimHumanMentions } from "../../lib/chat/human-mentions.ts";
-import { outboxStorageScope } from "../../lib/chat/outbox-payload-store.runtime.ts";
+import { outboxStorageScope } from "../../lib/chat/outbox-payload-owner.ts";
 import { captureChatOutboxAdmission } from "../../lib/chat/outbox-store.ts";
 import { scopedAgentIdForSession, visibleSessionMatches } from "../../lib/sessions/index.ts";
 import { resolveUiConversationIdentity } from "../../lib/sessions/session-key.ts";

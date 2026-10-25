@@ -3,7 +3,7 @@ import type { ChatQueueItem } from "../../lib/chat/chat-types.ts";
 import {
   outboxPayloadMatchesOwner,
   outboxStorageScope,
-} from "../../lib/chat/outbox-payload-store.runtime.ts";
+} from "../../lib/chat/outbox-payload-owner.ts";
 import {
   INTERRUPTED_SETTINGS_WAIT_ERROR,
   MAX_STORED_QUEUE_ITEMS,

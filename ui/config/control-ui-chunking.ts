@@ -77,6 +77,16 @@ export function controlUiStableChunkName(id: string): string | undefined {
   const normalized = normalizeModuleId(id);
 
   switch (controlUiBootManifestKey(id)) {
+    case "ui/src/lib/chat/composer-draft-write.runtime.ts":
+      return "composer-draft-write-runtime";
+    case "ui/src/lib/chat/composer-draft-recovery.runtime.ts":
+      return "composer-draft-recovery-runtime";
+    case "ui/src/pages/chat/outbox-payloads.runtime.ts":
+    case "ui/src/lib/chat/outbox-payload-store.runtime.ts":
+      return "outbox-payload-runtime";
+    case "ui/src/pages/chat/chat-outbox-recovery-rows.tsx":
+    case "ui/src/pages/chat/chat-outbox-recovery-actions.ts":
+      return "chat-outbox-recovery-runtime";
     case "ui/src/pages/chat/components/chat-details-people.css":
     case "ui/src/pages/chat/components/chat-outputs.css":
     case "ui/src/pages/chat/components/chat-details-environment-desktop.css":

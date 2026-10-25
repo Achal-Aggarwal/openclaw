@@ -2,7 +2,7 @@
 import { IDBFactory } from "fake-indexeddb";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ChatQueueItem } from "../../lib/chat/chat-types.ts";
-import { outboxStorageScope as scopeFor } from "../../lib/chat/outbox-payload-store.runtime.ts";
+import { outboxStorageScope as scopeFor } from "../../lib/chat/outbox-payload-owner.ts";
 import {
   captureChatOutboxRecoveryDestination as recoveryDestination,
   readChatOutboxRecovery as readRecovery,

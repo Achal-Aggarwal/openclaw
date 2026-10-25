@@ -10,7 +10,7 @@ import type {
   HumanMention,
 } from "./chat-types.ts";
 import { findChatSubmissionMessage } from "./history-message-identity.ts";
-import { outboxPayloadCanRecover } from "./outbox-payload-store.runtime.ts";
+import { outboxPayloadCanRecover } from "./outbox-payload-owner.ts";
 import { nextDraftRevision, readDraftRevisionState } from "./outbox-store-draft-state.ts";
 import type { ComposerStorageTarget, StoredChatOutboxScope } from "./outbox-store-scope.ts";
 import {

@@ -1,6 +1,6 @@
 import type { ApplicationContext } from "../../app/context.ts";
 import type { ChatAttachment, HumanMention } from "../../lib/chat/chat-types.ts";
-import { outboxStorageScope } from "../../lib/chat/outbox-payload-store.runtime.ts";
+import { outboxStorageScope } from "../../lib/chat/outbox-payload-owner.ts";
 import { captureChatOutboxAdmission } from "../../lib/chat/outbox-store.ts";
 import { normalizeAgentId } from "../../lib/sessions/session-key.ts";
 import { generateUUID } from "../../lib/uuid.ts";

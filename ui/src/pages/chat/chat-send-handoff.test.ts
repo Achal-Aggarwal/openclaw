@@ -3,7 +3,7 @@ import { afterEach, assert, expect, it, onTestFinished, vi } from "vitest";
 // @vitest-environment node
 import { createDeferred } from "../../../../test/helpers/promise.js";
 import type { ChatQueueItem } from "../../lib/chat/chat-types.ts";
-import { outboxStorageScope } from "../../lib/chat/outbox-payload-store.runtime.ts";
+import { outboxStorageScope } from "../../lib/chat/outbox-payload-owner.ts";
 import type { ChatHistoryResult } from "./chat-history-snapshot.ts";
 import { getChatHistoryLoadState } from "./chat-history-state.ts";
 import { loadChatHistory } from "./chat-history.ts";

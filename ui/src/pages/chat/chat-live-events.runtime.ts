@@ -28,10 +28,8 @@ import {
 import { clearPendingQueueItemsForRun, readDeliveredQueuedChatSendForRun } from "./chat-queue.ts";
 import { chatRunPresentation } from "./chat-run-presentation.ts";
 import { resumeStoredChatOutboxes } from "./chat-send-actions.ts";
-import {
-  requiresChatInputConsumption,
-  retireDeliveredQueuedUserTurn,
-} from "./chat-send-support.ts";
+import { retireDeliveredQueuedUserTurn } from "./chat-send-support.runtime.ts";
+import { requiresChatInputConsumption } from "./chat-send-support.ts";
 import type { ChatPageHost } from "./chat-state-host.ts";
 import { refreshChatModelAuthStatus } from "./chat-state-refresh.ts";
 import { selectedChatSessionRow } from "./chat-state-route.ts";

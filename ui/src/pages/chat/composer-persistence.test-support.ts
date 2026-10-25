@@ -1,6 +1,6 @@
 import { expect, vi } from "vitest";
 import type { ChatQueueItem } from "../../lib/chat/chat-types.ts";
-import { outboxStorageScope } from "../../lib/chat/outbox-payload-store.runtime.ts";
+import { outboxStorageScope } from "../../lib/chat/outbox-payload-owner.ts";
 import {
   captureChatOutboxRecoveryDestination,
   readChatOutboxRecovery,
