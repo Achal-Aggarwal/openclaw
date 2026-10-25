@@ -105,6 +105,7 @@ export function createTranscriptPresentation(
   rowElements: () => Iterable<HTMLElement>,
   beforeMeasure: () => void,
 ) {
+  let resizeOffsetSynced = false;
   const readConnectedRows = (): (() => boolean) | null => {
     const apply = readConnectedTranscriptRows(scrollElement(), virtualizer, rowElements());
     return apply
@@ -117,9 +118,15 @@ export function createTranscriptPresentation(
 
   const presentation = {
     measureElement(element: HTMLElement, entry: ResizeObserverEntry | undefined) {
-      // ResizeObserver can run before the reader's native scroll event.
-      // Registration only reuses a cached size or estimate until that observation.
-      if (entry || !virtualizer.targetWindow?.ResizeObserver) {
+      if (entry && !resizeOffsetSynced) {
+        // Observer entries share one native reader position. Keep the virtualizer's
+        // accumulated correction between entries, including clamped scroll writes.
+        resizeOffsetSynced = true;
+        queueMicrotask(() => {
+          resizeOffsetSynced = false;
+        });
+        beforeMeasure();
+      } else if (!entry && !virtualizer.targetWindow?.ResizeObserver) {
         beforeMeasure();
       }
       return measureTranscriptRow(element, entry, virtualizer);

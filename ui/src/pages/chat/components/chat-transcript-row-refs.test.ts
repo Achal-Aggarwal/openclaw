@@ -92,11 +92,17 @@ it.each([
   ]);
   expect(mounted.every((row) => observedElements.has(row))).toBe(true);
   for (const observer of resizeObservers) {
-    for (const row of mounted) {
-      observer.emitTarget(row, 800, height);
-    }
+    observer.emit(800, height);
   }
   expect([...virtualizer.itemSizeCache.values()]).toEqual(indexes.map(() => 80));
   expect(readHeight).not.toHaveBeenCalled();
-  expect(readOffset).toHaveBeenCalled();
+  expect(readOffset).toHaveBeenCalledOnce();
+
+  await Promise.resolve();
+  readOffset.mockReturnValue(10);
+  for (const observer of resizeObservers) {
+    observer.emit(800, 90);
+  }
+  expect([...virtualizer.itemSizeCache.values()]).toEqual(indexes.map(() => 90));
+  expect(readOffset).toHaveBeenCalledTimes(2);
 });
