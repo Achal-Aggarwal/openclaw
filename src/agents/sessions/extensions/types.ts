@@ -391,9 +391,6 @@ export interface ToolRenderContext<
   cwd: string;
   executionStarted: boolean;
   argsComplete: boolean;
-  /** Whether the tool result is partial/streaming. */
-  isPartial: boolean;
-  expanded: boolean;
   /** Whether inline images are currently shown in the TUI. */
   showImages: boolean;
   isError: boolean;
@@ -449,21 +446,6 @@ export interface ToolDefinition<
     ],
     Component
   >;
-}
-
-type AnyToolDefinition = ToolDefinition;
-
-/**
- * Preserve parameter inference for standalone tool definitions.
- *
- * Use this when assigning a tool to a variable or passing it through arrays such
- * as `customTools`, where contextual typing would otherwise widen params to
- * `unknown`.
- */
-export function defineTool<TParams extends TSchema, TDetails = unknown, TState = unknown>(
-  tool: ToolDefinition<TParams, TDetails, TState>,
-): ToolDefinition<TParams, TDetails, TState> & AnyToolDefinition {
-  return tool as ToolDefinition<TParams, TDetails, TState> & AnyToolDefinition;
 }
 
 /** Fired after session_start to allow extensions to provide additional resource paths. */
