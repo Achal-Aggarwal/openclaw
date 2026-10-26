@@ -430,6 +430,7 @@ it("prepares model presentation once per audience at growing fanout", async () =
           return peer;
         });
         modelPreparations.mockClear();
+        using stateReads = vi.spyOn(projection, "state", "get");
         const stringify = JSON.stringify;
         let nestedKeyEncodings = 0;
         const encoding = vi.spyOn(JSON, "stringify").mockImplementation((...args) => {
@@ -453,6 +454,8 @@ it("prepares model presentation once per audience at growing fanout", async () =
         } finally {
           encoding.mockRestore();
         }
+        // Audience revision probes must not rebuild full projection state per socket.
+        expect.soft(stateReads.mock.calls.length).toBeLessThanOrEqual(2 * count + 1);
         expect.soft(modelPreparations).toHaveBeenCalledTimes(Math.min(count, 2));
         expect.soft(nestedKeyEncodings).toBe(0);
         for (const [i, peer] of peers.entries()) {

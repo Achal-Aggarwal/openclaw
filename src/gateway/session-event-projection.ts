@@ -187,7 +187,7 @@ export function prepareSessionEventProjection(
     >();
     const diff = createSessionRowDeltaDiffer();
     const envelopeFields: [string, unknown][] = [];
-    let revision = projection.state.revision;
+    let revision = projection.sharingRevision;
     let accessRevision = readGatewayAccessRevision();
     // Run display facts belong to this synchronous publication; recipient authority stays live.
     const runProjector = connection.createRunProjector();
@@ -200,9 +200,9 @@ export function prepareSessionEventProjection(
         return undefined;
       }
       const currentAccessRevision = readGatewayAccessRevision();
-      if (revision !== projection.state.revision || accessRevision !== currentAccessRevision) {
+      if (revision !== projection.sharingRevision || accessRevision !== currentAccessRevision) {
         audiences.clear();
-        revision = projection.state.revision;
+        revision = projection.sharingRevision;
         accessRevision = currentAccessRevision;
       }
       // Resolve each recipient's live authority before reusing this synchronous publication.
