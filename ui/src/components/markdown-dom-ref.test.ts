@@ -5,63 +5,12 @@ import { mountSolid } from "../test-helpers/mount-solid.ts";
 import { renderSolidRef } from "../test-helpers/render-solid-ref.ts";
 import { createMarkdownRef } from "./markdown-dom-ref.ts";
 import { toStreamingMarkdownDomParts } from "./markdown-live.ts";
-import { normalizeMarkdownRenderOptions } from "./markdown-render-options.ts";
-import { markdownSanitizer } from "./markdown-sanitizer.ts";
 import {
   partitionMarkdownHtml,
   prewarmSanitizedMarkdown,
-  renderSanitizedMarkdown,
   toSanitizedMarkdownContent,
   toSanitizedMarkdownHtml,
 } from "./markdown.ts";
-
-it("sanitizes cold chat rows without creating another HTML document", () => {
-  const parse = vi.spyOn(DOMParser.prototype, "parseFromString");
-  onTestFinished(() => parse.mockRestore());
-  const content = renderSanitizedMarkdown(
-    "### Cold row\n\n| Value |\n| --- |\n| Ready |\n\n[Docs](/help)",
-    normalizeMarkdownRenderOptions({}),
-    false,
-    undefined,
-    true,
-  );
-  if (typeof content === "string") {
-    throw new Error("Cold chat rows must carry their sanitized DOM");
-  }
-  expect(content.fragment.querySelector("h3")?.textContent).toBe("Cold row");
-  expect(content.fragment.querySelector("td")?.textContent).toBe("Ready");
-  expect(content.fragment.querySelector("a")?.getAttribute("href")).toBe(
-    "https://docs.openclaw.ai/help",
-  );
-  expect(parse).not.toHaveBeenCalled();
-});
-
-it("strips active markup from an inert tree before its children can mount", () => {
-  const template = document.createElement("template");
-  const root = template.content.ownerDocument.createElement("div");
-  root.innerHTML =
-    "<svg><foreignObject><img src=x onerror=alert(1)></foreignObject></svg>" +
-    '<math><mtext><table><mglyph><style><!--</style><img title="--><img src=x onerror=alert(2)>">' +
-    '<script>alert(3)</script><iframe srcdoc="unsafe"></iframe>' +
-    "<template><img src=x onerror=alert(4)></template>" +
-    '<a href="javascript:alert(5)" onclick="alert(6)">Unsafe</a>';
-  const safe = root.ownerDocument.createElement("div");
-  safe.innerHTML = '<p title="safe">Retained</p><progress value="2" max="5"></progress>';
-  root.append(safe);
-  markdownSanitizer(() => {}, true, false, true).sanitize(root);
-  template.content.append(...root.childNodes);
-  const serialized = template.innerHTML;
-  const mounted = document.createElement("div");
-  mounted.innerHTML = serialized;
-  for (const tree of [template.content, mounted]) {
-    expect(
-      tree.querySelector("svg, math, script, iframe, template, [onclick], [onerror]"),
-    ).toBeNull();
-    expect(tree.querySelector('a[href^="javascript:"]')).toBeNull();
-    expect(tree.querySelector("p")?.textContent).toBe("Retained");
-    expect(tree.querySelector("progress")?.getAttribute("value")).toBe("2");
-  }
-});
 
 it("hands idle-prepared DOM to the first visible caller without parsing it again", () => {
   const source = 'idle-cache-paragraph <img src="x" onerror="alert(1)">';

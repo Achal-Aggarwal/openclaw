@@ -10,15 +10,11 @@ import { handleMarkdownCodeBlockClick } from "./markdown-code-blocks.ts";
 import { createMarkdownRef } from "./markdown-dom-ref.ts";
 import { parseMarkdownJson } from "./markdown-json.ts";
 import { toStreamingMarkdownDomParts } from "./markdown-live.ts";
-import {
-  normalizeMarkdownRenderOptions,
-  type MarkdownRenderOptions,
-} from "./markdown-render-options.ts";
+import type { MarkdownRenderOptions } from "./markdown-render-options.ts";
 import corpus from "./markdown-transcript-corpus.json" with { type: "json" };
 import { toStreamingMarkdownParts } from "./markdown.test-support.ts";
 import {
   prewarmSanitizedMarkdown,
-  renderSanitizedMarkdown,
   toSanitizedMarkdownContent,
   toSanitizedMarkdownHtml,
 } from "./markdown.ts";
@@ -145,12 +141,4 @@ it("preserves readable code and node state across lazy highlighting", async () =
 it.each(corpus)("preserves transcript $name byte for byte", ({ source, html, options }) => {
   // SAFETY: This checked-in corpus was captured with these renderer options at the merge base.
   expect(toSanitizedMarkdownHtml(source, options as MarkdownRenderOptions)).toBe(html);
-  const content = renderSanitizedMarkdown(
-    source,
-    normalizeMarkdownRenderOptions(options as MarkdownRenderOptions),
-    undefined,
-    undefined,
-    true,
-  );
-  expect(markdownContentHtml(content)).toBe(html);
 });

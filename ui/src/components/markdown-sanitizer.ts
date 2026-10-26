@@ -83,8 +83,6 @@ const progressSanitizeOptions = {
 };
 const fragmentSanitizeOptions = { ...sanitizeOptions, RETURN_DOM_FRAGMENT: true };
 const progressFragmentSanitizeOptions = { ...progressSanitizeOptions, RETURN_DOM_FRAGMENT: true };
-const inPlaceSanitizeOptions = { ...sanitizeOptions, IN_PLACE: true };
-const progressInPlaceSanitizeOptions = { ...progressSanitizeOptions, IN_PLACE: true };
 
 const sanitizers = new Map<typeof sanitizeOptions, ReturnType<typeof DOMPurify>>();
 
@@ -395,19 +393,14 @@ export function markdownSanitizer(
   decorate: (node: Element) => void,
   progressBars = false,
   returnFragment = false,
-  inPlace = false,
 ) {
-  const options = inPlace
+  const options = returnFragment
     ? progressBars
-      ? progressInPlaceSanitizeOptions
-      : inPlaceSanitizeOptions
-    : returnFragment
-      ? progressBars
-        ? progressFragmentSanitizeOptions
-        : fragmentSanitizeOptions
-      : progressBars
-        ? progressSanitizeOptions
-        : sanitizeOptions;
+      ? progressFragmentSanitizeOptions
+      : fragmentSanitizeOptions
+    : progressBars
+      ? progressSanitizeOptions
+      : sanitizeOptions;
   const cached = sanitizers.get(options);
   if (cached) {
     return cached;

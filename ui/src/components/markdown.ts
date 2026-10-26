@@ -155,7 +155,6 @@ export function renderSanitizedMarkdown(
   const sanitizer = markdownSanitizer(
     decorateMarkdownAnchor,
     renderOptions.progressBars,
-    false,
     returnFragment,
   );
   const sanitize = (input: string | Node): MarkdownContent => {
@@ -163,20 +162,8 @@ export function renderSanitizedMarkdown(
       return sanitizer.sanitize(input);
     }
     const template = document.createElement("template");
-    // Parse in the template's inert document so custom elements and resource
-    // loads cannot activate before DOMPurify applies the ordinary policy.
-    const root = template.content.ownerDocument.createElement("div");
-    if (typeof input === "string") {
-      root.innerHTML = input;
-    } else {
-      root.append(input);
-    }
-    sanitizer.sanitize(root);
-    const html = root.innerHTML;
-    while (root.firstChild) {
-      template.content.append(root.firstChild);
-    }
-    return { html, fragment: template.content };
+    template.content.append(sanitizer.sanitize(input, { RETURN_DOM_FRAGMENT: true }));
+    return { html: template.innerHTML, fragment: template.content };
   };
   const documentMode = renderOptions.mode === "document";
   const truncated = documentMode
