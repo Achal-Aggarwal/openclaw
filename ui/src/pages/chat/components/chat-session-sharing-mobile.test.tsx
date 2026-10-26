@@ -174,6 +174,8 @@ it("keeps sharing busy through refresh and retires it for a same-key successor",
     reason: "update",
     session: replacement,
   });
+  // Join canonical successor admission instead of depending on the scheduled event refresh.
+  await fixture.sessions.refresh({ agentId: "main", force: true });
   await waitForSolid(() =>
     expect(source.operationSignal?.aborted, "successor retires the previous sharing scope").toBe(
       true,
