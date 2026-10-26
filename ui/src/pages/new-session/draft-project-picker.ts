@@ -1,6 +1,5 @@
 import type {
   FsListDirResult,
-  ProjectRecent,
   ProjectsRegisterResult,
   ProjectsSearchRemoteResult,
   WorktreesBranchesResult,
@@ -9,17 +8,15 @@ import type { GatewayBrowserClient } from "../../api/gateway.ts";
 import { formatUiError } from "../../lib/format-error.ts";
 import { canCallGatewayMethod } from "../../lib/gateway-methods.ts";
 import { createPageRequest } from "../../lib/page-request.ts";
-import { pathDisplayName } from "../../lib/path-display.ts";
 import type { DraftGatewayState } from "./draft-gateway-state.ts";
 import type {
   DraftPlaceBrowserCallbacks,
   DraftPlaceBrowserSnapshot,
   DraftProjectPickerOwner,
 } from "./draft-place-browser.types.ts";
-import { isAbsolutePath, isKnownWorkspacePath } from "./path.ts";
+import { isAbsolutePath } from "./path.ts";
 import { PICKER_INPUT_DEBOUNCE_MS, PlaceBrowserState } from "./place-browser-state.ts";
 import { projectCloneInput } from "./project-chip.ts";
-import { recentPlaces, type RecentPlaceSource } from "./recent-places.ts";
 
 type ProjectSearchOutcome = { result: ProjectsSearchRemoteResult } | { error: unknown } | null;
 
@@ -48,7 +45,7 @@ export class DraftProjectPicker {
   } | null = null;
   private projectSearchTimer: ReturnType<typeof globalThis.setTimeout> | undefined;
 
-  readonly browser: PlaceBrowserState;
+  private browserValue: PlaceBrowserState | undefined;
 
   private projectSearchArgs: readonly unknown[] = [];
   private projectSearchReadValue: ProjectSearchRead | null = null;
@@ -71,8 +68,10 @@ export class DraftProjectPicker {
     private readonly read: () => DraftPlaceBrowserSnapshot,
     private readonly callbacks: DraftPlaceBrowserCallbacks,
     private readonly owner: DraftProjectPickerOwner,
-  ) {
-    this.browser = new PlaceBrowserState(
+  ) {}
+
+  get browser(): PlaceBrowserState {
+    return (this.browserValue ??= new PlaceBrowserState(
       (path) => {
         const snapshot = this.read().context?.gateway.snapshot;
         if (snapshot?.phase !== "connected" || !snapshot.client || !this.browserOpenValue) {
@@ -110,7 +109,7 @@ export class DraftProjectPicker {
           })
           .catch(() => undefined);
       },
-    );
+    ));
   }
 
   retireDisconnectedRegistration() {
@@ -184,39 +183,15 @@ export class DraftProjectPicker {
     // The register affordance and fence follow the draft's directory, not just loading state.
     // A shown error (failed navigate or failed registration) leaves the loaded folder valid,
     // so the action stays available for a retry.
-    return this.browser.loading || !this.browser.draftInLoadedDirectory()
+    return !this.browserValue ||
+      this.browserValue.loading ||
+      !this.browserValue.draftInLoadedDirectory()
       ? null
       : this.browserProjectPathValue;
   }
 
   get browserRegistering(): boolean {
     return this.browserRegistration !== null;
-  }
-
-  resolveProjectRecents(params: {
-    sessions: readonly RecentPlaceSource[];
-    workspace: string;
-    workspaceRoots: readonly string[];
-    isAdmin: boolean;
-  }): ProjectRecent[] {
-    const allowGatewayFolder = (folder: string) =>
-      params.isAdmin || isKnownWorkspacePath(params.workspaceRoots, folder);
-    const serverRecents = this.owner.projectRecents?.filter((recent) =>
-      recent.kind === "project"
-        ? this.owner.projects.some((project) => project.id === recent.projectId)
-        : recent.kind === "repository" || (!recent.execNode && allowGatewayFolder(recent.folder)),
-    );
-    return (
-      serverRecents ??
-      recentPlaces(params.sessions, {
-        workspace: params.workspace,
-        allowGatewayFolder,
-      }).map<ProjectRecent>((recent) => ({
-        kind: "folder",
-        folder: recent.folder,
-        displayName: pathDisplayName(recent.folder),
-      }))
-    );
   }
 
   changeProjectQuery(query: string) {
@@ -332,7 +307,7 @@ export class DraftProjectPicker {
   }
 
   resetBrowser() {
-    this.browser.reset();
+    this.browserValue?.reset();
     this.browserOpenValue = false;
     this.browserNodeIdValue = "";
     this.browserProjectPathValue = null;
@@ -340,7 +315,7 @@ export class DraftProjectPicker {
   }
 
   disconnect() {
-    this.browser.reset();
+    this.browserValue?.reset();
     this.retireRegistration();
     this.clearProjectSearchTimer();
     this.searchProjects([null, false, "", -1]);

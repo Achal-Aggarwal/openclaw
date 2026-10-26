@@ -451,7 +451,7 @@ describe("DraftPlaceBrowser", () => {
     await browser.refreshProjects();
 
     expect(
-      browser.projectPicker(DraftProjectPicker).resolveProjectRecents({
+      browser.resolveProjectRecents({
         sessions: [{ execCwd: "/workspace/recent" }],
         workspace: "/workspace",
         workspaceRoots: ["/workspace"],

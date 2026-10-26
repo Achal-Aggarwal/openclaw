@@ -54,14 +54,7 @@ export function ProjectPickerContent(props: ProjectChipProps) {
     const recentItems =
       props.nativeTerminal || query
         ? []
-        : picker()
-            .resolveProjectRecents({
-              sessions: props.params.context?.sessions.state.result?.sessions ?? [],
-              workspace,
-              workspaceRoots: props.params.place.knownWorkspaceRoots(),
-              isAdmin: props.params.place.isAdmin(),
-            })
-            .filter((recent) => recent.kind !== "project");
+        : props.recents.filter((recent) => recent.kind !== "project");
     const recentSuffixes = disambiguate(recentItems, (recent) => recent.displayName, [
       (recent) => (recent.kind === "folder" ? parentFolderDisplayName(recent.folder) : undefined),
       (recent) => (recent.kind === "folder" ? recent.folder : undefined),

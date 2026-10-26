@@ -32,6 +32,14 @@ export function mountProjectChip(
       return {
         params: { ...params },
         state: resolveProjectChip(state()),
+        recents: nativeTerminal()
+          ? []
+          : place.browser.resolveProjectRecents({
+              sessions: context.sessions.state.result?.sessions ?? [],
+              workspace: place.workspacePath(),
+              workspaceRoots: place.knownWorkspaceRoots(),
+              isAdmin: place.isAdmin(),
+            }),
         nativeTerminal: nativeTerminal(),
       };
     });

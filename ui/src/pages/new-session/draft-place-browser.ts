@@ -3,6 +3,7 @@ import type {
   ProjectRecent,
 } from "../../../../packages/gateway-protocol/src/index.js";
 import type { ApplicationContext } from "../../app/context.ts";
+import { pathDisplayName } from "../../lib/path-display.ts";
 import { projectsForGateway, type ProjectCatalog } from "../../lib/projects.ts";
 import type { DraftGatewayState } from "./draft-gateway-state.ts";
 import type {
@@ -11,7 +12,9 @@ import type {
   ProjectBrowserFocus,
 } from "./draft-place-browser.types.ts";
 import type { DraftProjectPicker } from "./draft-project-picker.ts";
+import { isKnownWorkspacePath } from "./path.ts";
 import type { DraftRemoteProject } from "./project-chip.ts";
+import { recentPlaces, type RecentPlaceSource } from "./recent-places.ts";
 
 type DraftPickerKind = "where" | "project" | "checkout";
 
@@ -67,6 +70,32 @@ export class DraftPlaceBrowser {
 
   get projectRecents(): readonly ProjectRecent[] | undefined {
     return this.projectCatalog?.snapshot.result?.recents;
+  }
+
+  resolveProjectRecents(params: {
+    sessions: readonly RecentPlaceSource[];
+    workspace: string;
+    workspaceRoots: readonly string[];
+    isAdmin: boolean;
+  }): ProjectRecent[] {
+    const allowGatewayFolder = (folder: string) =>
+      params.isAdmin || isKnownWorkspacePath(params.workspaceRoots, folder);
+    const serverRecents = this.projectRecents?.filter((recent) =>
+      recent.kind === "project"
+        ? this.projects.some((project) => project.id === recent.projectId)
+        : recent.kind === "repository" || (!recent.execNode && allowGatewayFolder(recent.folder)),
+    );
+    return (
+      serverRecents ??
+      recentPlaces(params.sessions, {
+        workspace: params.workspace,
+        allowGatewayFolder,
+      }).map<ProjectRecent>((recent) => ({
+        kind: "folder",
+        folder: recent.folder,
+        displayName: pathDisplayName(recent.folder),
+      }))
+    );
   }
 
   get githubHost(): string | undefined {

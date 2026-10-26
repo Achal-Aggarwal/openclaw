@@ -1,8 +1,4 @@
-import type {
-  FsListDirResult,
-  ProjectRecord,
-  ProjectRecent,
-} from "../../../../packages/gateway-protocol/src/index.js";
+import type { FsListDirResult } from "../../../../packages/gateway-protocol/src/index.js";
 import type { ApplicationContext } from "../../app/context.ts";
 
 export type ProjectBrowserFocus = Partial<Record<"browse" | "path", HTMLElement>>;
@@ -22,8 +18,6 @@ export type DraftPlaceBrowserCallbacks = {
 };
 
 export type DraftProjectPickerOwner = {
-  readonly projects: readonly ProjectRecord[];
-  readonly projectRecents: readonly ProjectRecent[] | undefined;
   refreshProjects: (invalidate?: boolean) => Promise<void>;
   close: () => void;
   focusProjectView: (kind: keyof ProjectBrowserFocus) => void;

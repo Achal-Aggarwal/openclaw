@@ -1,4 +1,5 @@
 import { lazy } from "solid-js";
+import type { ProjectRecent } from "../../../../packages/gateway-protocol/src/index.js";
 import { Icon } from "../../components/solid/icon.tsx";
 import { t } from "../../lib/reactive/i18n.ts";
 import type { ProjectBrowserFocus } from "./draft-place-browser.types.ts";
@@ -13,6 +14,7 @@ const ProjectPickerContent = lazy(() => import("./project-picker-content.tsx"), 
 export type ProjectChipProps = {
   params: NewSessionPlaceControlsOptions;
   state: ReturnType<typeof resolveProjectChip>;
+  recents: readonly ProjectRecent[];
   nativeTerminal: boolean;
   focus?: ProjectBrowserFocus;
 };
@@ -33,6 +35,7 @@ export function ProjectChip(props: ProjectChipProps) {
       <ProjectPickerContent
         params={props.params}
         state={props.state}
+        recents={props.recents}
         nativeTerminal={props.nativeTerminal}
         focus={props.focus}
       />

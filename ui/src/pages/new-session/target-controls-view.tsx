@@ -123,12 +123,20 @@ export function NewSessionPlaceControls(props: {
   const folderValue = liveValue(() => props.params.place.folder);
   const deviceFolderValue = liveValue(() => props.params.place.deviceFolder?.path ?? "");
   const view = createMemo(() => {
-    const { data, gateway, place } = props.params;
+    const { context, data, gateway, place } = props.params;
     const browser = place.browser;
     const nativeTerminal = catalog.isTarget(data);
     const cloudProfiles = nativeTerminal || !place.isAdmin() ? [] : gateway.cloudProfiles;
     const branches = place.repository.kind === "git" ? place.repository : null;
     const projects = nativeTerminal ? [] : browser.projects;
+    const recents = nativeTerminal
+      ? []
+      : browser.resolveProjectRecents({
+          sessions: context?.sessions.state.result?.sessions ?? [],
+          workspace: place.workspacePath(),
+          workspaceRoots: place.knownWorkspaceRoots(),
+          isAdmin: place.isAdmin(),
+        });
     const whereState = resolveWhereChip(draftWhereChipParams(place, gateway, cloudProfiles));
     const projectState = resolveProjectChip({
       folder: place.deviceFolder?.path ?? place.folder,
@@ -152,6 +160,7 @@ export function NewSessionPlaceControls(props: {
       browser,
       whereState,
       projectState,
+      recents,
       checkoutState,
     };
   });
@@ -221,6 +230,7 @@ export function NewSessionPlaceControls(props: {
               <ProjectChip
                 params={props.params}
                 state={view().projectState}
+                recents={view().recents}
                 nativeTerminal={view().nativeTerminal}
                 focus={view().browser.projectFocus}
               />
