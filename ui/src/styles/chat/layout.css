@@ -647,7 +647,9 @@ openclaw-pending-session-create {
   position: relative;
   display: flow-root;
   width: 100%;
-  content-visibility: auto;
+  /* The virtualizer already selects the viewport. Skipping these rows would
+     lay them out again when native scrolling reads their new extent. */
+  contain: layout style paint;
 }
 
 /* Virtual-core retains the geometry; parked DOM need not follow every size correction. */
