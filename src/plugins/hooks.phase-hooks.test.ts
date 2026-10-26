@@ -614,7 +614,11 @@ describe("before_prompt_build dispatch", () => {
     expect(leaf.text).toBe("caller");
     expect(map.get("leaf")).toBe(leaf);
     // Replacing detached children must not recreate the envelope's property descriptors.
-    expect(defineProperty.mock.calls.filter(([target]) => envelopes.has(target))).toHaveLength(0);
+    expect(
+      defineProperty.mock.calls.filter(
+        ([target]) => typeof target === "object" && target !== null && envelopes.has(target),
+      ),
+    ).toHaveLength(0);
     // Node preserves Error.cause, so only the detached graph needs a safety scan.
     expect(ownKeys.mock.calls.some(([value]) => value === leaf)).toBe(
       Boolean(process.versions.bun),
