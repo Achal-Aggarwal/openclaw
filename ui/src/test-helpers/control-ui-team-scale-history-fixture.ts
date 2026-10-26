@@ -1,3 +1,5 @@
+import type { ModelCatalogEntry } from "../api/types.ts";
+import type { ChatHistoryResult } from "../pages/chat/chat-history-snapshot.ts";
 import type { createTeamScaleDuplicateReadFixture } from "./control-ui-duplicate-read-fixture.ts";
 import type { ControlUiMockPresenceUser } from "./control-ui-mock-presence.ts";
 import type { ControlUiSessionFixture } from "./control-ui-session-fixtures.ts";
@@ -28,32 +30,102 @@ export function createTeamScaleHistoryFixture(options: {
   largeSnapshot?: boolean;
   richTranscript?: boolean;
   longSessionScenario?: LongSessionScenario;
+  duplicateBootReads?: boolean;
   sessionInfo: ControlUiSessionFixture;
   sender?: ControlUiMockPresenceUser;
   historyStateReceipt?: boolean;
   rowFacts?: boolean;
+  models: ModelCatalogEntry[];
+  inFlightRun?: ChatHistoryResult["inFlightRun"];
   attachments?: ReturnType<typeof createTeamScaleDuplicateReadFixture>["attachments"];
 }) {
   const session = options.sessionInfo;
-  const configureHistory = <T>(messages: T[]) =>
-    options.largeSnapshot || options.historyStateReceipt
-      ? {
-          messages,
-          sessionId: session.sessionId,
-          sessionInfo: session,
-          hasMore: false,
-          totalMessages: messages.length,
-          metadata: { commands: [], models: [] },
-          ...(options.historyStateReceipt
-            ? {
-                stateRevision: {
-                  sessionInfo: "fixture-session-v1",
-                  commands: "fixture-commands-v1",
-                },
-              }
-            : {}),
-        }
-      : undefined;
+  const selectHistory = <T>(
+    messages: T[],
+    pages: Array<{ offset: number; loadedMessages: number; messages: T[] }> = [],
+  ) => {
+    const deltaCursor = JSON.stringify([
+      "team-scale-history-v1",
+      session.key,
+      options.now,
+      options.messageCount,
+      options.largeSnapshot === true,
+      options.duplicateBootReads === true,
+      options.historyStateReceipt === true,
+      options.richTranscript === true,
+      options.longSessionScenario ?? null,
+    ]);
+    const configuredHistory = {
+      messages,
+      sessionId: session.sessionId,
+      sessionInfo: session,
+      deltaCursor,
+      pendingInputs: { items: [], total: 0, queuedCount: 0 },
+      stateRevision: {
+        sessionInfo: "fixture-session-v1",
+        commands: "fixture-commands-v1",
+        pendingInputs: "fixture-pending-inputs-v1",
+      },
+      ...(options.largeSnapshot || options.historyStateReceipt
+        ? {
+            hasMore: false,
+            totalMessages: messages.length,
+            metadata: { commands: [], models: [] },
+          }
+        : {
+            thinkingLevel: null,
+            metadata: { commands: [], models: options.models },
+            ...(options.inFlightRun ? { inFlightRun: options.inFlightRun } : {}),
+          }),
+    };
+    const windowedHistory = (count: number) => ({
+      ...configuredHistory,
+      messages: messages.slice(-count),
+      hasMore: messages.length > count,
+      ...(messages.length > count ? { nextOffset: count } : {}),
+      totalMessages: messages.length,
+    });
+    // Explicit long-session comparisons measure all rows; the normal fixture models boot's window.
+    const fullInitialWindow =
+      options.longSessionScenario !== "paging" &&
+      (options.historyStateReceipt || options.longSessionScenario !== undefined);
+    const limitedHistory = windowedHistory(fullInitialWindow ? messages.length : 80);
+    return {
+      cases: [
+        {
+          match: { sessionKey: session.key, cursor: deltaCursor },
+          response: {
+            kind: "delta",
+            messages: [],
+            deltaCursor,
+            sessionInfo: configuredHistory.sessionInfo,
+            metadata: configuredHistory.metadata,
+            pendingInputs: configuredHistory.pendingInputs,
+            stateRevision: configuredHistory.stateRevision,
+            ...(options.inFlightRun ? { inFlightRun: options.inFlightRun } : {}),
+          },
+        },
+        ...pages.map(({ offset, loadedMessages, messages: pageMessages }) => ({
+          match: { sessionKey: session.key, offset },
+          response: {
+            messages: pageMessages,
+            hasMore: loadedMessages < messages.length,
+            ...(loadedMessages < messages.length ? { nextOffset: loadedMessages } : {}),
+            totalMessages: messages.length,
+            sessionId: session.sessionId,
+          },
+        })),
+        {
+          match: { sessionKey: session.key, limit: 80, knownState: {} },
+          response: limitedHistory,
+        },
+        {
+          match: { sessionKey: session.key },
+          response: options.longSessionScenario === "paging" ? limitedHistory : configuredHistory,
+        },
+      ],
+    };
+  };
   const messageIds = Array.from(
     { length: options.messageCount },
     (_, index) => `team-message-${index + 1}`,
@@ -127,7 +199,7 @@ export function createTeamScaleHistoryFixture(options: {
       historyMessages,
       workload,
       pagination: undefined,
-      configuredHistory: configureHistory(historyMessages),
+      selectedHistory: selectHistory(historyMessages),
     };
   }
   const messagesPerWidget = Math.ceil(options.messageCount / options.inlineWidgets);
@@ -263,10 +335,15 @@ export function createTeamScaleHistoryFixture(options: {
       }),
     );
   }
-  const configuredHistory = configureHistory(historyMessages);
   if (options.longSessionScenario !== "paging") {
     const workload: LongSessionWorkload = { scenario: "mixed" };
-    return { messageIds, historyMessages, workload, pagination: undefined, configuredHistory };
+    return {
+      messageIds,
+      historyMessages,
+      workload,
+      pagination: undefined,
+      selectedHistory: selectHistory(historyMessages),
+    };
   }
   const initialMessageCount = Math.min(80, historyMessages.length);
   const pages = Array.from(
@@ -296,38 +373,17 @@ export function createTeamScaleHistoryFixture(options: {
       anchorEntryId,
     })),
   };
-  const initialResponse = {
-    messages: historyMessages.slice(-initialMessageCount),
-    hasMore: pages.length > 0,
-    ...(pages.length ? { nextOffset: initialMessageCount } : {}),
-    totalMessages: historyMessages.length,
-    sessionId: session.sessionId,
-    sessionInfo: session,
-    metadata: { commands: [], models: [] },
-  };
   const pagination = {
     deferredRequests: pages.map(({ offset }) => ({
       method: "chat.history",
       match: { sessionKey: session.key, offset },
     })),
-    methodResponses: {
-      "chat.startup": initialResponse,
-      "chat.history": {
-        cases: [
-          ...pages.map(({ offset, loadedMessages, messages }) => ({
-            match: { sessionKey: session.key, offset },
-            response: {
-              messages,
-              hasMore: loadedMessages < historyMessages.length,
-              ...(loadedMessages < historyMessages.length ? { nextOffset: loadedMessages } : {}),
-              totalMessages: historyMessages.length,
-              sessionId: session.sessionId,
-            },
-          })),
-          { match: { sessionKey: session.key }, response: initialResponse },
-        ],
-      },
-    },
   };
-  return { messageIds, historyMessages, workload, pagination, configuredHistory };
+  return {
+    messageIds,
+    historyMessages,
+    workload,
+    pagination,
+    selectedHistory: selectHistory(historyMessages, pages),
+  };
 }

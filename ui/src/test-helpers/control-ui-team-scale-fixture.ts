@@ -65,6 +65,7 @@ type FixtureOptions = {
   duplicateBootReads?: boolean;
   closedMenuMembers?: boolean;
   largeSnapshot?: boolean;
+  historyStateReceipt?: boolean;
   rowFacts?: boolean;
   offRosterSession?: boolean;
   transcriptMessages?: number;
@@ -73,7 +74,6 @@ type FixtureOptions = {
   dashboardMcpApp?: { font: Buffer };
   /** Opt into a scripted HTML dashboard with an independently fetched web font. */
   dashboardWidgetFontUrl?: string;
-  historyStateReceipt?: boolean;
   dashboardPaintMarker?: boolean;
 };
 
@@ -205,35 +205,36 @@ export function createControlUiTeamScaleFixture(options: FixtureOptions = {}) {
     now,
     selectedSessionKey,
   );
-  const {
-    messageIds,
-    historyMessages,
-    workload: longSessionWorkload,
-    pagination,
-    configuredHistory,
-  } = createTeamScaleHistoryFixture({
-    messageCount: counts.transcriptMessages,
-    inlineWidgets: counts.inlineWidgets,
-    now,
-    largeSnapshot: options.largeSnapshot,
-    richTranscript: options.richTranscript,
-    longSessionScenario: options.longSessionScenario,
-    rowFacts: options.rowFacts,
-    attachments: duplicateReads?.attachments,
-    sender: options.transcriptAvatars ? transcriptSender : undefined,
-    historyStateReceipt: options.historyStateReceipt,
-    sessionInfo: pinnedRows[0]!,
-  });
-  const historySnapshot = () => ({
-    sessionId: pinnedRows[0]!.sessionId,
-    sessionInfo: pinnedRows[0]!,
-    messages: historyMessages,
-  });
+  const models = [
+    { id: "gpt-5-mini", name: "Fixture reasoning model", provider: "openai", reasoning: true },
+  ];
   const inFlightRun = () => ({
     runId: TEAM_SCALE_LIVE_RUN_ID,
     text: "Synthetic streaming progress 0",
     startedAt: now,
     events: [],
+  });
+  const {
+    messageIds,
+    historyMessages,
+    selectedHistory,
+    workload: longSessionWorkload,
+    pagination,
+  } = createTeamScaleHistoryFixture({
+    messageCount: counts.transcriptMessages,
+    inlineWidgets: counts.inlineWidgets,
+    now,
+    largeSnapshot: options.largeSnapshot,
+    historyStateReceipt: options.historyStateReceipt,
+    richTranscript: options.richTranscript,
+    longSessionScenario: options.longSessionScenario,
+    rowFacts: options.rowFacts,
+    duplicateBootReads: options.duplicateBootReads,
+    sessionInfo: pinnedRows[0]!,
+    models,
+    inFlightRun: options.liveRun ? inFlightRun() : undefined,
+    attachments: duplicateReads?.attachments,
+    sender: options.transcriptAvatars ? transcriptSender : undefined,
   });
   const presenceEntries: PresenceEntry[] = people.map((person) => ({
     instanceId: person.instanceId,
@@ -378,6 +379,7 @@ export function createControlUiTeamScaleFixture(options: FixtureOptions = {}) {
     ...(options.rowFacts ? { sessionInfo: pinnedRows[0]! } : {}),
     sessions,
     presenceUsers: people,
+    models,
     historyMessages,
     ...(pagination ? { deferredRequests: pagination.deferredRequests } : {}),
     ...(options.richTranscript
@@ -390,6 +392,7 @@ export function createControlUiTeamScaleFixture(options: FixtureOptions = {}) {
                 now,
                 richTranscript: true,
                 sessionInfo: pinnedRows[1]!,
+                models,
                 sender: options.transcriptAvatars ? transcriptSender : undefined,
               }).historyMessages,
             },
@@ -432,10 +435,8 @@ export function createControlUiTeamScaleFixture(options: FixtureOptions = {}) {
         : {}),
       "question.list": { questions: [] },
       ...(options.dashboardWidgetFontUrl ? { "mcp.app.discover": { servers: [] } } : {}),
-      ...(configuredHistory
-        ? { "chat.startup": configuredHistory, "chat.history": configuredHistory }
-        : {}),
-      ...pagination?.methodResponses,
+      "chat.startup": selectedHistory,
+      "chat.history": selectedHistory,
       ...duplicateReads?.methodResponses,
       "agents.list": agents,
       "agent.identity.get": {
@@ -716,7 +717,14 @@ export function createControlUiTeamScaleFixture(options: FixtureOptions = {}) {
     sidebarLiveChurn: options.sidebarLiveChurn
       ? { equivalentAfterMs: 14_000, quietAfterMs: 15_000, durationMs: 20_000 }
       : undefined,
-    liveHistory: options.liveRun ? { ...historySnapshot(), inFlightRun: inFlightRun() } : undefined,
+    liveHistory: options.liveRun
+      ? {
+          sessionId: pinnedRows[0]!.sessionId,
+          sessionInfo: pinnedRows[0]!,
+          messages: historyMessages,
+          inFlightRun: inFlightRun(),
+        }
+      : undefined,
     counts: { ...counts, sessions: sessions.length, pinned: pinnedKeys.length },
     assets,
   };
