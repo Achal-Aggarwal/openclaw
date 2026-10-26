@@ -115,7 +115,7 @@ it.each([
   Object.defineProperty(viewport, "scrollTop", { configurable: true, get: readOffset });
   const refs = new TranscriptRowRefs(virtualizer, {
     isCurrentRow: (row) => viewport.contains(row),
-    beforeMeasure: () => {},
+    beforeMeasure: () => void viewport.scrollTop,
     onMount: () => {},
   });
   const mounted = indexes.map((index) => expectDefined(rows[index], "mounted row"));
