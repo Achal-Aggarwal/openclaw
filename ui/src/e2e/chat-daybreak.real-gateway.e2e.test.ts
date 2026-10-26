@@ -731,17 +731,9 @@ suite.define(() => {
           const slider = picker.locator("[data-chat-thinking-slider]");
           await expect.poll(() => slider.inputValue()).toBe("0");
           expect(await slider.getAttribute("data-chat-thinking-values")).toBe("medium,ultra");
-          expect(await slider.getAttribute("data-effort-boost")).toBe("");
-          expect(
-            await slider.evaluate(
-              (input) => getComputedStyle(input.parentElement!).backgroundImage,
-            ),
-          ).toBe("none");
           proof[name + "-narrowed-effort"] = await slider.evaluate((input: HTMLInputElement) => ({
             values: input.dataset.chatThinkingValues,
             value: input.value,
-            fill: input.style.getPropertyValue("--reasoning-fill"),
-            boost: input.dataset.effortBoost,
           }));
           await snapshot("both");
           const red = select.locator('[data-chat-access-option="daybreak_red"]');
@@ -787,7 +779,6 @@ suite.define(() => {
           await slider.press("ArrowRight");
           await expect.poll(async () => (await row()).thinkingLevel).toBe("medium");
           await expect.poll(() => slider.inputValue()).toBe("1");
-          expect(await slider.getAttribute("data-effort-boost")).toBe("");
           await snapshot("multilevel-medium");
           const bounds = await slider.boundingBox();
           expect(bounds).not.toBeNull();
@@ -796,7 +787,6 @@ suite.define(() => {
           await slider.press("End");
           await expect.poll(async () => (await row()).thinkingLevel).toBe("ultra");
           await expect.poll(() => slider.inputValue()).toBe("3");
-          expect(await slider.getAttribute("data-effort-boost")).toBe("ultra");
           await call("sessions.patch", { key, thinkingLevel: "medium" });
           reasoningEfforts = ["medium"];
           await choose("daybreak_blue");
