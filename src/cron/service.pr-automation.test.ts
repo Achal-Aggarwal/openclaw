@@ -2,10 +2,10 @@ import path from "node:path";
 import { expectDefined } from "@openclaw/normalization-core";
 import { asRecord } from "@openclaw/normalization-core/record-coerce";
 import { beforeEach, expect, it, vi } from "vitest";
-import {
-  ciAutomationJobSpec,
-  type CiAutomationOption,
-  type CiAutomationTarget,
+import { ciAutomationJobSpec } from "../../ui/src/lib/session-pr-automation-operation.js";
+import type {
+  CiAutomationOption,
+  CiAutomationTarget,
 } from "../../ui/src/lib/session-pr-automation-spec.js";
 import { resolveAdmittedRunActiveAssertion } from "../agents/admitted-run-context.js";
 import { persistAuthProfileBatch } from "../agents/auth-profiles/upsert-with-lock.js";

@@ -121,6 +121,7 @@ it.each(["explicit", "segment", "tool", "cached"] as const)(
             ]
           : [],
     });
+    await waitForSolid(() => expect(container.textContent).toContain("Checking the result."));
     await flushDeferredRowPrune();
     if (source === "explicit") {
       expect(container.querySelector(".chat-group.assistant .chat-text")?.textContent?.trim()).toBe(
