@@ -64,7 +64,7 @@ async function transcriptFixture(
       vi.fn((id: number) => idleCallbacks.delete(id)),
     );
   }
-  vi.mocked(Element.prototype.getBoundingClientRect).mockReturnValue(
+  vi.spyOn(Element.prototype, "getBoundingClientRect").mockReturnValue(
     new DOMRect(0, 0, 800, viewportHeight),
   );
   const container = document.body.appendChild(document.createElement("div"));
