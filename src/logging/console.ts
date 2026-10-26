@@ -20,8 +20,6 @@ type ConsoleSettings = {
   level: LogLevel;
   style: ConsoleStyle;
 };
-export type ConsoleLoggerSettings = ConsoleSettings;
-
 function normalizeConsoleLevel(level?: string): LogLevel {
   if (isVerbose()) {
     return "debug";
@@ -62,7 +60,7 @@ function resolveConsoleSettings(): ConsoleSettings {
   return { level, style };
 }
 
-export function getConsoleSettings(): ConsoleLoggerSettings {
+export function getConsoleSettings(): ConsoleSettings {
   const cached = loggingState.cachedConsoleSettings as ConsoleSettings | null;
   if (cached) {
     return cached;

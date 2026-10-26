@@ -336,7 +336,7 @@ export function SessionAutomationRead(props: {
   );
 }
 
-export type ChatSummaryAutomationsProps = SessionAutomationInventoryProps & {
+type ChatSummaryAutomationsProps = SessionAutomationInventoryProps & {
   /** Supplied only by the native desktop Details composition. */
   desktop?: { expanded: boolean; onExpandedChange: (expanded: boolean) => void };
   onNavigate?: (jobId: string) => void;

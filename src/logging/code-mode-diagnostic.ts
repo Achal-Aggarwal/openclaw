@@ -12,7 +12,7 @@ const MAX_NAMES = 24;
 const MAX_NAME_LENGTH = 80;
 const failureLog = createSubsystemLogger("agents/code-mode");
 
-export type CodeModeFailureContext = {
+type CodeModeFailureContext = {
   sessionId?: string;
   sessionKey?: string;
   runId?: string;

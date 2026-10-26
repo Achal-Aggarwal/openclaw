@@ -73,7 +73,7 @@ type AttachmentProps = {
   onOpenSidebar?: (content: SidebarContent) => void;
   onAssistantAttachmentLoaded?: () => void;
 };
-export type MessageAttachmentProps = AttachmentProps & {
+type MessageAttachmentProps = AttachmentProps & {
   item: AssistantAttachmentItem;
   presentation?: "inline" | "card" | "preview";
 };
