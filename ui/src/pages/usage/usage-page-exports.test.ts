@@ -1,9 +1,9 @@
 /* @vitest-environment jsdom */
 
 import { afterEach, expect, it, vi } from "vitest";
+import type { SessionsUsageResult } from "../../../../src/shared/usage-types.js";
 import * as downloads from "../../lib/download.ts";
 import { selectUsageExport } from "./export-menu.test-support.ts";
-import type { UsageJsonExport } from "./types.ts";
 import {
   cacheSnapshot,
   cleanupUsagePageTest,
@@ -194,7 +194,9 @@ it.each<
     }
     const payload = JSON.parse(
       download.mock.calls.find(([filename]) => filename.endsWith(".json"))![1],
-    ) as UsageJsonExport;
+    ) as Pick<SessionsUsageResult, "sessions" | "totals"> & {
+      daily: NonNullable<SessionsUsageResult["aggregates"]["costDaily"]>;
+    };
     expect
       .soft(payload.sessions.map((session) => session.key).toSorted((a, b) => a.localeCompare(b)))
       .toEqual(keys);

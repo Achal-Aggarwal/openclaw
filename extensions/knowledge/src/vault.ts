@@ -8,8 +8,7 @@ import { EvidenceInspector, inspectEvidence, withEvidenceFile } from "./evidence
 import { EvidenceReadInput } from "./evidence-read-contract.js";
 import { readEvidence } from "./evidence-read.js";
 import { resolveLinks } from "./markdown-links.js";
-import { mergeDetail } from "./merge-view.js";
-import { linkTargets, mergeRedirects } from "./merge.js";
+import { linkTargets, mergeRedirects, referenceIds } from "./merge.js";
 import type { Evidence } from "./model.js";
 import { expandTypes } from "./ontology.js";
 import { queryFreshness } from "./query-freshness.js";
@@ -289,6 +288,23 @@ export class SampleVault extends VaultScanner {
         });
       })
       .slice(0, 100);
+    const byId = new Map(data.records.map((record) => [record.id, record]));
+    const survivor = redirects.get(r.id);
+    const mergedInto = survivor && byId.get(survivor) ? summary(byId.get(survivor)!) : undefined;
+    // Absorbed pages are history, so they are listed even though they are not current records.
+    const mergedFrom = [...redirects]
+      .filter(([, to]) => to === r.id)
+      .flatMap(([from]) => (byId.get(from) ? [summary(byId.get(from)!)] : []));
+    const redirected = [
+      ...new Set([
+        ...referenceIds(r.metadata),
+        ...(r.metadata.source_page ? [r.metadata.source_page] : []),
+      ]),
+    ].flatMap((from) =>
+      redirects.has(from) && current.some((record) => record.id === redirects.get(from))
+        ? [{ from, to: redirects.get(from)! }]
+        : [],
+    );
     const targets = linkTargets(data.records, current);
     return {
       sourceFiles,
@@ -304,7 +320,9 @@ export class SampleVault extends VaultScanner {
       },
       issues: data.issues.filter((i) => i.path === r.path),
       references,
-      ...mergeDetail(data.records, current, r),
+      ...(mergedInto ? { mergedInto } : {}),
+      ...(mergedFrom.length ? { mergedFrom: mergedFrom.slice(0, 100) } : {}),
+      ...(redirected.length ? { redirects: redirected.slice(0, 100) } : {}),
       links: resolveLinks(r, targets.candidates, targets.canonical),
       evidence,
       evidenceTotal: r.metadata.evidence?.length ?? 0,

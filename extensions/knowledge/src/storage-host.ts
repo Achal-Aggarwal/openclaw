@@ -1,6 +1,5 @@
 import type { MessagePort } from "node:worker_threads";
 import type { VaultAccess } from "./access.js";
-import { catalogFacts } from "./catalog.js";
 import { inspectRecord, inspectOntology } from "./inspection.js";
 import { mergeCandidates as findMergeCandidates } from "./merge.js";
 import type { LoadedRecord } from "./model.js";
@@ -9,6 +8,7 @@ import { withinBudget } from "./response-budget.js";
 import { eligible } from "./retrieval.js";
 import { AUTHORITY_REVOKED, type HostMessage, type WorkerMessage } from "./storage-protocol.js";
 import { KnowledgeStorage } from "./storage.js";
+import { digest } from "./vault.js";
 
 type Storage = KnowledgeStorage;
 type Access = VaultAccess;
@@ -117,7 +117,29 @@ export const operations = {
       };
     }),
   // Catalog facts for the status operation; service-level fields stay on the main thread.
-  catalog: (s: Storage, a: Access) => s.run(a, async (vault) => catalogFacts(await vault.scan())),
+  catalog: (s: Storage, a: Access) =>
+    s.run(a, async (vault) => {
+      const data = await vault.scan();
+      const active = eligible(data, undefined, false);
+      return {
+        checkedAt: data.checkedAt,
+        records: active.length,
+        issues: data.issues.length,
+        definitions: data.ontology?.definitions.length ?? 0,
+        ontologyAvailable: Boolean(data.ontology),
+        ontologyFingerprint: data.ontology?.fingerprint ?? "",
+        // Content, evidence validation, ontology and time-based eligibility can
+        // change without changing the record count. checkedAt is not a revision.
+        snapshot: digest(
+          JSON.stringify([
+            data.records.map((r) => [r.id, r.path, r.hash, r.valid]),
+            active.map((r) => r.id),
+            data.ontology?.fingerprint,
+            data.issues,
+          ]),
+        ),
+      };
+    }),
   memoryGet: (
     s: Storage,
     a: Access,

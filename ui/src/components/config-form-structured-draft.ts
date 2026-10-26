@@ -1,15 +1,7 @@
 import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import { isSupportedConfigValueValid } from "./config-form.constraints.ts";
-import type { ConfigNodeRenderParams, ConfigNodeRenderer } from "./config-form.node.shared.ts";
+import type { ConfigNodeRenderParams } from "./config-form.node.shared.ts";
 import { schemaType } from "./config-form.shared.ts";
-
-export type ConfigFormStructuredDraftProps = {
-  identity: string;
-  sourceIdentity: unknown;
-  initialValue: Record<string, unknown> | unknown[];
-  params: ConfigNodeRenderParams;
-  renderNode: ConfigNodeRenderer;
-};
 
 export function resolveStructuredDraftInitialValue(
   params: ConfigNodeRenderParams,

@@ -3,12 +3,18 @@ import type { JSX as SolidJSX } from "@solidjs/web";
 import { createMemo, createSignal, Show } from "solid-js";
 import { copyWithPathPatch } from "../lib/config-form-utils.ts";
 import { t } from "../lib/reactive/i18n.ts";
-import type { ConfigFormStructuredDraftProps } from "./config-form-structured-draft.ts";
 import { isSupportedConfigValueValid } from "./config-form.constraints.ts";
+import type { ConfigNodeRenderParams, ConfigNodeRenderer } from "./config-form.node.shared.ts";
 import { configFieldId, schemaType } from "./config-form.shared.ts";
 
 export function ConfigStructuredDraft(
-  props: ConfigFormStructuredDraftProps & { class?: string },
+  props: {
+    identity: string;
+    sourceIdentity: unknown;
+    initialValue: Record<string, unknown> | unknown[];
+    params: ConfigNodeRenderParams;
+    renderNode: ConfigNodeRenderer;
+  } & { class?: string },
 ): SolidJSX.Element {
   const scope = createMemo(
     () => ({

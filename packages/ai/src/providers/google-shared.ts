@@ -14,20 +14,13 @@ import {
 import { clampThinkingLevel } from "../model-utils.js";
 import { transformProviderMessages as transformMessages } from "../provider-transcript-transform.js";
 import { googleFlashSupportsMinimalThinking } from "../transports/google-thinking-level.js";
-import {
-  failTransportStream,
-  notifyProviderStreamOpened,
-  transportAbortError,
-} from "../transports/transport-stream-shared.js";
 import type {
-  AssistantMessage,
   Context,
   Model,
   SimpleStreamOptions,
   ThinkingLevel as AgentThinkingLevel,
   StreamOptions,
 } from "../types.js";
-import type { AssistantMessageEventStream } from "../utils/event-stream.js";
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.js";
 import { stripSystemPromptCacheBoundary } from "../utils/system-prompt-cache-boundary.js";
 import {
@@ -35,7 +28,6 @@ import {
   requiresGoogleToolCallId,
   convertGoogleTools,
 } from "./google-messages.js";
-import { consumeGoogleGenerateContentStream } from "./google-stream.js";
 import { adjustMaxTokensForThinking } from "./simple-options.js";
 
 export type GoogleApiType = "google-generative-ai" | "google-vertex" | "google-interactions";
@@ -60,46 +52,6 @@ export type GoogleGenerateContentClient = {
 };
 
 type ClampedGoogleThinkingLevel = Exclude<AgentThinkingLevel, "xhigh" | "max">;
-
-export async function runGoogleGenerateContentLifecycle<T extends GoogleApiType>(params: {
-  stream: AssistantMessageEventStream;
-  model: Model<T>;
-  output: AssistantMessage;
-  options?: Pick<StreamOptions, "signal" | "onPayload">;
-  createClient: () => GoogleGenerateContentClient;
-  buildParams: () => GenerateContentParameters;
-  nextToolCallId: (name: string | undefined) => string;
-}): Promise<void> {
-  const { stream, model, output, options } = params;
-
-  try {
-    const client = params.createClient();
-    let requestParams = params.buildParams();
-    const nextParams = await options?.onPayload?.(requestParams, model);
-    if (nextParams !== undefined) {
-      requestParams = nextParams as GenerateContentParameters;
-    }
-    const googleStream = await client.models.generateContentStream(requestParams);
-    const googleIterator = googleStream[Symbol.asyncIterator]();
-    await notifyProviderStreamOpened({
-      options,
-      cancelStream: async () => {
-        await googleIterator.return?.();
-      },
-    });
-    await consumeGoogleGenerateContentStream({
-      chunks: { [Symbol.asyncIterator]: () => googleIterator },
-      model,
-      output,
-      stream,
-      signal: options?.signal,
-      nextToolCallId: params.nextToolCallId,
-    });
-  } catch (error) {
-    const failure = options?.signal?.aborted ? transportAbortError(options.signal) : error;
-    failTransportStream({ stream, output, error: failure, signal: options?.signal });
-  }
-}
 
 export function buildGoogleGenerateContentParams<T extends GoogleApiType>(
   model: Model<T>,

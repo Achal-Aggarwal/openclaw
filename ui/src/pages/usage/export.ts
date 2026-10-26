@@ -9,7 +9,6 @@ import { showToast } from "../../lib/toast.ts";
 import { isUsageCacheIncomplete } from "./cache-status.ts";
 import { formatIsoDate } from "./helpers.ts";
 import { buildDailyCsv, buildSessionsCsv } from "./query.ts";
-import type { UsageJsonExport } from "./usage-state-types.ts";
 
 registerUsageEnglish();
 
@@ -43,7 +42,7 @@ export function createUsageExportRequest(
         throw new Error(t("usage.export.incomplete"));
       }
       const selectedKeys = new Set(selectedQuery.selectedSessions);
-      const data: UsageJsonExport = {
+      const data = {
         sessions: selectedKeys.size
           ? result.sessions.filter((session) => selectedKeys.has(session.key))
           : result.sessions,

@@ -13,7 +13,6 @@ import {
 } from "@openclaw/normalization-core/number-coercion";
 import { readNonEmptyStringPreservingWhitespace } from "@openclaw/normalization-core/string-coerce";
 import type { ChatCompletion, ChatCompletionChunk } from "openai/resources/chat/completions.js";
-import type { OpenAICompletionsOptions } from "../provider-options.js";
 import {
   createOpenAICompletionsToolCallDeltaNormalizer,
   createOpenAIEncryptedToolCallReasoningTracker,
@@ -37,7 +36,6 @@ import { createDsmlRecoverer } from "./openai-completions-dsml.js";
 import { createGemmaToolCallRecoverer } from "./openai-completions-gemma.js";
 import { getCompat } from "./openai-transport-params.js";
 import {
-  isOpenAICompletionsThinkingEnabled,
   log,
   parseOpenAICompletionsUsage,
   readOpenAICompletionsContentDeltas,
@@ -692,15 +690,4 @@ function warnMissingStreamingUsage(model: OpenAIModeModel) {
       `on the model in models.providers.${model.provider}.models.`,
     { provider: model.provider, model: model.id },
   );
-}
-
-export function shouldEmitOpenAICompletionsReasoning(
-  model: OpenAIModeModel,
-  options: OpenAICompletionsOptions | undefined,
-) {
-  if (!model.reasoning) {
-    return false;
-  }
-  const effort = options?.reasoningEffort ?? options?.reasoning ?? "high";
-  return Boolean(effort) && isOpenAICompletionsThinkingEnabled(effort);
 }

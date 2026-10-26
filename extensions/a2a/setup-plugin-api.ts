@@ -1,1 +1,1 @@
-export { a2aChannelSetupPlugin } from "./src/channel.setup.js";
+export { a2aChannelSetupPlugin } from "./src/channel-base.js";

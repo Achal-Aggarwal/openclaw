@@ -34,13 +34,19 @@ import type {
   ConversationBindingsWorkerInput,
   ConversationBindingSnapshot,
 } from "./conversation-binding-facts.types.js";
-import type { ConversationDeliveryRecord } from "./conversation-delivery-store.types.js";
+import type {
+  ConversationDeliveryLookup,
+  ConversationDeliveryRecord,
+} from "./conversation-delivery-store.types.js";
 import type {
   ConversationRowsWorkerInput,
   ConversationRecord,
 } from "./conversation-registry.types.js";
 import type { ArchivedSessionEvictionBatch } from "./disk-budget.types.js";
-import type { SessionGoalOperationLookupResult } from "./goals-operations.types.js";
+import type {
+  SessionGoalOperationLookup,
+  SessionGoalOperationLookupResult,
+} from "./goals-operations.types.js";
 import type {
   SessionPendingArchivesWorkerInput,
   SessionArchivePruningWorkerInput,
@@ -96,6 +102,7 @@ import type {
   PendingInputHistorySnapshot,
 } from "./session-pending-input-history.types.js";
 import type * as PendingInputSourceWorker from "./session-pending-input-source.types.js";
+import type { StoredMessageReactionSummary } from "./session-reaction-store.types.js";
 import type {
   SessionRetirementReadResult,
   SessionRetirementReadWorkerInput,
@@ -105,15 +112,11 @@ import type {
   SessionRowFactsWorkerResult,
   SessionRowPresenceWorkerInput,
 } from "./session-row-facts.types.js";
-import type {
-  SessionMembersWorkerInput,
-  SessionMembershipFactsWorkerInput,
-  SessionSuggestionsWorkerInput,
-  SessionReactionsWorkerInput,
-  SessionReactionsWorkerResult,
-} from "./session-sharing-read.types.js";
 import type { SessionMembersSnapshot } from "./session-sharing-store.kernel.js";
-import type { StoredSessionSuggestion } from "./session-sharing-store.types.js";
+import type {
+  SessionSuggestionListParams,
+  StoredSessionSuggestion,
+} from "./session-sharing-store.types.js";
 import type { ResolvedSqliteStoreTarget } from "./session-sqlite-target.js";
 import type {
   SessionStoreProjectionWorkerInput,
@@ -172,11 +175,12 @@ import type {
   SessionProgressCardWorkerInput,
   VoiceSessionsWorkerInput,
 } from "./session-transcript-worker-read.types.js";
-import type {
-  ConversationDeliveryWorkerInput,
-  SessionGoalOperationReceiptWorkerInput,
-  SessionPendingInputReceiptsWorkerInput,
-} from "./session-transcript-worker-receipts.types.js";
+
+type SharingInput<Kind extends string> = {
+  kind: Kind;
+  database: { agentId: string; path: string };
+  env: NodeJS.ProcessEnv;
+};
 
 export type {
   PreparedSessionTranscriptHydration,
@@ -317,19 +321,48 @@ export type SessionHistoryWorkerInput =
   | SessionActivitySummarySourceWorkerInput
   | SessionRowPresenceWorkerInput
   | SessionProjectionStatusWorkerInput
-  | SessionMembersWorkerInput
-  | SessionSuggestionsWorkerInput
-  | SessionReactionsWorkerInput
-  | SessionMembershipFactsWorkerInput
+  | (SharingInput<"session-members"> & {
+      sessionKey: string;
+      continuation?: CanonicalSessionReaderContinuation;
+    })
+  | (SharingInput<"session-suggestions"> & {
+      sessionKey: string;
+      params: SessionSuggestionListParams;
+    })
+  | (SharingInput<"session-reactions"> & {
+      sessionKey: string;
+      sessionId: string;
+    })
+  | (SharingInput<"session-membership-facts"> & {
+      sessionKeys?: readonly string[];
+      continuation?: CanonicalSessionReaderContinuation;
+    })
   | SessionProgressCardWorkerInput
   | PendingInputHistoryWorkerInput
-  | SessionPendingInputReceiptsWorkerInput
+  | {
+      kind: "session-pending-input-receipts";
+      database: { agentId: string; path: string };
+      agentId: string;
+      sessionKey: string;
+      sessionId: string;
+      runIds: readonly string[];
+      env: NodeJS.ProcessEnv;
+    }
   | PendingInputSourceWorker.Input
   | HarnessCompletionSourceWorker.Input
-  | SessionGoalOperationReceiptWorkerInput
+  | (SessionGoalOperationLookup & {
+      kind: "goal-operation-receipt";
+      database: { agentId: string; path: string };
+      env: NodeJS.ProcessEnv;
+    })
   | ConversationRowsWorkerInput
   | ConversationBindingsWorkerInput
-  | ConversationDeliveryWorkerInput
+  | {
+      kind: "conversation-delivery";
+      database: { agentId: string; path: string };
+      env: NodeJS.ProcessEnv;
+      lookup: ConversationDeliveryLookup;
+    }
   | SessionEntryListWorkerInput
   | SessionEntryReadWorkerInput
   | SessionRuntimeTargetWorkerInput
@@ -446,7 +479,10 @@ export type SessionTranscriptWorkerValues = SessionTranscriptInventoryWorkerValu
     "projection-status": boolean;
     "session-members": { kind: "session-members" } & SessionMembersSnapshot;
     "session-suggestions": { kind: "session-suggestions"; suggestions: StoredSessionSuggestion[] };
-    "session-reactions": SessionReactionsWorkerResult;
+    "session-reactions": {
+      kind: "session-reactions";
+      reactions: Record<string, StoredMessageReactionSummary[]>;
+    };
     "session-membership-facts": SessionMembershipFacts;
     "session-progress-card": { kind: "session-progress-card"; card: ProgressCard | null };
     "goal-operation-receipt": {

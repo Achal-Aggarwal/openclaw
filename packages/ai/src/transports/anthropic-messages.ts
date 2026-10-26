@@ -15,7 +15,6 @@ import {
 import { asOptionalObjectRecord } from "@openclaw/normalization-core/record-coerce";
 import { getAiTransportHost } from "../host.js";
 import {
-  createAnthropicInlineImageBudget,
   normalizeAnthropicInlineContent,
   resolveAnthropicImageMediaType,
   type AnthropicInlineImageBudget,
@@ -237,7 +236,7 @@ export async function buildAnthropicRequest(
   const modelRetainsRuntimeContext = bindsClaudeThinkingPrefix(model);
   const inHistorySystemUpdates =
     !isOAuthToken && isDirectAnthropicModel(model) && supportsClaudeInHistorySystemMessages(model);
-  const imageBudget = createAnthropicInlineImageBudget();
+  const imageBudget = { totalBytes: 0 };
   const activeToolTurnAssistantIndex = replayThinkingEnabled
     ? -1
     : findActiveAnthropicToolTurnAssistantIndex(transformed);

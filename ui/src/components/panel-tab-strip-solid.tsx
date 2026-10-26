@@ -5,7 +5,6 @@ import { elementRef } from "../lib/reactive/element-ref.ts";
 import { createLayoutMeasurement } from "../lib/reactive/layout-measurement.ts";
 import { createShadowStyles } from "../lib/reactive/shadow-styles.ts";
 import { activeElementFor, createTabFocus, createTabList, type TabFocus } from "../lib/tabs.ts";
-import type { PanelTabStripTab } from "./panel-tab-strip-types.ts";
 import { Icon } from "./solid/icon.tsx";
 import "./tooltip.ts";
 import "../styles/tabs.css";
@@ -21,7 +20,27 @@ declare module "@solidjs/web" {
   }
 }
 
-export type SolidPanelTabStripTab = Omit<PanelTabStripTab, "icon"> & { icon?: SolidJSX.Element };
+export type SolidPanelTabStripTab = {
+  id: string;
+  domId: string;
+  label: string;
+  labelTooltip?: string | null;
+  title?: string | null;
+  icon?: SolidJSX.Element;
+  statusLabel?: string | null;
+  /** Short ownership marker (e.g. "agent") rendered as a pill after the label. */
+  badge?: string | null;
+  className?: string;
+  closeLabel: string;
+  closeDisabled?: boolean;
+  /** Fixed tabs keep native selection and keyboard navigation, without a close action. */
+  closable?: boolean;
+  group?: string;
+  draggable?: boolean;
+  reorderId?: string;
+  /** Explicit click/Enter/Space action; arrow-key selection still uses onSelect. */
+  onActivate?: () => void;
+};
 export type PanelTabStripProps<T extends SolidPanelTabStripTab> = {
   /** Explicit host presentation; a narrow desktop panel is still desktop. */
   presentation?: "desktop" | "mobile";

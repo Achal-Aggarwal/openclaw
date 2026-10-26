@@ -11,7 +11,6 @@ import { attachWorkspaceFile } from "./attachment-file.js";
 import { SinceInput, LastSeenInput } from "./chronicle-contract.js";
 import { emptyChronicle } from "./chronicle.js";
 import { contract } from "./contract.js";
-import { buildKnowledgeLearnGuidance, KNOWLEDGE_LEARN_TOOL_NAMES } from "./learn-guidance.js";
 import {
   RECORD_MAX_BYTES,
   BODY_INPUT_MAX_CHARS,
@@ -123,8 +122,32 @@ export function createKnowledgeService(
       // Write-disabled installs contribute no /learn guidance; Skill Workshop still can.
       ...(policy.writesEnabled
         ? {
-            learnToolNames: KNOWLEDGE_LEARN_TOOL_NAMES,
-            learnGuidanceBuilder: buildKnowledgeLearnGuidance,
+            learnToolNames: [
+              "knowledge_attach_file",
+              "knowledge_publish_batch",
+              "knowledge_save_page",
+              "knowledge_create_claim",
+              "knowledge_correct",
+              "knowledge_grep",
+              "knowledge_lookup",
+              "knowledge_ontology",
+            ],
+            // /learn needs page/claim writes; guidance lives in knowledge-ingest.
+            learnGuidanceBuilder: ({ availableTools }: { availableTools: Set<string> }) => {
+              if (
+                !["knowledge_save_page", "knowledge_create_claim", "knowledge_grep"].every((tool) =>
+                  availableTools.has(tool),
+                )
+              ) {
+                return [];
+              }
+              const supersede = availableTools.has("knowledge_correct")
+                ? " When someone explicitly replaces an earlier standing statement, supersede the old claim with `knowledge_correct`."
+                : "";
+              return [
+                `Memory (Knowledge): follow the \`knowledge-ingest\` skill's "Learning from a set of sources" section. Organise lessons by subject: one page per person, organization, project, tool or other durable subject, with its current understanding in a State section. Save facts, decisions, preferences and commitments as claims attached to those pages, quoting retained originals. Mark a conclusion drawn from several passages as \`agent_inference\`.${supersede}`,
+              ];
+            },
           }
         : {}),
     });

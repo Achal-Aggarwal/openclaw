@@ -20,13 +20,6 @@ export type UsageContextDetail = {
   status: PanelRefreshStatus;
 };
 
-export type UsageJsonExport = {
-  totals: UsageTotals | null;
-  sessions: UsageSessionEntry[];
-  daily: CostDailyEntry[];
-  aggregates: UsageAggregates;
-};
-
 export type UsageRouteData = {
   // Client identity alone cannot distinguish provider replacement or reconnect epochs.
   gateway: ApplicationContext["gateway"];

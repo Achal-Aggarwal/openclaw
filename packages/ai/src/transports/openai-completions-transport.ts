@@ -45,7 +45,6 @@ import {
 import {
   processCompletionsStream,
   observeOpenAICompletionsProgress,
-  shouldEmitOpenAICompletionsReasoning,
 } from "./openai-completions-stream.js";
 import { createOpenAIResponsesTransportStreamFn } from "./openai-responses-client.js";
 import type { OpenAIResponsesOptions } from "./openai-responses-contracts.js";
@@ -443,10 +442,15 @@ export function streamOpenAICompletionsRequest(
         }
       }
       const contextOutputBudget = resolveCompletionsContextOutputBudget(builtParams, params);
+      const requestedReasoningEffort =
+        mode !== "direct" && model.reasoning
+          ? (options?.reasoningEffort ?? options?.reasoning ?? "high")
+          : "";
       const emitReasoning =
         mode === "direct"
           ? directEmitReasoning
-          : shouldEmitOpenAICompletionsReasoning(model, options);
+          : Boolean(requestedReasoningEffort) &&
+            isOpenAICompletionsThinkingEnabled(requestedReasoningEffort);
       firstEventAbort = createFirstStreamEventAbortController(options?.signal);
       const requestOptions =
         mode === "direct"
