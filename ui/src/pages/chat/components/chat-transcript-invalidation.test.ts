@@ -612,6 +612,10 @@ describe("chat transcript invalidation", () => {
         await session.load;
       }
       const { transcript, container, rerender } = updatingThread(props);
+      const project = () =>
+        transcript.renderSession(props.sessionKey, (session) =>
+          projectChatTranscript({ ...props }, session),
+        );
       try {
         rerender();
         transcript.start();
@@ -620,9 +624,13 @@ describe("chat transcript invalidation", () => {
           expect(required(container, ".chat-question-summary button").textContent).toBe("Answer"),
         );
 
+        const previous = project();
         resetTranscriptSession(props.paneId, container);
         presentQuestions();
-        rerender();
+        const current = project();
+        render(previous.renderRows(), container);
+        flush();
+        render(current.renderRows(), container);
         await flushDeferredRowPrune();
         await waitForSolid(() =>
           expect(required(container, ".chat-question-summary button").textContent).toBe("Answer"),

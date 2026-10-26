@@ -1,4 +1,4 @@
-import { createMemo } from "solid-js";
+import { createMemo, Show } from "solid-js";
 import type { MessageGroup as MessageGroupData } from "../../../lib/chat/chat-types.ts";
 import { persistedMessageEntryId } from "../chat-thread-items.ts";
 import type { GroupedMessageOptions } from "./chat-message-bubble-options.ts";
@@ -19,6 +19,7 @@ export function PreparedMessage(props: {
   index: number;
   options: NativeMessageGroupOptions & Pick<GroupedMessageOptions, "replyLine">;
   prepared?: ReturnType<typeof prepareGroupMessage>;
+  showReactions?: boolean;
 }) {
   const toolsReady = useChatToolReadiness();
   const prepared = createMemo(() => {
@@ -85,12 +86,14 @@ export function PreparedMessage(props: {
         options={options()}
         onOpenSidebar={props.options.onOpenSidebar}
       />
-      <GroupMessageReactions
-        group={props.group}
-        actionDetails={prepared().actions}
-        isStreaming={isStreaming()}
-        options={props.options}
-      />
+      <Show when={props.showReactions !== false}>
+        <GroupMessageReactions
+          group={props.group}
+          actionDetails={prepared().actions}
+          isStreaming={isStreaming()}
+          options={props.options}
+        />
+      </Show>
     </>
   );
 }

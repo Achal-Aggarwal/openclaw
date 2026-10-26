@@ -120,7 +120,7 @@ suite.define(() => {
         },
       });
       await page.goto(controlUiSessionUrl(suite.server.baseUrl, sessionKey));
-      await gateway.waitForRequest("chat.startup");
+      await gateway.waitForRequest("sessions.messages.subscribe");
       const details = await openChatDetails(page);
       // Shared interaction bytes may be preloaded, but Context stays unused until opened.
       expect(breakdownRequests.length).toBeLessThanOrEqual(1);
