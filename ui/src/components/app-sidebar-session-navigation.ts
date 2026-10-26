@@ -336,6 +336,12 @@ export abstract class AppSidebarSessionNavigationElement extends AppSidebarBase 
   }
 
   override disconnectedCallback() {
+    // The same host moves between desktop and drawer synchronously.
+    queueMicrotask(() => {
+      if (!this.isConnected) {
+        this.pinnedSessions.dispose();
+      }
+    });
     this.sessionProjection.invalidate();
     this.homeMemos.clear();
     super.disconnectedCallback();
@@ -651,7 +657,7 @@ export abstract class AppSidebarSessionNavigationElement extends AppSidebarBase 
         () => model.sessions.map((row) => restoreSnapshotSession(row, this.getRouteSessionKey())),
       );
     }
-    const rows = this.rowsMemo.read(
+    return this.rowsMemo.read(
       () => [...sidebarRowsInputs(this, navigationState), this.sidebarEntries],
       () => {
         const roster = this.rosterSessionSource;
@@ -668,20 +674,20 @@ export abstract class AppSidebarSessionNavigationElement extends AppSidebarBase 
           compareSessions: createSidebarSessionRowsComparator(this.readSidebarSessionSortOptions),
           resolveAttention: this.resolveSessionAttention,
         });
-        return this.applySessionOwnerFilter(
+        const rows = this.applySessionOwnerFilter(
           projectUnpinnedSessionRows(projected),
           this.selectedAgentSessionResult()?.owners,
         );
+        this.attention.scheduleSessionSnoozeWake(
+          sidebarSessionSnoozeWakeRows(
+            this.sessionData,
+            this.selectedAgentSessionResult(),
+            navigationState,
+          ),
+        );
+        return rows;
       },
     );
-    this.attention.scheduleSessionSnoozeWake(
-      sidebarSessionSnoozeWakeRows(
-        this.sessionData,
-        this.selectedAgentSessionResult(),
-        navigationState,
-      ),
-    );
-    return rows;
   }
 
   private selectedAgentSessionResult(agentId = this.expandedAgentId()): SessionsListResult | null {

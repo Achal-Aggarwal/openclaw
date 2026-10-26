@@ -69,6 +69,7 @@ const repositoryScriptEntries = [
   "scripts/perf/access-authority-callback-measure.mjs!",
   // Its header documents the sandbox/workspace ownership assertion benchmark.
   "scripts/perf/workspace-assertion-measure.mjs!",
+  "scripts/perf/state-owner-identity-measure.mjs!",
   // Its header documents the full transcript-pairing repair benchmark.
   "scripts/perf/tool-result-pairing-measure.ts!",
   "scripts/perf/assistant-thinking-measure.ts!",
@@ -139,6 +140,7 @@ const repositoryScriptEntries = [
   "scripts/perf/session-row-materialization-measure.ts!",
   "scripts/perf/session-row-lineage-measure.ts!",
   "scripts/perf/tool-result-hash-measure.ts!",
+  "scripts/perf/tool-result-size-measure.ts!",
   "scripts/perf/ws-counter-stress-preload.ts!",
   "scripts/perf/ws-counter-stress.ts!",
   // The source header documents this GitHub reader benchmark's Node command.
@@ -252,6 +254,7 @@ const repositoryScriptEntries = [
   // Cold-load diagnostics invoked directly as documented in their headers.
   "scripts/perf/gateway-main-heap-preload.mjs!",
   "scripts/perf/headless-tools-cold-import.mjs!",
+  "scripts/perf/session-actor-append-measure.ts!",
   // scripts/perf/README.md invokes these measurement commands by path.
   "scripts/perf/cron-delivery-gateway-entry.ts!",
   "scripts/perf/plugin-policy-read-measure.mjs!",
@@ -357,6 +360,7 @@ const repositoryScriptEntries = [
   "scripts/perf/plugin-source-demand.mts!",
   "scripts/perf/responses-continuation-measure.mjs!",
   "scripts/perf/responses-continuation.ts!",
+  "scripts/perf/responses-history-conversion.ts!",
   "scripts/perf/schema-validator-cache-measure.ts!",
   "scripts/perf/session-lifecycle-boot.ts!",
   "scripts/perf/shared-skills-measure.ts!",
@@ -422,6 +426,7 @@ const repositoryScriptEntries = [
   "scripts/perf/tool-result-owned-freeze-measure.ts!",
   "scripts/perf/tool-search-allowlist-measure.ts!",
   "scripts/perf/tools-catalog-copy-measure.ts!",
+  "scripts/perf/session-catalog-entry-snapshot-measure.ts!",
   // Standalone owner benchmark; invocation is documented in its header.
   "scripts/perf/model-tool-projection-measure.ts!",
   "scripts/perf/trajectory-skills-metadata-measure.ts!",
