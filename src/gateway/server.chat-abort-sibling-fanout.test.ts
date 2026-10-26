@@ -572,6 +572,8 @@ test("measures natural descendant settlement in the session-list owner", async (
         expectsCompletionMessage: false,
       });
     }
+    const initial = await readList();
+    socket.on("message", receive);
     expect((await fixture.rpcReq(socket, "sessions.subscribe", listParams)).ok).toBe(true);
     await finish(runs[0][0], parentKey, leases[0]!);
     const before = await readList();
@@ -585,7 +587,7 @@ test("measures natural descendant settlement in the session-list owner", async (
       hasActiveSubagentRun: true,
       subagentRunState: "active",
     });
-    socket.on("message", receive);
+    const preludeCount = frames.length;
     await finish(runs[1][0], leafKey, leases[1]!);
     const after = await readList();
     for (const key of [rootKey, parentKey, leafKey]) {
@@ -598,7 +600,9 @@ test("measures natural descendant settlement in the session-list owner", async (
     }
     expect(after.sessions.find((row) => row.key === leafKey)?.hasActiveRun).toBe(false);
     socket.off("message", receive);
-    const terminal = frames.find((frame) => {
+    const prelude = frames.slice(0, preludeCount);
+    const completion = frames.slice(preludeCount);
+    const terminal = completion.find((frame) => {
       const payload = frame.payload as { sessionKey?: string; reason?: string } | undefined;
       return (
         frame.event === "sessions.changed" &&
@@ -606,18 +610,21 @@ test("measures natural descendant settlement in the session-list owner", async (
         payload.reason === "subagent-status"
       );
     });
-    const ancestors =
-      (terminal?.payload as { ancestorSessions?: SessionsListResult["sessions"] } | undefined)
-        ?.ancestorSessions ?? [];
-    expect(ancestors.find((row) => row.key === parentKey)?.hasActiveSubagentRun).toBe(false);
-    expect(ancestors.some((row) => row.key === rootKey)).toBe(true);
-    expect(ancestors.find((row) => row.key === rootKey)?.hasActiveSubagentRun).not.toBe(true);
+    const terminalPayload = expectDefined(terminal, "terminal frame").payload as {
+      ancestorSessions?: SessionsListResult["sessions"];
+      ancestorSessionRefs?: { key: string }[];
+    };
+    const ancestors = terminalPayload.ancestorSessions ?? [];
+    const ancestorRefs = terminalPayload.ancestorSessionRefs ?? [];
+    for (const key of [parentKey, rootKey]) {
+      expect([...ancestors, ...ancestorRefs].some((row) => row.key === key)).toBe(true);
+    }
     const measured: { wallMs: number; cpuMs: number }[] = [];
     const sortCounts: number[] = [];
     for (let sample = -1; sample < 7; sample += 1) {
       const client = createTestGatewayClient(async (method) => {
         if (method === "sessions.list") {
-          return structuredClone(before);
+          return structuredClone(initial);
         }
         if (method === "sessions.subscribe") {
           return { subscribed: true };
@@ -628,7 +635,20 @@ test("measures natural descendant settlement in the session-list owner", async (
       const owner = createTestSessionCapability(harness.gateway);
       try {
         await owner.refresh(listParams);
-        expect(owner.state.result?.sessions.length).toBe(before.sessions.length);
+        expect(owner.state.result?.sessions.length).toBe(initial.sessions.length);
+        // Seed the same connection history before timing the leaf's settlement.
+        for (const frame of prelude) {
+          harness.emitEvent(frame);
+        }
+        for (const key of [rootKey, parentKey, leafKey]) {
+          const actual = expectDefined(
+            owner.state.result?.sessions.find((row) => row.key === key),
+            "pre-completion replay row",
+          );
+          const expected = before.sessions.find((row) => row.key === key);
+          expect(actual.hasActiveSubagentRun).toBe(expected?.hasActiveSubagentRun);
+          expect(actual.hasActiveRun).toBe(expected?.hasActiveRun);
+        }
         const nativeSort = Array.prototype.sort;
         let frameSorts = 0;
         const spy =
@@ -646,7 +666,7 @@ test("measures natural descendant settlement in the session-list owner", async (
         const cpu = process.cpuUsage();
         const started = performance.now();
         try {
-          for (const frame of frames) {
+          for (const frame of completion) {
             const startCount = frameSorts;
             harness.emitEvent(frame);
             if (sample === -1) {
@@ -662,10 +682,13 @@ test("measures natural descendant settlement in the session-list owner", async (
           measured.push({ wallMs, cpuMs: (used.user + used.system) / 1000 });
         }
         for (const key of [rootKey, parentKey, leafKey]) {
-          const actual = owner.state.result?.sessions.find((row) => row.key === key);
+          const actual = expectDefined(
+            owner.state.result?.sessions.find((row) => row.key === key),
+            "settled replay row",
+          );
           const expected = after.sessions.find((row) => row.key === key);
-          expect(actual?.hasActiveSubagentRun).toBe(expected?.hasActiveSubagentRun);
-          expect(actual?.hasActiveRun).toBe(expected?.hasActiveRun);
+          expect(actual.hasActiveSubagentRun).toBe(expected?.hasActiveSubagentRun);
+          expect(actual.hasActiveRun).toBe(expected?.hasActiveRun);
         }
       } finally {
         owner.dispose();
@@ -675,8 +698,10 @@ test("measures natural descendant settlement in the session-list owner", async (
       "SESSION_ANCESTOR_BASELINE",
       JSON.stringify({
         rows: before.sessions.length,
-        frames: frames.length,
+        preludeFrames: prelude.length,
+        frames: completion.length,
         ancestorCount: ancestors.length,
+        ancestorReferenceCount: ancestorRefs.length,
         sortCounts,
         firstTimedReplay: measured[0],
         processWarmFirstEventSamples: measured.slice(1),
