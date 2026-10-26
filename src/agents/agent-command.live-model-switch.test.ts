@@ -3137,22 +3137,20 @@ describe("agentCommand – LiveSessionModelSwitchError retry", () => {
     state.runtimeConfigMock = createConfiguredModelCompatRuntimeConfig(true, true);
     setupSuccessfulAttempt("gmn", "gpt-5.4");
 
-    await runBasicAgentCommand({
-      thinking: "xhigh",
-    });
+    await runBasicAgentCommand({ thinking: "xhigh" });
 
-    const thinkingArgs = requireRecord(
-      mockCallArg(state.isThinkingLevelSupportedMock),
-      "thinking args",
-    );
-    expect(thinkingArgs.provider).toBe("gmn");
-    expect(thinkingArgs.model).toBe("gpt-5.4");
-    expect(thinkingArgs.level).toBe("xhigh");
-    const catalog = requireArray(thinkingArgs.catalog, "thinking catalog");
+    const args = requireRecord(mockCallArg(state.isThinkingLevelSupportedMock), "thinking args");
+    expect(args.provider).toBe("gmn");
+    expect(args.model).toBe("gpt-5.4");
+    expect(args.level).toBe("xhigh");
+    const catalog = requireArray(args.catalog, "thinking catalog");
     expectRecordFields(catalog[0], {
       provider: "gmn",
       id: "gpt-5.4",
-      compat: { supportedReasoningEfforts: ["low", "medium", "high", "xhigh"] },
+      compat: {
+        supportedReasoningEfforts: ["low", "medium", "high", "xhigh"],
+        supportsReasoningEffort: true,
+      },
     });
   });
 
