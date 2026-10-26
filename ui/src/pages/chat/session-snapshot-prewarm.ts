@@ -17,6 +17,13 @@ type PrewarmedSnapshot = {
 };
 
 let pending: PrewarmedSnapshot | undefined;
+let historyStateValidator:
+  | typeof import("../../lib/protocol-validators.generated/history-state.js").isChatHistoryState
+  | undefined;
+
+export function readPrewarmedHistoryStateValidator() {
+  return historyStateValidator;
+}
 
 export function peekPrewarmedChatSnapshot(): PrewarmedSnapshot | undefined {
   return pending;
@@ -43,10 +50,20 @@ export async function prewarmChatSnapshot(cacheKey: string): Promise<void> {
       .catch(() => undefined),
   };
   pending = entry;
-  // Load alongside storage so a warm transcript can send its cursor with connect.
-  // Keep board restoration independent of this optional metadata validator.
+  // Prepare the owned snapshot before the pane mounts, so dispatch can adopt it
+  // without waiting for storage or another validation continuation.
   try {
-    await import("../../lib/protocol-validators.generated/history-state.js");
+    const [{ readPrewarmedChatSnapshot }] = await Promise.all([
+      import("./session-snapshot-store.ts"),
+      import("../../lib/protocol-validators.generated/history-state.js").then(
+        ({ isChatHistoryState }) => {
+          historyStateValidator = isChatHistoryState;
+        },
+      ),
+    ]);
+    if (pending === entry) {
+      await readPrewarmedChatSnapshot(cacheKey);
+    }
   } catch {}
 }
 

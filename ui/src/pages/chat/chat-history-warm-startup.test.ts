@@ -745,6 +745,70 @@ describe("first chat startup snapshot ordering", () => {
     expect(h.state.chatMessages).toEqual(liveMessages);
   });
 
+  it.each([true, false])(
+    "sends prewarmed cursor and metadata without awaiting pane hydration (beforeHello=%s)",
+    async (beforeHello) => {
+      const cacheKey = resolveChatSnapshotKey(
+        { settings: loadSettings(), client: { offlineRecoveryScope: "test-recovery-scope" } },
+        { sessionKey },
+      );
+      const stateRevision = startupRevision();
+      const historyState: ChatHistoryState = {
+        stateRevision,
+        pendingInputs: emptyPendingInputs(),
+        sessionInfo: { key: sessionKey, kind: "direct", sessionId: "warm-session", updatedAt: 1 },
+        commands: startupCommands(),
+      };
+      vi.spyOn(snapshotDatabase, "readStoredChatSnapshotRecord").mockResolvedValueOnce({
+        projectionVersion: 3,
+        savedAt: 0,
+        sessionKey: cacheKey,
+        sessionId: stored.sessionId,
+        snapshot: { ...stored, historyState },
+      });
+      await prewarmChatSnapshot(cacheKey);
+      await vi.dynamicImportSettled();
+      const h = mountPane(sessionKey, !beforeHello, new SessionSnapshotStore());
+      connectSessionOwner(h);
+      h.state.connected = !beforeHello;
+      h.request.mockImplementationOnce(async () => {
+        if (beforeHello) {
+          h.connect();
+          void syncSelectedSessionMessageSubscription(h.state);
+        }
+        return {
+          key: sessionKey,
+          initialHistory: {
+            ok: true,
+            payload: {
+              kind: "delta",
+              messages: [],
+              deltaCursor: "current-cursor",
+              sessionInfo: h.liveResult.sessionInfo,
+            },
+          },
+        };
+      });
+      await syncSelectedSessionMessageSubscription(h.state, {
+        initialHistory: true,
+        beforeHello,
+      });
+      expect(h.request).toHaveBeenCalledExactlyOnceWith(
+        "sessions.messages.subscribe",
+        expect.objectContaining({
+          initialHistory: expect.objectContaining({
+            cursor: stored.deltaCursor,
+            knownState: stateRevision,
+          }),
+        }),
+        expect.anything(),
+      );
+      await h.start();
+      expect(h.request).toHaveBeenCalledOnce();
+      expect(h.state.chatMessages).toEqual(stored.messages);
+    },
+  );
+
   it("sends the retained cursor and receipts once storage has settled", async () => {
     const record = createDeferred<unknown>();
     vi.spyOn(snapshotDatabase, "readStoredChatSnapshotRecord").mockReturnValueOnce(record.promise);

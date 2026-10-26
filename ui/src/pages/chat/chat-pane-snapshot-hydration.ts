@@ -46,38 +46,46 @@ export abstract class ChatPaneSnapshotHydration extends ChatPaneReplyNavigation 
         this.boardProviderLease?.restoreSnapshot(board.snapshot, board.receivedAtMs);
       }
     };
-    const reading = this.sessionSnapshotStore.read(cacheKey, (board) => {
-      void restoreBoard(board);
-    });
+    let readySnapshot: ChatSessionSnapshot | null | undefined;
+    const reading = this.sessionSnapshotStore.read(
+      cacheKey,
+      (board) => void restoreBoard(board),
+      (snapshot) => {
+        readySnapshot = snapshot;
+      },
+    );
     const hydration: InitialChatSnapshotHydration = {
       titlePending: true,
       sessionKey,
       connected: this.context.gateway.snapshot.phase === "connected",
+      // Dispatch adopts only validated ready rows, together with their cursor.
+      adoptReadySnapshot: () => {
+        if (readySnapshot === undefined) {
+          return;
+        }
+        delete hydration.adoptReadySnapshot;
+        if (!isCurrent()) {
+          return;
+        }
+        const snapshot = mergeStoredChatSessionSnapshot(cache, state, target, readySnapshot);
+        if (requests.acceptedHistory || !snapshot) {
+          return;
+        }
+        // A sibling can fill the shared cache while this pane still needs its
+        // own transcript. Adopt those messages before revalidating their cursor.
+        applyChatCacheSnapshot(state, snapshot);
+        const mergedSnapshot = { ...snapshot, messages: state.chatMessages };
+        cacheChatSessionSnapshot(cache, state, target, mergedSnapshot);
+        if (snapshot.progressCard !== undefined) {
+          const progressTarget = this.resolveChatReadTarget();
+          if (progressTarget) {
+            this.progressCards.hydrate(progressTarget, snapshot.progressCard);
+          }
+        }
+      },
       promise: reading
         .then(async (storedSnapshot) => {
-          // Keep cache rendering out of connect preparation. The subscription can
-          // adopt ready rows synchronously after dispatch, before reading their cursor.
-          hydration.adoptReadySnapshot = () => {
-            delete hydration.adoptReadySnapshot;
-            if (!isCurrent()) {
-              return;
-            }
-            const snapshot = mergeStoredChatSessionSnapshot(cache, state, target, storedSnapshot);
-            if (requests.acceptedHistory || !snapshot) {
-              return;
-            }
-            // A sibling can fill the shared cache while this pane still needs its
-            // own transcript. Adopt those messages before revalidating their cursor.
-            applyChatCacheSnapshot(state, snapshot);
-            const mergedSnapshot = { ...snapshot, messages: state.chatMessages };
-            cacheChatSessionSnapshot(cache, state, target, mergedSnapshot);
-            if (snapshot.progressCard !== undefined) {
-              const progressTarget = this.resolveChatReadTarget();
-              if (progressTarget) {
-                this.progressCards.hydrate(progressTarget, snapshot.progressCard);
-              }
-            }
-          };
+          readySnapshot = storedSnapshot;
           const gateway = this.context.gateway.snapshot;
           if (
             gateway.client &&

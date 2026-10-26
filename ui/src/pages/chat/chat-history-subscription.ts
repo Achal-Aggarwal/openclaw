@@ -245,8 +245,8 @@ async function synchronizeSelectedSessionMessageSubscription(
           if (!(await openingDispatch) || !isCurrent()) {
             return null;
           }
-          paneRequests.initialSnapshotHydration?.adoptReadySnapshot?.();
         }
+        paneRequests.initialSnapshotHydration?.adoptReadySnapshot?.();
         // Storage can hydrate during connect preparation. Capture its latest cursor
         // at dispatch, without holding the network behind a slow storage read.
         const cursor = opts?.initialHistory ? readChatHistoryCursor(state) : undefined;
