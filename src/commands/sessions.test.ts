@@ -450,7 +450,10 @@ describe("sessionsCommand", () => {
       expect(header).not.toMatch(/\p{Cc}/u);
       expect(header).toContain("sessions-café\\noperator-forged\\tend\\rrow");
       expect(logs).toContain("No sessions found.");
-      expect(await runSessionsJson(sessionsCommand, store)).toMatchObject({ path: store, count: 0 });
+      expect(await runSessionsJson(sessionsCommand, store)).toMatchObject({
+        path: store,
+        count: 0,
+      });
     },
   );
 
