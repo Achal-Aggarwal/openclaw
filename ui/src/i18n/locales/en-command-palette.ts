@@ -126,44 +126,11 @@ const enCommandPalette = {
       denyApproval: "Deny approval",
     },
   },
-  chat: {
-    welcome: {
-      hintBeforeShortcut: "Type a message below ·",
-      hintAfterShortcut: "for commands",
-      recentSessions: "Recent chats",
-      suggestions: {
-        whatCanYouDo: en.chat.welcome.suggestions.whatCanYouDo,
-        summarizeRecentSessions: "Summarize my recent sessions",
-        configureChannel: "Help me configure a channel",
-        checkSystemHealth: "Check system health",
-        exploreOpenClaw: "Tour OpenClaw's code and docs",
-        investigateInSandbox: "Investigate an issue in a sandbox",
-        openDraftPullRequest: "Fix a bug and open a draft PR",
-      },
-    },
-    commands: {
-      arguments: "Command arguments",
-      menu: "Slash commands",
-      optionCount: "{count} options",
-      clearDescription: "Clear chat history",
-      redirectDescription: "Abort and restart with a new message",
-      steerDescription: "Inject a message into the active run",
-      exportDescription: "Download this conversation as Markdown",
-      categories: {
-        session: "Session",
-        model: "Model",
-        agents: "Agents",
-        tools: "Tools",
-      },
-    },
-  },
 } satisfies TranslationMap;
 
 export const registerCommandPaletteEnglish = Object.assign(
   () => {
     Object.assign(en.shortcutsOverlay, enCommandPalette.shortcutsOverlay);
-    Object.assign(en.chat.welcome, enCommandPalette.chat.welcome);
-    Object.assign(en.chat.commands, enCommandPalette.chat.commands);
     Object.assign(en.commandPalette, enCommandPalette.commandPalette);
     Object.assign(en.palette, enCommandPalette.palette);
     Object.assign(en.sessionsView, enCommandPalette.sessionsView);

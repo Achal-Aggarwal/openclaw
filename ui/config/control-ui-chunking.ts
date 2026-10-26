@@ -232,6 +232,8 @@ export function controlUiStableChunkName(id: string): string | undefined {
     case "ui/src/pages/new-session/initial-session-turn-handoff.ts":
       return "draft-submission-runtime";
     case "ui/src/pages/new-session/draft-placement-operations.runtime.ts":
+    case "ui/src/app/session-placement-startup.runtime.ts":
+    case "ui/src/lib/sessions/session-placement-policy.ts":
     case "ui/src/lib/sessions/session-placement-submit.ts":
     case "ui/src/lib/sessions/session-placement-startup.ts":
       // Placement is warmed only for a selected or restored placement target.
@@ -435,8 +437,9 @@ export function createControlUiCodeSplitting(options: { includeBootGroups?: bool
                 modules.add("node_modules/@solidjs/signals/dist/prod/deferred.js");
                 // Opened person cards share labels with New Session, not its composer chunk.
                 modules.add("ui/src/lib/platform-label.ts");
-                // Placement and delivery share retries without importing either route's bundle.
+                // Placement and delivery share acknowledgements and retries without either route.
                 modules.add("ui/src/pages/chat/chat-outbox-retry.ts");
+                modules.add("ui/src/pages/chat/chat-send-ack.ts");
               }
               return {
                 name: `control-ui-boot-${route}`,

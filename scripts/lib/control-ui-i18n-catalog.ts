@@ -20,6 +20,7 @@ import { registerChatCiEnglish } from "../../ui/src/i18n/locales/en-chat-ci.ts";
 import { registerChatCommandResultsEnglish } from "../../ui/src/i18n/locales/en-chat-command-results.ts";
 import { registerChatComposerEnglish } from "../../ui/src/i18n/locales/en-chat-composer.ts";
 import { registerChatDetailsEnglish } from "../../ui/src/i18n/locales/en-chat-details.ts";
+import { registerChatDiscoveryEnglish } from "../../ui/src/i18n/locales/en-chat-discovery.ts";
 import { registerChatGoalsEnglish } from "../../ui/src/i18n/locales/en-chat-goals.ts";
 import { registerChatMediaEnglish } from "../../ui/src/i18n/locales/en-chat-media.ts";
 import { registerChatMessageMetadataEnglish } from "../../ui/src/i18n/locales/en-chat-message-metadata.ts";
@@ -126,6 +127,7 @@ const sourceFiles = [
   "en-chat-command-results.ts",
   "en-chat-composer.ts",
   "en-chat-details.ts",
+  "en-chat-discovery.ts",
   "en-chat-goals.ts",
   "en-chat-message-metadata.ts",
   "en-chat-media.ts",
@@ -362,8 +364,8 @@ export function loadControlUiSourceCatalog(): TranslationMap {
           ...registerChatSessionEnglish.catalog.chat.sessionSuggestions,
         },
         commandResults,
-        commands: registerCommandPaletteEnglish.catalog.chat.commands,
-        welcome: registerCommandPaletteEnglish.catalog.chat.welcome,
+        commands: registerChatDiscoveryEnglish.catalog.chat.commands,
+        welcome: registerChatDiscoveryEnglish.catalog.chat.welcome,
         messages: registerChatMessageMetadataEnglish.catalog.chat.messages,
         toolCards,
         systemNotice: registerChatMessageMetadataEnglish.catalog.chat.systemNotice,

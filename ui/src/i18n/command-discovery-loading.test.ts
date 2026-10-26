@@ -12,7 +12,6 @@ describe("command discovery English loading", () => {
       load: () => import("../components/command-palette-catalog-search.ts"),
     },
     { surface: "session transcript search", load: () => import("../pages/sessions/view.tsx") },
-    { surface: "slash commands", load: () => import("../lib/chat/commands.ts") },
     { surface: "shortcut help", load: () => import("../components/keyboard-shortcuts-dialog.tsx") },
   ])("registers fallback copy before $surface reads it", async ({ load }) => {
     const { manager } = await loadI18n();
@@ -30,6 +29,38 @@ describe("command discovery English loading", () => {
     }
     expect(manager.t("common.health")).toBe("Gesundheit");
     expect(manager.t("commandPalette.newSessionSettings")).toBe("New session settings");
+  });
+
+  it.each([
+    { surface: "slash commands", load: () => import("../lib/chat/commands.ts") },
+    {
+      surface: "chat welcome",
+      load: () => import("../pages/chat/components/chat-welcome.tsx"),
+    },
+  ])("registers $surface copy without loading discovery overlays", async ({ surface, load }) => {
+    const { manager } = await loadI18n();
+    await manager.setLocale("de");
+    await load();
     expect(manager.t("chat.commands.menu")).toBe("Slash commands");
+    expect(manager.t("chat.welcome.hintBeforeShortcut")).toBe("Type a message below ·");
+    expect(manager.t("chat.welcome.recentSessions")).toBe("Recent chats");
+    for (const key of [
+      "commandPalette.newSessionSettings",
+      "palette.noResults",
+      "sessionsView.transcriptSearchTitle",
+      "shortcutsOverlay.labels.commandPalette",
+    ]) {
+      expect(manager.t(key)).toBe(key);
+    }
+    expect(manager.t("common.health")).toBe("Gesundheit");
+    if (surface === "slash commands") {
+      const { SLASH_COMMANDS } = await import("../lib/chat/commands.ts");
+      expect(SLASH_COMMANDS.find((command) => command.key === "steer")).toMatchObject({
+        description: "Inject a message into the active run",
+      });
+      expect(SLASH_COMMANDS.find((command) => command.key === "export-session")).toMatchObject({
+        description: "Download this conversation as Markdown",
+      });
+    }
   });
 });
