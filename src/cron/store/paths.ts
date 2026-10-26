@@ -8,7 +8,10 @@ import {
   readCronStorePartitionInventoryInDatabase,
   resolveUnboundCronDefaultStoreKey,
 } from "../../state/openclaw-state-db-cron-identity-migration.js";
-import { executeExistingOpenClawStateRead } from "../../state/openclaw-state-db-readonly.js";
+import {
+  executeExistingOpenClawStateRead,
+  isArtifactPreservingStateRead,
+} from "../../state/openclaw-state-db-readonly.js";
 import { captureOpenClawStateWorkerContext } from "../../state/openclaw-state-worker-context.js";
 import type { OpenClawStateWorkerContext } from "../../state/openclaw-state-worker-context.types.js";
 import { runOpenClawStateWorkerOperation } from "../../state/openclaw-state-worker-store.js";
@@ -99,7 +102,9 @@ export async function resolveCronStoreSelectionAsync(
     context.admission.assertCurrent();
     return { status: "ready", storeKey: explicitPath, storePath: explicitPath };
   }
-  let prepared = preparedDefaultSelections.get(context.admission);
+  // Report selections belong to their snapshot, not the mutable admission's cache.
+  const inspection = isArtifactPreservingStateRead("agent", context.admission.databasePath);
+  let prepared = inspection ? undefined : preparedDefaultSelections.get(context.admission);
   const previous = explicitPath ? prepared?.get(defaultStorePath) : undefined;
   if (previous) {
     const selection = await previous;
@@ -113,7 +118,11 @@ export async function resolveCronStoreSelectionAsync(
         type: "automationProactive.storeSelection",
         input: { storePath: explicitPath, defaultStorePath },
       },
-      { context, current: true },
+      {
+        context,
+        // Full inspection shares its report snapshot; mutable maintenance reads current rows.
+        current: !inspection,
+      },
     );
     context.admission.assertCurrent();
     if (!reply) {
@@ -125,7 +134,7 @@ export async function resolveCronStoreSelectionAsync(
     return reply.selection;
   };
   const pending = resolve();
-  if (explicitPath) {
+  if (explicitPath && !inspection) {
     if (!prepared) {
       prepared = new Map();
       preparedDefaultSelections.set(context.admission, prepared);
