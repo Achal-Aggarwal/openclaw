@@ -1,8 +1,19 @@
 import path from "node:path";
 import { expectDefined } from "@openclaw/normalization-core";
 import { expect, test, vi } from "vitest";
-import { awaitGateBeforeSettlement, createDeferred } from "../../test/helpers/promise.js";
+import {
+  awaitGateBeforeSettlement,
+  createDeferred,
+  withinTest,
+} from "../../test/helpers/promise.js";
 import { runQaGatewayFixture } from "../../test/helpers/qa-gateway-cleanup.js";
+import type { GatewayEventFrame } from "../../ui/src/api/gateway.ts";
+import type { SessionsListResult } from "../../ui/src/api/types.ts";
+import {
+  createGatewayHarness,
+  createTestSessionCapability,
+} from "../../ui/src/lib/sessions/session-capability.test-support.ts";
+import { createTestGatewayClient } from "../../ui/src/test-helpers/gateway-client.ts";
 import type { AgentCommandOpts } from "../agents/command/types.js";
 import { subagentRuns } from "../agents/subagents/registry/subagent-registry-memory.js";
 import { listRunsForControllerFromRuns } from "../agents/subagents/registry/subagent-registry-queries.js";
@@ -20,6 +31,7 @@ import type { SubagentRunRecord } from "../agents/subagents/registry/subagent-re
 import { getSubagentRunRuntimeKey } from "../agents/subagents/registry/subagent-run-generation.js";
 import * as swarm from "../agents/subagents/swarm/swarm-scheduler.js";
 import * as sessions from "../config/sessions/session-accessor.js";
+import { emitAgentEvent } from "../infra/agent-events.js";
 import {
   beginSessionEffect,
   getSessionMutationCount,
@@ -27,6 +39,7 @@ import {
   type SessionEffectRef,
 } from "../sessions/session-controller.lifecycle.js";
 import { observeGatewayConnectionWork } from "./server-held-work.test-support.js";
+import { flushPendingSessionsChangedEvents } from "./server-methods/session-change-event.js";
 import * as fixture from "./test-helpers.js";
 
 let gateway: Awaited<ReturnType<typeof fixture.createGatewaySuiteHarness>>;
@@ -412,3 +425,239 @@ for (const [suffix, name] of [
     );
   });
 }
+
+test("measures natural descendant settlement in the session-list owner", async ({ signal }) => {
+  const context = expectDefined(connectionObserver.context, "Gateway context");
+  const socket = await gateway.openWs();
+  const rootKey = "agent:main:main";
+  const parentKey = "agent:main:subagent:ancestor-probe-parent";
+  const leafKey = "agent:main:subagent:ancestor-probe-leaf";
+  const storePath = path.join(
+    process.env.OPENCLAW_STATE_DIR!,
+    "agents",
+    "main",
+    "sessions",
+    "sessions.json",
+  );
+  const leases: SessionEffectRef[] = [];
+  const frames: GatewayEventFrame[] = [];
+  const receive = (data: { toString(): string }) => {
+    const frame = JSON.parse(data.toString()) as GatewayEventFrame;
+    if (
+      frame.type === "event" &&
+      (frame.event === "sessions.changed" || frame.event === "session.message")
+    ) {
+      frames.push(frame);
+    }
+  };
+  const listParams = {
+    agentId: "main",
+    limit: 500,
+    includeGlobal: true,
+    includeUnknown: true,
+    includeDerivedTitles: false,
+    includeLastMessage: false,
+  };
+  const readList = async () => {
+    const response = await fixture.rpcReq<SessionsListResult>(socket, "sessions.list", listParams);
+    expect(response.ok, JSON.stringify(response.error)).toBe(true);
+    return expectDefined(response.payload, "session list");
+  };
+  const finish = async (runId: string, sessionKey: string, lease: SessionEffectRef) => {
+    // Only a received frame proves that the asynchronous lifecycle listener published.
+    const published = fixture.onceMessage(socket, (frame) => {
+      const event = frame as GatewayEventFrame;
+      const payload = event.payload as { sessionKey?: string; reason?: string } | undefined;
+      return (
+        event.type === "event" &&
+        event.event === "sessions.changed" &&
+        payload?.sessionKey === sessionKey &&
+        payload.reason === "subagent-status"
+      );
+    });
+    lease.release();
+    emitAgentEvent({
+      runId,
+      sessionKey,
+      stream: "lifecycle",
+      data: {
+        phase: "end",
+        endedAt: Date.now(),
+        terminalReply: { disposition: "visible", text: "Synthetic descendant completion." },
+      },
+    });
+    await withinTest(published, signal);
+    await flushPendingSessionsChangedEvents(context);
+  };
+  try {
+    await fixture.connectOk(socket, {
+      scopes: ["operator.read", "operator.write"],
+      prePairDevice: true,
+    });
+    for (const [key, parentSessionKey, spawnDepth] of [
+      [rootKey, undefined, undefined],
+      [parentKey, rootKey, 1],
+      [leafKey, parentKey, 2],
+      ...Array.from({ length: 97 }, (_, i) => [
+        `agent:main:ancestor-probe-filler-${i}`,
+        undefined,
+        undefined,
+      ]),
+    ] as const) {
+      const response = await fixture.rpcReq(socket, "sessions.create", {
+        key,
+        agentId: "main",
+        visibility: "shared",
+        parentSessionKey,
+        spawnDepth,
+      });
+      expect(response.ok, JSON.stringify(response.error)).toBe(true);
+    }
+    const runs = [
+      ["ancestor-probe-parent-run", parentKey, rootKey],
+      ["ancestor-probe-leaf-run", leafKey, parentKey],
+    ] as const;
+    for (const [runId, key, requesterSessionKey] of runs) {
+      const entry = expectDefined(
+        sessions.loadExactSessionEntryReadOnly({ storePath, sessionKey: key })?.entry,
+        "created session",
+      );
+      const lease = await beginSessionEffect({
+        scope: storePath,
+        identities: [key, entry.sessionId],
+        resolveGatewayContext: context.resolveGatewayContext,
+        run: { runId, sessionKey: key, sessionId: entry.sessionId, agentId: "main" },
+        assertAllowed: () => {},
+        onInterrupt: () => ({ runId }),
+      });
+      leases.push(lease);
+      await registerSubagentRun({
+        runId,
+        childSessionKey: key,
+        childAgentId: "main",
+        sessionEntry: entry,
+        requesterSessionKey,
+        requesterAgentId: "main",
+        requesterDisplayKey: requesterSessionKey,
+        ...(key === leafKey ? { requesterTurnRunId: runs[0][0] } : {}),
+        gatewayContextResolver: context.resolveGatewayContext,
+        task: "Synthetic descendant lifecycle",
+        cleanup: "keep",
+        collect: false,
+        expectsCompletionMessage: false,
+      });
+    }
+    expect((await fixture.rpcReq(socket, "sessions.subscribe", listParams)).ok).toBe(true);
+    await finish(runs[0][0], parentKey, leases[0]!);
+    const before = await readList();
+    for (const key of [rootKey, parentKey]) {
+      expect(before.sessions.find((row) => row.key === key)?.hasActiveSubagentRun).toBe(true);
+    }
+    expect(before.sessions.find((row) => row.key === parentKey)?.hasActiveRun).toBe(false);
+    expect(before.sessions.find((row) => row.key === leafKey)?.hasActiveRun).toBe(true);
+    socket.on("message", receive);
+    await finish(runs[1][0], leafKey, leases[1]!);
+    const after = await readList();
+    for (const key of [rootKey, parentKey, leafKey]) {
+      const row = expectDefined(
+        after.sessions.find((candidate) => candidate.key === key),
+        "settled session",
+      );
+      expect(row.hasActiveSubagentRun).not.toBe(true);
+      expect(row.hasActiveRun).not.toBe(true);
+    }
+    expect(after.sessions.find((row) => row.key === leafKey)?.hasActiveRun).toBe(false);
+    socket.off("message", receive);
+    const terminal = frames.find((frame) => {
+      const payload = frame.payload as { sessionKey?: string; reason?: string } | undefined;
+      return (
+        frame.event === "sessions.changed" &&
+        payload?.sessionKey === leafKey &&
+        payload.reason === "subagent-status"
+      );
+    });
+    const ancestors =
+      (terminal?.payload as { ancestorSessions?: SessionsListResult["sessions"] } | undefined)
+        ?.ancestorSessions ?? [];
+    expect(ancestors.find((row) => row.key === parentKey)?.hasActiveSubagentRun).toBe(false);
+    expect(ancestors.some((row) => row.key === rootKey)).toBe(true);
+    expect(ancestors.find((row) => row.key === rootKey)?.hasActiveSubagentRun).not.toBe(true);
+    const measured: { wallMs: number; cpuMs: number }[] = [];
+    const sortCounts: number[] = [];
+    for (let sample = -1; sample < 7; sample += 1) {
+      const client = createTestGatewayClient(async (method) => {
+        if (method === "sessions.list") {
+          return structuredClone(before);
+        }
+        if (method === "sessions.subscribe") {
+          return { subscribed: true };
+        }
+        throw new Error(`Unexpected diagnostic request: ${method}`);
+      });
+      const harness = createGatewayHarness(client);
+      const owner = createTestSessionCapability(harness.gateway);
+      try {
+        await owner.refresh(listParams);
+        expect(owner.state.result?.sessions.length).toBe(before.sessions.length);
+        const nativeSort = Array.prototype.sort;
+        let frameSorts = 0;
+        const spy =
+          sample === -1
+            ? vi.spyOn(Array.prototype, "sort").mockImplementation(function (
+                this: unknown[],
+                compare,
+              ) {
+                if (this.length === before.sessions.length) {
+                  frameSorts += 1;
+                }
+                return nativeSort.call(this, compare);
+              })
+            : undefined;
+        const cpu = process.cpuUsage();
+        const started = performance.now();
+        try {
+          for (const frame of frames) {
+            const startCount = frameSorts;
+            harness.emitEvent(frame);
+            if (sample === -1) {
+              sortCounts.push(frameSorts - startCount);
+            }
+          }
+        } finally {
+          spy?.mockRestore();
+        }
+        const wallMs = performance.now() - started;
+        const used = process.cpuUsage(cpu);
+        if (sample >= 0) {
+          measured.push({ wallMs, cpuMs: (used.user + used.system) / 1000 });
+        }
+        for (const key of [rootKey, parentKey, leafKey]) {
+          const actual = owner.state.result?.sessions.find((row) => row.key === key);
+          const expected = after.sessions.find((row) => row.key === key);
+          expect(actual?.hasActiveSubagentRun).toBe(expected?.hasActiveSubagentRun);
+          expect(actual?.hasActiveRun).toBe(expected?.hasActiveRun);
+        }
+      } finally {
+        owner.dispose();
+      }
+    }
+    console.log(
+      "SESSION_ANCESTOR_BASELINE",
+      JSON.stringify({
+        rows: before.sessions.length,
+        frames: frames.length,
+        ancestorCount: ancestors.length,
+        sortCounts,
+        firstTimedReplay: measured[0],
+        processWarmFirstEventSamples: measured.slice(1),
+        runtime: process.versions.bun ?? process.version,
+      }),
+    );
+  } finally {
+    socket.off("message", receive);
+    for (const lease of leases) {
+      lease.release();
+    }
+    socket.close();
+  }
+});
