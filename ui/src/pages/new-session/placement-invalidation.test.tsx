@@ -10,13 +10,13 @@ import { mountSolid } from "../../test-helpers/mount-solid.ts";
 import { PaletteDraftHost } from "../../test-helpers/palette-session-draft.tsx";
 import { flush, waitForSolid } from "../../test-helpers/solid-settle.ts";
 import { createRepositoryFixture } from "./draft-place-state.test-support.ts";
+import { DraftProjectPicker } from "./draft-project-picker.ts";
 import {
   createDraftFixture,
   readyChatRoute,
   resetSubmissionMocks,
 } from "./draft-submission-flow.test-support.ts";
 import type { DraftSubmissionFlow } from "./draft-submission-flow.ts";
-import { DraftProjectPicker } from "./draft-project-picker.ts";
 import { placementControls } from "./placement.test-support.ts";
 import { mountProjectChip } from "./project-chip.test-support.tsx";
 import { createSubmissionAction, type SubmissionPresentation } from "./submission-action.ts";
