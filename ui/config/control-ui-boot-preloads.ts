@@ -107,8 +107,6 @@ export function collectControlUiBootAssets(
     ["chat", "ui/src/pages/chat/components/chat-message-bubble-rich.tsx"],
     ["chat", "ui/src/pages/chat/components/chat-message-context-view.tsx"],
     ["chat", "ui/src/pages/chat/components/chat-workspace-conflict.tsx"],
-    // Visible Canvas widgets share these small labels; preload data without evaluating widgets.
-    ["chat", "ui/src/i18n/locales/en-board.ts"],
     ["new", "ui/src/pages/new-session/new-session-page-entry.ts"],
   ] as const) {
     const chunk = chunks.find((candidate) =>

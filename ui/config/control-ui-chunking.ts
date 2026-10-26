@@ -482,6 +482,8 @@ export function createControlUiCodeSplitting(options: { includeBootGroups?: bool
                 // First-screen content must not evaluate unrelated action/tool modules.
                 // Keep snapshot decoding here too rather than adding another preload URL.
                 for (const module of [
+                  // Visible Canvas labels share the first-screen download, not another request.
+                  "ui/src/i18n/locales/en-board.ts",
                   "ui/src/pages/chat/components/chat-details-subagent-rows.tsx",
                   "ui/src/pages/chat/components/chat-details-desktop-process-row.tsx",
                   "ui/src/pages/chat/components/chat-details-process-row.tsx",

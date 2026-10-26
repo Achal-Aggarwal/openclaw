@@ -124,6 +124,7 @@ describe("Control UI build chunking", () => {
     const rich = modulePath("../pages/chat/components/chat-message-bubble-rich.tsx");
     const details = modulePath("../pages/chat/components/chat-details-environment-body.tsx");
     const snapshotDecoder = modulePath("../pages/chat/session-snapshot-decoder.ts");
+    const boardLabels = modulePath("../i18n/locales/en-board.ts");
     const permission = modulePath("../pages/chat/components/chat-permission-card.tsx");
     const reset = modulePath("../pages/chat/chat-board-reset-confirmation.tsx");
     const modal = modulePath("../components/modal-dialog.tsx");
@@ -146,7 +147,7 @@ describe("Control UI build chunking", () => {
       [newSessionEntry, `export { NewSession, modal } from ${JSON.stringify(newSession)};`],
       [
         chat,
-        `import ${JSON.stringify(sharedStyle)}; import ${JSON.stringify(transcriptStyle)}; import { label } from ${JSON.stringify(sharedUi)}; import { action } from ${JSON.stringify(pluginActions)}; import { patch } from ${JSON.stringify(mutations)}; export { version } from ${JSON.stringify(inlineView)}; export { skeleton } from ${JSON.stringify(skeleton)}; export class Chat { label = patch(action(label)); } export const openPanel = () => import(${JSON.stringify(optional)}); export const reset = () => import(${JSON.stringify(reset)}); export const rich = () => import(${JSON.stringify(rich)}); export const details = () => import(${JSON.stringify(details)}); export const snapshot = () => import(${JSON.stringify(snapshotDecoder)});`,
+        `import ${JSON.stringify(sharedStyle)}; import ${JSON.stringify(transcriptStyle)}; import { label } from ${JSON.stringify(sharedUi)}; import { action } from ${JSON.stringify(pluginActions)}; import { patch } from ${JSON.stringify(mutations)}; export { version } from ${JSON.stringify(inlineView)}; export { skeleton } from ${JSON.stringify(skeleton)}; export class Chat { label = patch(action(label)); } export const openPanel = () => import(${JSON.stringify(optional)}); export const reset = () => import(${JSON.stringify(reset)}); export const rich = () => import(${JSON.stringify(rich)}); export const details = () => import(${JSON.stringify(details)}); export const snapshot = () => import(${JSON.stringify(snapshotDecoder)}); export { registerBoard } from ${JSON.stringify(boardLabels)};`,
       ],
       [
         newSession,
@@ -195,6 +196,7 @@ describe("Control UI build chunking", () => {
       ],
       [details, "export const render = () => 'details';"],
       [snapshotDecoder, "export const decode = () => 'snapshot';"],
+      [boardLabels, "export const registerBoard = () => 'board labels';"],
       [permission, "export const render = () => 'permission';"],
       [diff, "export const diff = () => 'diff';"],
       [preamble, "export const preamble = () => 'preamble';"],
@@ -307,7 +309,7 @@ describe("Control UI build chunking", () => {
     const deliveryChunk = chunks.find((chunk) => delivery in chunk.modules)!;
     const toolChunk = chunks.find((chunk) => tools in chunk.modules)!;
     const permissionChunk = chunks.find((chunk) => permission in chunk.modules)!;
-    for (const firstScreen of [rich, details, snapshotDecoder]) {
+    for (const firstScreen of [rich, details, snapshotDecoder, boardLabels]) {
       expect(chunks.find((chunk) => firstScreen in chunk.modules)?.fileName).toBe(
         chatChunk.fileName,
       );
