@@ -11,6 +11,23 @@ export type NewSessionVisibility = "normal" | "draft" | "incognito";
 export type DraftSessionCreateOverrides = Partial<
   Pick<SessionCreateParams, "message" | "attachments" | "displayName" | "displayNameGenerated">
 > & { mentions?: readonly HumanMention[]; visibility?: NewSessionVisibility };
+export type DraftSessionCreateSelection = Partial<
+  Pick<
+    SessionCreateParams,
+    | "attachments"
+    | "permissionMode"
+    | "catalogId"
+    | "category"
+    | "displayName"
+    | "displayNameGenerated"
+  >
+> & {
+  message: string;
+  mentions?: readonly HumanMention[];
+  visibility: NewSessionVisibility;
+  toolOverrides?: SessionCreateParams["toolOverrides"] | null;
+};
+
 export function isWorktreeNameValid(value: string): boolean {
   const name = value.trim();
   return !name || WORKTREE_NAME_PATTERN.test(name);

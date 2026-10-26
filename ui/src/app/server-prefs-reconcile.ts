@@ -24,6 +24,7 @@ import {
   type ServerUiPrefs,
   type SyncedServerUiPrefs,
   type ServerUiPrefState,
+  type ServerUiPrefReadiness,
 } from "./server-prefs-state.ts";
 import {
   PENDING_KEY,
@@ -169,13 +170,7 @@ function resolveServerUiPrefStateFromSnapshot<K extends SyncedPrefKey>(
 
 function isServerUiPrefReady(
   key: SyncedPrefKey,
-  {
-    appearanceReady,
-    navigationReady = appearanceReady,
-  }: {
-    appearanceReady: boolean;
-    navigationReady?: boolean;
-  },
+  { appearanceReady, navigationReady = appearanceReady }: ServerUiPrefReadiness,
 ): boolean {
   return isNavigationPref(key) ? navigationReady : appearanceReady || !isAppearancePref(key);
 }

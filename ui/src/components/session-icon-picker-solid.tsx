@@ -25,7 +25,7 @@ export type AppearancePickerFocus = (
   canFocus?: () => boolean,
 ) => void;
 
-export function AppearancePicker(props: {
+export type AppearancePickerProps = {
   mobile?: boolean;
   sessionLabel?: string;
   ref?: (handle: AppearancePickerFocus) => void;
@@ -47,7 +47,9 @@ export function AppearancePicker(props: {
   onBack: (event: Event) => void;
   onInput: (event: InputEvent & { currentTarget: HTMLTextAreaElement }) => void;
   onApply: (event: Event) => void;
-}) {
+};
+
+export function AppearancePicker(props: AppearancePickerProps) {
   const choices = new Map<string | null, HTMLButtonElement>();
   const colors = new Map<string | null, HTMLButtonElement>();
   let custom: HTMLButtonElement | undefined;

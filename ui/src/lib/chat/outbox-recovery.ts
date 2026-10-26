@@ -32,6 +32,7 @@ export type ChatOutboxRecoveryEntry = StoredComposerRecovery & {
   id: string;
   owner: { gatewayOwner: string; recoveryScope?: string };
 };
+export type ChatOutboxRecoveryResult = "restored" | "conflict" | "storage-failed";
 
 type RecoveryHost = ChatComposerScope & {
   sessionKey?: string;
@@ -241,7 +242,7 @@ export function restoreChatOutboxRecovery(
   entry: ChatOutboxRecoveryEntry,
   destination: NonNullable<ReturnType<typeof captureChatOutboxRecoveryDestination>>,
   minimumRevision = 0,
-): "restored" | "conflict" | "storage-failed" {
+): ChatOutboxRecoveryResult {
   const result = consumeChatOutboxRecovery(state, entry, destination, minimumRevision);
   return result === "completed" ? "restored" : result;
 }

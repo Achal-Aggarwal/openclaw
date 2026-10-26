@@ -1,22 +1,30 @@
-import type {
-  CostUsageSummary,
-  SessionLogEntry,
-} from "../../../../src/infra/session-cost-usage.types.js";
-import type { SessionsUsageResult as SharedSessionsUsageResult } from "../../../../src/shared/usage-types.js";
+import type { SessionLogEntry } from "../../../../src/infra/session-cost-usage.types.js";
 import type { ApplicationContext, ApplicationGatewaySnapshot } from "../../app/context.ts";
 import type { PanelRefreshStatus } from "../../components/panel-refresh-status-state.ts";
 import type { PageReadResult } from "../../lib/page-request.ts";
-import type { SessionsUsageResult } from "./data-types.ts";
+import type {
+  CostUsageDailyEntry,
+  SessionsUsageEntry,
+  SessionsUsageResult,
+  SessionsUsageTotals,
+} from "./data-types.ts";
 
-export type UsageSessionEntry = SharedSessionsUsageResult["sessions"][number];
-export type UsageTotals = SharedSessionsUsageResult["totals"];
-export type CostDailyEntry = CostUsageSummary["daily"][number];
+export type UsageSessionEntry = SessionsUsageEntry;
+export type UsageTotals = SessionsUsageTotals;
+export type CostDailyEntry = CostUsageDailyEntry;
 export type UsageAggregates = SessionsUsageResult["aggregates"];
 
 export type UsageContextDetail = {
   weight: UsageSessionEntry["contextWeight"];
   read: Promise<PageReadResult> | null;
   status: PanelRefreshStatus;
+};
+
+export type UsageJsonExport = {
+  totals: UsageTotals | null;
+  sessions: UsageSessionEntry[];
+  daily: CostDailyEntry[];
+  aggregates: UsageAggregates;
 };
 
 export type UsageRouteData = {

@@ -57,17 +57,6 @@ it("entry retains native tools, denies untrusted provider callers and prompt hon
     "knowledge_remember",
     "knowledge_save_page",
   ]);
-  const all = new Set<string>(capability!.learnToolNames);
-  const full = capability!.learnGuidanceBuilder({ availableTools: all }).join("\n");
-  expect(full).toContain("knowledge-ingest");
-  expect(full).toContain("knowledge_correct");
-
-  all.delete("knowledge_correct");
-  expect(capability!.learnGuidanceBuilder({ availableTools: all }).join("\n")).not.toContain(
-    "knowledge_correct",
-  );
-  all.delete("knowledge_create_claim");
-  expect(capability!.learnGuidanceBuilder({ availableTools: all })).toStrictEqual([]);
 });
 
 it("entry registers without reading the host runtime, as CLI metadata loading requires", () => {

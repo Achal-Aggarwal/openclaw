@@ -80,11 +80,13 @@ export function ChatPullRequestMobileRecovery(
   );
 }
 
-/** A whole-row destination. The host retains origin/Back and chooses the root subset. */
-export function ChatPullRequestMobileRow(props: {
+export type ChatPullRequestMobileRowProps = {
   pullRequest: ControlUiSessionPullRequest;
   onOpen: (pullRequest: ControlUiSessionPullRequest) => void;
-}) {
+};
+
+/** A whole-row destination. The host retains origin/Back and chooses the root subset. */
+export function ChatPullRequestMobileRow(props: ChatPullRequestMobileRowProps) {
   return (
     <button
       type="button"

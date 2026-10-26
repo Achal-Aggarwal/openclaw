@@ -33,6 +33,17 @@ export interface TooltipPolicyProps {
   openOnClick?: boolean;
   anchor?: HTMLElement | SVGElement | null;
 }
+export interface TooltipPolicyOptions {
+  props: () => TooltipPolicyProps;
+  trigger: () => HTMLElement | SVGElement | null;
+  richContent: () => readonly Node[];
+  richContainer: () => HTMLElement | null;
+  surface: HTMLElement;
+  requestOpen: (open: boolean) => boolean;
+  retire: () => void;
+  preview: (anchor: HTMLElement | SVGElement, content: string) => void;
+}
+
 /** Synchronous interaction authority, available before the lazy renderer loads. */
 export class TooltipOwner {
   static readonly #activeByDocument = new WeakMap<Document, TooltipOwner>();
@@ -108,16 +119,7 @@ export class TooltipOwner {
 
   constructor(
     readonly host: HTMLElement,
-    private readonly options: {
-      props: () => TooltipPolicyProps;
-      trigger: () => HTMLElement | SVGElement | null;
-      richContent: () => readonly Node[];
-      richContainer: () => HTMLElement | null;
-      surface: HTMLElement;
-      requestOpen: (open: boolean) => boolean;
-      retire: () => void;
-      preview: (anchor: HTMLElement | SVGElement, content: string) => void;
-    },
+    private readonly options: TooltipPolicyOptions,
   ) {}
   get id() {
     return this.#tooltipId;

@@ -19,27 +19,6 @@ import type {
 const NON_VISION_USER_IMAGE_PLACEHOLDER = "(image omitted: model does not support images)";
 const NON_VISION_TOOL_IMAGE_PLACEHOLDER = "(tool image omitted: model does not support images)";
 
-function replaceImagesWithPlaceholder(
-  content: (TextContent | ImageContent)[],
-  placeholder: string,
-): (TextContent | ImageContent)[] {
-  const result: (TextContent | ImageContent)[] = [];
-
-  for (const block of content) {
-    if (block.type !== "image") {
-      result.push(block);
-      continue;
-    }
-    const previous = result.at(-1);
-    const repeated = previous?.type === "text" && previous.text === placeholder;
-    if (isImageWithMediaPayload(block) && !repeated) {
-      result.push({ type: "text", text: placeholder });
-    }
-  }
-
-  return result;
-}
-
 function transformAssistant<TApi extends Api>(
   message: AssistantMessage,
   model: Model<TApi>,
@@ -209,15 +188,26 @@ export function transformMessages<TApi extends Api>(
       });
     } else {
       if (!supportsImages && typeof message.content !== "string") {
-        message = {
-          ...message,
-          content: replaceImagesWithPlaceholder(
-            message.content,
-            message.role === "user"
-              ? NON_VISION_USER_IMAGE_PLACEHOLDER
-              : NON_VISION_TOOL_IMAGE_PLACEHOLDER,
-          ),
-        };
+        const projectedMessage = { ...message };
+        const sourceContent = message.content;
+        const placeholder =
+          message.role === "user"
+            ? NON_VISION_USER_IMAGE_PLACEHOLDER
+            : NON_VISION_TOOL_IMAGE_PLACEHOLDER;
+        const content: (TextContent | ImageContent)[] = [];
+        for (const block of sourceContent) {
+          if (block.type !== "image") {
+            content.push(block);
+            continue;
+          }
+          const previous = content.at(-1);
+          const repeated = previous?.type === "text" && previous.text === placeholder;
+          if (isImageWithMediaPayload(block) && !repeated) {
+            content.push({ type: "text", text: placeholder });
+          }
+        }
+        projectedMessage.content = content;
+        message = projectedMessage;
       }
       if (message.role === "toolResult") {
         const trimmedId = message.toolCallId.trim();

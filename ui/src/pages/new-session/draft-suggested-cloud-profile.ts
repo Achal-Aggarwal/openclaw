@@ -1,7 +1,10 @@
 import type { DraftGatewayState } from "./draft-gateway-state.ts";
-import type { DraftPlaceCallbacks, DraftPlaceSnapshot } from "./draft-place-contract.ts";
+import type {
+  DraftCloudProfileSelection,
+  DraftPlaceCallbacks,
+  DraftPlaceSnapshot,
+} from "./draft-place-contract.ts";
 import { environmentCloudDisabledReason } from "./hosted-environments.ts";
-import type { NewSessionModelSelection } from "./model-selection.ts";
 
 export type SuggestedProfileAdoption = {
   completion: Promise<void>;
@@ -15,12 +18,7 @@ export class DraftSuggestedCloudProfile {
 
   constructor(
     private readonly gateway: DraftGatewayState,
-    private readonly place: {
-      readonly modelControl: NewSessionModelSelection;
-      readonly requiredPlacement: boolean;
-      isAdmin(): boolean;
-      selectCloudProfile(profileId: string): void;
-    },
+    private readonly place: DraftCloudProfileSelection,
     private readonly read: () => DraftPlaceSnapshot,
     private readonly callbacks: DraftPlaceCallbacks,
   ) {}

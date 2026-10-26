@@ -579,7 +579,7 @@ declare global {
   }
 }
 
-type ChatDetailsDesktopCompositionProps = Omit<Props, "desktop"> & {
+export type ChatDetailsDesktopCompositionProps = Omit<Props, "desktop"> & {
   /** The native host keeps ownership of top-layer menus and Undo/focus behavior. */
   progressMenuRef?: (menu: MenuHandle) => void;
   onHideProgress?: () => void;

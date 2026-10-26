@@ -150,6 +150,8 @@ export type SessionResetOptions = {
   agentId?: string | null;
 };
 
+export type SessionResetResult = "completed" | "not-started" | "uncertain";
+
 export type SessionGateway = {
   defer?: ApplicationGateway["defer"];
   readonly connection?: { readonly gatewayUrl: string; readonly token?: string };

@@ -1,6 +1,9 @@
 import type { ControlUiLinkReaderDescriptor } from "../../../src/shared/control-ui-link-reader.js";
 import { resolveLinkReaderTarget, EMPTY_LINK_READERS } from "../components/link-reader-target.ts";
-import { LINK_READER_PANEL_TOGGLE_EVENT } from "../components/panel-toggle-contract.ts";
+import {
+  LINK_READER_PANEL_TOGGLE_EVENT,
+  type LinkReaderPanelToggleDetail,
+} from "../components/panel-toggle-contract.ts";
 import { canCallGatewayMethod } from "../lib/gateway-methods.ts";
 import { shouldHandleNavigationClick } from "../lib/navigation-click.ts";
 import { listen } from "../lib/reactive/listener.ts";
@@ -118,7 +121,7 @@ export function startLinkReaderRouting(
     }
     // Prevent navigation only after the shell accepts the request. Unmounted
     // shells and unavailable surfaces must leave the ordinary link working.
-    const request = new CustomEvent(LINK_READER_PANEL_TOGGLE_EVENT, {
+    const request = new CustomEvent<LinkReaderPanelToggleDetail>(LINK_READER_PANEL_TOGGLE_EVENT, {
       cancelable: true,
       detail: {
         url: target.href,

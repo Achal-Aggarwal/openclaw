@@ -15,13 +15,11 @@ import {
 import { routeIdFromPath, type ApplicationRouter } from "../app-routes.ts";
 import { pathForSession } from "../app-session-path-builder.ts";
 import { sessionRefFromPath } from "../app-session-route-paths.ts";
-import type { BoardFace } from "../lib/board/settings.ts";
 import { parseCatalogSessionKey } from "../lib/sessions/catalog-key.ts";
 import { sessionNavigationTarget } from "../lib/sessions/route-navigation.ts";
 import {
   buildAgentMainSessionKey,
   isUiGlobalSessionKey,
-  normalizeAgentId,
   parseAgentSessionKey,
   resolveUiConversationIdentity,
   resolveUiConfiguredMainKey,
@@ -36,21 +34,8 @@ import type {
   ApplicationNavigationOptions,
 } from "./context.ts";
 import { waitForGatewayClient } from "./gateway-readiness.ts";
+import { releasedSessionQuery, resolvePersistedAgentId } from "./released-session-query.ts";
 import { loadGatewaySessionSelection } from "./settings.ts";
-
-function resolvePersistedAgentId(
-  selectedAgentId: string | null | undefined,
-  agentsList: AgentsListResult | null,
-): string | null {
-  const selectedId = selectedAgentId?.trim();
-  if (!selectedId || !agentsList) {
-    return null;
-  }
-  const normalizedId = normalizeAgentId(selectedId);
-  return agentsList.agents.some((agent) => normalizeAgentId(agent.id) === normalizedId)
-    ? normalizedId
-    : null;
-}
 
 // Saved selection only fills an implicit landing. Agent paths and plugin slug
 // candidates remain explicit, even before Gateway hello registers plugin tabs.
@@ -69,30 +54,16 @@ async function normalizeReleasedSessionQueryLocation(params: {
   selectedAgentId?: string | null;
   signal: AbortSignal;
 }): Promise<RouteLocation | null> {
-  const { location, basePath } = params;
-  const searchParams = new URLSearchParams(location.search);
-  if (!searchParams.has("session")) {
+  const released = releasedSessionQuery(params.location, params.basePath);
+  if (!released) {
     return null;
   }
-  const chatRoot = pathForRoute("chat", basePath);
-  const dashboardRoot = pathForRoute("dashboard", basePath);
-  const pathFace =
-    location.pathname === chatRoot || location.pathname === `${chatRoot}/`
-      ? "chat"
-      : location.pathname === dashboardRoot || location.pathname === `${dashboardRoot}/`
-        ? "dashboard"
-        : null;
-  if (!pathFace) {
-    return null;
-  }
-  const face: BoardFace = searchParams.get("face") === "dashboard" ? "dashboard" : pathFace;
-  const sessionKey = searchParams.get("session")?.trim() ?? "";
   const defaultsKnown = Boolean(
     params.agentsList()?.mainKey?.trim() ||
     (params.gateway.snapshot.phase === "connected" && params.gateway.snapshot.hello),
   );
-  const parsed = parseAgentSessionKey(sessionKey);
-  if (sessionKey && !defaultsKnown) {
+  const parsed = parseAgentSessionKey(released.sessionKey);
+  if (released.sessionKey && !defaultsKnown) {
     await waitForGatewayClient(params.gateway, params.signal);
   }
   const defaults = {
@@ -104,8 +75,8 @@ async function normalizeReleasedSessionQueryLocation(params: {
     (resolvePersistedAgentId(params.selectedAgentId, defaults.agentsList) ||
       resolveUiDefaultAgentId(defaults));
   const mainKey = resolveUiConfiguredMainKey(defaults);
-  const pathname = sessionKey
-    ? pathForSession(face, agentId, sessionKey, params.basePath, {
+  const pathname = released.sessionKey
+    ? pathForSession(released.face, agentId, released.sessionKey, params.basePath, {
         mainKey,
       })
     : null;
@@ -115,7 +86,7 @@ async function normalizeReleasedSessionQueryLocation(params: {
   const nextSearch = search.toString();
   return {
     ...params.location,
-    pathname: pathname ?? pathForRoute(face, params.basePath),
+    pathname: pathname ?? pathForRoute(released.face, params.basePath),
     search: nextSearch ? `?${nextSearch}` : "",
   };
 }

@@ -27,6 +27,12 @@ import type { LogbookCardPayload, LogbookStatusPayload, LogbookUiState } from ".
 
 registerEnglishCatalog(registerLogbookEnglish);
 
+export type LogbookProps = {
+  initialClient: GatewayBrowserClient | null;
+  // Return the same promise until the route or connection lifetime retires.
+  getRetired: () => Promise<void>;
+};
+
 /** Stable category hue so colors stay consistent across renders and days. */
 function categoryHue(category: string): number {
   let hash = 0;
@@ -317,11 +323,7 @@ function Ask(props: { model: LogbookModel; actions: LogbookActions }) {
   );
 }
 
-export function Logbook(props: {
-  initialClient: GatewayBrowserClient | null;
-  // Return the same promise until the route or connection lifetime retires.
-  getRetired: () => Promise<void>;
-}) {
+export function Logbook(props: LogbookProps) {
   const locale = projectI18n(i18n);
   const formatClock = (ms: number, timeZone: string) => {
     locale.locale();

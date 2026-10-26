@@ -89,3 +89,9 @@ export function formatKeyboardShortcutParts(
 export function matchesShortcutCombo(combo: KeyboardShortcutCombo, event: KeyboardEvent): boolean {
   return matchesKeyboardShortcut(combo, event, isApplePlatform(), resolveAsciiShortcutKey(event));
 }
+
+/** Runtime controls of the lazily loaded shortcuts dialog. */
+export type KeyboardShortcutsDialogElement = HTMLElement & {
+  isOpen: boolean;
+  toggle: () => void;
+};

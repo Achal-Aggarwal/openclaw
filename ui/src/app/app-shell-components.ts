@@ -13,6 +13,7 @@ import {
   TERMINAL_PANEL_TOGGLE_EVENT,
   TERMINAL_PANEL_DOCK_BOTTOM_EVENT,
 } from "../components/panel-toggle-contract.ts";
+import type { KeyboardShortcutsDialogElement } from "../lib/keyboard-shortcut-contract.ts";
 import type { DebugOverlayElement } from "../pages/debug/debug-overlay-state.ts";
 import { SHELL_APPROVALS_OPEN_EVENT, type LazyShellEvent } from "./lazy-shell-action.ts";
 
@@ -33,11 +34,7 @@ export interface ShellOwnedElements {
   approvalOverlay?: HTMLElement & { show(): void; dialogOpen?: boolean };
   debugOverlay?: DebugOverlayElement;
   pendingDebugOverlayFrame?: HTMLElement;
-  /** Runtime controls of the lazily loaded shortcuts dialog. */
-  keyboardShortcuts?: HTMLElement & {
-    isOpen: boolean;
-    toggle: () => void;
-  };
+  keyboardShortcuts?: KeyboardShortcutsDialogElement;
   assistantPanel?: HTMLElement;
   browserPanel?: HTMLElement;
   desktopPanel?: HTMLElement;

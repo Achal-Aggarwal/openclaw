@@ -1,6 +1,5 @@
 import type { JSX as SolidJSX } from "@solidjs/web";
 import { createMemo, createSignal, For, Show } from "solid-js";
-import type { ConfigUiHints } from "../api/types.ts";
 import { getLocale, t } from "../lib/reactive/i18n.ts";
 import { SECTION_META } from "./config-form.meta.ts";
 import { ConfigNode } from "./config-form.node.tsx";
@@ -11,6 +10,7 @@ import {
   localizedHintForPath,
   schemaType,
   type ConfigFormProps,
+  type ConfigTierGroupsProps,
   type JsonSchema,
 } from "./config-form.shared.ts";
 import { splitConfigSchemaByTier } from "./config-form.tiers.ts";
@@ -18,16 +18,7 @@ import { Icon } from "./solid/icon.tsx";
 import { Popover, type PopoverHandle } from "./solid/popover.tsx";
 import { SettingsEmpty, SettingsPage, LearnMoreLink } from "./solid/settings-ui.tsx";
 
-export function ConfigTierGroups(props: {
-  schema: JsonSchema;
-  path: Array<string | number>;
-  hints: ConfigUiHints;
-  revealAdvanced: boolean;
-  onShowAdvanced: () => void;
-  onHideAdvanced?: () => void;
-  renderTier: (node: () => JsonSchema) => SolidJSX.Element;
-  commonPrelude?: SolidJSX.Element;
-}): SolidJSX.Element {
+export function ConfigTierGroups(props: ConfigTierGroupsProps): SolidJSX.Element {
   const split = createMemo(() =>
     splitConfigSchemaByTier({
       schema: props.schema,

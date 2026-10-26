@@ -4,7 +4,6 @@ import { createMemo, For, onSettled, Show } from "solid-js";
 import type { SessionObserverDigest } from "../../../../../packages/gateway-protocol/src/schema/sessions.js";
 import type { ControlUiSessionPullRequest } from "../../../../../src/gateway/control-ui-contract.js";
 import type { GatewayBrowserClient } from "../../../api/gateway.ts";
-import type { ModelCatalogEntry } from "../../../api/types.ts";
 import type { ChatSendShortcut } from "../../../app/settings.ts";
 import { handleMarkdownCodeBlockClick } from "../../../components/markdown-code-blocks.ts";
 import { markdownBlocksRef } from "../../../components/markdown-element-refs-solid.ts";
@@ -13,7 +12,6 @@ import { PanelEmptyState } from "../../../components/solid/panel-empty-state.tsx
 import { PanelLoadingSkeleton } from "../../../components/solid/panel-loading-skeleton.tsx";
 import { registerChatSessionEnglish } from "../../../i18n/locales/en-chat-session.ts";
 import type { MessageGroup as MessageGroupData } from "../../../lib/chat/chat-types.ts";
-import { normalizeChatFastModeInput } from "../../../lib/chat/model-select-state.ts";
 import { cancelLayout, scheduleLayout } from "../../../lib/layout-frame.ts";
 import { elementRef } from "../../../lib/reactive/element-ref.ts";
 import { registerEnglishCatalog, t } from "../../../lib/reactive/i18n.ts";
@@ -22,14 +20,11 @@ import { projectOwner } from "../../../lib/reactive/projection.ts";
 import { defineSolidBridge, type SolidBridgeElement } from "../../../lib/solid-bridge.ts";
 import type { SidebarPanelDefinitionParams } from "../chat-pane-embedded-types.ts";
 import { usePanePresentation } from "../chat-pane-presentation.ts";
+import { createSideChatModelControlProps } from "../chat-session-companion-model-controls.ts";
 import type {
   ChatSessionCompanionThread,
   ChatSessionCompanionTurn,
 } from "../chat-session-companion.ts";
-import {
-  readChatModelCatalogState,
-  refreshChatModelCatalogOnDemand,
-} from "../chat-state-refresh.ts";
 import { resolveChatAttachmentLimits } from "./chat-attachment-admission.ts";
 import type { ChatAttachmentControlsProps } from "./chat-attachment-controls.types.ts";
 import { createChatAttachmentDropHandlers } from "./chat-attachments.ts";
@@ -40,8 +35,6 @@ import type { ChatModelControlsProps } from "./chat-model-controls.tsx";
 import { SessionRailComposer, sessionRailQuestion } from "./chat-session-rail-composer.tsx";
 import type { SidebarPanelHostRegistration } from "./chat-sidebar-region-types.ts";
 
-const sideChatCatalogs = new WeakMap<ModelCatalogEntry[], ModelCatalogEntry[]>();
-
 registerEnglishCatalog(registerChatSessionEnglish);
 
 /** Adapt pane facts only after Side Chat's first presentation loads this module. */
@@ -49,65 +42,17 @@ export function ChatSessionRailPanel(
   props: SidebarPanelDefinitionParams & { registerPanelHost?: SidebarPanelHostRegistration },
 ) {
   const presented = usePanePresentation(() => props.companionPresented);
-  /**
-   * Side chat reuses the main composer's model and effort pickers for its own
-   * per-question controls. Choices stay in the pane's companion store and travel
-   * with each question; they never patch the observed session.
-   */
-  const modelControls = createParkedProjection<ChatModelControlsProps | undefined>(() => {
-    if (!props.onCompanionModelSelect) {
-      return undefined;
-    }
-    const state = props.state;
-    const companion = props.companion;
-    const selection = companion.modelSelection ?? {};
-    const sessionKey = `side-chat:${state.sessionKey}`;
-    // Side chat always answers on the OpenClaw runtime, so runtime variants are not choices.
-    const sourceCatalog = state.chatModelCatalog;
-    let catalog = sideChatCatalogs.get(sourceCatalog);
-    if (!catalog) {
-      catalog = sourceCatalog.map(({ runtimeChoices: _runtimeChoices, ...entry }) => entry);
-      sideChatCatalogs.set(sourceCatalog, catalog);
-    }
-    const modelRef = selection.model || companion.defaultModel || "";
-    const separator = modelRef.indexOf("/");
-    const effective =
-      separator > 0
-        ? { provider: modelRef.slice(0, separator), model: modelRef.slice(separator + 1) }
-        : { model: modelRef || undefined };
-    const entry = catalog.find(
-      (candidate) => candidate.provider === effective.provider && candidate.id === effective.model,
-    );
-    const target = { model: effective.model, modelProvider: effective.provider };
-    return {
-      activeRunId: null,
-      agentDefaultModel: companion.defaultModel,
-      connected: state.connected,
-      gatewayAvailable: Boolean(state.client),
-      loading: false,
-      modelCatalog: catalog,
-      modelCatalogState: readChatModelCatalogState(state),
-      modelOverrides: { [sessionKey]: selection.model ?? null },
-      modelSwitching: false,
-      sending: companion.turns.some((turn) => turn.status === "pending"),
-      sessionKey,
-      selectedSession: undefined,
-      sessionsResult: null,
-      stream: null,
-      thinkingSession: { ...target, thinkingLevel: selection.thinkingLevel },
-      fastModeTarget: {
-        ...target,
-        fastMode: selection.fastMode,
-        effectiveFastMode: selection.fastMode ?? entry?.effectiveFastMode,
-      },
-      onModelSelect: (value) => props.onCompanionModelSelect?.({ model: value || undefined }),
-      onThinkingSelect: (value) =>
-        props.onCompanionModelSelect?.({ thinkingLevel: value || undefined }),
-      onFastModeSelect: (value) =>
-        props.onCompanionModelSelect?.({ fastMode: normalizeChatFastModeInput(value) }),
-      onModelPickerOpen: () => refreshChatModelCatalogOnDemand(state),
-    };
-  }, presented);
+  const modelControls = createParkedProjection(
+    () =>
+      props.onCompanionModelSelect
+        ? createSideChatModelControlProps({
+            state: props.state,
+            companion: props.companion,
+            onSelect: (patch) => props.onCompanionModelSelect?.(patch),
+          })
+        : undefined,
+    presented,
+  );
   return (
     <ChatSessionRail
       presentation={props.presentation}

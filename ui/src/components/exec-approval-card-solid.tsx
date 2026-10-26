@@ -77,6 +77,18 @@ export type ExecApprovalCardProps = {
   onDecisionReady?: (decide: ExecApprovalCardProps["onDecision"], deciding: () => boolean) => void;
 };
 
+export type SidebarApprovalRowProps = {
+  approval: ExecApprovalRequest;
+  busy: boolean;
+  connected: boolean;
+  canGrant: boolean;
+  error: string | null;
+  openSessionHref?: string;
+  sessionTitle?: string | null;
+  onDecision: (event: Event, approvalId: string, decision: ExecApprovalDecision) => void;
+  onOpenSession?: (event: MouseEvent) => void;
+};
+
 export function ApprovalAgentAvatar(props: { agentId: string; class?: string }) {
   const context = projectAgentRowContext(useOptionalApplication());
   const avatar = createMemo(() => {
@@ -180,17 +192,7 @@ export function approvalTitle(active: ExecApprovalRequest): string {
     : t("execApproval.execApprovalNeeded");
 }
 
-export function SidebarApprovalRow(props: {
-  approval: ExecApprovalRequest;
-  busy: boolean;
-  connected: boolean;
-  canGrant: boolean;
-  error: string | null;
-  openSessionHref?: string;
-  sessionTitle?: string | null;
-  onDecision: (event: Event, approvalId: string, decision: ExecApprovalDecision) => void;
-  onOpenSession?: (event: MouseEvent) => void;
-}) {
+export function SidebarApprovalRow(props: SidebarApprovalRowProps) {
   const approval = createMemo(() => props.approval);
   const nowMs = createMemo(() => readApprovalTime(approval().expiresAtMs));
   const expired = () => approval().expiresAtMs <= nowMs();

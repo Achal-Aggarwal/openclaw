@@ -10,10 +10,12 @@ import { formatErrorMessage } from "./errors.js";
 import { normalizeSystemdUnit } from "./restart.js";
 import { detectRespawnSupervisor } from "./supervisor-markers.js";
 
+export type SystemdStopTimeout = { timeoutMs: number; source: string; warning?: string };
+
 /** Read only the running unit, never a same-named unit in the other manager. */
 export async function readSystemdStopTimeout(
   env: NodeJS.ProcessEnv = process.env,
-): Promise<{ timeoutMs: number; source: string; warning?: string } | null> {
+): Promise<SystemdStopTimeout | null> {
   const membership = await fs.readFile("/proc/self/cgroup", "utf8").catch(() => "");
   const memberships = membership.split("\n");
   // On hybrid/legacy hosts, resource controllers can stop at the user manager.

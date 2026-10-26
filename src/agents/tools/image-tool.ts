@@ -7,10 +7,21 @@ import { normalizeMediaProviderId } from "../../../packages/media-understanding-
 import { resolveAgentModelPrimaryValue } from "../../config/model-input.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { captureAmbientGatewayOperatorAuthority } from "../../gateway/operator-invocation-authority.js";
+import { MEDIA_CAPABILITY_DEFAULTS } from "../../media-understanding/defaults.constants.js";
 import {
   resolveAutoMediaKeyProviders,
   resolveDefaultMediaModel,
 } from "../../media-understanding/defaults.js";
+import { matchesImageEntryCapability } from "../../media-understanding/entry-capabilities.js";
+import {
+  describeImageWithModel,
+  describeImagesWithModel,
+} from "../../media-understanding/image-runtime.js";
+import {
+  buildMediaUnderstandingRegistry,
+  getMediaUnderstandingProvider,
+} from "../../media-understanding/provider-registry.js";
+import { resolveTimeoutMs } from "../../media-understanding/resolve.js";
 import {
   classifyMediaReferenceSource,
   normalizeMediaReferenceSource,
@@ -18,9 +29,11 @@ import {
 import type { ImageCompressionPolicy } from "../../media/web-media.js";
 import { resolvePluginCapabilityProvider } from "../../plugins/capability-provider-runtime.js";
 import { runWithAsyncWorkResources } from "../../shared/async-work-resources.js";
+import { bindOperatorModelExecution } from "../admitted-run-context.js";
 import type { AuthProfileStore } from "../auth-profiles/types.js";
 import { resolveImageSanitizationLimits } from "../image-sanitization.js";
 import { isMinimaxVlmProvider } from "../minimax-vlm.js";
+import { runWithImageModelFallback } from "../model-fallback-image.js";
 import type { PreparedModelRuntimeSnapshot } from "../prepared-model-runtime.js";
 import type { AgentToolResult } from "../runtime/index.js";
 import { createSandboxBridgeReadFile } from "../sandbox-media-paths.js";
@@ -38,7 +51,6 @@ import {
 import {
   prepareImageCompressionPolicy,
   resolveImageModelConfigForOverride,
-  runImagePrompt,
 } from "./image-tool.model-execution.js";
 import {
   buildMediaReferenceDetails,
@@ -52,6 +64,7 @@ import {
   type MediaToolSandbox,
 } from "./media-tool-shared.js";
 import {
+  applyAgentDefaultModelConfig,
   buildToolModelConfigFromCandidates,
   hasToolModelConfig,
   prepareToolAuthProfileStore,
@@ -518,21 +531,166 @@ export function createImageTool(options?: {
         // Do not issue a paid vision-provider call for an already-aborted run.
         signal?.throwIfAborted();
         // Text-only runs delegate image understanding to the configured fallback model.
-        const result = await runImagePrompt({
-          signal,
-          operatorAuthority,
-          assertCurrent,
-          cfg: options?.config,
-          agentId: options?.agentId,
-          agentDir,
-          authStore: options?.authProfileStore,
-          imageModelConfig: imageRoute.imageModelConfig,
+        const {
+          config: cfg,
+          agentId,
+          authProfileStore: authStore,
+          workspaceDir,
+          preparedModelRuntime,
+        } = options ?? {};
+        const toolSignal = signal;
+        const assertToolCurrent = assertCurrent;
+
+        const effectiveCfg = applyAgentDefaultModelConfig(
+          cfg,
+          "imageModel",
+          imageRoute.imageModelConfig,
+        );
+        const providerCfg: OpenClawConfig = effectiveCfg ?? {};
+        const preparedProviders =
+          preparedModelRuntime?.mediaCapabilityProviders?.mediaUnderstandingProviders;
+
+        const imageResult = await runWithImageModelFallback({
+          cfg: effectiveCfg,
+          manifestPlugins: preparedModelRuntime?.metadataSnapshot,
           modelOverride,
-          prompt: promptRaw,
-          images: loadedImages,
-          workspaceDir: options?.workspaceDir,
-          preparedModelRuntime: options?.preparedModelRuntime,
+          operatorAuthority,
+          abortSignal: toolSignal,
+          run: (provider, modelId) =>
+            runWithAsyncWorkResources(async (onExecutionAcquired) => {
+              const execution = bindOperatorModelExecution(operatorAuthority, {
+                provider,
+                model: modelId,
+              });
+              if (execution) {
+                onExecutionAcquired({ release: execution.release });
+              }
+              const executionSignal = execution
+                ? toolSignal
+                  ? AbortSignal.any([toolSignal, execution.signal])
+                  : execution.signal
+                : toolSignal;
+              const assertExecutionCurrent = () => {
+                assertToolCurrent?.();
+                executionSignal?.throwIfAborted();
+                execution?.assertCurrent();
+              };
+              assertExecutionCurrent();
+              // The fallback candidate owns runtime loading; an unrelated media plugin must not
+              // block a selected image provider before its request timeout can start.
+              const selectedProvider = preparedProviders
+                ? findCapabilityProviderById({
+                    providers: preparedProviders,
+                    providerId: provider,
+                    normalizeProviderId: normalizeMediaProviderId,
+                  })
+                : resolvePluginCapabilityProvider({
+                    key: "mediaUnderstandingProviders",
+                    providerId: provider,
+                    cfg: providerCfg,
+                  });
+              const providerRegistry = buildMediaUnderstandingRegistry(
+                selectedProvider ? { [provider]: selectedProvider } : undefined,
+                providerCfg,
+                preparedProviders ?? [],
+              );
+              const sharedEntry = providerCfg.tools?.media?.models?.find((entry) => {
+                const timeoutEntry = { entry, provider, model: modelId, providerRegistry };
+                const configuredProvider = normalizeMediaProviderId(
+                  timeoutEntry.entry.provider ?? "",
+                );
+                const normalizedSelectedProvider = normalizeMediaProviderId(timeoutEntry.provider);
+                if (
+                  !configuredProvider ||
+                  configuredProvider !== normalizedSelectedProvider ||
+                  !matchesImageEntryCapability(timeoutEntry)
+                ) {
+                  return false;
+                }
+                const configuredModel = timeoutEntry.entry.model?.trim();
+                if (!configuredModel) {
+                  return true;
+                }
+                const providerPrefix = `${normalizedSelectedProvider}/`;
+                const normalizedConfiguredModel = configuredModel.startsWith(providerPrefix)
+                  ? configuredModel.slice(providerPrefix.length)
+                  : configuredModel;
+                return normalizedConfiguredModel === timeoutEntry.model;
+              });
+              const timeoutMs = resolveTimeoutMs(
+                sharedEntry?.timeoutSeconds ?? providerCfg.tools?.media?.image?.timeoutSeconds,
+                MEDIA_CAPABILITY_DEFAULTS.image.timeoutSeconds,
+              );
+              const imageProvider = getMediaUnderstandingProvider(provider, providerRegistry);
+              const request = {
+                provider,
+                model: modelId,
+                prompt: promptRaw,
+                maxTokens: 4096,
+                timeoutMs,
+                ...(executionSignal ? { signal: executionSignal } : {}),
+                cfg: providerCfg,
+                ...(agentId ? { agentId } : {}),
+                agentDir,
+                authStore,
+                ...(workspaceDir ? { workspaceDir } : {}),
+                ...(preparedModelRuntime ? { preparedModelRuntime } : {}),
+              };
+              if (
+                loadedImages.length > 1 &&
+                (imageProvider?.describeImages || !imageProvider?.describeImage)
+              ) {
+                const describeImages = imageProvider?.describeImages ?? describeImagesWithModel;
+                // A run cancelled mid-dispatch must not buy another provider call.
+                assertExecutionCurrent();
+                const described = await describeImages({
+                  images: loadedImages.map((image, index) => ({
+                    buffer: image.buffer,
+                    fileName: `image-${index + 1}`,
+                    mime: image.mimeType,
+                  })),
+                  ...request,
+                });
+                assertExecutionCurrent();
+                return { text: described.text, provider, model: described.model ?? modelId };
+              }
+              const describeImage = imageProvider?.describeImage ?? describeImageWithModel;
+              const parts: string[] = [];
+              for (const [index, image] of loadedImages.entries()) {
+                // A run cancelled mid-dispatch must not buy another provider call.
+                assertExecutionCurrent();
+                const described = await describeImage({
+                  buffer: image.buffer,
+                  fileName: `image-${index + 1}`,
+                  mime: image.mimeType,
+                  ...request,
+                  prompt:
+                    loadedImages.length === 1
+                      ? promptRaw
+                      : `${promptRaw}\n\nDescribe image ${index + 1} of ${loadedImages.length}.`,
+                });
+                assertExecutionCurrent();
+                if (loadedImages.length === 1) {
+                  return { text: described.text, provider, model: described.model ?? modelId };
+                }
+                parts.push(`Image ${index + 1}:\n${described.text.trim()}`);
+              }
+              return {
+                text: parts.join("\n\n").trim(),
+                provider,
+                model: modelId,
+              };
+            }),
         });
+
+        const result = {
+          ...imageResult.result,
+          attempts: imageResult.attempts.map((attempt) => ({
+            provider: attempt.provider,
+            model: attempt.model,
+            error: attempt.error,
+          })),
+        };
 
         return buildTextToolResult(result, buildMediaReferenceDetails(loadedImages, "image"));
       }),

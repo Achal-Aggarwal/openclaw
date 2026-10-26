@@ -1,6 +1,8 @@
 import type { SessionsUsageResult } from "../../../../src/shared/usage-types.js";
 import type { SessionRequestClient } from "./session-capability.ts";
 
+export type SessionUsageTarget = { key: string; agentId?: string };
+
 export type SessionUsageQuery = {
   startDate: string;
   endDate: string;

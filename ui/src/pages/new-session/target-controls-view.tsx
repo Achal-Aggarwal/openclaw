@@ -1,10 +1,8 @@
 import { createMemo, Loading, onSettled } from "solid-js";
-import type { GatewayAgentRow } from "../../api/types.ts";
 import type { AgentSelectElement } from "../../components/agent-select.tsx";
 import type { PopoverHandle } from "../../components/solid/popover.tsx";
 import { registerNewSessionSetupEnglish } from "../../i18n/locales/en-new-session-setup.ts";
 import { normalizeAgentTargetLabel } from "../../lib/agents/display.ts";
-import type { AgentIdentityCapability } from "../../lib/agents/identity.ts";
 import { t } from "../../lib/reactive/i18n.ts";
 import { liveValue } from "../../lib/reactive/live-value.ts";
 import { normalizeAgentId } from "../../lib/sessions/session-key.ts";
@@ -15,7 +13,7 @@ import type { DraftGatewayState } from "./draft-gateway-state.ts";
 import "../../components/agent-select-registration.ts";
 import { resolveProjectChip } from "./project-chip.ts";
 import { ProjectChip } from "./project-chip.tsx";
-import type { NewSessionPlaceControlsOptions } from "./target-controls.ts";
+import type { AgentSelectOptions, NewSessionPlaceControlsOptions } from "./target-controls.ts";
 import { NewSessionTerminalHost } from "./terminal-start-view.tsx";
 import { draftWhereChipParams, resolveWhereChip } from "./where-chip.ts";
 import { WhereChip } from "./where-chip.tsx";
@@ -23,15 +21,7 @@ import { WhereChip } from "./where-chip.tsx";
 registerNewSessionSetupEnglish();
 
 export function AgentSelect(props: {
-  params: {
-    agents: GatewayAgentRow[];
-    agentId: string;
-    agentIdentity?: AgentIdentityCapability;
-    disabled: boolean;
-    variant?: "default" | "compact";
-    onSelect: (agentId: string) => void;
-    onOpenChange: (open: boolean) => void;
-  };
+  params: AgentSelectOptions;
   ref?: (node: HTMLSpanElement) => void;
   focusTargetsRef?: AgentSelectElement["focusTargetsRef"];
 }) {

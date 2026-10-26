@@ -27,7 +27,6 @@ import { captureAsyncWorkTracker } from "../shared/async-work-scope.js";
 import { observeMainThreadSql } from "../test-utils/main-thread-sql-spies.test-support.js";
 import { withOpenClawTestState } from "../test-utils/openclaw-test-state.js";
 import type { SystemAgentConfiguredRoute } from "./inference-route.js";
-import { SETUP_INFERENCE_TEST_MAX_TOKENS } from "./setup-inference-probe-work.js";
 import {
   loadSetupInferencePluginGeneration,
   revalidateStableSetupInferenceOwner,
@@ -116,7 +115,7 @@ describe("setup inference plugin ownership", () => {
         allowAuthProfileFallback: false,
         disableTools: true,
         thinkLevel: "off",
-        streamParams: { maxTokens: SETUP_INFERENCE_TEST_MAX_TOKENS },
+        streamParams: { maxTokens: 256 },
       });
       return probeReply(route);
     });

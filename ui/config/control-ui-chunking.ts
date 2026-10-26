@@ -187,6 +187,7 @@ export function controlUiStableChunkName(id: string): string | undefined {
       return "chat-provider-review";
     // Keep optional compression groups separate from code evaluated by text-only Chat.
     case "ui/src/pages/chat/chat-send-delivery.runtime.ts":
+    case "ui/src/pages/chat/chat-send-queue-runtime.ts":
     case "ui/src/pages/chat/chat-model-recovery.runtime.ts":
     case "ui/src/pages/chat/chat-command-dispatch.runtime.ts":
     case "ui/src/pages/chat/chat-pane-session-operations.ts":

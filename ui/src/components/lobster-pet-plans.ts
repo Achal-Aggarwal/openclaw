@@ -334,11 +334,13 @@ export const LOBSTER_BOTTLE_FORTUNES = [
   "what washes away was never pinned",
 ] as const;
 
-export function planLobsterBottle(seed: number): {
+export type LobsterBottlePlan = {
   atMs: number;
   spotPct: number;
   fortuneIndex: number;
-} | null {
+};
+
+export function planLobsterBottle(seed: number): LobsterBottlePlan | null {
   const rng = mulberry32((seed ^ 0xb077) >>> 0);
   if (rng() >= 0.03) {
     return null;

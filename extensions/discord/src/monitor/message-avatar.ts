@@ -77,40 +77,6 @@ export function createDiscordAvatarResolver() {
     return undefined;
   };
 
-  const refreshGuildIcon = (
-    client: Client,
-    guildId: string,
-    conversationId: string,
-    endpointRuntime: DiscordEndpointRuntime | null,
-  ): void => {
-    if (pendingGuilds.has(guildId) || pendingGuilds.size >= DISCORD_AVATAR_CACHE_MAX_ENTRIES) {
-      return;
-    }
-    pendingGuilds.add(guildId);
-    void client
-      .fetchGuild(guildId)
-      .then((guild) => {
-        const hash = guild.icon ?? null;
-        setBoundedEntry(guildIcons, guildId, {
-          expiresAt: Date.now() + DISCORD_GUILD_ICON_TTL_MS,
-          hash,
-        });
-        if (hash) {
-          resolveSavedAvatar(
-            `${conversationId}\0${hash}`,
-            discordAvatarUrl("icons", guildId, hash),
-            endpointRuntime,
-          );
-        }
-      })
-      .catch((error: unknown) => {
-        logDebug(`discord guild icon lookup failed: ${formatErrorMessage(error)}`);
-      })
-      .finally(() => {
-        pendingGuilds.delete(guildId);
-      });
-  };
-
   return {
     resolve(params: {
       client: Client;
@@ -131,7 +97,32 @@ export function createDiscordAvatarResolver() {
       }
       const guildIcon = guildIcons.get(params.guildId);
       if (!guildIcon || guildIcon.expiresAt <= Date.now()) {
-        refreshGuildIcon(params.client, params.guildId, params.conversationId, endpointRuntime);
+        const { client, guildId, conversationId } = params;
+        if (!pendingGuilds.has(guildId) && pendingGuilds.size < DISCORD_AVATAR_CACHE_MAX_ENTRIES) {
+          pendingGuilds.add(guildId);
+          void client
+            .fetchGuild(guildId)
+            .then((guild) => {
+              const hash = guild.icon ?? null;
+              setBoundedEntry(guildIcons, guildId, {
+                expiresAt: Date.now() + DISCORD_GUILD_ICON_TTL_MS,
+                hash,
+              });
+              if (hash) {
+                resolveSavedAvatar(
+                  `${conversationId}\0${hash}`,
+                  discordAvatarUrl("icons", guildId, hash),
+                  endpointRuntime,
+                );
+              }
+            })
+            .catch((error: unknown) => {
+              logDebug(`discord guild icon lookup failed: ${formatErrorMessage(error)}`);
+            })
+            .finally(() => {
+              pendingGuilds.delete(guildId);
+            });
+        }
       }
       return guildIcon?.hash
         ? resolveSavedAvatar(

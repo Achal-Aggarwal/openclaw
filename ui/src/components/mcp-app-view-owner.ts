@@ -124,19 +124,7 @@ export function createMcpAppView(
     );
     presentationInputs = nextPresentation;
     if (presentationChanged) {
-      confirmation.update();
-      if (host.displayMode === "fullscreen") {
-        promoteToPopoverTopLayer(host, () => [host]);
-      } else {
-        host.removeAttribute("popover");
-      }
-      if (activeResources) {
-        activeResources.frameHeight = host.height;
-        activeResources.iframe.style.height =
-          host.fillContainer || host.displayMode === "fullscreen" ? "100%" : `${host.height}px`;
-        activeResources.updateHostContext?.();
-      }
-      updateReservedHeight();
+      updatePresentation();
     }
     if (surfaceInput !== host.surface && !presentationChanged) {
       updateReservedHeight();
@@ -246,6 +234,22 @@ export function createMcpAppView(
         host.style.minHeight = "";
       }
     }
+  }
+
+  function updatePresentation() {
+    confirmation.update();
+    if (host.displayMode === "fullscreen") {
+      promoteToPopoverTopLayer(host, () => [host]);
+    } else {
+      host.removeAttribute("popover");
+    }
+    if (activeResources) {
+      activeResources.frameHeight = host.height;
+      activeResources.iframe.style.height =
+        host.fillContainer || host.displayMode === "fullscreen" ? "100%" : `${host.height}px`;
+      activeResources.updateHostContext?.();
+    }
+    updateReservedHeight();
   }
 
   async function requestOwner<T = unknown>(

@@ -16,7 +16,7 @@ import { loadAgentRuntimePluginRegistryHandle } from "../agents/runtime-plugins.
 import { SessionManager } from "../agents/sessions/index.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import type { PluginInstallRecord } from "../config/types.plugins.js";
-import { clearAgentRunContext } from "../infra/agent-run-registry.js";
+import { clearAgentRunContext, registerAgentRunContext } from "../infra/agent-run-registry.js";
 import { formatErrorMessage } from "../infra/errors.js";
 import { loadInstalledPluginIndexInstallRecords } from "../plugins/installed-plugin-index-record-reader.js";
 import { loadInstalledPluginIndex } from "../plugins/installed-plugin-index.js";
@@ -28,6 +28,7 @@ import { getPluginRegistryForContext } from "../plugins/runtime/gateway-request-
 import { withPluginRuntimeGenerationScope } from "../plugins/runtime/generation-scope.js";
 import { getPluginRuntimeLoadContext } from "../plugins/runtime/load-context.js";
 import type { RuntimeEnv } from "../runtime.js";
+import { AsyncWorkScope } from "../shared/async-work-scope.js";
 import {
   projectInferenceRoute,
   resolveSystemAgentConfiguredRouteFromConfig,
@@ -50,13 +51,6 @@ import {
   setupInferenceLog,
   type VerifySetupInferenceResult,
 } from "./setup-inference-core.js";
-import {
-  registerHiddenSetupInferenceProbeRun,
-  runSetupInferenceProbeWork,
-  SETUP_INFERENCE_TEST_MAX_TOKENS,
-  type SetupTurnFailure,
-  type SetupTurnSuccess,
-} from "./setup-inference-probe-work.js";
 import { resolveSetupInferenceProfileError } from "./setup-inference-profile.js";
 import { createSystemAgentUserTurnRecorder } from "./user-turn-transcript.js";
 import {
@@ -67,6 +61,33 @@ import {
   type SystemAgentOwnerPluginArtifactSnapshot,
   type SystemAgentVerifiedInferenceBinding,
 } from "./verified-inference.js";
+
+const SETUP_INFERENCE_TEST_MAX_TOKENS = 256;
+
+type SetupTurnFailure = {
+  ok: false;
+  status: SetupInferenceFailureStatus;
+  error: string;
+};
+
+type SetupTurnSuccess = {
+  ok: true;
+  latencyMs: number;
+  text: string;
+  auth: AgentExecutionAuthBinding;
+};
+
+/** The probe is setup evidence, not a chat turn: its events must never reach Gateway projection. */
+function registerHiddenSetupInferenceProbeRun(runId: string, agentId: string, sessionKey: string) {
+  registerAgentRunContext(runId, {
+    agentId,
+    sessionKey,
+    isControlUiVisible: false,
+    projectSessionActive: false,
+    projectSessionLifecycle: false,
+    projectSessionMessages: false,
+  });
+}
 
 /**
  * Runs one bounded, tool-free turn through the exact configured route. The turn is evidence,
@@ -170,7 +191,7 @@ export async function runSetupInferenceTurn(params: {
     } else {
       const { runEmbeddedAgent: runEmbedded } = await import("../agents/embedded-agent.js");
       const harness = route.agentHarnessRuntimeOverride;
-      result = await runSetupInferenceProbeWork(runEmbedded, {
+      const probeParams: Parameters<typeof runEmbedded>[0] = {
         ...shared,
         // The probe owns its transcript; session admission must not create durable agent state.
         sessionPersistence: "detached",
@@ -191,7 +212,24 @@ export async function runSetupInferenceTurn(params: {
           ? { streamParams: { maxTokens: SETUP_INFERENCE_TEST_MAX_TOKENS } }
           : {}),
         modelRun: true,
-      });
+      };
+      /** Setup must release the isolated probe generation before activation can replace it. */
+      const failures = new Set<unknown>();
+      const work = new AsyncWorkScope(failures);
+      try {
+        result = await work.track(() => runEmbedded(probeParams));
+      } finally {
+        await AsyncWorkScope.runWhenAllIdle(
+          () => [work],
+          () => work.drain(),
+        );
+      }
+      if (failures.size > 0) {
+        throw new AggregateError(
+          [...failures],
+          "Inference setup check cleanup did not finish safely.",
+        );
+      }
     }
     if (params.signal?.aborted) {
       throw new SetupInferenceCancelledError();

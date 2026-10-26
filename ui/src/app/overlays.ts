@@ -5,7 +5,6 @@ import {
 } from "../../../src/gateway/events.js";
 import { registerListener } from "../../../src/shared/listeners.js";
 import type { NodeListNode } from "../../../src/shared/node-list-types.js";
-import type { GatewayBrowserClient } from "../api/gateway.ts";
 import { t } from "../i18n/index.ts";
 import { formatUiError } from "../lib/format-error.ts";
 import { showToast } from "../lib/toast.ts";
@@ -18,31 +17,19 @@ import {
   parseApprovalResolvedEvent,
   resolveApprovalRequest,
   type ExecApprovalPromptState,
-  refreshPendingApprovalQueue,
 } from "./exec-approval.ts";
 import { gatewayPresentationScope } from "./gateway-presentation-scope.ts";
 import type { ApplicationGateway } from "./gateway.ts";
 import { hasOperatorReadAccess, readGatewayOperatorAccess } from "./operator-access.ts";
+import {
+  createOverlayApprovalRefresher,
+  readOverlayOperatorAccessTransition,
+} from "./overlays-access.ts";
 import type { ApplicationOverlays, ApplicationOverlaySnapshot } from "./overlays-types.ts";
 import {
   createApplicationUpdateOverlays,
   type ApplicationUpdateOverlayHooks,
 } from "./overlays-updates.ts";
-
-function readOverlayOperatorAccessTransition(
-  previous: ReturnType<typeof readGatewayOperatorAccess>,
-  snapshot: ApplicationGateway["snapshot"],
-) {
-  const access = snapshot.phase === "connected" ? readGatewayOperatorAccess(snapshot) : previous;
-  return {
-    access,
-    reviewChanged: previous.canReviewApprovals !== access.canReviewApprovals,
-    grantChanged: previous.canGrantApprovals !== access.canGrantApprovals,
-    grantRevoked: previous.canGrantApprovals && !access.canGrantApprovals,
-    adminRevoked: previous.canAdmin && !access.canAdmin,
-    pairingChanged: previous.canPair !== access.canPair,
-  };
-}
 
 export function createApplicationOverlays(
   gateway: ApplicationGateway,
@@ -186,7 +173,7 @@ export function createApplicationOverlays(
       });
   }
 
-  const approvalRefreshParams = {
+  const refreshApprovals = createOverlayApprovalRefresher({
     gateway,
     state: promptState,
     getConnectedEpoch: () => connectedEpoch,
@@ -195,54 +182,7 @@ export function createApplicationOverlays(
     isCurrentClient,
     isDisposed: () => disposed,
     publish,
-  };
-  let approvalRefreshGeneration = 0;
-  let approvalRefreshTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
-  const cancelApprovalRefresh = () => {
-    approvalRefreshGeneration += 1;
-    if (approvalRefreshTimer !== null) {
-      globalThis.clearTimeout(approvalRefreshTimer);
-      approvalRefreshTimer = null;
-    }
-  };
-  const refreshApprovalQueue = async (
-    client: GatewayBrowserClient,
-    epoch = approvalRefreshParams.getConnectedEpoch(),
-    reviewGeneration = approvalRefreshParams.getReviewGeneration(),
-  ) => {
-    cancelApprovalRefresh();
-    const refreshGeneration = approvalRefreshGeneration;
-    let retryDelayMs = 1_000;
-    const isCurrent = () =>
-      refreshGeneration === approvalRefreshGeneration &&
-      !approvalRefreshParams.isDisposed() &&
-      epoch === approvalRefreshParams.getConnectedEpoch() &&
-      reviewGeneration === approvalRefreshParams.getReviewGeneration() &&
-      approvalRefreshParams.canReview() &&
-      readGatewayOperatorAccess(approvalRefreshParams.gateway.snapshot).canReviewApprovals &&
-      approvalRefreshParams.isCurrentClient(client);
-    const run = async () => {
-      if (!isCurrent()) {
-        return;
-      }
-      const complete = await refreshPendingApprovalQueue(approvalRefreshParams.state, {
-        isCurrentClient: (requestClient) => requestClient === client && isCurrent(),
-      });
-      if (!isCurrent()) {
-        return;
-      }
-      approvalRefreshParams.publish();
-      if (!complete) {
-        approvalRefreshTimer = globalThis.setTimeout(() => {
-          approvalRefreshTimer = null;
-          void run();
-        }, retryDelayMs);
-        retryDelayMs = Math.min(retryDelayMs * 2, 4_000);
-      }
-    };
-    await run();
-  };
-  const refreshApprovals = { refresh: refreshApprovalQueue, cancel: cancelApprovalRefresh };
+  });
 
   const synchronizeGateway = (next: ApplicationGateway["snapshot"]) => {
     const previousClient = activeClient;

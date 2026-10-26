@@ -1,29 +1,13 @@
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
 import { truncateUtf16Safe } from "@openclaw/normalization-core/utf16-slice";
-import type { HumanMention } from "../../lib/chat/chat-types.ts";
 import type { SessionCreateParams } from "../../lib/sessions/create.ts";
 import { normalizeAgentId } from "../../lib/sessions/session-key.ts";
-import type { NewSessionVisibility } from "./create-params.ts";
+import type { DraftSessionCreateSelection } from "./create-params.ts";
 import type { DraftPlaceState } from "./draft-place-state.ts";
 
 export function buildSelectedSessionCreateParams(
   place: DraftPlaceState,
-  params: Partial<
-    Pick<
-      SessionCreateParams,
-      | "attachments"
-      | "permissionMode"
-      | "catalogId"
-      | "category"
-      | "displayName"
-      | "displayNameGenerated"
-    >
-  > & {
-    message: string;
-    mentions?: readonly HumanMention[];
-    visibility: NewSessionVisibility;
-    toolOverrides?: SessionCreateParams["toolOverrides"] | null;
-  },
+  params: DraftSessionCreateSelection,
 ): SessionCreateParams {
   const draft = {
     ...params,

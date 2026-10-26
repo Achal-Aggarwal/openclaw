@@ -54,13 +54,7 @@ import {
   MALFORMED_STREAMING_FRAGMENT_ERROR_MESSAGE,
   parseRetryAfterSeconds,
 } from "../transports/transport-utils.js";
-import type {
-  AssistantMessage,
-  Model,
-  ModelRequestHeaders,
-  SimpleStreamOptions,
-  StreamFunction,
-} from "../types.js";
+import type { AssistantMessage, Model, SimpleStreamOptions, StreamFunction } from "../types.js";
 import {
   appendAssistantMessageDiagnostic,
   createAssistantMessageDiagnostic,
@@ -495,13 +489,14 @@ export const streamOpenAICodexResponses: StreamFunction<
       while (true) {
         const activeAttempt = semanticAttempt;
         response = undefined;
-        const sseHeaders = buildSSEHeaders(
-          modelHeaders,
-          optionHeaders,
-          accountId,
-          apiKey,
-          sessionId,
-        );
+        const sseHeaders = buildBaseCodexHeaders(modelHeaders, optionHeaders, accountId, apiKey);
+        sseHeaders.set("OpenAI-Beta", "responses=experimental");
+        sseHeaders.set("accept", "text/event-stream");
+        sseHeaders.set("content-type", "application/json");
+        if (sessionId) {
+          sseHeaders.set("session_id", sessionId);
+          sseHeaders.set("x-client-request-id", sessionId);
+        }
         const bodyJson = JSON.stringify(activeAttempt.request);
         const canCompressSseBody =
           model.provider === "openai" && !sseHeaders.has("content-encoding");
@@ -1393,26 +1388,6 @@ function createCodexRequestId(): string {
     return `codex_${suffix}`;
   }
   throw new Error("Secure random request id generation is unavailable");
-}
-
-function buildSSEHeaders(
-  initHeaders: ModelRequestHeaders | undefined,
-  additionalHeaders: ModelRequestHeaders | undefined,
-  accountId: string,
-  token: string,
-  sessionId?: string,
-): Headers {
-  const headers = buildBaseCodexHeaders(initHeaders, additionalHeaders, accountId, token);
-  headers.set("OpenAI-Beta", "responses=experimental");
-  headers.set("accept", "text/event-stream");
-  headers.set("content-type", "application/json");
-
-  if (sessionId) {
-    headers.set("session_id", sessionId);
-    headers.set("x-client-request-id", sessionId);
-  }
-
-  return headers;
 }
 
 /* oxlint-disable max-lines -- TODO: split this grandfathered oversized file. */

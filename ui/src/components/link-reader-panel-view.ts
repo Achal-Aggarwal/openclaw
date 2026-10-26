@@ -136,6 +136,14 @@ export function tabLabel(tab: ReaderTab): string {
     : t("linkReader.newTab");
 }
 
+export type LinkReaderPanelState = {
+  urlDraft: string;
+  invalidUrl: boolean;
+  tabLimitUrl: string | null;
+  tabs: ReaderTab[];
+  activeId: string | null;
+};
+
 export function readerHostedTabs(tabs: ReaderTab[], ownerDocument: Document): PanelHostedTab[] {
   return tabs.map((tab) => ({
     id: tab.id,

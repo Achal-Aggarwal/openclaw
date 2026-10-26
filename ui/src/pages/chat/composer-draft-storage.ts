@@ -34,13 +34,18 @@ import {
   type ChatComposerPersistenceState,
   type ChatComposerPersistOptions,
   type ChatComposerPersistStatus,
+  type ChatComposerDraftRevisionState,
+  type StoredChatComposerSnapshot,
 } from "./composer-persistence-state.ts";
 import { serializeQueueItemForScope } from "./composer-queue-persistence.ts";
 
 export function loadCapturedChatComposerState(
   state: ChatComposerScope,
   captured: StoredChatOutboxScope,
-) {
+): {
+  snapshot: StoredChatComposerSnapshot | null;
+  revisions: ChatComposerDraftRevisionState;
+} {
   const empty = { snapshot: null, revisions: { committed: 0, latestAttempt: 0 } };
   const storage = getSafeSessionStorage();
   if (!storage) {

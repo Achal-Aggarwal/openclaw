@@ -28,6 +28,7 @@ import {
   resolveUpdateStatusBanner,
   resolveUpdateStatusCheckBanner,
   type UpdateRestartStatusResponse,
+  type UpdateRunResponse,
   type UpdateFailureTriage,
   type UpdateTriageAdmission,
 } from "./update-overlay-helpers.ts";
@@ -602,23 +603,15 @@ export function createApplicationUpdateOverlays(
         if (!isCurrent() || snapshot.updateSchedule?.campaign?.state === "applying") {
           return;
         }
-        const response = await client.request<{
-          runId?: string;
-          ok?: boolean;
-          result?: {
-            status?: string;
-            reason?: string;
-            before?: { sha?: string | null; version?: string | null } | null;
-            after?: { sha?: string | null; version?: string | null } | null;
-          };
-          handoff?: { status?: string };
-          restart?: { coalesced?: boolean } | null;
-          sentinel?: { payload?: UpdateRestartStatusResponse["sentinel"] } | null;
-        }>("update.run", sessionKey ? { sessionKey } : {}, {
-          onSent: () => {
-            attempt.requestSent = true;
+        const response = await client.request<UpdateRunResponse>(
+          "update.run",
+          sessionKey ? { sessionKey } : {},
+          {
+            onSent: () => {
+              attempt.requestSent = true;
+            },
           },
-        });
+        );
         if (!isCurrent()) {
           return;
         }

@@ -34,6 +34,17 @@ export type ConfigFormProps = {
   onRemove?: (path: Array<string | number>) => void;
 };
 
+export type ConfigTierGroupsProps = {
+  schema: JsonSchema;
+  path: Array<string | number>;
+  hints: ConfigUiHints;
+  revealAdvanced: boolean;
+  onShowAdvanced: () => void;
+  onHideAdvanced?: () => void;
+  renderTier: (node: () => JsonSchema) => JSX.Element;
+  commonPrelude?: JSX.Element;
+};
+
 export {
   hintForPath,
   humanize,

@@ -1,6 +1,6 @@
 import type { UiCommandParams } from "@openclaw/gateway-protocol";
 import { asNullableRecord } from "@openclaw/normalization-core/record-coerce";
-import type { GatewayBrowserClient, GatewayEventFrame } from "../api/gateway.ts";
+import type { GatewayBrowserClient, GatewayEventFrame, GatewayHelloOk } from "../api/gateway.ts";
 import { isSessionRouteId } from "../app-route-paths.ts";
 import {
   BROWSER_PANEL_TOGGLE_EVENT,
@@ -36,6 +36,15 @@ import { capturePlacementStartupConnection } from "./session-placement-startup.t
 import { invalidateUserPreferences } from "./user-prefs-cache.ts";
 
 const AGENT_ROSTER_REFRESH_DEBOUNCE_MS = 100;
+
+export type StoredOutboxScopeHost = {
+  client: GatewayBrowserClient | null;
+  connected: boolean;
+  settings: { gatewayUrl?: string | null };
+  assistantAgentId?: string | null;
+  agentsList?: { defaultId?: string | null; mainKey?: string | null } | null;
+  hello?: Pick<GatewayHelloOk, "snapshot"> | null;
+};
 
 export type OutboxStoreRuntime = ReturnType<
   (typeof import("../lib/chat/outbox-store-projection.ts"))["createStoredChatOutboxReader"]
