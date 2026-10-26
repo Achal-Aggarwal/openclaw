@@ -374,16 +374,13 @@ describe("Control UI build chunking", () => {
     const entryChunk = chunks.find((chunk) => chunk.isEntry)!;
     const automationChunk = chunks.find((chunk) => automation in chunk.modules)!;
     const automationOperationChunk = chunks.find((chunk) => automationOperation in chunk.modules)!;
-    for (const statusModule of [
-      automationSpec,
-      automationView,
-      automationDetails,
-      automationCopy,
-    ]) {
+    for (const statusModule of [automationSpec, automationView, automationDetails]) {
       expect(chunks.find((chunk) => statusModule in chunk.modules)?.fileName).toBe(
         automationChunk.fileName,
       );
     }
+    const automationCopyChunk = chunks.find((chunk) => automationCopy in chunk.modules)!;
+    expect(automationCopyChunk.fileName).not.toBe(automationChunk.fileName);
     expect(staticImports(automationChunk.fileName)).not.toContain(
       automationOperationChunk.fileName,
     );
@@ -519,6 +516,10 @@ describe("Control UI build chunking", () => {
         "markdown-rendering-runtime",
       ],
       ["/repo/ui/node_modules/get-east-asian-width/index.js", "markdown-rendering-runtime"],
+      [
+        new URL("../pages/chat/chat-spawned-subagent.ts", import.meta.url).pathname,
+        "deferred-ui-support",
+      ],
       ["/repo/ui/src/components/config-form.shared.ts", undefined],
       ["/repo/ui/src/lib/clipboard.ts", undefined],
       ["/repo/ui/src/build-info.ts", undefined],

@@ -167,6 +167,7 @@ export function controlUiStableChunkName(id: string): string | undefined {
     case "ui/src/lib/sessions/usage.ts":
     case "src/shared/weak-owner-map.ts":
     case "ui/src/pages/chat/components/chat-activity-headline-selection.ts":
+    case "ui/src/pages/chat/chat-spawned-subagent.ts":
     case "ui/src/pages/chat/components/chat-working-indicator.tsx":
     case "ui/src/pages/chat/components/chat-working-indicator-branding.tsx":
     case "ui/src/components/working-phrase-solid.tsx":

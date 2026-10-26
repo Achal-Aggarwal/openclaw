@@ -1,4 +1,4 @@
-import { ActivityGroupEntries } from "../../pages/chat/components/chat-message-group-rich-entry.ts";
+import { ActivityGroupEntries as LazyActivityGroupEntries } from "../../pages/chat/components/chat-message-group-rich-entry.ts";
 import { hasToolMessageDemand } from "./tool-message-demand.ts";
 
 type ChatToolFamily = typeof import("../../pages/chat/chat-tool-family-runtime.ts");
@@ -58,7 +58,7 @@ export function loadChatToolPresentation(): Promise<ChatToolPresentation> {
         ActivityGroupEntries,
       }),
     ),
-    ActivityGroupEntries.preload(),
+    LazyActivityGroupEntries.preload(),
   ]).then(
     ([, loaded]) => {
       presentation = loaded;

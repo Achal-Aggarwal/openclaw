@@ -9,12 +9,12 @@ import type { GatewaySessionRow, SessionMembersListEvidenceResult } from "../../
 import { sessionsResult } from "../../lib/sessions/session-capability.test-support.ts";
 import type { SessionRefreshOutcome } from "../../lib/sessions/session-capability.ts";
 import type { GatewayRequestHandler } from "../../test-helpers/gateway-client.ts";
-import type { ChatSessionSharingState } from "./chat-pane-sharing-contract.ts";
-import { resolvePreparedChatSessionSharing } from "./chat-pane-sharing-mutations.ts";
 import {
   createGatewayBrowserClientFixture,
   createSessionContext,
 } from "./chat-application-context.test-support.ts";
+import type { ChatSessionSharingState } from "./chat-pane-sharing-contract.ts";
+import { resolvePreparedChatSessionSharing } from "./chat-pane-sharing-mutations.ts";
 import { createTestChatPane, type TestChatPane } from "./chat-pane.test-support.ts";
 import { createSessionCapabilityFixture } from "./chat-session-capability.test-support.ts";
 import type { ChatPageHost } from "./chat-state-host.ts";

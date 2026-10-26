@@ -47,9 +47,10 @@ export async function prewarmChatSnapshot(cacheKey: string): Promise<void> {
   // The store shares the parsed result and early board receipt with its consumer.
   try {
     await Promise.all([
-      import("./session-snapshot-store.ts").then(({ readPrewarmedChatSnapshot }) =>
-        readPrewarmedChatSnapshot(cacheKey),
-      ),
+      (async () => {
+        const { readPrewarmedChatSnapshot } = await import("./session-snapshot-store.ts");
+        await readPrewarmedChatSnapshot(cacheKey);
+      })(),
       import("../../lib/protocol-validators.generated/history-state.js"),
     ]);
   } catch {}

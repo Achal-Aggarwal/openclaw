@@ -3,6 +3,7 @@
 import { createComponent, createSignal } from "solid-js";
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import type { AgentActivityItem } from "../../../../../packages/gateway-protocol/src/schema/logs-chat.js";
+import { prepareChatToolPresentation } from "../../../lib/chat/tool-family.ts";
 import { projectOwner } from "../../../lib/reactive/projection.ts";
 import { mountSolid } from "../../../test-helpers/mount-solid.ts";
 import { flush, waitForSolid } from "../../../test-helpers/solid-settle.ts";
@@ -416,6 +417,11 @@ describe("transcript projection", () => {
       ],
     );
     props.showToolCalls = true;
+    // Prepare the optional owners before testing row placement and card content.
+    await Promise.all([
+      prepareChatToolPresentation(props.messages),
+      import("./browser-tab-card.tsx"),
+    ]);
     saveChatSessionScrollPosition(props.paneId, props.sessionKey, {
       scrollTop: 0,
       anchorToEnd: false,

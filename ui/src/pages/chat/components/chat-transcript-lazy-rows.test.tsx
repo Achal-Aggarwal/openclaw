@@ -69,11 +69,12 @@ it("commits the first tool history row fully through the public chat thread", as
       ) {
         return;
       }
-      const row = host.columnElement?.querySelector(".chat-virtual-row");
-      firstCommittedActivity = row
+      const committedRow = host.columnElement?.querySelector(".chat-virtual-row");
+      firstCommittedActivity = committedRow
         ? {
-            summary: row.querySelector(".chat-activity-group__summary")?.textContent ?? null,
-            failure: row.querySelector(".chat-tool-failure")?.textContent ?? null,
+            summary:
+              committedRow.querySelector(".chat-activity-group__summary")?.textContent ?? null,
+            failure: committedRow.querySelector(".chat-tool-failure")?.textContent ?? null,
           }
         : null;
     },

@@ -177,7 +177,7 @@ it("hydrates the transcript without mounting an invalid persisted board", async 
     const transaction = database.transaction(CHAT_SNAPSHOT_STORE_NAME, "readwrite");
     const completed = transactionComplete(transaction);
     transaction.objectStore(CHAT_SNAPSHOT_STORE_NAME).put({
-      projectionVersion: 3,
+      projectionVersion: 5,
       sessionKey: resolveChatSnapshotKey(pane.state, { sessionKey }),
       savedAt: Date.now(),
       sessionId: transcript.sessionId,
