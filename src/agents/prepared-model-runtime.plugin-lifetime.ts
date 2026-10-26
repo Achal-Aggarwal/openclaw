@@ -54,7 +54,10 @@ import type {
 import { releaseRuntimePluginWork, retainRuntimePluginWork } from "./runtime-plugin-work.js";
 
 const log = createSubsystemLogger("agents/prepared-model-runtime");
-type Lifetime = ReturnType<typeof createLifetime>;
+const runUnscoped = <T>(run: () => T): T => run();
+type Lifetime = ReturnType<typeof createLifetime> & {
+  overlapInstances?: ReadonlyMap<PluginInstanceHandle, PluginRegistry>;
+};
 // Source and compiled consumers can share the same generation and registry objects.
 // Share only cleanup ownership; model/auth snapshots keep their existing module identity.
 const { generations, active, retirements, publications } = resolveGlobalSingleton(
@@ -193,6 +196,14 @@ export function ownPreparedPluginGeneration(
       (registry) => registry !== undefined,
     ),
   );
+  let overlapInstances: Map<PluginInstanceHandle, PluginRegistry> | undefined;
+  for (const registry of selectedRegistries) {
+    for (const instance of collectRegistryInvocationInstances(registry, true)) {
+      if (!overlapInstances?.has(instance)) {
+        (overlapInstances ??= new Map()).set(instance, registry);
+      }
+    }
+  }
   const acquisitionFailures: unknown[] = [];
   const lifetime = createLifetime(
     async () => {
@@ -223,6 +234,8 @@ export function ownPreparedPluginGeneration(
     void lifetime.close().catch(() => {});
     throw error;
   }
+  // The immutable generation owns this selection; ordinary leases need no callable scope.
+  Object.assign(lifetime, { overlapInstances });
   generations.set(generation, lifetime);
   return lifetime;
 }
@@ -242,25 +255,16 @@ export function createPreparedModelRuntimeLease(
   pluginGeneration: PreparedModelRuntimePluginGeneration,
   onRelease?: () => void,
 ): PreparedModelRuntimeLease {
-  const registryByInstance = new Map<PluginInstanceHandle, PluginRegistry>();
-  const registries = [pluginGeneration.pluginRegistry, pluginGeneration.inboundPluginRegistry];
-  for (const registry of registries) {
-    if (registry) {
-      for (const instance of collectRegistryInvocationInstances(registry)) {
-        if (!registryByInstance.has(instance)) {
-          registryByInstance.set(instance, registry);
-        }
-      }
-    }
-  }
-  const registry = registries.find((entry) => entry !== undefined);
-  const scope = registry
-    ? new PluginInvocationScope(registry, registryByInstance.keys(), {
-        retained: true,
-        parent: pluginInvocationContext.getStore(),
-        registryByInstance,
-      })
-    : undefined;
+  const registryByInstance = ownPreparedPluginGeneration(pluginGeneration).overlapInstances;
+  const registry = registryByInstance?.values().next().value;
+  const scope =
+    registryByInstance && registry
+      ? new PluginInvocationScope(registry, registryByInstance.keys(), {
+          retained: true,
+          parent: pluginInvocationContext.getStore(),
+          registryByInstance,
+        })
+      : undefined;
   let releaseGeneration: () => Promise<void>;
   try {
     releaseGeneration = retainPreparedPluginGeneration(pluginGeneration);
@@ -268,17 +272,20 @@ export function createPreparedModelRuntimeLease(
     scope?.release();
     throw error;
   }
+  if (!scope && !onRelease) {
+    return {
+      snapshot,
+      pluginGeneration,
+      run: runUnscoped,
+      [Symbol.asyncDispose]: releaseGeneration,
+    };
+  }
   let closed = false;
   let disposal: Promise<void> | undefined;
   return {
     snapshot,
     pluginGeneration,
-    run<T>(run: () => T): T {
-      if (closed) {
-        throw new Error("Prepared model runtime lease is closed");
-      }
-      return scope ? scope.run(run) : run();
-    },
+    run: scope ? <T>(run: () => T): T => scope.run(run) : runUnscoped,
     [Symbol.asyncDispose]() {
       if (!closed) {
         closed = true;
