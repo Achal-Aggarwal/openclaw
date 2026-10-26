@@ -61,6 +61,7 @@ export class TranscriptInitialRange {
     this.retainViewportRows();
     return {
       activeRowKeys: new Set(this.activeIndexes().map((index) => rows[index]!.key)),
+      preparingRowKey: this.preparingRowKey,
     };
   }
 
@@ -169,6 +170,7 @@ export class TranscriptInitialRange {
       queueMicrotask(() => {
         if (this.preparingRowKey === key) {
           this.preparingRowKey = undefined;
+          this.invalidate();
           this.queuePreparation();
         }
       });

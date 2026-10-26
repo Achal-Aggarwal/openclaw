@@ -142,6 +142,9 @@ function TranscriptRows(props: {
                     data-index={String(virtualRow().index)}
                     data-virtual-row-key={row()?.key}
                     data-prepared-row={active() ? undefined : "true"}
+                    data-preparing-row={
+                      row()?.key === props.snapshot.preparingRowKey ? "true" : undefined
+                    }
                     inert={!active()}
                     aria-hidden={active() ? undefined : "true"}
                   >

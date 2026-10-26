@@ -237,14 +237,18 @@ it("prepares ahead during fast scrolling and waits for measurement before admitt
     `[data-virtual-row-key="${preparedKey}"]`,
   );
   expect(preparing).not.toBeNull();
+  expect(preparing!.getAttribute("data-preparing-row")).toBe("true");
+  expect(view.container.querySelectorAll("[data-preparing-row]")).toHaveLength(1);
   expect(Number(preparing!.dataset.index)).toBeGreaterThan(Math.max(...activeIndexes()));
   expect(view.renderRow.mock.calls).toHaveLength(rendered + 1);
   await view.frame(2, false);
   expect(view.renderRow.mock.calls).toHaveLength(rendered + 1);
   emitTranscriptResize(preparing!, 800, 100);
   await settle();
+  expect(view.container.querySelectorAll("[data-preparing-row]")).toHaveLength(0);
   await view.frame(1, false);
   expect(view.renderRow.mock.calls).toHaveLength(rendered + 2);
+  expect(view.container.querySelectorAll("[data-preparing-row]")).toHaveLength(1);
 });
 
 it("places a fresh long transcript at its measured tail before preparing distant rows", async () => {
