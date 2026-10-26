@@ -365,7 +365,7 @@ describe("buildConfiguredAgentSystemPrompt", () => {
     },
   );
 
-  it("renders only current supplied aliases without ambient lookup or repeated discovery", () => {
+  it("keeps admitted aliases after snapshot retirement without rediscovery", () => {
     const config: OpenClawConfig = {
       plugins: { enabled: false },
       agents: {
@@ -373,28 +373,33 @@ describe("buildConfiguredAgentSystemPrompt", () => {
           model: "fixture/current",
           models: {
             "fixture/current": { alias: "Current" },
+            "fixture/another": { alias: "Another" },
             "fixture/unsupported": { alias: "Unavailable" },
           },
         },
       },
     };
-    const owner = preparedOwner(config, ["current"], "writer");
+    const owner = preparedOwner(config, ["current", "another"], "writer");
     const lookup = vi
       .spyOn(preparedModelCatalog, "getPreparedModelCatalogOwnerSnapshot")
       .mockReturnValue(owner);
     const fetch = vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("Unexpected network"));
     const params = { config, agentId: "writer", workspaceDir: "/tmp/openclaw" };
     expect(buildConfiguredAgentSystemPrompt(params)).not.toContain("## Model Aliases");
+    let admitted = "";
     for (let index = 0; index < 3; index++) {
       const prompt = buildConfiguredAgentSystemPrompt({ ...params, preparedModelRuntime: owner });
       expect(prompt).toContain("- Current: fixture/current");
+      expect(prompt).toContain("- Another: fixture/another");
+      expect(prompt.indexOf("- Another:")).toBeLessThan(prompt.indexOf("- Current:"));
+      admitted = prompt;
       expect(prompt).not.toContain("Unavailable");
       expect(prompt).not.toContain("fixture/unsupported");
     }
     owner.isCurrent.mockReturnValue(false);
-    expect(
-      buildConfiguredAgentSystemPrompt({ ...params, preparedModelRuntime: owner }),
-    ).not.toContain("## Model Aliases");
+    expect(buildConfiguredAgentSystemPrompt({ ...params, preparedModelRuntime: owner })).toBe(
+      admitted,
+    );
     const replacementConfig: OpenClawConfig = {
       ...config,
       agents: { defaults: { models: { "fixture/current": { alias: "Replacement" } } } },
