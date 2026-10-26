@@ -18,6 +18,7 @@ import {
   settlePendingPackageActivation,
   settleStalePackageActivation,
 } from "../../infra/package-update-activation.js";
+import { createPublicationOwner } from "../../infra/package-update-publication-owner.js";
 import { defaultRuntime } from "../../runtime.js";
 import {
   createOpenClawTestState,
@@ -231,7 +232,60 @@ describe.skipIf(process.platform === "win32")(
       expect(fs.readFileSync(resolvePackageActivationJournalPath(f.anchor))).toEqual(before);
     });
 
-    it.each(["publishing", "publication-complete", "aborted"] as const)(
+    it.each(["repair", "automatic"] as const)(
+      "settles a completed publication through %s when the live package serves the candidate",
+      async (mode) => {
+        const f = await fixtures.prepare();
+        mocks.root.mockResolvedValue(f.packageRoot);
+        const journal = openPackageActivationJournal(f.anchor);
+        const prepared = journal.read();
+        await withUpdateCommandExecutor(
+          randomUUID(),
+          async (executor) => {
+            const fence = await executor.enter(f.packageRoot);
+            await createPublicationOwner(f.anchor, journal, fence.assertCurrent, prepared).publish(
+              false,
+            );
+          },
+          { existingAuthority: prepared.descriptor.authority },
+        );
+        expect(journal.read().phase).toBe("publication-complete");
+        const liveBytes = fs.readFileSync(path.join(f.packageRoot, "package.json"));
+        const launcherBytes = fs.readFileSync(f.launcher);
+        expect(() => assertNoPendingPackageActivation(f.packageRoot)).toThrow();
+
+        if (mode === "repair") {
+          await repair();
+          expect(mocks.finalize).toHaveBeenCalledOnce();
+        } else {
+          const preview = await settlePendingPackageActivation(f.packageRoot, {
+            automatic: true,
+            dryRun: true,
+          });
+          expect(preview).toEqual({
+            operationId: f.operationId,
+            reason: "publication-settled-external-change",
+          });
+          expect(() =>
+            assertNoPendingPackageActivation(f.packageRoot, { dryRun: true }),
+          ).not.toThrow();
+          await expect(
+            settlePendingPackageActivation(f.packageRoot, { automatic: true }),
+          ).resolves.toEqual(preview);
+        }
+
+        expect(readPackageActivationReceipt(f.packageRoot)).toMatchObject({ phase: "complete" });
+        expect(() => assertNoPendingPackageActivation(f.packageRoot)).not.toThrow();
+        expect(fs.existsSync(f.anchor)).toBe(false);
+        expect(packageActivationIdentity(f.packageRoot, true)).toBe(
+          prepared.descriptor.candidate.identity,
+        );
+        expect(fs.readFileSync(path.join(f.packageRoot, "package.json"))).toEqual(liveBytes);
+        expect(fs.readFileSync(f.launcher)).toEqual(launcherBytes);
+      },
+    );
+
+    it.each(["publishing", "aborted"] as const)(
       "keeps dry-run admission blocked for a candidate in %s phase",
       async (phase) => {
         const f = await fixtures.prepare();

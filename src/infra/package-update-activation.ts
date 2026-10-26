@@ -94,7 +94,7 @@ function readPackageActivationContinuation(installKey: string, dryRun?: boolean)
       packageActivationIdentity(installKey, true),
     ) &&
     (packageActivationLeaseChanged(record.descriptor.authority) ||
-      (record.phase === "prepared" &&
+      (["prepared", "publication-complete"].includes(record.phase) &&
         packageActivationIdentity(installKey, true) === record.descriptor.candidate.identity) ||
       (packageActivationIdentity(installKey, true) === record.descriptor.previous.identity &&
         ((record.phase === "prepared" &&
@@ -250,10 +250,12 @@ export async function settlePendingPackageActivation(
       initial.intent === null &&
       initial.publications.length === 0) ||
       initial.phase === "aborted");
+  // A completed publication whose live package already serves the candidate only
+  // needs its verified evidence retired; it must not block the next update.
   const externalPublication =
     initial.descriptor.authority.installKey === installKey &&
     liveIdentity === initial.descriptor.candidate.identity &&
-    initial.phase === "prepared";
+    (initial.phase === "prepared" || initial.phase === "publication-complete");
   if (!publicationNotStarted && !externalPublication) {
     if (options?.automatic) {
       return undefined;
@@ -302,7 +304,7 @@ export async function settlePendingPackageActivation(
         },
         initial,
       );
-      if (externalPublication) {
+      if (externalPublication && initial.phase === "prepared") {
         await owner.publish(true);
       } else if (initial.phase === "prepared") {
         await owner.preflight("repair");
