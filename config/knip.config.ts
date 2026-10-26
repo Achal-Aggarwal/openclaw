@@ -63,15 +63,19 @@ const repositoryScriptEntries = [
   // The scheduled-run execution context design invokes this development replay by path.
   "scripts/dev/cron-context-replay.mts!",
   // Maintained measurement commands invoke these roots by path; the archive and
-  // session-create commands also launch their preload hooks through --import.
+  // session commands also launch their preload hooks through --import.
+  "scripts/perf/after-turn-context-measure.ts!",
+  "scripts/perf/agent-runtime-dispatch-measure.ts!",
   "scripts/perf/archive-worker-churn-measure.ts!",
   "scripts/perf/archive-worker-churn-preload.mjs!",
   "scripts/perf/archive-worker-startup-measure.mjs!",
   "scripts/perf/attempt-stream-repair-measure.ts!",
   "scripts/perf/catalog-retained-data-measure.ts!",
+  "scripts/perf/channels-status-inventory.ts!",
   "scripts/perf/config-health-read-measure.ts!",
   "scripts/perf/context-engine-lifecycle-bench.ts!",
   "scripts/perf/disk-budget-scan.ts!",
+  "scripts/perf/extension-handler-lookup-measure.ts!",
   "scripts/perf/git-operation-allocation-measure.ts!",
   "scripts/perf/mcp-namespace-result-measure.ts!",
   "scripts/perf/mcp-oauth-startup.ts!",
@@ -87,10 +91,14 @@ const repositoryScriptEntries = [
   "scripts/perf/plugin-source-preparation.ts!",
   "scripts/perf/prepared-gateway-startup-measure.mjs!",
   "scripts/perf/provider-tool-normalization-measure.ts!",
+  "scripts/perf/reply-tool-authority-measure.ts!",
   "scripts/perf/sandbox-paths-measure.ts!",
+  "scripts/perf/session-archive-staging-measure.ts!",
   "scripts/perf/session-create-measure-loader.mjs!",
   "scripts/perf/session-create-measure.ts!",
   "scripts/perf/session-create-repository-measure.ts!",
+  "scripts/perf/session-delete-measure.ts!",
+  "scripts/perf/session-delete-phases-loader.mjs!",
   "scripts/perf/session-entry-patch-prepare-measure.ts!",
   "scripts/perf/session-event-audience-measure.ts!",
   "scripts/perf/session-projection-stream-measure.ts!",
@@ -110,6 +118,7 @@ const repositoryScriptEntries = [
   "scripts/perf/transcript-snapshot-copy-measure.ts!",
   "scripts/perf/turn-start-phases.ts!",
   "scripts/perf/ui-streaming-render-measure.ts!",
+  "scripts/perf/update-manager-measure.ts!",
   "scripts/perf/worker-spawn-measure.mjs!",
   "scripts/perf/worktree-size-measure.ts!",
   // #183131 invokes this fresh-process cron flake workload by path.
