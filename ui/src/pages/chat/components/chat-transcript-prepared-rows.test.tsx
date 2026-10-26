@@ -424,6 +424,17 @@ it("places a fresh long transcript at its tail and warms a bounded upward window
   expect(view.renderRow.mock.calls).toHaveLength(preparations);
 });
 
+it("uses cached geometry on the first reader movement after tail placement", async () => {
+  const view = await transcriptFixture(null, true);
+  await view.frame(8);
+  const style = vi.spyOn(globalThis, "getComputedStyle");
+  await view.scrollTo(240);
+  await view.frame(2, false);
+  expect(
+    style.mock.calls.filter(([element]) => element.classList.contains("chat-virtual-row")),
+  ).toHaveLength(0);
+});
+
 it("waits for idle time to mount prepared rows and uses the latest viewport", async () => {
   const view = await transcriptFixture(0, true);
   const scheduled = vi.mocked(requestIdleCallback).mock.calls.length;
