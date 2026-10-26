@@ -150,6 +150,11 @@ function normalizeTerminalDeliveryEvidenceResult(
     return undefined;
   }
   const captured = record.captured === true ? (true as const) : undefined;
+  const rawMeta = asOptionalObjectRecord(record.meta);
+  const meta: RestartRecoveryTerminalDeliveryEvidenceResult["meta"] = {
+    ...(rawMeta?.aborted === true ? { aborted: true as const } : {}),
+    ...(rawMeta?.error === true ? { error: true as const } : {}),
+  };
   const rawPayloads = Array.isArray(record.payloads) ? record.payloads : undefined;
   const payloads: RestartRecoveryTerminalDeliveryEvidenceResult["payloads"] = rawPayloads
     ? rawPayloads.slice(0, 64).map((payload) => {
@@ -271,6 +276,7 @@ function normalizeTerminalDeliveryEvidenceResult(
     record.restartUnsafeSideEffectsDetected === true ? (true as const) : undefined;
   if (
     !captured &&
+    Object.keys(meta).length === 0 &&
     !payloads?.length &&
     !payloadsTruncated &&
     !deliveryStatus &&
@@ -283,6 +289,7 @@ function normalizeTerminalDeliveryEvidenceResult(
   }
   return {
     ...(captured ? { captured } : {}),
+    ...(Object.keys(meta).length ? { meta } : {}),
     ...(payloads?.length ? { payloads } : {}),
     ...(payloadsTruncated ? { payloadsTruncated } : {}),
     ...(deliveryStatus ? { deliveryStatus } : {}),

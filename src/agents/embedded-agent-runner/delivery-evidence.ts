@@ -23,6 +23,7 @@ export type AgentDeliveryEvidence = {
   payloads?: unknown;
   /** Durable recovery evidence sets this when its bounded payload projection omitted entries. */
   payloadsTruncated?: unknown;
+  meta?: { aborted?: unknown; error?: unknown };
   deliveryStatus?: {
     status?: unknown;
     resultCount?: unknown;
