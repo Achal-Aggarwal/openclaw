@@ -417,6 +417,10 @@ const repositoryScriptEntries = [
   "scripts/perf/trajectory-tool-parameters-measure.ts!",
   "scripts/perf/transcript-projection-receipt-measure.ts!",
   "scripts/perf/ui-streaming-render-measure.ts!",
+  // The dynamic-consumer compiler follows the computed child launches of these command roots.
+  "scripts/perf/archive-worker-churn-measure.ts!",
+  "scripts/perf/session-create-measure.ts!",
+  "scripts/perf/session-create-repository-measure.ts!",
   // Maintained source headers invoke these standalone commands and external preload by exact path.
   "scripts/bench-control-ui-talk.ts!",
   "scripts/perf/agent-catalog-display-measure.ts!",
