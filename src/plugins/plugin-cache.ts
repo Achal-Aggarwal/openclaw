@@ -261,14 +261,12 @@ export async function preparePluginCacheFact<T>(
   read: () => Promise<T>,
 ): Promise<{ value: T; assertCurrent: () => void }> {
   const signal = getPluginCacheRetirementSignal(owner);
-  signal.throwIfAborted();
   let current = facts.get(key);
   if (!current) {
     const reading = read();
     const pending: { pending: Promise<{ value: T }> } = {
       pending: reading
         .then((value) => {
-          signal.throwIfAborted();
           const published = facts.get(key);
           if (published && "value" in published) {
             return published;
@@ -293,7 +291,6 @@ export async function preparePluginCacheFact<T>(
   const assertCurrent = () => {
     signal.throwIfAborted();
   };
-  assertCurrent();
   return { value: ready.value, assertCurrent };
 }
 

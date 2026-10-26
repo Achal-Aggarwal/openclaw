@@ -21,6 +21,7 @@ import {
   installMockGateway,
   requireRecord,
   requireString,
+  textContent,
 } from "./chat-flow.test-support.ts";
 import {
   focusChatSidePanel,
@@ -597,9 +598,7 @@ suite.define(() => {
               },
               {
                 role: "assistant",
-                content: [
-                  { type: "text", text: "The task progress card tracks the workspace checks." },
-                ],
+                content: textContent("The task progress card tracks the workspace checks."),
               },
             ],
             featureMethods: [

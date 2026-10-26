@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { writeOpenAiResponsesText } from "../../test/helpers/openai-responses-sse.js";
+import { createUsageFixture } from "../agents/test-helpers/usage-fixtures.js";
 import { getRuntimeConfig, writeConfigFile } from "../config/config.js";
 import { resolveSessionStorePathCore } from "../config/sessions/paths.js";
 import {
@@ -151,14 +152,7 @@ describe("gateway compaction hot reload", () => {
               api: "openai-responses",
               provider: primaryModel.providerId,
               model: primaryModel.modelId,
-              usage: {
-                input: 10,
-                output: 10,
-                cacheRead: 0,
-                cacheWrite: 0,
-                totalTokens: 20,
-                cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-              },
+              usage: createUsageFixture(10, 10, 20),
               stopReason: "stop",
               timestamp,
             },

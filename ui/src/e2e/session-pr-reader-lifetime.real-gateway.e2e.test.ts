@@ -33,7 +33,9 @@ import {
   openDesktopPullRequestPage,
   openDetailsPullRequests,
 } from "./chat-details.test-support.ts";
+import { createLightDesktopControlUiContextOptions } from "./control-ui-browser-options.test-support.ts";
 import { createControlUiE2eSuite } from "./control-ui-e2e-suite.test-support.ts";
+import { deviceGatewayEnv } from "./device-gateway-env.test-support.ts";
 import { createGatewayProxy, gatewayProxyRoute } from "./gateway-proxy.test-support.ts";
 
 const sessionKey = "agent:main:pr-reader-lifetime";
@@ -179,14 +181,7 @@ suite.define(() => {
             GITHUB_TOKEN: undefined,
             OPENCLAW_GATEWAY_PASSWORD: undefined,
             OPENCLAW_GATEWAY_TOKEN: undefined,
-            OPENCLAW_SKIP_BROWSER_CONTROL_SERVER: "1",
-            OPENCLAW_SKIP_CANVAS_HOST: "1",
-            OPENCLAW_SKIP_CHANNELS: "1",
-            OPENCLAW_SKIP_CRON: "1",
-            OPENCLAW_SKIP_GMAIL_WATCHER: "1",
-            OPENCLAW_SKIP_PROVIDERS: "1",
-            OPENCLAW_TEST_MINIMAL_GATEWAY: "1",
-            VITEST: "1",
+            ...deviceGatewayEnv,
           },
         });
         const original = await createRepository(state, "original-workspace", 101);
@@ -375,12 +370,7 @@ suite.define(() => {
             ...(refresh ? { refreshSessionKeys: keys } : {}),
           });
         await suite.withPage(
-          {
-            viewport: { width: 1180, height: 800 },
-            colorScheme: "light",
-            locale: "en-US",
-            serviceWorkers: "block",
-          },
+          createLightDesktopControlUiContextOptions(),
           async ({ page }) => {
             await page.addInitScript(() =>
               localStorage.setItem(
