@@ -1370,15 +1370,11 @@ describe("compactEmbeddedAgentSessionDirect hooks", () => {
     });
 
     expect(result.ok, JSON.stringify(result)).toBe(true);
-    expect(plannedCompactionPluginSelections({}, metadataSnapshot)).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          provider: "anthropic",
-          modelId: "claude-modern",
-          runtime: "codex",
-        }),
-      ]),
-    );
+    expect(plannedCompactionPluginSelections({}, metadataSnapshot)).toContainEqual({
+      provider: "anthropic",
+      modelId: "claude-modern",
+      agentId: "main",
+    });
   });
 
   it("revalidates immutable Ultra for each compaction fallback candidate", async () => {
@@ -1798,15 +1794,8 @@ describe("compactEmbeddedAgentSessionDirect hooks", () => {
     });
 
     expect(result.ok).toBe(true);
-    expect(plannedCompactionPluginSelections(config)).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          provider: "anthropic",
-          modelId: "claude-fallback",
-          runtime: "codex",
-        }),
-      ]),
-    );
+    const fallback = { provider: "anthropic", modelId: "claude-fallback", agentId: "main" };
+    expect(plannedCompactionPluginSelections(config)).toContainEqual(fallback);
     const admittedConfig = {
       agents: {
         defaults: {
@@ -1815,13 +1804,11 @@ describe("compactEmbeddedAgentSessionDirect hooks", () => {
         },
       },
     };
-    expect(plannedCompactionPluginSelections(admittedConfig)).toContainEqual(
-      expect.objectContaining({
-        provider: "anthropic",
-        modelId: "reloaded-summary",
-        runtime: "codex",
-      }),
-    );
+    expect(plannedCompactionPluginSelections(admittedConfig)).toContainEqual({
+      ...fallback,
+      modelId: "reloaded-summary",
+      runtime: "codex",
+    });
   });
   it("preserves explicit compaction.model behavior without session fallback", async () => {
     sessionCompactImpl.mockRejectedValueOnce(
