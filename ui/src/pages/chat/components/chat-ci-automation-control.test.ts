@@ -3,10 +3,8 @@ import { beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { createDeferred } from "../../../../../test/helpers/promise.js";
 import { GatewayBrowserClient } from "../../../api/gateway.ts";
 import type { CronJob } from "../../../api/types.ts";
-import {
-  ciAutomationJobSpec,
-  type CiAutomationOption,
-} from "../../../lib/session-pr-automation-spec.ts";
+import { ciAutomationJobSpec } from "../../../lib/session-pr-automation-operation.ts";
+import type { CiAutomationOption } from "../../../lib/session-pr-automation-spec.ts";
 import {
   createHello as hello,
   createGatewayHarness,
@@ -98,6 +96,7 @@ class Fixture {
     }
   }
   async settle() {
+    await vi.dynamicImportSettled();
     await flushSync();
     await this.element.updateComplete;
     await flushSync();
@@ -265,6 +264,26 @@ describe("CI automation popup scope", () => {
     expect(h.root.textContent).not.toContain("fix-first");
   });
 
+  it.each(["session", "auth", "gateway"] as const)(
+    "retires an admitted toggle before operation loading can write after %s replacement",
+    async (change) => {
+      await h.open();
+      h.checkbox().click();
+      // Module loading yields even when cached; retire authority in that same turn.
+      if (change === "session") {
+        h.element.sessionId = "replacement";
+      } else if (change === "auth") {
+        h.snapshot({ hello: hello(["operator.read"]) });
+      } else {
+        h.element.gateway = createGatewayHarness().gateway;
+      }
+      await vi.dynamicImportSettled();
+      await h.settle();
+      expect(h.calls("cron.add")).toHaveLength(0);
+      expect(h.calls("cron.update")).toHaveLength(0);
+    },
+  );
+
   it("retires old inventory before another toggle can target a replacement session", async () => {
     await h.open();
     h.element.sessionId = "replacement";
@@ -309,7 +328,7 @@ describe("CI automation popup scope", () => {
       h.writes["cron.add"] = pending.promise;
       await h.open();
       h.checkbox().click();
-      await h.element.updateComplete;
+      await waitForSolid(() => expect(h.calls("cron.add")).toHaveLength(1));
       if (change === "session") {
         await h.paint("replacement");
         await h.open(false);
@@ -340,8 +359,7 @@ describe("CI automation popup scope", () => {
     expect(h.checkbox().checked).toBe(true);
     h.checkbox().checked = false;
     h.checkbox().dispatchEvent(new Event("change"));
-    await h.element.updateComplete;
-    expect(h.calls("cron.update")).toHaveLength(1);
+    await waitForSolid(() => expect(h.calls("cron.update")).toHaveLength(1));
     h.snapshot({ phase: "reconnecting" });
     await h.element.updateComplete;
     h.writes = {};

@@ -70,6 +70,8 @@ export const uiIsolatedTestFiles = [
   "ui/src/pages/chat/components/chat-annotation-lazy.test.ts",
   // Holds the rich-message import before first use by any other transcript suite.
   "ui/src/pages/chat/components/chat-rich-message-lazy.test.tsx",
+  // Holds mobile destinations before another header suite can preload them.
+  "ui/src/pages/chat/components/chat-pane-mobile-navigation-loading.test.tsx",
   "ui/src/pages/chat/components/chat-transcript-controller.test.ts",
   "ui/src/pages/chat/components/chat-transcript-geometry.test.ts",
   "ui/src/pages/chat/components/chat-transcript-invalidation.test.ts",

@@ -120,6 +120,11 @@ describe("Control UI build chunking", () => {
     const payloads = modulePath("../pages/chat/outbox-payloads.runtime.ts");
     const live = modulePath("../pages/chat/chat-live-events.runtime.ts");
     const tools = modulePath("../pages/chat/chat-tool-family-runtime.ts");
+    const richGroup = modulePath("../pages/chat/components/chat-message-group-rich.tsx");
+    const rich = modulePath("../pages/chat/components/chat-message-bubble-rich.tsx");
+    const details = modulePath("../pages/chat/components/chat-details-environment-body.tsx");
+    const snapshotDecoder = modulePath("../pages/chat/session-snapshot-decoder.ts");
+    const permission = modulePath("../pages/chat/components/chat-permission-card.tsx");
     const reset = modulePath("../pages/chat/chat-board-reset-confirmation.tsx");
     const modal = modulePath("../components/modal-dialog.tsx");
     const modalView = modulePath("../components/solid/modal-dialog.tsx");
@@ -141,7 +146,7 @@ describe("Control UI build chunking", () => {
       [newSessionEntry, `export { NewSession, modal } from ${JSON.stringify(newSession)};`],
       [
         chat,
-        `import ${JSON.stringify(sharedStyle)}; import ${JSON.stringify(transcriptStyle)}; import { label } from ${JSON.stringify(sharedUi)}; import { action } from ${JSON.stringify(pluginActions)}; import { patch } from ${JSON.stringify(mutations)}; export { version } from ${JSON.stringify(inlineView)}; export { skeleton } from ${JSON.stringify(skeleton)}; export class Chat { label = patch(action(label)); } export const openPanel = () => import(${JSON.stringify(optional)}); export const reset = () => import(${JSON.stringify(reset)});`,
+        `import ${JSON.stringify(sharedStyle)}; import ${JSON.stringify(transcriptStyle)}; import { label } from ${JSON.stringify(sharedUi)}; import { action } from ${JSON.stringify(pluginActions)}; import { patch } from ${JSON.stringify(mutations)}; export { version } from ${JSON.stringify(inlineView)}; export { skeleton } from ${JSON.stringify(skeleton)}; export class Chat { label = patch(action(label)); } export const openPanel = () => import(${JSON.stringify(optional)}); export const reset = () => import(${JSON.stringify(reset)}); export const rich = () => import(${JSON.stringify(rich)}); export const details = () => import(${JSON.stringify(details)}); export const snapshot = () => import(${JSON.stringify(snapshotDecoder)});`,
       ],
       [
         newSession,
@@ -182,7 +187,15 @@ describe("Control UI build chunking", () => {
         live,
         `import { diff } from ${JSON.stringify(diff)}; import { preamble } from ${JSON.stringify(preamble)}; export const live = () => diff() + preamble();`,
       ],
-      [tools, "export const tools = () => 'tools';"],
+      [tools, `export { tools } from ${JSON.stringify(richGroup)};`],
+      [richGroup, "export const tools = () => 'tools';"],
+      [
+        rich,
+        `export const render = () => 'rich'; export const tools = () => import(${JSON.stringify(tools)}); export const permission = () => import(${JSON.stringify(permission)});`,
+      ],
+      [details, "export const render = () => 'details';"],
+      [snapshotDecoder, "export const decode = () => 'snapshot';"],
+      [permission, "export const render = () => 'permission';"],
       [diff, "export const diff = () => 'diff';"],
       [preamble, "export const preamble = () => 'preamble';"],
       [sharedStyle, ".shared-fixture { color: red; }"],
@@ -293,6 +306,14 @@ describe("Control UI build chunking", () => {
     const liveChunk = chunks.find((chunk) => live in chunk.modules)!;
     const deliveryChunk = chunks.find((chunk) => delivery in chunk.modules)!;
     const toolChunk = chunks.find((chunk) => tools in chunk.modules)!;
+    const permissionChunk = chunks.find((chunk) => permission in chunk.modules)!;
+    for (const firstScreen of [rich, details, snapshotDecoder]) {
+      expect(chunks.find((chunk) => firstScreen in chunk.modules)?.fileName).toBe(
+        chatChunk.fileName,
+      );
+    }
+    expect(permissionChunk.fileName).toBe(toolChunk.fileName);
+    expect(staticImports(chatChunk.fileName)).not.toContain(toolChunk.fileName);
     expect(liveChunk.fileName).toBe(deliveryChunk.fileName);
     expect(staticImports(entryChunk.fileName)).not.toContain(liveChunk.fileName);
     expect(liveChunk.fileName).toBe(toolChunk.fileName);
@@ -302,6 +323,8 @@ describe("Control UI build chunking", () => {
     expect(boot.chat).toContain(copyChunk.fileName);
     expect(boot.new).toContain(copyChunk.fileName);
     expect(boot.chat).toContain(liveChunk.fileName);
+    // Tool-rich rows remain parallel downloads, never a plain rich row's static dependency.
+    expect(boot.interactionOnly.chat).toContain(liveChunk.fileName);
     expect(boot.new).not.toContain(liveChunk.fileName);
     expect(boot.chat).not.toContain(modalChunk.fileName);
     expect(boot.chat).not.toContain(resetChunk.fileName);

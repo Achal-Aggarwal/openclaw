@@ -78,10 +78,6 @@ export function controlUiStableChunkName(id: string): string | undefined {
       return "route-controls-runtime";
     case "ui/src/components/markdown-json-parser.runtime.ts":
       return "markdown-json-runtime";
-    case "ui/src/pages/chat/session-snapshot-decoder.ts":
-    case "ui/src/lib/protocol-validators.generated/board.js":
-    case "ui/src/lib/protocol-validators.generated/transcript.js":
-      return "chat-interaction-runtime";
     case "ui/src/pages/chat/components/chat-context-breakdown.tsx":
     case "ui/src/pages/chat/components/chat-context-breakdown-model.ts":
     case "ui/src/pages/chat/components/chat-context-report.tsx":
@@ -105,13 +101,7 @@ export function controlUiStableChunkName(id: string): string | undefined {
     case "ui/src/pages/chat/components/chat-message-group-rich.tsx":
     case "ui/src/pages/chat/components/chat-session-activity.solid.tsx":
       return "chat-interaction-runtime";
-    case "ui/src/pages/chat/components/chat-message-bubble-rich.tsx":
-    case "ui/src/pages/chat/components/chat-bubble-activity-view.tsx":
     case "ui/src/pages/chat/components/chat-message-bubble-tools.tsx":
-    case "ui/src/pages/chat/components/chat-message-attachment-status-solid.tsx":
-    case "ui/src/pages/chat/components/chat-async-question-summary.tsx":
-    case "ui/src/pages/chat/components/chat-message-context-view.tsx":
-    case "ui/src/pages/chat/components/chat-workspace-conflict.tsx":
       return "chat-interaction-runtime";
     case "ui/src/lib/chat/composer-draft-write.runtime.ts":
     case "ui/src/pages/chat/outbox-payloads.runtime.ts":
@@ -247,11 +237,6 @@ export function controlUiStableChunkName(id: string): string | undefined {
       return "chat-saved-annotations-runtime";
     case "ui/src/pages/chat/components/chat-forwarded-attribution.tsx":
       return "chat-forwarded-attribution-runtime";
-    case "ui/src/pages/chat/components/chat-details-desktop-process-row.tsx":
-    case "ui/src/pages/chat/components/chat-details-process-row.tsx":
-    case "ui/src/pages/chat/components/chat-details-environment-body.tsx":
-      // Saved Details may render at boot without admitting tool/send interactions.
-      return "chat-interaction-runtime";
     case "ui/src/pages/chat/chat-provider-review-controller.tsx":
       return "chat-provider-review";
     // Keep optional compression groups separate from code evaluated by text-only Chat.
@@ -494,8 +479,25 @@ export function createControlUiCodeSplitting(options: { includeBootGroups?: bool
             ...(["shared", "new", "chat"] as const).map((route, index) => {
               const modules = new Set(controlUiBootModules[route]);
               if (route === "chat") {
-                // Visible subagent rows must not evaluate the optional interaction chunk.
-                modules.add("ui/src/pages/chat/components/chat-details-subagent-rows.tsx");
+                // First-screen content must not evaluate unrelated action/tool modules.
+                // Keep snapshot decoding here too rather than adding another preload URL.
+                for (const module of [
+                  "ui/src/pages/chat/components/chat-details-subagent-rows.tsx",
+                  "ui/src/pages/chat/components/chat-details-desktop-process-row.tsx",
+                  "ui/src/pages/chat/components/chat-details-process-row.tsx",
+                  "ui/src/pages/chat/components/chat-details-environment-body.tsx",
+                  "ui/src/pages/chat/components/chat-message-bubble-rich.tsx",
+                  "ui/src/pages/chat/components/chat-bubble-activity-view.tsx",
+                  "ui/src/pages/chat/components/chat-message-attachment-status-solid.tsx",
+                  "ui/src/pages/chat/components/chat-async-question-summary.tsx",
+                  "ui/src/pages/chat/components/chat-message-context-view.tsx",
+                  "ui/src/pages/chat/components/chat-workspace-conflict.tsx",
+                  "ui/src/pages/chat/session-snapshot-decoder.ts",
+                  "ui/src/lib/protocol-validators.generated/board.js",
+                  "ui/src/lib/protocol-validators.generated/transcript.js",
+                ]) {
+                  modules.add(module);
+                }
               }
               if (route === "shared") {
                 // Plugin activation validates versions on every route without

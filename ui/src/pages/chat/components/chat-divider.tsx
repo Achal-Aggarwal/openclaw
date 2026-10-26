@@ -1,14 +1,18 @@
-import { createMemo, Match, Show, Switch } from "solid-js";
+import { createMemo, lazy, Match, Show, Switch } from "solid-js";
 import { Icon } from "../../../components/solid/icon.tsx";
 import { MarkdownHtml } from "../../../components/solid/markdown-html.tsx";
 import type { ChatItem } from "../../../lib/chat/chat-types.ts";
 import { formatTimeMs } from "../../../lib/format.ts";
 import { t } from "../../../lib/reactive/i18n.ts";
 import { detectTextDirection } from "../../../lib/text-direction.ts";
-import { ChatPermissionCard } from "./chat-permission-card.tsx";
+import { ChatLazyBoundary } from "./chat-lazy-boundary.tsx";
 import { ChatRunFailureNotice } from "./chat-run-failure-notice.tsx";
 import { ChatSkillLearnedNotice } from "./chat-skill-learned-notice.tsx";
 import type { ChatThreadProps } from "./chat-thread-interactions.ts";
+
+const ChatPermissionCard = lazy(() => import("./chat-permission-card.tsx"), {
+  export: "ChatPermissionCard",
+});
 
 function SystemLine(props: {
   icon?: Extract<ChatItem, { kind: "divider" }>["icon"];
@@ -219,10 +223,12 @@ export function ChatNotice(props: ChatNoticeProps) {
       </Match>
       <Match when={props.item.permissionMissing}>
         <div data-chat-row-key={props.item.key} data-ts={String(props.item.timestamp)}>
-          <ChatPermissionCard
-            request={props.item.permissionMissing!}
-            onRetry={props.onPermissionRetry}
-          />
+          <ChatLazyBoundary>
+            <ChatPermissionCard
+              request={props.item.permissionMissing!}
+              onRetry={props.onPermissionRetry}
+            />
+          </ChatLazyBoundary>
         </div>
       </Match>
       <Match when={props.item.collapsedBody && props.item.text}>

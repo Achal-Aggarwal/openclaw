@@ -10,7 +10,6 @@ import { ChatBubbleActivity } from "./chat-bubble-activity-view.tsx";
 import { ChatLazyBoundary } from "./chat-lazy-boundary.tsx";
 import { OmittedMedia, PairingQrNotices } from "./chat-message-attachment-status-solid.tsx";
 import type { MessageContentProps as ContentProps } from "./chat-message-bubble-presentation.ts";
-import { BubbleToolCards, InlineToolCards, ToolMessage } from "./chat-message-bubble-tools.tsx";
 import {
   AssistantAttachments,
   ChatClawHubCard,
@@ -20,6 +19,16 @@ import {
 import type { PositionedMedia } from "./chat-message-media-markdown.ts";
 import type { AttachmentItem } from "./chat-message-media.ts";
 import { MarkdownText } from "./chat-message-text-view.tsx";
+
+const BubbleToolCards = lazy(() => import("./chat-message-bubble-tools.tsx"), {
+  export: "BubbleToolCards",
+});
+const InlineToolCards = lazy(() => import("./chat-message-bubble-tools.tsx"), {
+  export: "InlineToolCards",
+});
+const ToolMessage = lazy(() => import("./chat-message-bubble-tools.tsx"), {
+  export: "ToolMessage",
+});
 
 const PluginInlineView = lazy(() => import("../../../plugins/control-ui-inline-view.tsx"), {
   export: "PluginInlineView",
@@ -37,13 +46,17 @@ export function RichBubbleFrame(props: ContentProps & { renderContents: () => JS
         </ChatBubbleActivity>
       </Match>
       <Match when={props.state().onlyToolCards}>
-        <InlineToolCards
-          cards={props.state().toolCards}
-          options={props.state().toolRenderOptions}
-        />
+        <ChatLazyBoundary>
+          <InlineToolCards
+            cards={props.state().toolCards}
+            options={props.state().toolRenderOptions}
+          />
+        </ChatLazyBoundary>
       </Match>
       <Match when={props.state().isStandaloneToolMessage}>
-        <ToolMessage {...props} renderContents={() => props.renderContents()} />
+        <ChatLazyBoundary>
+          <ToolMessage {...props} renderContents={() => props.renderContents()} />
+        </ChatLazyBoundary>
       </Match>
       <Match when={true}>{props.renderContents()}</Match>
     </Switch>
@@ -167,7 +180,9 @@ export function RichBubbleAfter(props: ContentProps) {
         )}
       </For>
       <Show when={props.state().hasToolCards || props.state().failedToolCard}>
-        <BubbleToolCards {...props} />
+        <ChatLazyBoundary>
+          <BubbleToolCards {...props} />
+        </ChatLazyBoundary>
       </Show>
       <Show
         when={

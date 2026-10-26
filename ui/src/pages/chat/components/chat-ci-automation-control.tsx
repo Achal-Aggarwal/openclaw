@@ -21,11 +21,7 @@ import type {
   CiAutomationOptions,
   CiAutomationTarget,
 } from "../../../lib/session-pr-automation-spec.ts";
-import {
-  loadCiAutomationJobs,
-  setCiAutomationEnabled,
-  type CiAutomationJobs,
-} from "../../../lib/session-pr-automation.ts";
+import { loadCiAutomationJobs, type CiAutomationJobs } from "../../../lib/session-pr-automation.ts";
 import { defineSolidBridge, type SolidBridgeElement } from "../../../lib/solid-bridge.ts";
 import {
   ChatCiAutomationError,
@@ -364,6 +360,12 @@ function createCiAutomation(props: Props, host: SolidBridgeElement<Props>) {
 
     async function commit() {
       try {
+        const { setCiAutomationEnabled } =
+          await import("../../../lib/session-pr-automation-operation.ts");
+        // Loading code cannot carry this admitted write into a retired or revoked scope.
+        if (!admitted.current() || !canRead() || !canManage()) {
+          return;
+        }
         const job = await setCiAutomationEnabled(
           admitted.client,
           admitted.target,

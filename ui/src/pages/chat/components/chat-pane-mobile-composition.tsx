@@ -61,6 +61,34 @@ export function ChatPaneMobileComposition(props: {
     (props.header.incognito ?? props.header.session?.incognito) ||
     isIncognitoSessionKey(props.header.session?.key);
   const [mobileActions, setMobileActions] = createSignal<ChatPaneMobileActions>();
+  let pendingNavigation: ((actions: ChatPaneMobileActions) => void) | undefined;
+  const navigateMobile = (navigate: (actions: ChatPaneMobileActions) => void) => {
+    const actions = mobileActions();
+    if (actions) {
+      navigate(actions);
+      return;
+    }
+    const host = props.header.detailsControl?.mobileHost;
+    const sessionKey = props.header.session?.key;
+    // Only the latest destination click survives loading, within its original visible pane.
+    pendingNavigation = (ready) => {
+      if (
+        presented() &&
+        props.header.detailsControl?.mobileHost === host &&
+        props.header.session?.key === sessionKey
+      ) {
+        navigate(ready);
+      }
+    };
+  };
+  const mobileReady = (actions: ChatPaneMobileActions | undefined) => {
+    setMobileActions(actions);
+    const pending = pendingNavigation;
+    pendingNavigation = undefined;
+    if (actions) {
+      pending?.(actions);
+    }
+  };
   const emptyPlacement: ChatPanePlacementProps = { session: undefined };
   const readMachineName = createMemo(() => props.header.readMachineName);
   const machineNameRead = createMemo(() => {
@@ -87,7 +115,10 @@ export function ChatPaneMobileComposition(props: {
   const Details = dynamic(() => props.details);
   // The component identity and its DOM stay retained across mobile and desktop placement.
   const details = (
-    <Details placement={placement} onOpenMachine={() => mobileActions()?.openMachine()} />
+    <Details
+      placement={placement}
+      onOpenMachine={() => navigateMobile((actions) => actions.openMachine())}
+    />
   );
   let actionsMenu: HTMLElementTagNameMap["openclaw-chat-header-session-menu"] | undefined;
   const registerActionsMenu = (element: NonNullable<typeof actionsMenu>) => {
@@ -163,7 +194,7 @@ export function ChatPaneMobileComposition(props: {
           onAction={(action) => {
             // Session keys can repeat across panes; retain the originating pane identity.
             if (mobile() && action.kind === "move-session") {
-              mobileActions()?.openMove();
+              navigateMobile((actions) => actions.openMove());
             } else if (!mobile() && action.kind === "split-right" && props.header.onSplitRight) {
               props.header.onSplitRight(props.header.paneId);
             } else if (!mobile() && action.kind === "split-below" && props.header.onSplitDown) {
@@ -200,8 +231,8 @@ export function ChatPaneMobileComposition(props: {
           peopleLabel={t("chat.sessionHeader.people")}
           morePeople={(count) => t("chat.sessionHeader.morePeople", { count: String(count) })}
           peopleExpanded={mobileActions()?.peopleExpanded() ?? false}
-          onOpenMachine={(source) => mobileActions()?.openMachine(source)}
-          onOpenPeople={(source) => mobileActions()?.openPeople(source)}
+          onOpenMachine={(source) => navigateMobile((actions) => actions.openMachine(source))}
+          onOpenPeople={(source) => navigateMobile((actions) => actions.openPeople(source))}
         />
         <ChatLazyBoundary>
           <ChatPaneMobileRuntime
@@ -212,7 +243,7 @@ export function ChatPaneMobileComposition(props: {
             placement={placement}
             layoutModel={layoutModel}
             actionSource={actionSource}
-            onReady={setMobileActions}
+            onReady={mobileReady}
           />
         </ChatLazyBoundary>
       </Show>

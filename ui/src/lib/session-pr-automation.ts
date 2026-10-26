@@ -8,7 +8,6 @@ import {
   CI_AUTOMATION_OPTIONS,
   ciAutomationDeclarationKey,
   ciAutomationJobMatches,
-  ciAutomationJobSpec,
   type CiAutomationOption,
   type CiAutomationTarget,
 } from "./session-pr-automation-spec.ts";
@@ -67,38 +66,4 @@ export async function loadCiAutomationJobs(
   } while (!signal.aborted);
   signal.throwIfAborted();
   return jobs;
-}
-
-export async function setCiAutomationEnabled(
-  client: GatewayBrowserClient,
-  target: CiAutomationTarget,
-  option: CiAutomationOption,
-  enabled: boolean,
-  current: CronJob | undefined,
-): Promise<CronJob | undefined> {
-  if (!current && !enabled) {
-    return undefined;
-  }
-  let result: CronJob;
-  if (current) {
-    if (!ciAutomationJobMatches(current, target, option) || !current.configRevision) {
-      throw new Error("Refresh the automation before changing it.");
-    }
-    result = await client.request<CronJob>("cron.update", {
-      id: current.id,
-      expectedConfigRevision: current.configRevision,
-      patch: { enabled },
-    });
-  } else {
-    // Declaration convergence makes a lost create acknowledgement discoverable as the same job.
-    const response = await client.request<{ job: CronJob }>(
-      "cron.add",
-      ciAutomationJobSpec(target, option),
-    );
-    result = response.job;
-  }
-  if (!result || !ciAutomationJobMatches(result, target, option)) {
-    throw new Error("The automation changed while saving. Refresh to check its current state.");
-  }
-  return result;
 }

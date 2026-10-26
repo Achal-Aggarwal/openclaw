@@ -27,8 +27,6 @@ const sharedInteractionEntries = new Set([
 const chatInteractionEntries = new Set([
   // JSON trees belong to transcripts; New Session has no code blocks to prepare.
   "ui/src/components/markdown-json-parser.runtime.ts",
-  // Warm disk records decode without another round trip; empty storage stays unevaluated.
-  "ui/src/pages/chat/session-snapshot-decoder.ts",
   // Viewport transitions use cached bytes while desktop boot skips mobile evaluation.
   "ui/src/pages/chat/components/chat-pane-mobile-runtime.tsx",
   // A saved Context panel can render on the first screen.
@@ -45,6 +43,7 @@ const chatInteractionEntries = new Set([
   "ui/src/pages/chat/chat-live-events.runtime.ts",
   "ui/src/pages/chat/tool-stream.ts",
   // Download common tool facts and collapsed chrome without evaluating them for plain transcripts.
+  "ui/src/pages/chat/components/chat-message-group-rich.tsx",
   "ui/src/pages/chat/chat-tool-family-runtime.ts",
   "ui/src/pages/chat/chat-tool-presentation.runtime.ts",
   // Search, session actions, commands and viewers load on explicit demand.
@@ -105,10 +104,11 @@ export function collectControlUiBootAssets(
     // Fetch their whole static graph beside the route without evaluating it.
     ["chat", "ui/src/pages/chat/components/chat-agent-run-frame.tsx"],
     ["chat", "ui/src/pages/chat/components/chat-message-stream-view.tsx"],
-    ["chat", "ui/src/pages/chat/components/chat-message-group-rich.tsx"],
     ["chat", "ui/src/pages/chat/components/chat-message-bubble-rich.tsx"],
     ["chat", "ui/src/pages/chat/components/chat-message-context-view.tsx"],
     ["chat", "ui/src/pages/chat/components/chat-workspace-conflict.tsx"],
+    // Visible Canvas widgets share these small labels; preload data without evaluating widgets.
+    ["chat", "ui/src/i18n/locales/en-board.ts"],
     ["new", "ui/src/pages/new-session/new-session-page-entry.ts"],
   ] as const) {
     const chunk = chunks.find((candidate) =>

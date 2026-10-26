@@ -4,14 +4,17 @@ import { CronAddParamsSchema } from "../../../packages/gateway-protocol/src/sche
 import type { GatewayBrowserClient } from "../api/gateway.ts";
 import type { CronJob, CronJobsListResult } from "../api/types.ts";
 import {
+  ciAutomationJobSpec as jobSpec,
+  setCiAutomationEnabled,
+} from "./session-pr-automation-operation.ts";
+import {
   CI_AUTOMATION_OPTIONS,
   ciAutomationDeclarationKey as declarationKeyFor,
   ciAutomationJobMatches as matchesJob,
-  ciAutomationJobSpec as jobSpec,
   type CiAutomationOption,
   type CiAutomationTarget,
 } from "./session-pr-automation-spec.ts";
-import { loadCiAutomationJobs, setCiAutomationEnabled } from "./session-pr-automation.ts";
+import { loadCiAutomationJobs } from "./session-pr-automation.ts";
 
 const target: CiAutomationTarget = {
   agentId: "main",
