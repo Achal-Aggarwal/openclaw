@@ -10,7 +10,7 @@ import {
   createOpenClawTestInstance,
   type OpenClawTestInstance,
 } from "../test/helpers/openclaw-test-instance.js";
-import { gatewayEnv } from "./ios-release-e2e.js";
+import { gatewayEnv, operationError } from "./ios-release-e2e.js";
 import { markIosResourcePhase, roles } from "./ios-resource-timeline.mjs";
 import { summarizeGatewayLogs } from "./lib/ios-release-e2e-diagnostics.js";
 import { prepareIOSReleaseGateway } from "./lib/ios-release-gateway.js";
@@ -50,6 +50,7 @@ const proof: Record<string, unknown> = {
   tests: [],
 };
 let phase = "startup";
+let bootCycle: "cold" | "warm" = "cold";
 let retainRoot = false;
 const root = await mkdtemp(path.join(os.tmpdir(), "openclaw-ios-boot-probe-"));
 let instance: OpenClawTestInstance | undefined;
@@ -95,7 +96,7 @@ const command = async (name: string, bin: string, args: string[], timeoutMs = 60
     }
     throw error;
   } finally {
-    operations.push({ name, outcome, ms: Math.round(performance.now() - started) });
+    operations.push({ name, bootCycle, outcome, ms: Math.round(performance.now() - started) });
     console.error(`iOS boot probe: ${name} ${outcome}`);
   }
 };
@@ -111,6 +112,7 @@ type CensusRow = {
   runningThreads?: number;
 };
 type BootSnapshot = {
+  bootCycle: "cold" | "warm";
   sample: number;
   startedMs: number;
   endedMs?: number;
@@ -120,6 +122,7 @@ type BootSnapshot = {
   rows: CensusRow[];
 };
 const startObserver = async () => {
+  const cycle = bootCycle;
   const hints = new Map<string, string>();
   for (const role of roles) {
     const short = role.slice(0, 16);
@@ -138,6 +141,7 @@ const startObserver = async () => {
     const fields = line.split("\t");
     if (fields[0] === "BEGIN") {
       active = {
+        bootCycle: cycle,
         sample: Number(fields[1]),
         startedMs: Number(fields[2]),
         hostBefore: host(),
@@ -203,6 +207,7 @@ const startObserver = async () => {
     (code) => {
       operations.push({
         name: "boot-census",
+        bootCycle: cycle,
         outcome: code === 0 ? "passed" : "failed",
         ms: Math.round(performance.now() - started),
       });
@@ -214,6 +219,7 @@ const startObserver = async () => {
       }
       operations.push({
         name: "boot-census",
+        bootCycle: cycle,
         outcome: "failed",
         ms: Math.round(performance.now() - started),
       });
@@ -265,6 +271,7 @@ const rpc = async (stage: string, setupCode = false) => {
   } finally {
     operations.push({
       name: stage,
+      bootCycle,
       outcome,
       ms: Math.round(performance.now() - started),
       authenticatedMs,
@@ -338,32 +345,57 @@ try {
     udid = undefined;
     throw new Error("invalid-device-id");
   }
-  await startObserver();
-  await command("simulator-boot", "xcrun", ["simctl", "boot", udid]);
-  await command("simulator-ready", "xcrun", ["simctl", "bootstatus", udid, "-b"], 180_000);
-  await rpc("after-boot-setup-status");
-  await rpc("after-boot-setup-code", true);
+  for (const cycle of ["cold", "warm"] as const) {
+    bootCycle = cycle;
+    await startObserver();
+    await command("simulator-boot", "xcrun", ["simctl", "boot", udid]);
+    await command("simulator-ready", "xcrun", ["simctl", "bootstatus", udid, "-b"], 180_000);
+    await rpc("after-boot-setup-status");
+    await rpc("after-boot-setup-code", true);
+    await observerDone;
+    if (retainRoot) {
+      throw new Error("observer-cleanup-unconfirmed");
+    }
+    await command("simulator-shutdown", "xcrun", ["simctl", "shutdown", udid]);
+  }
   proof.status = "probe-passed";
 } catch (error) {
   if (hasUnjoinedWork(error)) {
     retainRoot = true;
   }
   proof.failedPhase = phase;
+  proof.failedBootCycle = bootCycle;
   proof.status = "failed";
 } finally {
   if (proof.status !== "probe-passed") {
     observerAbort.abort();
   }
   await observerDone;
+  // Retire the task-owned simulator's load before stopping the Gateway fixture.
+  const cleanup = [
+    ...(await Promise.allSettled([
+      udid
+        ? command("simulator-delete", "xcrun", ["simctl", "delete", udid], 60_000)
+        : Promise.resolve(),
+    ])),
+    ...(await Promise.allSettled([instance?.cleanup()])),
+  ];
+  proof.cleanupFailures = cleanup.flatMap((result, index) =>
+    result.status === "rejected"
+      ? [
+          {
+            source: index === 0 ? "simulator" : "gateway",
+            code: operationError("cleanup", result.reason).diagnostic.code,
+            events: summarizeGatewayLogs(
+              `${instance?.logs() ?? ""}\n${result.reason instanceof Error ? result.reason.message : ""}`,
+            ),
+          },
+        ]
+      : [],
+  );
   if (instance) {
     proof.gatewayEvents = summarizeGatewayLogs(instance.logs());
   }
-  const cleanup = await Promise.allSettled([
-    instance?.cleanup(),
-    udid
-      ? command("simulator-delete", "xcrun", ["simctl", "delete", udid], 60_000)
-      : Promise.resolve(),
-  ]);
   proof.cleanupConfirmed = cleanup.every((result) => result.status === "fulfilled") && !retainRoot;
   if (!proof.cleanupConfirmed) {
     proof.status = "failed";
