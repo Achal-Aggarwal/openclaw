@@ -1,7 +1,6 @@
 /** Lifecycle-owned auth/model discovery snapshots for agent runs. */
 import { toStringifiedError } from "@openclaw/normalization-core/error-coercion";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
-import { readOnlyWorkerScope } from "../infra/sqlite-readonly-worker-context.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
 import { registerRuntimeAuthProfileStoreMutationListener } from "./auth-profiles/runtime-snapshots.js";
 import type { ModelCatalogSnapshot } from "./model-catalog.types.js";
@@ -717,34 +716,30 @@ function invalidateForAuthMutation(event: PreparedModelRuntimeAuthMutation): voi
     notifyPreparedModelRuntimePublication({ phase: "invalidated" });
     return;
   }
-  // Publication owns its reads and must outlive the auth emitter's temporary SQLite reader
-  // scope; the queue continuation would otherwise inherit that scope after it closes.
-  const publication = readOnlyWorkerScope.exit(() =>
-    publicationQueue.enqueue(async () => {
-      // A pending replacement gate means a queued config publication owns the next generation:
-      // it drains queued auth mutations against the new config and rebuilds/announces the
-      // dispatch publication. Rebuilding here would revive stale owners with the old config or
-      // throw on them, emitting a spurious failed/published event that wedges chat metadata.
+  const publication = publicationQueue.enqueue(async () => {
+    // A pending replacement gate means a queued config publication owns the next generation:
+    // it drains queued auth mutations against the new config and rebuilds/announces the
+    // dispatch publication. Rebuilding here would revive stale owners with the old config or
+    // throw on them, emitting a spurious failed/published event that wedges chat metadata.
+    if (getBlockingReplacement()) {
+      authPublication.adoptTransaction(transaction, getBlockingReplacement()!.gateId);
+      return;
+    }
+    await drainPendingAuthMutations(() => {
+      // Admission waits only for static publication; account discovery owns a separate lifetime.
       if (getBlockingReplacement()) {
         authPublication.adoptTransaction(transaction, getBlockingReplacement()!.gateId);
         return;
       }
-      await drainPendingAuthMutations(() => {
-        // Admission waits only for static publication; account discovery owns a separate lifetime.
-        if (getBlockingReplacement()) {
-          authPublication.adoptTransaction(transaction, getBlockingReplacement()!.gateId);
-          return;
-        }
-        if (!authPublication.resolve(transaction, owners)) {
-          return;
-        }
-        if (pendingModelRuntimeReplacement?.degraded || configuredOwnersAreRequestVisible(owners)) {
-          notifyPreparedModelRuntimePublication({ phase: "published" });
-          refreshCommittedProviderCatalogs(owners.values());
-        }
-      });
-    }),
-  );
+      if (!authPublication.resolve(transaction, owners)) {
+        return;
+      }
+      if (pendingModelRuntimeReplacement?.degraded || configuredOwnersAreRequestVisible(owners)) {
+        notifyPreparedModelRuntimePublication({ phase: "published" });
+        refreshCommittedProviderCatalogs(owners.values());
+      }
+    });
+  });
   notifyPreparedModelRuntimePublication({ phase: "invalidated" });
   void publication.catch((error: unknown) => {
     if (!authPublication.isCurrent(transaction)) {

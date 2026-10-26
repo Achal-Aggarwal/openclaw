@@ -1,3 +1,4 @@
+import { readOnlyWorkerScope } from "../infra/sqlite-readonly-worker-context.js";
 import { PreparedModelRuntimePublicationSupersededError } from "./prepared-model-runtime.errors.js";
 import { capturePreparedModelRuntimeLifetime } from "./prepared-model-runtime.lifecycle.js";
 import type { PreparedModelRuntimeStartup } from "./prepared-model-runtime.startup.js";
@@ -11,7 +12,9 @@ export class PreparedModelRuntimePublicationQueue {
 
   enqueue(task: () => Promise<void>, release?: Promise<void>): Promise<void> {
     const previous = this.#tail;
-    const publication = previous.then(task);
+    // Queued publication owns its reads and outlives the caller's temporary SQLite reader
+    // scope; the continuation would otherwise inherit that scope after it closes.
+    const publication = readOnlyWorkerScope.exit(() => previous.then(task));
     this.#pending.add(publication);
     const settled = () => {
       this.#pending.delete(publication);
