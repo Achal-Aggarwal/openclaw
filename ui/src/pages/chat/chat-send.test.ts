@@ -1150,7 +1150,7 @@ describe("handleSendChat", () => {
 
   it("retires a failed queued picker back to the preceding confirmed session row", async () => {
     const firstPatch = createDeferred<unknown>();
-    const firstPatchStarted = createDeferred<void>();
+    const firstPatchStarted = createDeferred();
     let patchCount = 0;
     const host = makeChatHost({
       requestHandlers: {
