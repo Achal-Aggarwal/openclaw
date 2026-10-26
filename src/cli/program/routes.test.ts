@@ -33,6 +33,7 @@ vi.mock("../command-execution-startup.js", () => ({
 vi.mock("../config-cli.js", () => ({
   runConfigGet: runConfigGetMock,
   runConfigUnset: runConfigUnsetMock,
+  routeConfigMutationToOwner: () => async () => {},
 }));
 
 vi.mock("../../commands/models/list.list-command.js", () => ({
