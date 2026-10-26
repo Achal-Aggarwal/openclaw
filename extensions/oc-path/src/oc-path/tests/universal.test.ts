@@ -385,6 +385,8 @@ it.each([
     expect(ast.raw).toBe(raw);
   } else {
     expect(result.ok).toBe(true);
-    if (result.ok) expect(JSON.parse(result.ast.raw)).toEqual({ k: expected });
+    if (result.ok) {
+      expect(JSON.parse(result.ast.raw)).toEqual({ k: expected });
+    }
   }
 });

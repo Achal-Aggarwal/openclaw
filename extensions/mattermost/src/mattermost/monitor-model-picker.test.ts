@@ -1,4 +1,4 @@
-import { expectPairingReplyText, createPluginRuntimeMock } from "openclaw/plugin-sdk/channel-test-helpers";
+import { expectPairingReplyText } from "openclaw/plugin-sdk/channel-test-helpers";
 import { buildPairingReply } from "openclaw/plugin-sdk/conversation-runtime";
 // Mattermost tests cover native model-picker interaction dispatch ownership.
 import type * as SessionTranscriptRuntime from "openclaw/plugin-sdk/session-transcript-runtime";

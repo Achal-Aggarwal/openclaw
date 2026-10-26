@@ -16,7 +16,10 @@ import {
   renderMattermostProviderPickerView,
   resolveMattermostModelPickerCurrentModel,
 } from "./model-picker.js";
-import { authorizeMattermostCommandInvocation, MATTERMOST_PAIRING_QUEUE_FULL_TEXT } from "./monitor-auth.js";
+import {
+  authorizeMattermostCommandInvocation,
+  MATTERMOST_PAIRING_QUEUE_FULL_TEXT,
+} from "./monitor-auth.js";
 import { buildMattermostModelPickerSelectMessageSid } from "./monitor-context.js";
 import { buildMattermostEventPlan } from "./monitor-event-plan.js";
 import { dispatchMattermostInteractionReply } from "./monitor-interaction-dispatch.js";

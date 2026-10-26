@@ -1,16 +1,19 @@
-import { expectPairingReplyText, createPluginRuntimeMock } from "openclaw/plugin-sdk/channel-test-helpers";
-import { buildPairingReply } from "openclaw/plugin-sdk/conversation-runtime";
-import { setMattermostRuntime } from "../runtime.js";
 // Mattermost tests cover slash http plugin behavior.
 import { IncomingMessage, type ServerResponse } from "node:http";
 import { Socket } from "node:net";
+import {
+  expectPairingReplyText,
+  createPluginRuntimeMock,
+} from "openclaw/plugin-sdk/channel-test-helpers";
+import { buildPairingReply } from "openclaw/plugin-sdk/conversation-runtime";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { OpenClawConfig, RuntimeEnv } from "../../runtime-api.js";
+import { setMattermostRuntime } from "../runtime.js";
 import type { ResolvedMattermostAccount } from "./accounts.js";
 import type { MattermostClient } from "./client.js";
 const clientMocks = vi.hoisted(() => ({
   createMattermostClient: vi.fn(),
-  fetchMattermostChannel: vi.fn(async () => {
+  fetchMattermostChannel: vi.fn<typeof import("./client.js").fetchMattermostChannel>(async () => {
     throw new Error("channel lookup intentionally unavailable in token validation tests");
   }),
 }));
@@ -526,9 +529,9 @@ describe("slash-http", () => {
       body: "token=valid-token&team_id=t1&channel_id=c1&user_id=u1&command=%2Foc_status&text=",
     });
 
-    expect(response.statusCode).toBe(200);
-    expect(response.body).toBeTruthy();
-    const { text } = JSON.parse(response.body) as { text: string };
+    expect(response.res.statusCode).toBe(200);
+    expect(response.getBody()).toBeTruthy();
+    const { text } = JSON.parse(response.getBody()) as { text: string };
     if (code) {
       expectPairingReplyText(text, {
         channel: "mattermost",

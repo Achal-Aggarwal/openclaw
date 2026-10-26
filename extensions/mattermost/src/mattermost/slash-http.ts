@@ -478,11 +478,13 @@ async function authorizeSlashInvocation(params: {
       });
       return {
         ok: false,
-        denyText: code ? core.channel.pairing.buildPairingReply({
-          channel: "mattermost",
-          idLine: `Your Mattermost user id: ${senderId}`,
-          code,
-        }) : MATTERMOST_PAIRING_QUEUE_FULL_TEXT,
+        denyText: code
+          ? core.channel.pairing.buildPairingReply({
+              channel: "mattermost",
+              idLine: `Your Mattermost user id: ${senderId}`,
+              code,
+            })
+          : MATTERMOST_PAIRING_QUEUE_FULL_TEXT,
       };
     }
 
