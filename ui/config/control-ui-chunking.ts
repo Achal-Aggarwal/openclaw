@@ -234,7 +234,7 @@ export function controlUiStableChunkName(id: string): string | undefined {
     case "ui/src/lib/sessions/session-placement-submit.ts":
     case "ui/src/lib/sessions/session-placement-startup.ts":
       // New Session intent and placement share these operations; idle Chat hints exclude them.
-      return "new-session-submission-runtime";
+      return "session-placement-startup.runtime";
     case "ui/src/lib/sessions/session-mutation-operations.runtime.ts":
     case "ui/src/lib/sessions/create.ts":
     case "ui/src/lib/sessions/session-patch-row-facts.ts":

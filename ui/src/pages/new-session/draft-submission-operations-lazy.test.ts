@@ -15,7 +15,7 @@ const operationsImport = vi.hoisted(() => ({
   ready: Promise.withResolvers<void>(),
 }));
 
-vi.mock("./draft-submission-operations.runtime.ts", async (importOriginal) => {
+vi.mock("../../app/session-placement-startup.runtime.ts", async (importOriginal) => {
   if (++operationsImport.calls === 1) {
     await operationsImport.failed.promise;
     throw new Error("Submission code unavailable");

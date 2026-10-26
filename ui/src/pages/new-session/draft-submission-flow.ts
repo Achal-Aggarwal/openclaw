@@ -54,7 +54,7 @@ import { submitDraftInTerminal } from "./terminal-start.ts";
 registerNewSessionSetupEnglish();
 
 export function preloadDraftSubmissionOperations() {
-  return import("./draft-submission-operations.runtime.ts");
+  return import("../../app/session-placement-startup.runtime.ts");
 }
 
 export class DraftSubmissionFlow {

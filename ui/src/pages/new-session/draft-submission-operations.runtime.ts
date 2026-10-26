@@ -9,8 +9,6 @@ import {
 import { deleteSessionPlacementDraft } from "../../lib/sessions/session-placement-startup.ts";
 import type { PendingSessionPlacementRecoveryState } from "./session-placement-recovery-state.ts";
 
-// Placement recovery and New Session intent share one deferred entry, excluded from idle Chat hints.
-export { default } from "../../app/session-placement-startup.runtime.ts";
 export { CreationComposer } from "./creation-composer.ts";
 export { completeInitialSessionTurn } from "./initial-session-turn-handoff.ts";
 export { prepareInstantThreadHandoff } from "./instant-thread-handoff.ts";
