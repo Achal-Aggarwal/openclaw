@@ -848,7 +848,9 @@ suite.define(() => {
           expect(await toggle.isChecked()).toBe(true);
           expect((await row()).cyberAccessProgram).toBe("daybreak_blue");
           await snapshot("unknown");
-          await choose("standard");
+          // Turning off the unavailable choice removes the switch itself.
+          await toggle.press("Space");
+          await expect.poll(async () => (await row()).cyberAccessProgram).toBe("standard");
           await expect.poll(() => toggle.count()).toBe(0);
           const before = receipts.length;
           await send("Continue after turning off unavailable Daybreak.");
