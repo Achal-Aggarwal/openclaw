@@ -96,11 +96,11 @@ async function mountEndFollowFixture(savedOffset?: number) {
     host.transcript.scrollToEnd();
   }
   const thread = host.querySelector<HTMLElement>(".chat-thread")!;
-  const row = host.querySelector<HTMLElement>('[data-virtual-row-key="growing-run"]')!;
   const extent = host.querySelector<HTMLElement>(".chat-thread-inner--virtual")!;
   const dock = host.querySelector<HTMLElement>(".chat-prs")!;
   const distance = () => thread.scrollHeight - thread.clientHeight - thread.scrollTop;
   await expect.poll(() => extent.offsetHeight).toBe(1300);
+  const row = host.querySelector<HTMLElement>('[data-virtual-row-key="growing-run"]')!;
   return { host, thread, row, extent, dock, distance };
 }
 

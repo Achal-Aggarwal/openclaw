@@ -472,23 +472,18 @@ suite.define(() => {
           // Outlast virtual-core's five-second scroll reconciliation deadline:
           // the assertion protects durable geometry, not a transient resize frame.
           await page.clock.runFor(5_500);
-          const final = await bubble.evaluate((element, nextId) => {
+          const final = await bubble.evaluate((element) => {
             const row = element.closest<HTMLElement>(".chat-virtual-row")!;
             const scroller = row.closest<HTMLElement>(".chat-thread")!;
-            const next = scroller
-              .querySelector(`.chat-bubble[data-entry-id="${nextId}"]`)!
-              .closest<HTMLElement>(".chat-virtual-row")!;
             const rect = row.getBoundingClientRect();
             return {
               key: row.dataset.virtualRowKey,
               height: row.offsetHeight,
               top: rect.top,
               bottom: rect.bottom,
-              nextTop: next.getBoundingClientRect().top,
-              gap: next.getBoundingClientRect().top - rect.bottom,
               returnOffset: scroller.scrollTop + rect.top - scroller.getBoundingClientRect().top,
             };
-          }, nextMessageId);
+          });
           const finalAnchor = await captureTopVisibleVirtualRow(thread);
           if (artifactDir) {
             await page.screenshot({ path: path.join(artifactDir, "02-after-interruption.png") });
@@ -514,9 +509,41 @@ suite.define(() => {
           }
           expect(final.key).toBe(initial.key);
           expect(final.height).toBeGreaterThan(initial.height);
+          const showAdjacency = async () => {
+            // Parked neighbors have no painted rect. Bring the boundary into view
+            // only after verifying that recovery preserved the reader's anchor.
+            await thread.hover();
+            const delta = await thread.evaluate(
+              (element, { offset, height }) =>
+                offset + Math.max(0, height - element.clientHeight / 2) - element.scrollTop,
+              { offset: final.returnOffset, height: final.height },
+            );
+            await page.mouse.wheel(0, delta);
+            await thread
+              .locator(
+                `.chat-virtual-row:not([data-prepared-row]) .chat-bubble[data-entry-id="${nextMessageId}"]`,
+              )
+              .waitFor({ state: "visible" });
+            await bubble
+              .getByText("Recovered paragraph 1.", { exact: false })
+              .waitFor({ state: "visible" });
+            await waitForChatScrollIdle(page);
+            return bubble.evaluate((element, nextId) => {
+              const row = element.closest<HTMLElement>(".chat-virtual-row")!;
+              const next = row
+                .closest(".chat-thread")!
+                .querySelector(`.chat-bubble[data-entry-id="${nextId}"]`)!
+                .closest<HTMLElement>(".chat-virtual-row")!;
+              return {
+                height: row.offsetHeight,
+                gap: next.getBoundingClientRect().top - row.getBoundingClientRect().bottom,
+              };
+            }, nextMessageId);
+          };
+          const adjacent = await showAdjacency();
           expect(
-            Math.abs(final.gap),
-            JSON.stringify({ initial, during, final }),
+            Math.abs(adjacent.gap),
+            JSON.stringify({ initial, during, final, adjacent }),
           ).toBeLessThanOrEqual(1);
           // Leaving and returning must use the recovered size in the virtual
           // range too, not merely conceal stale cached geometry with DOM flow.
@@ -537,29 +564,9 @@ suite.define(() => {
             await page.mouse.wheel(0, -100_000);
             await expect.poll(() => thread.evaluate((element) => element.scrollTop)).toBe(0);
           }
-          await expect.poll(() => bubble.count()).toBe(0);
+          await expect.poll(() => bubble.isVisible()).toBe(false);
           // Returning is reader input: retire any still-reconciling latest command.
-          await thread.hover();
-          const returnDelta = await thread.evaluate(
-            (element, offset) => offset - element.scrollTop,
-            final.returnOffset,
-          );
-          await page.mouse.wheel(0, returnDelta);
-          await bubble
-            .getByText("Recovered paragraph 1.", { exact: false })
-            .waitFor({ state: "visible" });
-          await waitForChatScrollIdle(page);
-          const returned = await bubble.evaluate((element, nextId) => {
-            const row = element.closest<HTMLElement>(".chat-virtual-row")!;
-            const next = row
-              .closest(".chat-thread")!
-              .querySelector(`.chat-bubble[data-entry-id="${nextId}"]`)!
-              .closest<HTMLElement>(".chat-virtual-row")!;
-            return {
-              height: row.offsetHeight,
-              gap: next.getBoundingClientRect().top - row.getBoundingClientRect().bottom,
-            };
-          }, nextMessageId);
+          const returned = await showAdjacency();
           expect(returned.height).toBe(final.height);
           expect(Math.abs(returned.gap)).toBeLessThanOrEqual(1);
           if (artifactDir) {

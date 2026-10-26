@@ -1,4 +1,5 @@
 import type { Range, Virtualizer } from "@tanstack/virtual-core";
+import type { TranscriptRow } from "./chat-transcript-layout.ts";
 import { extractTranscriptRange } from "./chat-transcript-range.ts";
 
 type ChatTranscriptPrependAnchor = { messageKey: string; rowKey: string | null; top: number };
@@ -26,13 +27,14 @@ export class TranscriptPrependAnchor {
     range: Range,
     indexes: ReadonlyMap<string, number>,
     focusedRowKey: string | null,
+    rows: readonly TranscriptRow[],
   ): number[] {
     const messageKey = this.messageKey;
     const rowKey =
       (messageKey === null ? null : this.committedMessageRows.get(messageKey)) ??
       this.pending?.rowKey ??
       null;
-    return extractTranscriptRange(range, indexes, [focusedRowKey, rowKey]);
+    return extractTranscriptRange(range, indexes, [focusedRowKey, rowKey], rows);
   }
 
   /** Whether the next projection inserts history before the committed first message. */

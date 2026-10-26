@@ -25,7 +25,9 @@ it("hands idle-prepared DOM to the first visible caller without parsing it again
       html.set!.call(this, value);
     },
   });
-  onTestFinished(() => Object.defineProperty(Element.prototype, "innerHTML", html));
+  onTestFinished(() => {
+    Object.defineProperty(Element.prototype, "innerHTML", html);
+  });
   expect(prewarmSanitizedMarkdown(source, {})).toBe(true);
   expect(prewarmSanitizedMarkdown(source, {})).toBe(false);
   const cachedHtml = toSanitizedMarkdownHtml(source);
@@ -71,7 +73,9 @@ it("mounts fresh chat Markdown without reparsing and keeps only HTML in its cach
       html.set!.call(this, value);
     },
   });
-  onTestFinished(() => Object.defineProperty(Element.prototype, "innerHTML", html));
+  onTestFinished(() => {
+    Object.defineProperty(Element.prototype, "innerHTML", html);
+  });
   const prepare = () =>
     prepareMessageMarkdown(
       source,

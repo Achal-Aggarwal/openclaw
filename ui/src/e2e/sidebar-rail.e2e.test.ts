@@ -1,4 +1,7 @@
+import { withTimeout } from "@openclaw/fs-safe/advanced";
 import { expect, it } from "vitest";
+import { evaluateControlUiContext } from "../test-helpers/control-ui-e2e-context.ts";
+import { recordControlUiE2eFailureFacts } from "../test-helpers/control-ui-e2e-diagnostics.ts";
 import {
   installMockGateway,
   defaultControlUiFeatureMethods,
@@ -118,7 +121,11 @@ suite.define(() => {
           },
           "users.prefs.get": {
             status: "ok",
-            entries: { "ui.railShortcuts": entries, "ui.themeMode": "dark" },
+            entries: {
+              "ui.railShortcuts": entries,
+              "ui.themeMode": "dark",
+              "new-session.migration.v1": true,
+            },
           },
           "users.prefs.set": { status: "ok" },
           "sessions.describe": {
@@ -150,12 +157,44 @@ suite.define(() => {
         // Post-commit profile reads must retain the accepted pin order.
         await gateway.setMethodResponse("users.prefs.get", {
           status: "ok",
-          entries: { "ui.railShortcuts": nextEntries, "ui.themeMode": "dark" },
+          entries: {
+            "ui.railShortcuts": nextEntries,
+            "ui.themeMode": "dark",
+            "new-session.migration.v1": true,
+          },
         });
         await gateway.resolveDeferred("users.prefs.set");
         committedEntries = nextEntries;
       };
-      await expect.poll(pinOrder).toEqual(entries);
+      try {
+        await expect.poll(pinOrder).toEqual(entries);
+      } catch (error) {
+        await withTimeout(
+          Promise.all([
+            evaluateControlUiContext(page, (context) => ({
+              pinBootstrapForegroundReady: context.connectionBootstrap.foregroundReady,
+            })),
+            Promise.all(
+              unloaded.map(
+                async (row) =>
+                  (await gateway.getRequests("sessions.describe", { key: row.key })).length,
+              ),
+            ),
+            pins.count(),
+          ]),
+          1_000,
+        )
+          .then(([facts, descriptorRequests, renderedPins]) =>
+            recordControlUiE2eFailureFacts(page, {
+              ...facts,
+              pinDescriptorRequests: descriptorRequests,
+              pinRenderedCount: renderedPins,
+              pinDiagnosticRead: true,
+            }),
+          )
+          .catch(() => recordControlUiE2eFailureFacts(page, { pinDiagnosticRead: false }));
+        throw error;
+      }
       for (const row of unloaded) {
         const link = rail.getByRole("link", { name: row.label, exact: true });
         await link.waitFor();
@@ -246,7 +285,7 @@ suite.define(() => {
         const installProfilePreferences = () =>
           installPreferenceServer(
             page,
-            { "ui.themeMode": "dark" },
+            { "ui.themeMode": "dark", "new-session.migration.v1": true },
             "openclaw-test:clean-rail:profile-prefs",
           );
         await installProfilePreferences();

@@ -1,6 +1,7 @@
 import type { Locator } from "playwright";
 import { expect, it } from "vitest";
 import { createDeferred } from "../../../test/helpers/promise.js";
+import type { ChatPageHost } from "../pages/chat/chat-state-host.ts";
 import { openChatDetails } from "./chat-details.test-support.ts";
 import {
   chatThreadDistanceFromBottom,
@@ -125,7 +126,24 @@ suite.define(() => {
         state: "delta",
         message: { role: "assistant", content: "Reviewing the workspace.\n\nAnother finding." },
       });
-      await expect.poll(() => thread.textContent()).toContain("Another finding.");
+      await expect
+        .poll(() =>
+          page.evaluate(() => {
+            const pane = document.querySelector<
+              HTMLElement & { state: Pick<ChatPageHost, "sessionKey" | "chatRunId" | "chatStream"> }
+            >("openclaw-chat-pane.chat-pane-cache__pane--active");
+            return {
+              sessionKey: pane?.state.sessionKey,
+              runId: pane?.state.chatRunId,
+              text: pane?.state.chatStream,
+            };
+          }),
+        )
+        .toEqual({
+          sessionKey: "agent:main:main",
+          runId,
+          text: "Reviewing the workspace.\n\nAnother finding.",
+        });
       await waitForChatScrollIdle(page);
       expect(await scrollTop(thread)).toBe(beforeFooter);
       await page.locator(".agent-chat__composer-footer").hover();
@@ -154,6 +172,9 @@ suite.define(() => {
       await page.mouse.wheel(0, -200);
       await waitForChatScrollIdle(page);
       expect(await scrollTop(thread)).toBe(beforeDraft);
+      await page.getByRole("button", { name: "Scroll to latest" }).click();
+      await expect.poll(() => chatThreadDistanceFromBottom(page)).toBeLessThanOrEqual(4);
+      await thread.getByText("Another finding.", { exact: false }).waitFor({ state: "visible" });
     });
   });
 

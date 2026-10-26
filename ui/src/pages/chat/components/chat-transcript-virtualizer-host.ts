@@ -132,8 +132,9 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
       this.renderer.connect();
       if (this.connected && this.virtualizer.scrollElement !== this.scrollElement) {
         this.layout.connect(this.scrollElement, this.callbacks);
-        // eslint-disable-next-line no-underscore-dangle -- TanStack exposes this bound adapter lifecycle hook.
-        this.virtualizer._willUpdate();
+        // Virtual-core exposes its lifecycle hooks as bound arrow functions.
+        const { _willUpdate: updateVirtualizer } = this.virtualizer;
+        updateVirtualizer();
         this.invalidate();
       }
     });
@@ -177,7 +178,8 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
     this.initialRange = new TranscriptInitialRange(
       initialOffset,
       () => this.virtualizer,
-      (range, indexes) => this.prependAnchor.extractRange(range, indexes, this.focusedRowKey),
+      (...range) =>
+        this.prependAnchor.extractRange(...range, this.focusedRowKey, this.acceptedRows ?? []),
       invalidate,
       () => this.connected && this.renderer.isPresented(),
       (element, entry) => this.presentation.measureElement(element, entry),
@@ -692,14 +694,10 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
     this.focusedRowKey = focusedTranscriptRowKey(this.scrollElement, event.relatedTarget);
   }
 
-  private reconcileInteractionResize(sidebarCommitTarget?: EventTarget | null): void {
+  private reconcileInteractionResize(target?: EventTarget | null): void {
+    const anchor = this.offsetState.pendingInteractionAnchor;
     if (
-      reconcileChatTranscriptInteractionResize(
-        this.offsetState.pendingInteractionAnchor,
-        sidebarCommitTarget,
-        this.scrollElement,
-        this.virtualizer,
-      )
+      reconcileChatTranscriptInteractionResize(anchor, target, this.scrollElement, this.virtualizer)
     ) {
       this.offsetState.pendingInteractionAnchor = null;
     }

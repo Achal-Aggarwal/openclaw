@@ -61,7 +61,19 @@ it.each(["idle measurement", "end-command measurement", "native end clamp"] as c
     }));
     state.client = createGatewayBrowserClientFixture({ request });
     state.connected = true;
-    state.chatMessages = Array.from({ length: 12 }, (_, index) => nativeHistoryMessage(index + 3));
+    state.chatMessages = Array.from({ length: 12 }, (_, index) => {
+      const message = nativeHistoryMessage(index + 3);
+      // A remote image keeps the earlier row measurable for late intrinsic resize.
+      return index === 4
+        ? {
+            ...message,
+            content: [
+              ...message.content,
+              { type: "image", url: "https://images.example.test/history-resize.png" },
+            ],
+          }
+        : message;
+    });
     state.chatHistoryPagination = { hasMore: true, nextOffset: 2, totalMessages: 4 };
     state.chatLoading = false;
     state.chatHasAutoScrolled = true;
@@ -111,6 +123,7 @@ it.each(["idle measurement", "end-command measurement", "native end clamp"] as c
           this as unknown as IntersectionObserver,
         );
       }
+      unobserve() {}
       disconnect() {}
     }
     vi.stubGlobal("IntersectionObserver", HistoryIntersectionObserver);

@@ -397,11 +397,30 @@ suite.define(() => {
                       // the presence packet against its queued-custody replacement.
                       await expect
                         .poll(() =>
-                          reader
-                            .locator('.chat-virtual-row[data-virtual-row-key="presence:typing"]')
-                            .textContent(),
+                          a.received.some((frame) => {
+                            if (frame.type !== "event" || frame.event !== "session.typing") {
+                              return false;
+                            }
+                            const payload = record(frame.payload);
+                            return (
+                              payload?.sessionKey === sessionKey &&
+                              payload?.typing === true &&
+                              payload?.preview === remotePrompt &&
+                              record(payload?.actor)?.id === profileIds[1]
+                            );
+                          }),
                         )
-                        .toContain(remotePrompt);
+                        .toBe(true);
+                      // The transcript tail renders only while the reader is there.
+                      if (!reading) {
+                        await expect
+                          .poll(() =>
+                            reader
+                              .locator('.chat-virtual-row[data-virtual-row-key="presence:typing"]')
+                              .textContent(),
+                          )
+                          .toContain(remotePrompt);
+                      }
                     }
                   : undefined,
               );

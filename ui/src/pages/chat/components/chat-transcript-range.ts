@@ -10,8 +10,13 @@ export function extractTranscriptRange(
   range: Range,
   rowIndexesByKey: ReadonlyMap<string, number>,
   retainedRowKeys: readonly (string | null)[],
+  rows: readonly TranscriptRow[],
 ): number[] {
-  const indexes = defaultRangeExtractor(range);
+  // Dynamic rows need neighboring measurements for native resize anchoring.
+  // Completed fragments use the bounded preparation owner instead.
+  const indexes = defaultRangeExtractor(range).filter(
+    (index) => !rows[index]!.retainDom || (index >= range.startIndex && index <= range.endIndex),
+  );
   for (const key of retainedRowKeys) {
     const index = key === null ? undefined : rowIndexesByKey.get(key);
     if (index !== undefined && index >= 0 && index < range.count && !indexes.includes(index)) {
@@ -33,7 +38,8 @@ export function previewTranscriptRowKeys(
     initialOffset: virtualizer.scrollOffset ?? virtualizer.options.initialOffset,
     initialRect: virtualizer.scrollRect ?? virtualizer.options.initialRect,
     onChange: () => undefined,
-    rangeExtractor: (range) => extractTranscriptRange(range, nextIndexes, [focusedRowKey]),
+    rangeExtractor: (range) =>
+      extractTranscriptRange(range, nextIndexes, [focusedRowKey], nextRows),
   });
   preview.scrollElement = virtualizer.scrollElement;
   // Isolate the fork's key-anchor transition so teardown selection cannot

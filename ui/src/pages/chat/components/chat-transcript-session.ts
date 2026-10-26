@@ -40,8 +40,9 @@ export type TranscriptCallbacks = {
 };
 
 export const CHAT_TRANSCRIPT_ESTIMATED_ROW_PX = 120;
-// Ordinary rows prepare Markdown synchronously; keep that work inside the viewport.
-export const CHAT_TRANSCRIPT_OVERSCAN = 0;
+// Dynamic rows retain neighboring measurements; completed fragments are filtered
+// to the viewport and prepared separately by TranscriptInitialRange.
+export const CHAT_TRANSCRIPT_OVERSCAN = 2;
 // Initial virtual rows can correct their estimates for several frames. Observe
 // the range for ~200ms before accepting a saved offset that remains unreachable.
 export const CHAT_TRANSCRIPT_SCROLL_RESTORE_STABLE_FRAMES = 12;

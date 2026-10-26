@@ -133,14 +133,23 @@ export function enhanceMarkdownTables(owner: HTMLElement): TableOwnerState {
     };
     const mutationObserver = new MutationObserver((records) => {
       const shells = new Set<HTMLElement>();
+      const collectShells = (node: HTMLElement) => {
+        if (node.matches(tableShellSelector)) {
+          shells.add(node);
+        }
+        // Syntax highlighting inserts many leaf spans, which cannot contain tables.
+        if (node.firstElementChild) {
+          for (const shell of node.querySelectorAll<HTMLElement>(tableShellSelector)) {
+            shells.add(shell);
+          }
+        }
+      };
       for (const record of records) {
         const target =
           record.target instanceof Element ? record.target : record.target.parentElement;
         const shell = target?.closest<HTMLElement>(tableShellSelector);
         if (record.type === "attributes" && target instanceof HTMLElement) {
-          for (const table of target.querySelectorAll<HTMLElement>(tableShellSelector)) {
-            shells.add(table);
-          }
+          collectShells(target);
         }
         // Icon/copy feedback belongs to the controls and cannot change the table's width.
         if (shell && (target === shell || target?.closest(tableViewportSelector))) {
@@ -150,16 +159,7 @@ export function enhanceMarkdownTables(owner: HTMLElement): TableOwnerState {
           if (!(node instanceof HTMLElement)) {
             continue;
           }
-          if (node.matches(tableShellSelector)) {
-            shells.add(node);
-          }
-          // Syntax highlighting inserts many leaf spans, which cannot contain tables.
-          if (!node.firstElementChild) {
-            continue;
-          }
-          for (const added of node.querySelectorAll<HTMLElement>(tableShellSelector)) {
-            shells.add(added);
-          }
+          collectShells(node);
         }
         for (const node of record.removedNodes) {
           if (!(node instanceof HTMLElement) || owner.contains(node)) {
