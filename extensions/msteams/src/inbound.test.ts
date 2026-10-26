@@ -76,6 +76,22 @@ describe("msteams inbound", () => {
       ).toBeUndefined();
     });
 
+    it("reads the copy paragraph whatever the tag case and attribute order", () => {
+      const content =
+        '<blockquote itemtype="http://schema.skype.com/Reply" itemscope>' +
+        `<P class="q" ITEMPROP='copy'>quoted <b>text</b></P>` +
+        "</blockquote>";
+      expect(extractMSTeamsQuoteInfo([replyAttachment({ content })])?.body).toBe("quoted text");
+    });
+
+    it("returns promptly for many unterminated paragraph tags", () => {
+      // The former paragraph regex re-scanned the tag from every `<p` start.
+      const content = `http://schema.skype.com/Reply ${"<P".repeat(4_000)}${'ITEMPROP="COPY"'.repeat(400)}`;
+      const started = performance.now();
+      expect(extractMSTeamsQuoteInfo([replyAttachment({ content })])).toBeUndefined();
+      expect(performance.now() - started).toBeLessThan(500);
+    });
+
     it("uses 'unknown' as sender when sender element is absent", () => {
       const result = extractMSTeamsQuoteInfo([
         {
