@@ -59,6 +59,8 @@ const allowedAttrs = [
   "data-code-encoding",
   "data-code-highlight",
   "data-file-kind",
+  "data-file-fragment",
+  "data-markdown-heading",
   "data-file-line",
   "data-file-path",
   "data-link-favicon-host",
