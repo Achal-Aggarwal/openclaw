@@ -8,6 +8,7 @@ import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { redactSupportString } from "../logging/diagnostic-support-redaction.js";
 import { hasCommandProcessCleanupError } from "../process/exec-result.js";
 import { runUtf8CommandWithTimeout } from "../process/exec.js";
+import { resolveLegacyCronDefaultStoreKey } from "../state/openclaw-state-db-cron-identity-migration.js";
 import { resolvePathViaExistingAncestorSync } from "./boundary-path.js";
 import { formatDiskSpaceBytes, tryReadDiskSpace } from "./disk-space.js";
 import { extractErrorCode } from "./errors.js";
@@ -291,6 +292,8 @@ export async function prepareUpdateCandidateStateSnapshot(params: {
   snapshotWarnings: string[];
   cleanupDirectories: string[];
 }> {
+  // Capture selection before the first await; the worker runs under private paths.
+  const sourceCronDefaultStoreKey = resolveLegacyCronDefaultStoreKey(params.env);
   let { capacity } = await measureInitialUpdateSnapshotState(params);
   params.signal?.throwIfAborted();
   params.assertCurrent?.();
@@ -398,6 +401,7 @@ export async function prepareUpdateCandidateStateSnapshot(params: {
           {
             input: JSON.stringify({
               ...request,
+              ...(request.mode === "snapshot" ? { sourceCronDefaultStoreKey } : {}),
               includeLocalStoreVersions: true,
               includeClientCredentialStoreVersion: true,
               streamProgress: true,

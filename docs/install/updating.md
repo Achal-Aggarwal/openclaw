@@ -53,6 +53,14 @@ are reported by the scheduler without restarting the Gateway.
 
 **Updates always work** (`openclaw update` finishes best effort everywhere). Changes to update, Doctor, service lifecycle, migrations, plugin loading: state their update behavior. Installed updater runs first, can't be patched; candidate fixes key on markers shipped drivers set; existing operator state = input. Recoverable hiccups → recorded warnings; back up before mutating, let rollback restore it; refuse only for named data risk with previous Gateway kept running. Timeouts and budgets: generous, derived from measured state, sized for slow hardware. Proof: published-driver × candidate cell.
 
+The updater captures the original default cron selector before isolating candidate
+paths. Candidate snapshots use that selector to bind a matching pre-v34 partition
+in their private shared database, including PostgreSQL exports. Existing bindings,
+unmatched partitions, source databases, and schema versions remain unchanged.
+Both the installed updater and candidate must contain this repair. Older updaters
+that omit the selector retain the existing unresolved-selection behavior; the
+candidate does not infer it from the relocated state directory.
+
 Private Doctor and post-core workers validate command fields before entering maintenance.
 The delegated executor admits its grant data separately and still checks live process and
 installation ownership before effects. Callbacks and live deadline objects stay in the

@@ -6,7 +6,6 @@ import { resolveStateDir } from "../config/paths.js";
 import { resolveDaemonRuntimePinStorePath } from "../daemon/runtime-pin-store.js";
 import { listDefaultAgentDatabasePaths } from "../state/agent-database-path-discovery.js";
 import { tableExists } from "../state/openclaw-state-db-schema-helpers.js";
-import { readStateSchemaContentVersion } from "../state/openclaw-state-db-schema-version.js";
 import type { DB } from "../state/openclaw-state-db.generated.js";
 import { resolveOpenClawRegisteredAgentDatabasePath } from "../state/openclaw-state-db.paths.js";
 import {
@@ -55,6 +54,7 @@ import {
   runUpdateStateInspectionWorker,
 } from "./update-candidate-state.inspection.js";
 import { withStateInspectionCleanup } from "./update-candidate-state.process.js";
+import type { UpdateCandidateStateSnapshotInput } from "./update-candidate-state.projection.js";
 import {
   collectRegisteredPaths,
   collectSupplementalStateDatabasePaths,
@@ -553,17 +553,12 @@ export async function readUpdateStateSchemaVersions({
 
 /** Keep snapshot dependencies out of schema inspection; rebind registry paths to private copies. */
 export async function snapshotUpdateCandidateState(
-  input: StateInput & {
-    targetStateDir: string;
-    candidateRoot: string;
-    pluginPlanPath: string;
-    databaseInventory: string[];
-    fullIntegrityCheck?: boolean;
-    onProgress?: (progress: UpdateStateInspectionProgress) => void;
-  },
+  input: UpdateCandidateStateSnapshotInput,
 ): Promise<z.infer<typeof UpdateCandidateStateSnapshotSchema>> {
   const { createVerifiedSqliteSnapshot } = await import("./sqlite-snapshot.js");
   const { AGENT_FTS_SCHEMAS } = await import("../state/openclaw-agent-fts-schema.js");
+  const { projectUpdateCandidateCronSelection } =
+    await import("./update-candidate-state.projection.js");
   const { copyUpdateCandidatePlugins, UpdateCandidatePluginPlanSchema } =
     await import("./update-candidate-plugins.js");
   const plugins = UpdateCandidatePluginPlanSchema.parse(
@@ -659,7 +654,10 @@ export async function snapshotUpdateCandidateState(
       ...(file === shared
         ? {
             transform: (db: DatabaseSync) => {
-              contentVersion = readStateSchemaContentVersion(db);
+              contentVersion = projectUpdateCandidateCronSelection(
+                db,
+                input.sourceCronDefaultStoreKey,
+              );
               const queries = getNodeSqliteKysely<CandidateStateDatabase>(db);
               execApprovals.rebaseReceipt(db);
               // Source process leases cannot own the independently opened rehearsal copy.

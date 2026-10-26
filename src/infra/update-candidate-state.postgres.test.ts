@@ -12,11 +12,13 @@ import { readBackupEngine } from "../snapshot/database-backup.js";
 import { withArtifactPreservingStateReads as preserveArtifacts } from "../state/artifact-preserving-state-reads.js";
 import { OPENCLAW_AGENT_SCHEMA_VERSION as AGENT_VERSION } from "../state/openclaw-agent-db-contract.js";
 import { OPENCLAW_STATE_SCHEMA_VERSION as STATE_VERSION } from "../state/openclaw-state-db-contract.js";
+import { readCronDefaultStoreBindingInDatabase } from "../state/openclaw-state-db-cron-identity-migration.js";
 import { agentPortProvider } from "./database-engine/agent-port.js";
 import { materializeDatabasePort } from "./database-engine/port.worker.js";
 import { statePortProvider } from "./database-engine/state-port.js";
 import { openNodeSqliteDatabase as openDatabase } from "./node-sqlite.js";
 import { readUpdateStateSchemaVersions as readVersions } from "./update-candidate-state.js";
+import { runUpdateCandidateSnapshotWorker } from "./update-candidate-state.test-support.js";
 
 const configured = getEnvironmentData("openclaw.test.state.conformance.connection");
 const connection = typeof configured === "string" ? configured : undefined;
@@ -205,6 +207,77 @@ describe.skipIf(!connection)("mixed-engine update inventory", () => {
         expect(await fs.readFile(fixture.agent)).toEqual(before);
       } finally {
         await setVersion(AGENT_VERSION);
+      }
+    },
+  );
+
+  it.each([33, 34])(
+    "uses exported content version %s for private cron selection",
+    async (version) => {
+      const fixture = fixtures.get("postgres-state")!;
+      const anchor = readBackupEngine(fixture.shared);
+      if (anchor.engine !== "postgres") {
+        throw new Error("Expected the PostgreSQL shared-state fixture");
+      }
+      const sourceCronDefaultStoreKey = path.join(fixture.stateDir, "cron", "jobs.json");
+      const targetStateDir = directories.make("update-postgres-cron-copy-");
+      const anchorBytes = await fs.readFile(fixture.shared);
+      await client.query(
+        `UPDATE "${anchor.namespace}".openclaw_schema_meta SET version = 33 WHERE store = 'state'`,
+      );
+      await client.query(
+        `UPDATE "${anchor.namespace}".config_machine_state SET value_json = $1
+        WHERE state_key = 'state.schema.contentVersion'`,
+        [String(version)],
+      );
+      await client.query(
+        `INSERT INTO "${anchor.namespace}".cron_jobs
+        (store_key, job_id, name, enabled, payload_kind, job_json, state_json, updated_at)
+        VALUES ($1, 'retained-cron', 'Retained job', 0, 'agentTurn', '{}', '{}', 1)`,
+        [sourceCronDefaultStoreKey],
+      );
+      const readMachineState = async () =>
+        (
+          await client.query(
+            `SELECT * FROM "${anchor.namespace}".config_machine_state ORDER BY state_key`,
+          )
+        ).rows;
+      try {
+        const before = await readMachineState();
+        await runUpdateCandidateSnapshotWorker({
+          ...fixture,
+          env: contextFor(fixture).env,
+          targetStateDir,
+          candidateRoot: fixture.stateDir,
+          sourceCronDefaultStoreKey,
+        });
+        using copy = openDatabase(path.join(targetStateDir, "state", "openclaw.sqlite"), {
+          readOnly: true,
+        });
+        expect(readCronDefaultStoreBindingInDatabase(copy)).toEqual(
+          version === 33
+            ? { status: "ready", storeKey: sourceCronDefaultStoreKey }
+            : { status: "absent" },
+        );
+        expect(copy.prepare("PRAGMA user_version").get()).toEqual({ user_version: 33 });
+        expect(copy.prepare("SELECT store_key, job_id FROM cron_jobs").all()).toEqual([
+          { store_key: sourceCronDefaultStoreKey, job_id: "retained-cron" },
+        ]);
+        expect(await readMachineState()).toEqual(before);
+        expect(await fs.readFile(fixture.shared)).toEqual(anchorBytes);
+      } finally {
+        await client.query(
+          `DELETE FROM "${anchor.namespace}".cron_jobs WHERE job_id = 'retained-cron'`,
+        );
+        await client.query(
+          `UPDATE "${anchor.namespace}".openclaw_schema_meta SET version = $1 WHERE store = 'state'`,
+          [STATE_VERSION],
+        );
+        await client.query(
+          `UPDATE "${anchor.namespace}".config_machine_state SET value_json = $1
+          WHERE state_key = 'state.schema.contentVersion'`,
+          [String(STATE_VERSION)],
+        );
       }
     },
   );
