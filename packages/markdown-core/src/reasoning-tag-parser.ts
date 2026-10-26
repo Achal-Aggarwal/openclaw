@@ -327,8 +327,15 @@ export function parseMarkdownOwnership(text: string, options?: MarkdownOwnership
       retainStart = Math.min(retainStart, blockStart);
     }
   }
-  const { unsettledDefinitionStarts, retainStart: referenceStart } =
-    findReferenceDefinitionRetention(text, definitions);
+  const unsettledDefinitionStarts = definitions
+    .filter((definition) => canStillHaveReferenceTitle(text, definition.end))
+    .map(({ start }) => start);
+  // Expanded labels cannot be serialized as carried CommonMark definitions (999 source
+  // characters maximum); keep their original source just like unfinished titles.
+  const referenceStart = definitions.reduce(
+    (offset, { identifier, start }) => (identifier.length > 999 ? Math.min(offset, start) : offset),
+    Math.min(text.length, ...unsettledDefinitionStarts),
+  );
   retainStart = findListItemRetentionStart(text, blocks, Math.min(retainStart, referenceStart));
   regions.sort((left, right) => left.start - right.start);
   return {
@@ -406,22 +413,6 @@ function findListItemRetentionStart(
       );
     })?.position?.start?.offset ?? offset
   );
-}
-
-function findReferenceDefinitionRetention(
-  text: string,
-  definitions: readonly { identifier: string; start: number; end: number }[],
-) {
-  const unsettledDefinitionStarts = definitions
-    .filter((definition) => canStillHaveReferenceTitle(text, definition.end))
-    .map(({ start }) => start);
-  // Expanded labels cannot be serialized as carried CommonMark definitions (999 source
-  // characters maximum); keep their original source just like unfinished titles.
-  const retainStart = definitions.reduce(
-    (offset, { identifier, start }) => (identifier.length > 999 ? Math.min(offset, start) : offset),
-    Math.min(text.length, ...unsettledDefinitionStarts),
-  );
-  return { unsettledDefinitionStarts, retainStart };
 }
 
 function canStillHaveReferenceTitle(text: string, start: number): boolean {

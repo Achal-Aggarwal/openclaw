@@ -122,23 +122,6 @@ const artifactTypes = new Map([
   ["input_file", "file"],
 ]);
 
-/** Generates a stable id from transcript position plus display metadata. */
-function artifactId(parts: {
-  sessionKey: string;
-  messageSeq: number;
-  contentIndex: number;
-  title: string;
-  type: string;
-}): string {
-  const hash = createHash("sha256")
-    .update(
-      `${parts.sessionKey}\0${parts.messageSeq}\0${parts.contentIndex}\0${parts.type}\0${parts.title}`,
-    )
-    .digest("base64url")
-    .slice(0, 18);
-  return `artifact_${hash}`;
-}
-
 function resolveMessageSeq(message: Record<string, unknown>, fallback: number): number {
   const meta = asOptionalRecord(message["__openclaw"]);
   const seq = meta?.seq;
@@ -234,16 +217,20 @@ function collectArtifactsFromMessage(
       params.imagesOnly && declaredArtifactId
         ? parseTranscriptImageArtifactId(declaredArtifactId)
         : undefined;
-    const id =
-      declaredArtifactId && (parseManagedOutgoingArtifactId(declaredArtifactId) || transcriptImage)
-        ? declaredArtifactId
-        : artifactId({
-            sessionKey: params.sessionKey,
-            messageSeq,
-            contentIndex,
-            title,
-            type,
-          });
+    let id: string;
+    if (
+      declaredArtifactId &&
+      (parseManagedOutgoingArtifactId(declaredArtifactId) || transcriptImage)
+    ) {
+      id = declaredArtifactId;
+    } else {
+      const sessionKey = params.sessionKey;
+      const hash = createHash("sha256")
+        .update(`${sessionKey}\0${messageSeq}\0${contentIndex}\0${type}\0${title}`)
+        .digest("base64url")
+        .slice(0, 18);
+      id = `artifact_${hash}`;
+    }
     // Preserve the first match without inspecting or normalizing sibling payloads.
     if (params.downloadArtifactIds && !params.downloadArtifactIds.delete(id)) {
       continue;
