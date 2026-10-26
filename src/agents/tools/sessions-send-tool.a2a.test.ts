@@ -112,9 +112,10 @@ describe("runSessionsSendA2AFlow reply delivery", () => {
         disposition: "visible" as const,
         text: sanitizeAgentRunTerminalReplyText(fullReply),
       };
+      agentWaitMock.mockResolvedValue({ status: "ok", terminalReply });
       callGatewayMock.mockImplementation(async (request: CallGatewayOptions) => {
         if (request.method === "agent.wait") {
-          return { status: "ok", terminalReply };
+          return await agentWaitMock(request);
         }
         expect(request.method).toBe("chat.history");
         expect(request.params).toMatchObject({
@@ -128,11 +129,18 @@ describe("runSessionsSendA2AFlow reply delivery", () => {
           messages: [{ role: "assistant", content: fullReply, __openclaw: { runId: "run-test" } }],
         };
       });
-      await runFlow({
+      await runSessionsSendA2AFlow({
         callGateway: callGatewayMock,
+        runId: "run-test",
         targetAgentId: "worker",
         targetSessionKey: "agent:worker:main",
+        displayKey: "agent:worker:main",
         requesterSessionKey: "agent:main:main",
+        requesterDeliveryGeneration: {
+          ...requesterDeliveryGeneration,
+          sessionKey: "agent:main:main",
+        },
+        replyTimeoutMs: 10_000,
       });
       expect(runAgentStep).toHaveBeenCalledOnce();
       const delivered = vi.mocked(runAgentStep).mock.calls[0]![0];

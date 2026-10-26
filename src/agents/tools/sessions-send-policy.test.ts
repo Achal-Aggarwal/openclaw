@@ -113,6 +113,8 @@ function expectNoDispatch() {
 
 describe("sessions_send directed policy at the tool boundary", () => {
   let state: OpenClawTestState;
+  // Only the reply-recovery cases may read the accepted run's history.
+  let historyReadExpected = false;
   let originalRegistry: ReturnType<typeof captureActivePluginRegistrySnapshot>;
 
   beforeAll(async () => {
@@ -227,7 +229,10 @@ describe("sessions_send directed policy at the tool boundary", () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
-    expect(gatewayMethods()).not.toContain("chat.history");
+    if (!historyReadExpected) {
+      expect(gatewayMethods()).not.toContain("chat.history");
+    }
+    historyReadExpected = false;
   });
 
   afterAll(async () => {
@@ -272,6 +277,7 @@ describe("sessions_send directed policy at the tool boundary", () => {
   ])(
     "returns the accepted run's full $name with explicit tool-budget truncation",
     async ({ full, preview }) => {
+      historyReadExpected = true;
       const transport = callGateway.getMockImplementation()!;
       callGateway.mockImplementation(
         async (request: Parameters<AgentToolGatewayRequestCaller>[0]) => {
@@ -330,6 +336,7 @@ describe("sessions_send directed policy at the tool boundary", () => {
   );
 
   it("reports a truncated preview when the accepted run's full reply is unavailable", async () => {
+    historyReadExpected = true;
     const preview = `${"a".repeat(4_095)}…`;
     const transport = callGateway.getMockImplementation()!;
     callGateway.mockImplementation(
