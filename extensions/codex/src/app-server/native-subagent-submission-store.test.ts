@@ -144,7 +144,7 @@ describe("native subagent submission receipts in the binding store", () => {
         },
         currentAuthority,
       );
-      const pending = await store.readNativeSubagentAssignments?.(identity, owner);
+      const pending = store.readNativeSubagentAssignments?.(identity, owner);
       expect(pending).toHaveLength(2);
       expect(pending).toContainEqual({ ...first, recordedCompletion });
       await expect(
@@ -186,14 +186,14 @@ describe("native subagent submission receipts in the binding store", () => {
       await closeOpenClawStateDatabaseAsync();
       resetPluginStateStoreForTests();
       const reopened = createLazyCodexAppServerBindingStore(openState(root));
-      expect(await reopened.readNativeSubagentSubmissions(identity, owner)).toEqual([nextReceipt]);
+      expect(reopened.readNativeSubagentSubmissions(identity, owner)).toEqual([nextReceipt]);
       await reopened.mutate(identity, {
         kind: "replace-thread",
         expectedThreadId: binding.threadId,
         binding: { ...binding, threadId: "rotated-parent" },
       });
       const rotated = { ...owner, parentThreadId: "rotated-parent" };
-      expect(await reopened.readNativeSubagentAssignments?.(identity, rotated)).toEqual([second]);
+      expect(reopened.readNativeSubagentAssignments?.(identity, rotated)).toEqual([second]);
     },
   );
 
