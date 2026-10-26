@@ -67,7 +67,6 @@ export const SessionListRowSchema = Type.Object(
       "derivedTitle",
       "lastMessagePreview",
       "parentSessionKey",
-      "sidebarRoot",
       "model",
       "contextTokens",
       "totalTokens",
@@ -79,6 +78,14 @@ export const SessionListRowSchema = Type.Object(
     channel: Type.String(),
     archived: Type.Boolean(),
     pinned: Type.Boolean(),
+    sidebarRoot: Type.Boolean({
+      description:
+        "True only when a nested session was explicitly promoted to the sidebar top level; false does not mean nested. Use topLevel for placement.",
+    }),
+    topLevel: Type.Boolean({
+      description:
+        "Whether the sidebar shows this session at the top level. Conversations linked to the agent main session for notices are top-level; subagents and sessions under another session are nested.",
+    }),
     createdActor: Type.Optional(SessionInventoryActorSchema),
     owner: Type.Optional(
       Type.Object({ actor: SessionInventoryActorSchema }, { additionalProperties: false }),

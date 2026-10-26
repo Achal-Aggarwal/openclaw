@@ -204,6 +204,43 @@ describe("sessions-list-tool", () => {
     expect((await list()).sessions?.[0]?.parentSessionKey).toBe("agent:main:subagent:parent");
   });
 
+  it("reports sidebar placement separately from explicit promotion", async () => {
+    mockRows([
+      projectedRow("agent:main:main", "main"),
+      projectedRow("agent:main:dashboard:linked", "dashboard", {
+        parentSessionKey: "agent:main:main",
+      }),
+      projectedRow("agent:main:dashboard:nested", "dashboard", {
+        parentSessionKey: "agent:main:dashboard:linked",
+      }),
+      projectedRow("agent:main:dashboard:promoted", "dashboard", {
+        parentSessionKey: "agent:main:dashboard:linked",
+        sidebarRoot: true,
+      }),
+      projectedRow("agent:main:dashboard:spawned", "dashboard", {
+        spawnedBy: "agent:main:main",
+      }),
+      projectedRow("agent:main:subagent:worker", "subagent", {
+        parentSessionKey: "agent:main:main",
+      }),
+    ]);
+
+    expect(
+      (await list()).sessions?.map(({ key, sidebarRoot, topLevel }) => [
+        key,
+        sidebarRoot,
+        topLevel,
+      ]),
+    ).toEqual([
+      ["agent:main:main", false, true],
+      ["agent:main:dashboard:linked", false, true],
+      ["agent:main:dashboard:nested", false, false],
+      ["agent:main:dashboard:promoted", true, true],
+      ["agent:main:dashboard:spawned", false, false],
+      ["agent:main:subagent:worker", false, false],
+    ]);
+  });
+
   it("omits malformed agent keys and derives channels only from valid group keys", async () => {
     mockRows([
       groupRow(

@@ -4,6 +4,7 @@ import { Type } from "typebox";
 import { Value } from "typebox/value";
 import { SessionsListParamsSchema } from "../../../packages/gateway-protocol/src/schema/sessions-list.js";
 import { SessionRunStatusSchema } from "../../../packages/gateway-protocol/src/schema/sessions-row.js";
+import { isPinnableSessionEntry } from "../../config/sessions/session-pin-policy.js";
 import type { SessionEntry } from "../../config/sessions/types.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { deriveSessionTitle, prepareSessionTitleRead } from "../../gateway/session-utils-core.js";
@@ -446,6 +447,12 @@ export function createSessionsListTool(opts?: {
           archived: entry.archived === true,
           pinned: entry.pinned === true,
           sidebarRoot: entry.sidebarRoot === true,
+          // Pinnability is the Gateway's sidebar-root policy; main-session notice links stay top-level.
+          topLevel: isPinnableSessionEntry(key, {
+            spawnedBy: readStringValue(entry.spawnedBy),
+            parentSessionKey: readStringValue(entry.parentSessionKey),
+            sidebarRoot: entry.sidebarRoot,
+          }),
           ...(rowLabel ? { label: rowLabel } : {}),
           ...(entry.createdActor
             ? { createdActor: projectInventoryActor(entry.createdActor) }
