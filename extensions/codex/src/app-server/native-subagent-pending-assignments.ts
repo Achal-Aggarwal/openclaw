@@ -130,7 +130,7 @@ function mergeNativeAssignmentMetadata(
 }
 
 /** Doctor and binding writes merge compatible facts for one obligation, never distinct turns. */
-export function normalizeNativePendingAssignments(value: unknown) {
+function normalizeNativePendingAssignments(value: unknown) {
   if (value === undefined) {
     return undefined;
   }

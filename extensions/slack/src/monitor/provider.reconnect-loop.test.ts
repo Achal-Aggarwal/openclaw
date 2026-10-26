@@ -2,9 +2,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createRuntimeSpies } from "../../../test-support/runtime-spies.js";
 import { getSlackClient, getSlackTestState, resetSlackTestState } from "../monitor.test-helpers.js";
-import { SLACK_ISOLATED_INVALID_AUTH_TERMINAL_LIMIT } from "./reconnect-policy.js";
 
 const { monitorSlackProvider } = await import("./provider.js");
+// Mirrors the reconnect policy's isolated invalid_auth terminal limit.
+const SLACK_ISOLATED_INVALID_AUTH_TERMINAL_LIMIT = 3;
 const slackTestState = getSlackTestState();
 
 describe("slack socket reconnect loop", () => {
