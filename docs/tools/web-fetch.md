@@ -33,7 +33,7 @@ URL to fetch. `http(s)` only.
 </ParamField>
 
 <ParamField path="extractMode" type="'markdown' | 'text'" default="markdown">
-Output format after main-content extraction. Text mode removes complete link destinations, including nested parentheses, and preserves literal inline and fenced code.
+Output format after main-content extraction. Text mode removes complete link destinations, including nested parentheses, and preserves literal inline and fenced code. Readability text output keeps headings, paragraphs, and list items on separate lines.
 </ParamField>
 
 <ParamField path="maxChars" type="number">
