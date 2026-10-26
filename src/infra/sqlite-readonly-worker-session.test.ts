@@ -352,6 +352,11 @@ it("counts admitted read-only session children in node spawn diagnostics", () =>
     emitChildProcessSpawnSample();
     setDiagnosticsEnabledForProcess(true);
     const { child } = createSession();
+    expect(mock.spawn).toHaveBeenCalledWith(
+      process.execPath,
+      expect.any(Array),
+      expect.objectContaining({ windowsHide: true, stdio: ["ignore", "pipe", "pipe", "ipc"] }),
+    );
     now = 60_000;
     emitChildProcessSpawnSample();
     expect(events).toEqual([]);
