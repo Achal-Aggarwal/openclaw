@@ -107,24 +107,10 @@ export function routeConfigMutationToOwner(
           `Cannot admit ${method} while a Gateway owns this state directory: This command is offline-only. Database settings select the state database the running Gateway holds open, so they change only offline. No settings were saved. To run offline, stop the Gateway through its service owner, wait for ownership to release, then rerun this exact command.`,
         );
       }
-      const current = await requestOwner<{ hash?: unknown; path?: unknown }>("config.get", {});
-      // The diff is prepared from this command's file; bind it to the file the owner writes.
-      const { resolveIdentityPathViaExistingAncestorSync: identity } =
-        await import("../infra/boundary-path.js");
-      const selected = resolveConfigPath(env);
-      if (typeof current.path !== "string" || identity(current.path) !== identity(selected)) {
-        throw new Error(
-          `The running Gateway owns this state directory but uses config file ${typeof current.path === "string" ? shortenHomePath(current.path) : "<unknown>"}, not ${shortenHomePath(selected)}. Nothing was sent and no settings were saved. Rerun with the Gateway's config path, or stop the Gateway through its service owner and rerun this exact command.`,
-        );
-      }
-      const { buildConfigOwnerPatch } = await import("./config-cli-owner-patch.js");
-      const result = await requestOwner<{ restart?: unknown; restartPending?: unknown }>(
-        "config.patch",
-        buildConfigOwnerPatch(change, current.hash),
-      );
-      return result.restart || result.restartPending
-        ? "The Gateway is restarting to apply it."
-        : undefined;
+      const { bindConfigOwner } = await import("./config-cli-owner-patch.js");
+      return await (
+        await bindConfigOwner(requestOwner, env)
+      )(change);
     });
   };
 }
