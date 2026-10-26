@@ -1,9 +1,10 @@
 /* @vitest-environment jsdom */
-import { afterEach, beforeEach, expect, it, onTestFinished } from "vitest";
+import { afterEach, beforeEach, expect, it, onTestFinished, vi } from "vitest";
 import { waitForSolid } from "../../../test-helpers/solid-settle.ts";
 import { createTestTranscript } from "../chat-view.test-helpers.ts";
 import { saveChatSessionScrollPosition } from "../scroll.ts";
 import { createChatThreadHarness } from "./chat-message-native.test-support.tsx";
+import * as textPreparation from "./chat-message-text-preparation.ts";
 import {
   installTranscriptDomMocks,
   resetTranscriptTestDom,
@@ -12,6 +13,36 @@ import {
 
 beforeEach(installTranscriptDomMocks);
 afterEach(resetTranscriptTestDom);
+
+it("keeps settled message preparation out of minute-boundary scroll updates", async () => {
+  const clock = vi.spyOn(Date, "now").mockReturnValue(60_000);
+  const prepare = vi.spyOn(textPreparation, "prepareMessageMarkdown");
+  const props = threadProps("minute-scroll", "agent:main:minute-scroll", [
+    { role: "user", content: "Inspect the workspace", timestamp: 1_000 },
+    { role: "assistant", content: "**Workspace checked**", timestamp: 2_000 },
+  ]);
+  const transcript = createTestTranscript(props.paneId);
+  const container = document.body.appendChild(document.createElement("div"));
+  const thread = createChatThreadHarness(container, transcript);
+  onTestFinished(() => {
+    thread.unmount();
+    transcript.dispose();
+    prepare.mockRestore();
+    clock.mockRestore();
+  });
+  thread.render(props);
+  transcript.start();
+  transcript.update();
+  await waitForSolid(() => expect(container.textContent).toContain("Inspect the workspace"));
+  expect(prepare).toHaveBeenCalled();
+  prepare.mockClear();
+
+  clock.mockReturnValue(120_000);
+  thread.render(props);
+  transcript.update();
+  await waitForSolid(() => expect(container.textContent).toContain("Workspace checked"));
+  expect(prepare).not.toHaveBeenCalled();
+});
 
 it.each([false, true])(
   "keeps the focused work summary toggle through expansion updates (long frame: %s)",

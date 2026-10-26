@@ -1,10 +1,12 @@
 import { asNullableRecord, asOptionalRecord } from "@openclaw/normalization-core/record-coerce";
 import type { JSX } from "@solidjs/web";
-import { createMemo, For, Show } from "solid-js";
+import { createMemo, For, Show, useContext } from "solid-js";
 import { registerChatMessageMetadataEnglish } from "../../../i18n/locales/en-chat-message-metadata.ts";
 import type { MessageGroup } from "../../../lib/chat/chat-types.ts";
 import { formatCompactTokenCount, formatCost, formatTimeAgo } from "../../../lib/format.ts";
 import { getLocale, registerEnglishCatalog, t } from "../../../lib/reactive/i18n.ts";
+import { readVisibleTime } from "../../../lib/reactive/visible-clock.ts";
+import { ContentPresentation } from "../../../lib/solid/presentation.ts";
 
 registerEnglishCatalog(registerChatMessageMetadataEnglish);
 
@@ -61,13 +63,19 @@ function TimestampTime(props: { view: { dateTime: string; relativeLabel: string 
 }
 
 export function ChatTimestamp(props: { timestamp: number; metadata?: JSX.Element[] }) {
+  const presented = useContext(ContentPresentation);
   const timestamp = createMemo(() => props.timestamp);
   const calendar = createMemo(() => prepareTimestamp(timestamp()));
-  const view = createMemo(() => ({
-    ...calendar(),
-    // Parent clock refreshes still advance relative copy without reformatting calendar labels.
-    relativeLabel: relativeTimestampLabel(props.timestamp, calendar().label),
-  }));
+  const view = createMemo(() => {
+    // Refresh relative copy without invalidating the surrounding message or Markdown.
+    if (presented()) {
+      readVisibleTime(60_000);
+    }
+    return {
+      ...calendar(),
+      relativeLabel: relativeTimestampLabel(timestamp(), calendar().label),
+    };
+  });
   const contextLabel = createMemo(
     () => {
       const title = calendar().dateTime

@@ -367,3 +367,24 @@ it("formats the detailed timestamp only when metadata becomes available", () => 
   expect(detailedCalls()).toHaveLength(1);
   expect(view.container.textContent).toContain("84 tokens");
 });
+
+it("advances a relative timestamp without refreshing its message", async () => {
+  const now = Date.UTC(2026, 9, 26, 12);
+  vi.useFakeTimers({ now });
+  try {
+    const view = mountSolid<Parameters<typeof ChatTimestamp>[0]>(ChatTimestamp, {
+      timestamp: now - 60_000,
+    });
+    disposers.push(view.dispose);
+    const time = view.container.querySelector("time");
+    expect(time?.textContent).toBe("1m ago");
+
+    await vi.advanceTimersByTimeAsync(60_000);
+    await settle();
+
+    expect(view.container.querySelector("time")).toBe(time);
+    expect(time?.textContent).toBe("2m ago");
+  } finally {
+    vi.useRealTimers();
+  }
+});

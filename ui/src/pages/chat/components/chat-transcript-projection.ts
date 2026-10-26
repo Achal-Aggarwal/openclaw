@@ -450,8 +450,6 @@ export function projectChatTranscript(
     getExpansionStateVersion(expandedUserMessages),
     expandedAssistantMessages,
     getExpansionStateVersion(expandedAssistantMessages),
-    // The host minute poll requests an update; this key crosses row guard() memoization.
-    Math.floor(Date.now() / 60_000),
     props.latestBrowserTabs,
     props.sessionKey,
     // Invalidate settled rows when spawn metadata arrives, not on activity/title patches.
