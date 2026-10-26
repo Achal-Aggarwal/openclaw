@@ -316,31 +316,6 @@ function collectDestructiveIdKeyedArrayEntryPatchPaths(params: {
   return paths;
 }
 
-function rejectDestructiveArrayPatchWithoutIntent(params: {
-  currentConfig: OpenClawConfig;
-  mergedConfig: unknown;
-  patch: unknown;
-  replacePaths: Set<string>;
-  respond: RespondFn;
-}): boolean {
-  const destructivePaths = collectDestructiveArrayPatchPaths({
-    base: params.currentConfig,
-    patch: params.patch,
-    merged: params.mergedConfig,
-  });
-  const unconfirmedPaths = destructivePaths.filter((path) => !params.replacePaths.has(path));
-  if (unconfirmedPaths.length === 0) {
-    return false;
-  }
-  respondError(
-    params.respond,
-    ErrorCodes.INVALID_REQUEST,
-    `config.patch would remove entries from array path(s): ${unconfirmedPaths.join(", ")}. ` +
-      `Pass replacePaths with the exact path(s) when this is intentional, or use config.apply for full-config replacement.`,
-  );
-  return true;
-}
-
 function hasOwnRecordValue(value: unknown, key: string): boolean {
   return isRecord(value) && Object.hasOwn(value, key);
 }
@@ -879,18 +854,22 @@ export const configHandlers: GatewayRequestHandlers = {
       );
       return;
     }
-    if (
-      rejectDestructiveArrayPatchWithoutIntent({
-        currentConfig: snapshot.config,
-        mergedConfig: applyMergePatch(
-          snapshot.config,
-          createMergePatch(sourceConfig, restoredMerge.result),
-        ),
-        patch: normalizedPatch,
-        replacePaths,
+    const destructivePaths = collectDestructiveArrayPatchPaths({
+      base: snapshot.config,
+      patch: normalizedPatch,
+      merged: applyMergePatch(
+        snapshot.config,
+        createMergePatch(sourceConfig, restoredMerge.result),
+      ),
+    });
+    const unconfirmedPaths = destructivePaths.filter((path) => !replacePaths.has(path));
+    if (unconfirmedPaths.length !== 0) {
+      respondError(
         respond,
-      })
-    ) {
+        ErrorCodes.INVALID_REQUEST,
+        `config.patch would remove entries from array path(s): ${unconfirmedPaths.join(", ")}. ` +
+          `Pass replacePaths with the exact path(s) when this is intentional, or use config.apply for full-config replacement.`,
+      );
       return;
     }
     // Patch presence is authored intent even when its value equals a runtime default.
