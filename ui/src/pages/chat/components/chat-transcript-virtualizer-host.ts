@@ -132,8 +132,7 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
       this.renderer.connect();
       if (this.connected && this.virtualizer.scrollElement !== this.scrollElement) {
         this.layout.connect(this.scrollElement, this.callbacks);
-        const { _willUpdate: updateVirtualizer } = this.virtualizer;
-        updateVirtualizer();
+        this.virtualizer._willUpdate();
         this.invalidate();
       }
     });
@@ -473,10 +472,11 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
         rows.some((row, index) => row.key !== this.rowKeys[index]));
     const nextKeys = rowModelChanged ? rows.map((row) => row.key) : this.rowKeys;
     const virtualizer = this.virtualizer;
+    const nextRowKeys = rowModelChanged
+      ? nextKeys
+      : virtualizer.getVirtualItems().map(({ index }) => rows[index]!.key);
     return this.mcpAppUnmountGate.render(
-      rowModelChanged
-        ? nextKeys
-        : virtualizer.getVirtualItems().map(({ index }) => rows[index]!.key),
+      nextRowKeys,
       () => {
         // Rows, lookup maps, and the retained renderer commit together. A
         // teardown-pending candidate must never replace the displayed model.

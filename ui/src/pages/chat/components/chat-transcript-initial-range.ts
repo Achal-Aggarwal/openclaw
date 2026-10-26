@@ -281,7 +281,6 @@ export class TranscriptInitialRange {
         if (
           row &&
           prewarm &&
-          step <= 8 &&
           !rendered.has(row.key) &&
           row.estimatedSize === undefined &&
           this.prewarmRow?.(index)

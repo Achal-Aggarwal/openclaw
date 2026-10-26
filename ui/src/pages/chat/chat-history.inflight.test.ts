@@ -157,6 +157,19 @@ it("restores cleared activity alongside an owned run's current text", async () =
   });
 });
 
+it("retains unchanged stream segments when history replaces the live text", async () => {
+  const snapshot = activeSnapshot("run-live", "Before refresh.");
+  const state = createState(snapshot);
+  await loadChatHistory(state);
+  const segments = state.chatStreamSegments;
+  snapshot.inFlightRun!.text = "After refresh.";
+
+  await loadChatHistory(state);
+
+  expect(state.chatStream).toBe("After refresh.");
+  expect(state.chatStreamSegments).toBe(segments);
+});
+
 it("keeps an identical new reply after the Gateway retires its persisted predecessor", () => {
   const state = createState(activeHistory("active-run"));
   state.chatMessages = [

@@ -207,6 +207,12 @@ it("warms ordinary rows only in idle time without mounting their DOM", async () 
   expect(view.container.querySelector(`[data-virtual-row-key="${warmed.key}"]`)).toBeNull();
   expect(view.container.querySelectorAll(".chat-virtual-row")).toHaveLength(elements);
   expect(prewarmGroupedMessage(view.groups[index]!.messages[0]!.message, {})).toBe(false);
+  for (let turn = 0; turn < 16; turn++) {
+    await view.idle();
+  }
+  const last = view.renderRow.mock.calls.at(-1)![0];
+  expect(last.kind === "item" ? last.item : -1).toBeGreaterThan(index + 8);
+  expect(view.container.querySelectorAll(".chat-virtual-row")).toHaveLength(elements);
 });
 
 it("reuses a recent completed row after scrolling away and back, with a bounded DOM cache", async () => {
