@@ -343,15 +343,9 @@ async function deleteSqliteSessionEntryLifecycleLocked(
       return expectedEntryMismatchResult([]);
     }
     const prepared = preparation.value.value;
-    let resolved = preparedScope;
-    if (execution) {
-      const native = execution.fileIdentity;
-      if (!native) {
-        throw new Error("Session deletion planning lost its admitted database identity");
-      }
-      // Planning already admitted this owner; archive requests must share its physical spelling.
-      resolved = { ...preparedScope, path: native.nativeLocation };
-    }
+    // Planning admitted this owner; archive requests must share its physical spelling.
+    const nativeLocation = execution?.fileIdentity?.nativeLocation;
+    const resolved = nativeLocation ? { ...preparedScope, path: nativeLocation } : preparedScope;
     const databaseOptions = toDatabaseOptions(resolved);
     return await withSqliteTranscriptArchiveSession(databaseOptions, async () => {
       return await withSqliteSessionDeletions(

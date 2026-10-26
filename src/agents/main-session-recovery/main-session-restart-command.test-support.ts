@@ -35,6 +35,7 @@ import type {
   recoverRestartAbortedMainSessions,
   retryRestartAbortedMainSessionRecovery,
 } from "./main-session-restart-recovery.js";
+import { registerStaleOperatorSourceCase } from "./main-session-restart-stale-source.test-support.js";
 
 async function runRecoveryCommandDuringStop(params: {
   entry: InternalSessionEntry;
@@ -390,4 +391,6 @@ export function registerAcceptedRecoveryStopCase(params: {
       }
     });
   });
+  // Shares this registration's recovery fixtures; see the stale-source support module.
+  registerStaleOperatorSourceCase(params);
 }

@@ -440,13 +440,7 @@ export async function maybeRepairGatewayServiceConfig(
     });
   }
 
-  const runtimeRepair = await canRepairRuntime(
-    audit,
-    command,
-    repairPlan,
-    expectedLayout,
-    platform,
-  );
+  const runtimeRepair = await canRepairRuntime(audit, command, repairPlan, expectedLayout);
   const definitionRepair =
     !runtimeRepair &&
     !installationDrift &&
