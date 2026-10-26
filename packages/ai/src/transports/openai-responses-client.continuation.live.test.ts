@@ -1,8 +1,8 @@
-import { createServer } from "node:http";
+import { createServer, type Server } from "node:http";
 import https from "node:https";
-import type { AddressInfo, Server } from "node:net";
 import type { AssistantMessage, Context, Model } from "@openclaw/llm-core";
 import { afterEach, describe, expect, it } from "vitest";
+import { listenLoopback } from "../../../../test/helpers/gateway-integration-fixtures.js";
 import { makeProviderModel } from "../providers/provider-model.test-support.js";
 import { cleanupSessionResources } from "../session-resources.js";
 import { createOpenAIResponsesTransportStreamFn } from "./openai-responses-client.js";
@@ -55,11 +55,7 @@ class CapturingOpenAIForwardProxy {
         upstream.end(body);
       });
     });
-    await new Promise<void>((resolve) => {
-      this.server?.listen(0, "127.0.0.1", resolve);
-    });
-    const address = this.server?.address() as AddressInfo;
-    return `http://127.0.0.1:${address.port}/v1`;
+    return `${await listenLoopback(this.server)}/v1`;
   }
 
   async close(): Promise<void> {
