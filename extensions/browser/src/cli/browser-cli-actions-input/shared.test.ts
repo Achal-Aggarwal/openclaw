@@ -125,7 +125,13 @@ describe("readActionsPayload", () => {
   );
 });
 
-async function withInput(content: string, run: (file:string)=>Promise<void>) { await withTempDir("browser-fields", async (root) => { const file = path.join(root,"fields.json"); await fs.writeFile(file,content); await run(file); }); }
+async function withInput(content: string, run: (file: string) => Promise<void>) {
+  await withTempDir("browser-fields", async (root) => {
+    const file = path.join(root, "fields.json");
+    await fs.writeFile(file, content);
+    await run(file);
+  });
+}
 it.each([false, true])(
   "preserves oversized Unicode fields files (symlink: %s)",
   async (symlink) => {
