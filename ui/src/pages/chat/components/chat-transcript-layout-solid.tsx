@@ -104,20 +104,20 @@ function TranscriptRows(props: {
       <Show when={props.snapshot.header}>{(header) => <ChatHistoryBoundary {...header()} />}</Show>
       <div class="chat-virtual-sizer" ref={(element) => props.columnRef(element)}>
         {props.snapshot.overlay}
-        <div
-          class="chat-virtual-block"
-          style={{
-            transform: `translateY(${blockStart() - props.snapshot.virtualizer.options.scrollMargin}px)`,
-          }}
-        >
+        <div class="chat-virtual-block">
+          <div
+            aria-hidden="true"
+            style={{
+              height: `${blockStart() - props.snapshot.virtualizer.options.scrollMargin}px`,
+            }}
+          />
           <For each={virtualRows()} keyed={(row) => row.key}>
             {(virtualRow) => {
               const index = createMemo(() => virtualRow().index);
               const row = createMemo(() => props.snapshot.rows[index()]);
               const content = createMemo(() => {
                 // Content rows may replace their DOM without replacing the row model.
-                const source =
-                  row()?.kind === "content" ? props.snapshot.getContent : getContent();
+                const source = row()?.kind === "content" ? props.snapshot.getContent : getContent();
                 return source(index());
               });
               const active = () => props.snapshot.activeRowKeys.has(row()?.key ?? "");
@@ -135,7 +135,9 @@ function TranscriptRows(props: {
                     ]}
                     style={{
                       "contain-intrinsic-block-size": `${virtualRow().size}px`,
-                      top: active() ? undefined : `${virtualRow().start - blockStart()}px`,
+                      top: active()
+                        ? undefined
+                        : `${virtualRow().start - props.snapshot.virtualizer.options.scrollMargin}px`,
                     }}
                     data-index={String(virtualRow().index)}
                     data-virtual-row-key={row()?.key}
