@@ -20,7 +20,6 @@ import { normalizeChatImageRenditionWidth } from "../shared/chat-image-rendition
 import { createLazyRuntimeModule } from "../shared/lazy-runtime.js";
 import {
   controlUiAvatarResolutionMeta,
-  type ControlUiAvatarMeta,
   gatewayAssistantAvatarUrl,
   prepareGatewayAssistantAvatar,
 } from "./assistant-avatar.js";
@@ -494,7 +493,7 @@ export async function handleControlUiAvatarRequest(
       sendJson(res, 200, {
         avatarUrl,
         ...controlUiAvatarResolutionMeta(resolved),
-      } satisfies ControlUiAvatarMeta);
+      });
       return true;
     }
 

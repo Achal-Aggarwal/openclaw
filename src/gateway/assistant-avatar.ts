@@ -23,16 +23,7 @@ import {
 import { DEFAULT_ASSISTANT_IDENTITY } from "./assistant-identity.js";
 import { buildControlUiResourcePath, matchControlUiResourceUrl } from "./control-ui-contract.js";
 
-export type ControlUiAvatarMeta = {
-  avatarUrl: string | null;
-  avatarSource: string | null;
-  avatarStatus: AgentAvatarResolution["kind"] | null;
-  avatarReason: string | null;
-};
-
-export function controlUiAvatarResolutionMeta(
-  resolved: AgentAvatarResolution | null,
-): Omit<ControlUiAvatarMeta, "avatarUrl"> {
+export function controlUiAvatarResolutionMeta(resolved: AgentAvatarResolution | null) {
   if (!resolved) {
     return { avatarSource: null, avatarStatus: null, avatarReason: null };
   }
