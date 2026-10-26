@@ -33,16 +33,18 @@ const emptyDiff = {
   digest: "ff7b090f43d2d90e4cd883d95840d6b752475a7a1769e295fb4cbb558a6ffb64",
 };
 
+// The native compiler package follows the host platform; CI uses linux-x64.
+const typescriptPlatformPackage = `@typescript/typescript-${process.platform}-${process.arch}`;
 const trustedCompilerEnv = {
   TRUSTED_TYPESCRIPT_PATH: resolve("node_modules/typescript"),
   TRUSTED_TYPESCRIPT_PLATFORM_PATH: join(
     dirname(realpathSync(resolve("node_modules/typescript"))),
-    "@typescript/typescript-linux-x64",
+    typescriptPlatformPackage,
   ),
 };
 const installRevisionCompiler = `mkdir -p node_modules/@typescript
 cp -RL "$TRUSTED_TYPESCRIPT_PATH" node_modules/typescript
-cp -RL "$TRUSTED_TYPESCRIPT_PLATFORM_PATH" node_modules/@typescript/typescript-linux-x64`;
+cp -RL "$TRUSTED_TYPESCRIPT_PLATFORM_PATH" node_modules/${typescriptPlatformPackage}`;
 
 function git(repo: string, args: string[]): string {
   return execFileSync("git", args, { cwd: repo, encoding: "utf8" });
