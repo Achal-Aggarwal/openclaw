@@ -34,6 +34,8 @@ export function createSessionRowSelection(
   // Singleton rows live only in winners; retain physical competitors only when needed.
   const groups = new Map<string, Map<string, IndexedTarget>>();
   const winners = new Map<string, IndexedTarget>();
+  const archiveWinners = [new Map<string, IndexedTarget>(), new Map<string, IndexedTarget>()];
+  const archiveIndex = (target: IndexedTarget) => Number(target.row.entry.archivedAt !== undefined);
   const duplicates = new Set<string>();
   const orders = new Map<
     string,
@@ -44,7 +46,13 @@ export function createSessionRowSelection(
     }
   >();
   // Fixed partitions bound refiltering after exact publications without retaining old rosters.
-  let partitions: Array<{ revision: object; entries: Map<string, SessionEntryPair> }> | undefined;
+  let partitions:
+    | Array<{
+        revision: object;
+        entries: Map<string, SessionEntryPair>;
+        archiveEntries: Map<string, SessionEntryPair>[];
+      }>
+    | undefined;
   const partitionFor = (key: string) => {
     let hash = 0;
     for (let i = 0; i < key.length; i++) {
@@ -242,13 +250,23 @@ export function createSessionRowSelection(
     if (winner === oldWinner) {
       return;
     }
+    if (oldWinner) {
+      archiveWinners[archiveIndex(oldWinner)]!.delete(key);
+    }
+    if (winner) {
+      archiveWinners[archiveIndex(winner)]!.set(key, winner);
+    }
     updateCreator(oldWinner, true);
     updateCreator(winner);
     const partition = partitionFor(key);
     if (partition) {
       partition.revision = {};
       recordSessionRowPartitionRevision(changeScope);
+      if (oldWinner) {
+        partition.archiveEntries[archiveIndex(oldWinner)]!.delete(key);
+      }
       if (winner) {
+        partition.archiveEntries[archiveIndex(winner)]!.set(key, winner.pair);
         partition.entries.set(key, winner.pair);
       } else {
         partition.entries.delete(key);
@@ -331,9 +349,15 @@ export function createSessionRowSelection(
         partitions = Array.from({ length: 64 }, () => ({
           revision: {},
           entries: new Map<string, SessionEntryPair>(),
+          archiveEntries: [
+            new Map<string, SessionEntryPair>(),
+            new Map<string, SessionEntryPair>(),
+          ],
         }));
         for (const [key, target] of winners) {
-          partitionFor(key)!.entries.set(key, target.pair);
+          const partition = partitionFor(key)!;
+          partition.entries.set(key, target.pair);
+          partition.archiveEntries[archiveIndex(target)]!.set(key, target.pair);
         }
       }
       return {
@@ -343,24 +367,34 @@ export function createSessionRowSelection(
           const orderKey = `${sortBy}:${archived ?? false}`;
           let entries = !candidates && sortBy && orders.get(orderKey)?.entries;
           if (!entries) {
-            const targets = (
-              residentOrder
-                ? Array.from(residentOrder, (row) => {
-                    const target = winners.get(keyFor(row));
-                    return target?.row.agentId === row.agentId &&
-                      target.row.storeTarget.storePath === row.storeTarget.storePath
-                      ? target
-                      : undefined;
-                  })
-                : candidates
-                  ? [...new Set(Array.from(candidates, keyFor))].flatMap(
-                      (key) => winners.get(key) ?? [],
-                    )
-                  : [...winners.values()]
-            ).filter(
-              (target): target is IndexedTarget =>
-                target !== undefined && matchesSessionArchiveFilter(target.row.entry, archived),
-            );
+            const selected =
+              archived === "all" ? winners : archiveWinners[Number(archived === true)]!;
+            const targets: IndexedTarget[] = [];
+            if (residentOrder) {
+              for (const row of residentOrder) {
+                const target = selected.get(keyFor(row));
+                if (
+                  target?.row.agentId === row.agentId &&
+                  target.row.storeTarget.storePath === row.storeTarget.storePath
+                ) {
+                  targets.push(target);
+                }
+              }
+            } else if (candidates) {
+              for (const key of new Set(Array.from(candidates, keyFor))) {
+                const target = selected.get(key);
+                if (target) {
+                  targets.push(target);
+                }
+              }
+            } else {
+              // Unordered readers retain federation insertion order across archive transitions.
+              for (const [key, target] of sortBy ? selected : winners) {
+                if (sortBy || selected.has(key)) {
+                  targets.push(target);
+                }
+              }
+            }
             entries = targets.map((target) => target.pair);
             if (sortBy) {
               entries.sort((a, b) => compareSessionEntryPairs(a, b, sortBy));

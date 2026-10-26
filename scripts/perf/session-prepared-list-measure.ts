@@ -29,6 +29,8 @@ const { values } = parseArgs({
     reconciliation: { type: "boolean", default: false },
     "cpu-profile": { type: "boolean", default: false },
     golden: { type: "string" },
+    "archive-workload": { type: "boolean", default: false },
+    "archive-shape": { type: "string" },
     "sort-rows": { type: "string" },
     "sort-workload": { type: "boolean", default: false },
   },
@@ -98,24 +100,30 @@ Date.now = () => clock;
 
 const cases: SessionsListParams[] = [];
 const profileId = "team-shape-profile-0";
-const viewer: GatewayClient | undefined = values["sort-workload"]
-  ? {
-      connect: {
-        minProtocol: PROTOCOL_VERSION,
-        maxProtocol: PROTOCOL_VERSION,
-        client: { id: "openclaw-control-ui", version: "bench", platform: "bench", mode: "webchat" },
-        role: "operator",
-        scopes: ["operator.read", "operator.write"],
-      },
-      authenticatedUserProfile: {
-        profileId,
-        displayName: null,
-        hasAvatar: false,
-        updatedAt: anchor,
-      },
-      preparedSessionProfile: { profileId, aliases: new Set([profileId]), role: null },
-    }
-  : undefined;
+const viewer: GatewayClient | undefined =
+  values["sort-workload"] || values["archive-workload"]
+    ? {
+        connect: {
+          minProtocol: PROTOCOL_VERSION,
+          maxProtocol: PROTOCOL_VERSION,
+          client: {
+            id: "openclaw-control-ui",
+            version: "bench",
+            platform: "bench",
+            mode: "webchat",
+          },
+          role: "operator",
+          scopes: ["operator.read", "operator.write"],
+        },
+        authenticatedUserProfile: {
+          profileId,
+          displayName: null,
+          hasAvatar: false,
+          updatedAt: anchor,
+        },
+        preparedSessionProfile: { profileId, aliases: new Set([profileId]), role: null },
+      }
+    : undefined;
 for (const archived of [false, true, "all"] as const) {
   for (const agentId of ["main", undefined]) {
     for (const offset of [0, 50]) {
@@ -233,8 +241,23 @@ function sampledBytes(profile: HeapProfiler.SamplingHeapProfile) {
 }
 
 function sampledCpu(profile: Profiler.Profile) {
-  const targets = new Set(["withPreparedExactRows", "withAgentRosterFactsBatch", "selectPage"]);
-  const nodes = new Map(profile.nodes.map((node) => [node.id, node.callFrame.functionName]));
+  const targets = new Set([
+    "withPreparedExactRows",
+    "withAgentRosterFactsBatch",
+    "selectPage",
+    "matchesSessionArchiveFilter",
+    "filterSessionEntries",
+  ]);
+  const nodes = new Map(
+    profile.nodes.map((node) => [
+      node.id,
+      node.callFrame.functionName === "entries" &&
+      /session-(utils-list|row-selection)/.test(node.callFrame.url)
+        ? "archiveEntryIteration"
+        : node.callFrame.functionName,
+    ]),
+  );
+  targets.add("archiveEntryIteration");
   const selfMicros: Record<string, number> = {};
   for (const [index, id] of (profile.samples ?? []).entries()) {
     const name = nodes.get(id);
@@ -248,7 +271,55 @@ function sampledCpu(profile: Profiler.Profile) {
 try {
   projection = await projections.createSessionRowProjection({ cfg, modelCatalog: [] });
   await projection.ensureMaterialized();
-  const rows = projection.selectEntries({ agentId: "main" });
+  let rows = projection.selectEntries({ agentId: "main" });
+  if (values["archive-workload"]) {
+    // Historical Team aggregate: 4,379 dashboards + 359 children + 75 explicit archives.
+    const wanted = Math.floor((sessions * 4813) / 10800);
+    let archivedCount = rows.filter((row) => row.entry?.archivedAt !== undefined).length;
+    for (const row of rows) {
+      if (archivedCount >= wanted) break;
+      if (row.entry && row.entry.archivedAt === undefined && row.key.includes(":subagent:")) {
+        sessionEntries.replaceSessionEntrySync(
+          { agentId: row.agentId, sessionKey: row.key },
+          { ...row.entry, archivedAt: anchor },
+        );
+        archivedCount++;
+      }
+    }
+    await projection.ensureMaterialized();
+    rows = projection.selectEntries({ agentId: "main" });
+    assert.equal(rows.filter((row) => row.entry?.archivedAt !== undefined).length, wanted);
+    const parent = rows.find(
+      (row) => row.entry?.archivedAt === undefined && row.key.includes(":dashboard:"),
+    );
+    assert(parent);
+    cases.splice(
+      0,
+      cases.length,
+      { source: "sidebar", rowMode: "sidebar", archived: false, limit: 100 },
+      { source: "sidebar", rowMode: "sidebar", archived: false, involvingMe: true, limit: 100 },
+      { source: "sidebar", rowMode: "sidebar", archived: false, spawnedBy: parent.key, limit: 100 },
+      {
+        source: "agent-roster",
+        rowMode: "sidebar",
+        archived: false,
+        includeOwnerSessionCounts: true,
+        limit: 50,
+      },
+      { source: "agent-roster", rowMode: "sidebar", archived: "all", limit: 50 },
+    );
+  }
+  if (values["archive-shape"] !== undefined) {
+    assert(values["archive-workload"], "--archive-shape requires --archive-workload");
+    const index = parseStrictIntegerOption({
+      raw: values["archive-shape"],
+      label: "--archive-shape",
+      min: 0,
+      fallback: 0,
+    });
+    assert(index < cases.length, "--archive-shape must select one of the five archive cases");
+    cases.splice(0, cases.length, cases[index]!);
+  }
   if (values["sort-rows"]) {
     writeFileSync(
       path.resolve(values["sort-rows"]),
@@ -339,6 +410,8 @@ try {
   const initialGolden = await capture();
   let sequence = 0;
   let listCpuMicros = 0;
+  const caseCpuMicros = cases.map(() => 0);
+  const caseCalls = cases.map(() => 0);
   let updateCpuMicros = 0;
   let returnedRows = 0;
   const responses = values.mode === "verify" ? createHash("sha256") : undefined;
@@ -367,6 +440,7 @@ try {
         updateCpuMicros += used.user + used.system;
       }
       before = process.threadCpuUsage();
+      const caseIndex = sequence % cases.length;
       const result = await read(sequence++);
       used = process.threadCpuUsage(before);
       assert.equal(result.count, result.sessions.length);
@@ -375,6 +449,8 @@ try {
       responses?.update(canonicalResult(result));
       if (measured) {
         listCpuMicros += used.user + used.system;
+        caseCpuMicros[caseIndex]! += used.user + used.system;
+        caseCalls[caseIndex]!++;
         returnedRows += result.count;
       }
     }
@@ -422,6 +498,9 @@ try {
   writeFileSync(path.join(root, "golden.json"), JSON.stringify(golden, null, 2));
   const bytes = allocation ? sampledBytes(allocation) : undefined;
   const result = {
+    archiveWorkload: values["archive-workload"],
+    archiveShape: values["archive-shape"],
+    caseCpuMsPerCall: caseCpuMicros.map((micros, index) => micros / 1000 / caseCalls[index]!),
     mode: values.mode,
     cpuProfile: values["cpu-profile"],
     reconciliation: values.reconciliation,
