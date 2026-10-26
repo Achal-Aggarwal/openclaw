@@ -61,7 +61,9 @@ it.each([
     });
     await flushDeferredRowPrune();
     expect(container.querySelectorAll(".chat-group.user")).toHaveLength(1);
-    expect(container.querySelectorAll(".chat-send-status")).toHaveLength(1);
+    await waitForSolid(() =>
+      expect(container.querySelectorAll(".chat-send-status")).toHaveLength(1),
+    );
     const status = container.querySelector(".chat-send-status");
     expect(status?.textContent).toContain(connected ? "Queued" : "Waiting for reconnect");
     expect(status?.querySelector(".chat-send-status__retry")).toBeNull();
