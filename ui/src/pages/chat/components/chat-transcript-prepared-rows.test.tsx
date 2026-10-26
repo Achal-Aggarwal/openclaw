@@ -251,12 +251,18 @@ it("prepares ahead during fast scrolling and waits for measurement before admitt
   expect(view.container.querySelectorAll("[data-preparing-row]")).toHaveLength(1);
 });
 
-it("places a fresh long transcript at its measured tail before preparing distant rows", async () => {
+it("places a fresh long transcript at its tail and warms a bounded upward window", async () => {
   const view = await transcriptFixture(null);
   await view.frame(8);
   expect(view.container.scrollTop).toBeGreaterThan(24_000);
   expect(view.container.querySelector('[data-virtual-row-key="fragment:255"]')).not.toBeNull();
   expect(transcriptRows(view.container).every((row) => Number(row.dataset.index) > 230)).toBe(true);
+  await view.frame(48);
+  expect(transcriptRows(view.container).some((row) => Number(row.dataset.index) < 230)).toBe(true);
+  expect(transcriptRows(view.container).length).toBeLessThanOrEqual(32);
+  const preparations = view.renderRow.mock.calls.length;
+  await view.frame(16);
+  expect(view.renderRow.mock.calls).toHaveLength(preparations);
 });
 
 it("waits for idle time to prepare during scrolling and uses the latest viewport", async () => {

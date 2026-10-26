@@ -3,6 +3,8 @@ import type { TranscriptRow } from "./chat-transcript-layout.ts";
 import { transcriptOverscan } from "./chat-transcript-range.ts";
 import { CHAT_TRANSCRIPT_OVERSCAN } from "./chat-transcript-session.ts";
 
+const PREPARED_ROW_LIMIT = 32;
+
 /** Own initial tail placement and bounded preparation ahead of the visible range. */
 export class TranscriptInitialRange {
   pending = true;
@@ -210,7 +212,7 @@ export class TranscriptInitialRange {
     }
     // The recent viewport wins over speculative preparation; geometry stays in
     // virtual-core's size cache even after the bounded DOM cache evicts a row.
-    while (this.preparedRowKeys.size > 32) {
+    while (this.preparedRowKeys.size > PREPARED_ROW_LIMIT) {
       this.preparedRowKeys.delete(this.preparedRowKeys.keys().next().value!);
     }
   }
@@ -239,10 +241,18 @@ export class TranscriptInitialRange {
         return;
       }
       const rows = this.rows;
-      const direction = this.scrollSample.direction;
+      const sampledDirection = this.scrollSample.direction;
+      // Initial placement and size compensation can point beyond an edge.
+      // Idle work there prepares inward, where the reader can actually go.
+      const inward =
+        (sampledDirection > 0 && range.endIndex === rows.length - 1) ||
+        (sampledDirection < 0 && range.startIndex === 0);
+      const direction = inward ? -sampledDirection : sampledDirection;
       const viewport = virtualizer.scrollRect?.height ?? 600;
       const velocity =
-        performance.now() - this.scrollSample.time < 100 ? this.scrollSample.velocity : 0;
+        !inward && performance.now() - this.scrollSample.time < 100
+          ? this.scrollSample.velocity
+          : 0;
       // At speed, prepare the next viewport rather than rows the reader skips.
       // Virtual-core resolves this from cached sizes; no neighbor layout reads.
       const predictedOffset =
@@ -257,8 +267,11 @@ export class TranscriptInitialRange {
             ? range.endIndex
             : range.startIndex;
       const rendered = new Set(virtualizer.getVirtualItems().map((row) => row.key));
+      const lookahead = velocity
+        ? 8
+        : Math.max(0, PREPARED_ROW_LIMIT - this.activeIndexes().length);
       let admitted = 0;
-      for (let step = 1; step <= 8 && admitted === 0; step++) {
+      for (let step = 1; step <= lookahead && admitted === 0; step++) {
         const index = origin + step * direction;
         const row = rows?.[index];
         if (
