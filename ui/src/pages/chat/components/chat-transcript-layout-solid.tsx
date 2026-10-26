@@ -14,6 +14,7 @@ import {
 } from "../solid-render-lifecycle.ts";
 import { ChatHistoryBoundary } from "./chat-history-boundary.tsx";
 import { ChatLazyBoundary } from "./chat-lazy-boundary.tsx";
+import { prewarmGroupedMessage } from "./chat-message-bubble-presentation.ts";
 import type {
   TranscriptContent,
   TranscriptLayoutProps,
@@ -188,6 +189,14 @@ export class ChatTranscriptRenderer {
       this.contentSource = { rows, renderer, getContent: (index) => renderer(rows[index]!) };
     }
     return this.contentSource.getContent;
+  }
+
+  prewarmRow(index: number): boolean {
+    const content = this.contentSource?.getContent(index);
+    const view = content instanceof GuardedTranscriptItem ? content.native : undefined;
+    return view?.kind === "group" && !view.group.isStreaming && view.group.messages.length === 1
+      ? prewarmGroupedMessage(view.group.messages[0]!.message, view.options)
+      : false;
   }
 
   get columnElement(): HTMLDivElement | undefined {

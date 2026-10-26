@@ -34,6 +34,7 @@ export class TranscriptInitialRange {
       element: HTMLElement,
       entry: ResizeObserverEntry | undefined,
     ) => number,
+    private readonly prewarmRow?: (index: number) => boolean,
   ) {
     this.tailRows = initialOffset === null ? 1 : 0;
   }
@@ -218,7 +219,7 @@ export class TranscriptInitialRange {
     ) {
       return;
     }
-    const prepare = (deadline: number) => {
+    const prepare = (deadline: number, prewarm = false) => {
       this.cancelPreparation = undefined;
       if (performance.now() >= deadline) {
         this.queuePreparation();
@@ -271,8 +272,24 @@ export class TranscriptInitialRange {
         : Math.max(0, PREPARED_ROW_LIMIT - this.activeIndexes().length);
       let admitted = 0;
       for (let step = 1; step <= lookahead && admitted === 0; step++) {
+        if (performance.now() >= deadline) {
+          this.queuePreparation();
+          return;
+        }
         const index = origin + step * searchDirection;
         const row = rows?.[index];
+        if (
+          row &&
+          prewarm &&
+          step <= 8 &&
+          !rendered.has(row.key) &&
+          row.estimatedSize === undefined &&
+          this.prewarmRow?.(index)
+        ) {
+          // The shared cache owns readiness; no DOM or range invalidation is needed.
+          this.queuePreparation();
+          return;
+        }
         if (
           row?.estimatedSize !== undefined &&
           !rendered.has(row.key) &&
@@ -300,7 +317,7 @@ export class TranscriptInitialRange {
     if (typeof requestIdleCallback === "function") {
       // Keep this slot through scrolling; prepare reads the latest viewport.
       const idleRequest = requestIdleCallback(
-        (idle) => prepare(performance.now() + (idle.timeRemaining() >= 6 ? 6 : 0)),
+        (idle) => prepare(performance.now() + (idle.timeRemaining() >= 6 ? 6 : 0), true),
         { timeout: 250 },
       );
       this.cancelPreparation = () => cancelIdleCallback(idleRequest);

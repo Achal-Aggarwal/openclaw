@@ -1,9 +1,14 @@
 import { readSessionMessageIdentity } from "@openclaw/gateway-client/browser";
+import { asNullableRecord } from "@openclaw/normalization-core/record-coerce";
 import type { Accessor } from "solid-js";
 import { CHAT_PENDING_INPUT_MESSAGE_PREFIX } from "../../../../../packages/gateway-protocol/src/schema/chat-history-constants.js";
 import { parseMarkdownJson } from "../../../components/markdown-json.ts";
 import type { MarkdownRenderOptions } from "../../../components/markdown-render-options.ts";
-import { extractThinkingCached } from "../../../lib/chat/message-extract.ts";
+import { prewarmSanitizedMarkdown } from "../../../components/markdown.ts";
+import {
+  extractThinkingCached,
+  readTranscriptMediaEntries,
+} from "../../../lib/chat/message-extract.ts";
 import {
   isStandaloneToolMessageForDisplay,
   normalizeRoleForGrouping,
@@ -11,6 +16,7 @@ import {
 import { extractToolCardsCached, isToolCardError } from "../../../lib/chat/tool-cards.ts";
 import { t } from "../../../lib/reactive/i18n.ts";
 import { isProviderVoiceTranscript } from "../chat-assistant-reply.ts";
+import { resolveCappedMessageId } from "../chat-message-recovery.ts";
 import { isPendingSendMessage } from "../chat-thread-items.ts";
 import { workspaceResultConflictFromTranscript } from "../workspace-conflict.ts";
 import { readAsyncQuestions } from "./chat-async-question-content.ts";
@@ -131,6 +137,57 @@ export function createMessageMediaOptions(
   };
 }
 
+function messageMarkdownRenderOptions(
+  role: string,
+  preparation: Pick<ChatMessageRenderPreparation, "displayMarkdown" | "humanMentions">,
+  markdown: string | null,
+  opts: Pick<GroupedMessageOptions, "onOpenImage" | "fetchLinkFavicon" | "isStreaming">,
+): MarkdownRenderOptions {
+  return {
+    assistantTranscriptRoleHeaders: role === "assistant",
+    codeBlockChrome: role === "user" ? "none" : "copy",
+    codeBlockInteraction: role === "assistant" ? "interactive" : "static",
+    fileLinks: true,
+    humanMentions: markdown === preparation.displayMarkdown ? preparation.humanMentions : undefined,
+    interactiveImages: opts.onOpenImage !== undefined,
+    sessionLinks: true,
+    tableInteractions: "enabled",
+    linkFavicons: Boolean(opts.fetchLinkFavicon) && !opts.isStreaming,
+  };
+}
+
+/** Warm settled text only; media and recovered messages keep their visible lifecycle. */
+export function prewarmGroupedMessage(
+  message: unknown,
+  opts: Pick<GroupedMessageOptions, "onOpenImage" | "fetchLinkFavicon">,
+): boolean {
+  const role = asNullableRecord(message)?.role;
+  if (
+    (role !== "user" && role !== "assistant") ||
+    resolveCappedMessageId(message, role) ||
+    readTranscriptMediaEntries(message).length
+  ) {
+    return false;
+  }
+  const prepared = prepareChatMessageRender(message);
+  if (
+    prepared.normalizedMessage.content.some(
+      (part) => part.type !== "text" && part.type !== "thinking",
+    )
+  ) {
+    return false;
+  }
+  const markdown = prepared.displayMarkdown;
+  return (
+    Boolean(markdown) &&
+    !parseMarkdownJson(markdown) &&
+    prewarmSanitizedMarkdown(
+      markdown,
+      messageMarkdownRenderOptions(role, prepared, markdown, { ...opts, isStreaming: false }),
+    )
+  );
+}
+
 export function prepareGroupedMessage(
   preparation: ChatMessageRenderPreparation,
   messageKey: string,
@@ -138,10 +195,11 @@ export function prepareGroupedMessage(
   onOpenSidebar?: (content: SidebarContent) => void,
 ) {
   const disclosure = opts.assistantMessageDisclosure;
-  const { message, normalizedMessage, displayMarkdown, humanMentions } =
+  const selected =
     disclosure?.expanded && disclosure.message
       ? prepareChatMessageRender(disclosure.message)
       : preparation;
+  const { message, normalizedMessage, displayMarkdown } = selected;
   // SAFETY: The group render boundary supplies transcript message records; fields remain unknown.
   const m = message as Record<string, unknown>;
   const role = typeof m.role === "string" ? m.role : "unknown";
@@ -200,17 +258,7 @@ export function prepareGroupedMessage(
   const markdown =
     (normalizedRole === "user" ? opts.messageActions?.markdown : undefined) ??
     (displayMarkdown || null);
-  const markdownRenderOptions: MarkdownRenderOptions = {
-    assistantTranscriptRoleHeaders: role === "assistant",
-    codeBlockChrome: role === "user" ? "none" : "copy",
-    codeBlockInteraction: role === "assistant" ? "interactive" : "static",
-    fileLinks: true,
-    humanMentions: markdown === displayMarkdown ? humanMentions : undefined,
-    interactiveImages: opts.onOpenImage !== undefined,
-    sessionLinks: true,
-    tableInteractions: "enabled",
-    linkFavicons: Boolean(opts.fetchLinkFavicon) && !opts.isStreaming,
-  };
+  const markdownRenderOptions = messageMarkdownRenderOptions(role, selected, markdown, opts);
 
   // Classify completed bare JSON before Markdown can interpret its literal values.
   const jsonResult = markdown && !opts.isStreaming ? parseMarkdownJson(markdown) : null;

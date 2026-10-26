@@ -7,9 +7,25 @@ import { createMarkdownRef } from "./markdown-dom-ref.ts";
 import { toStreamingMarkdownDomParts } from "./markdown-live.ts";
 import {
   partitionMarkdownHtml,
+  prewarmSanitizedMarkdown,
   toSanitizedMarkdownContent,
   toSanitizedMarkdownHtml,
 } from "./markdown.ts";
+
+it("shares idle-prepared HTML with visible callers without retaining fragments", () => {
+  const source = 'idle-cache-paragraph <img src="x" onerror="alert(1)">';
+  expect(prewarmSanitizedMarkdown(source, {})).toBe(true);
+  expect(prewarmSanitizedMarkdown(source, {})).toBe(false);
+  const cached = toSanitizedMarkdownContent(source);
+  expect(typeof cached).toBe("string");
+  const view = renderSolidRef(() => createMarkdownRef(() => ({ content: cached })), {
+    targetElement: document.createElement("div"),
+  });
+  expect(view.container.querySelector("[onerror]")).toBeNull();
+  expect(toSanitizedMarkdownHtml(source)).toBe(cached);
+  expect(prewarmSanitizedMarkdown(source, { interactiveImages: true })).toBe(true);
+  expect(prewarmSanitizedMarkdown("oversized ".repeat(6000), {})).toBe(false);
+});
 
 it("mounts fresh chat Markdown without reparsing and keeps only HTML in its cache", () => {
   const marker = "chat-sanitized-fragment-first-mount";

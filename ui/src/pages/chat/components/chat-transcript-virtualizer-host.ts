@@ -181,6 +181,7 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
       invalidate,
       () => this.connected && this.renderer.isPresented(),
       (element, entry) => this.presentation.measureElement(element, entry),
+      (index) => this.renderer.prewarmRow(index),
     );
     this.mcpAppUnmountGate = createMcpAppUnmountGate(invalidate);
     this.positionRail = createPositionRailGutter(
@@ -465,25 +466,23 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
     snapshot: TranscriptRenderSnapshot<T>,
     capturePrepend: boolean,
   ): HTMLDivElement {
-    const { rows, renderRow, announcement, announce, overlay, header, messageRows, renderKeyRows } =
-      snapshot;
+    const { rows, renderRow, header, messageRows, renderKeyRows } = snapshot;
     const rowModelChanged =
       rows !== this.acceptedRows &&
       (rows.length !== this.rowKeys.length ||
         rows.some((row, index) => row.key !== this.rowKeys[index]));
     const nextKeys = rowModelChanged ? rows.map((row) => row.key) : this.rowKeys;
     const virtualizer = this.virtualizer;
-    const nextRowKeys = rowModelChanged
-      ? nextKeys
-      : virtualizer.getVirtualItems().map(({ index }) => rows[index]!.key);
     return this.mcpAppUnmountGate.render(
-      nextRowKeys,
+      rowModelChanged
+        ? nextKeys
+        : virtualizer.getVirtualItems().map(({ index }) => rows[index]!.key),
       () => {
         // Rows, lookup maps, and the retained renderer commit together. A
         // teardown-pending candidate must never replace the displayed model.
         this.entryAnimations.sync(
           snapshot.entryKeys,
-          announce && !this.offsetState.pendingScrollOffset,
+          snapshot.announce && !this.offsetState.pendingScrollOffset,
         );
         this.acceptedRows = rows;
         this.messageRowKeysById = messageRows;
@@ -517,7 +516,7 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
             this.appliedHeaderHeight,
           );
         }
-        this.announcement.sync(announcement, announce);
+        this.announcement.sync(snapshot.announcement, snapshot.announce);
         return this.renderer.render({
           applicationContext: snapshot.applicationContext,
           messageElements: this.messageElements,
@@ -530,7 +529,7 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
           getContent: this.renderer.contentFor(rows, renderRow),
           ...this.initialRange.presentation(rows),
           virtualizer,
-          overlay,
+          overlay: snapshot.overlay,
           header: header?.props ?? null,
           scrollElementRef: this.scrollElementRef,
           captureInteractionResize: this.captureInteractionResize,

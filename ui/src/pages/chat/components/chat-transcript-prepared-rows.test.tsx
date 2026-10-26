@@ -3,9 +3,12 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { mountSolid } from "../../../test-helpers/solid-render.tsx";
 import { flush } from "../../../test-helpers/solid-settle.ts";
+import { prewarmGroupedMessage } from "./chat-message-bubble-presentation.ts";
 import { ChatTimestamp } from "./chat-message-timestamp-view.tsx";
+import { createMessageGroup } from "./chat-message.test-support.ts";
 import { emitTranscriptResize } from "./chat-transcript-fixture.test-support.tsx";
 import type { TranscriptRow } from "./chat-transcript-layout.ts";
+import { GuardedTranscriptItem } from "./chat-transcript-render-guard.ts";
 import { ChatSessionVirtualizerHost } from "./chat-transcript-virtualizer-host.ts";
 import {
   installTranscriptDomMocks,
@@ -34,6 +37,7 @@ async function transcriptFixture(
   initialOffset: number | null = 0,
   idlePreparation = false,
   plainFirstRow = false,
+  ordinary = false,
 ) {
   let now = 1;
   let nextFrame = 0;
@@ -79,14 +83,30 @@ async function transcriptFixture(
     kind: "item",
     key: `fragment:${index}`,
     item: index,
-    estimatedSize: index === 0 && plainFirstRow ? undefined : 100,
+    estimatedSize: ordinary || (index === 0 && plainFirstRow) ? undefined : 100,
   }));
+  const groups = ordinary
+    ? rows.map((_, index) =>
+        createMessageGroup(
+          { role: "assistant", content: `Idle ordinary message ${index}`, timestamp: index },
+          "assistant",
+        ),
+      )
+    : [];
   let presented = true;
   let queued = false;
   let disposed = false;
-  const renderRow = vi.fn((row: TranscriptRow<number>) => (
-    <span>Message {row.kind === "item" ? row.item : ""}</span>
-  ));
+  const renderRow = vi.fn((row: TranscriptRow<number>) =>
+    ordinary ? (
+      new GuardedTranscriptItem([groups[row.kind === "item" ? row.item : 0]], {
+        kind: "group",
+        group: groups[row.kind === "item" ? row.item : 0]!,
+        options: { showReasoning: false },
+      })
+    ) : (
+      <span>Message {row.kind === "item" ? row.item : ""}</span>
+    ),
+  );
   let renderer = renderRow;
   const draw = () => {
     const root = host.render(rows, renderer, null, false, null, null, presented);
@@ -119,6 +139,7 @@ async function transcriptFixture(
     container,
     host,
     renderRow,
+    groups,
     async updateRow(index: number, item: number) {
       rows[index] = { kind: "item", key: `fragment:${index}`, item, estimatedSize: 100 };
       draw();
@@ -172,6 +193,21 @@ async function transcriptFixture(
     },
   };
 }
+
+it("warms ordinary rows only in idle time without mounting their DOM", async () => {
+  const view = await transcriptFixture(0, true, false, true);
+  const rendered = view.renderRow.mock.calls.length;
+  const elements = view.container.querySelectorAll(".chat-virtual-row").length;
+  await view.idle(0);
+  expect(view.renderRow.mock.calls).toHaveLength(rendered);
+  await view.idle();
+  const warmed = view.renderRow.mock.calls.slice(rendered).at(-1)![0];
+  const index = warmed.kind === "item" ? warmed.item : -1;
+  expect(index).toBeGreaterThan(0);
+  expect(view.container.querySelector(`[data-virtual-row-key="${warmed.key}"]`)).toBeNull();
+  expect(view.container.querySelectorAll(".chat-virtual-row")).toHaveLength(elements);
+  expect(prewarmGroupedMessage(view.groups[index]!.messages[0]!.message, {})).toBe(false);
+});
 
 it("reuses a recent completed row after scrolling away and back, with a bounded DOM cache", async () => {
   const view = await transcriptFixture();

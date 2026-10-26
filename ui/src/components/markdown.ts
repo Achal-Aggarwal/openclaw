@@ -228,11 +228,31 @@ export function toSanitizedMarkdownContent(
   return prepareSanitizedMarkdown(markdownLocal, options, true);
 }
 
+/** Prepare a cacheable row without retaining DOM or touching an existing entry. */
+export function prewarmSanitizedMarkdown(
+  markdownLocal: string,
+  options: MarkdownRenderOptions,
+): boolean {
+  return prepareSanitizedMarkdown(markdownLocal, options, false, true);
+}
+
 function prepareSanitizedMarkdown(
   markdownLocal: string,
   options: MarkdownRenderOptions,
   returnFragment: boolean,
-): MarkdownContent {
+): MarkdownContent;
+function prepareSanitizedMarkdown(
+  markdownLocal: string,
+  options: MarkdownRenderOptions,
+  returnFragment: boolean,
+  prewarm: true,
+): boolean;
+function prepareSanitizedMarkdown(
+  markdownLocal: string,
+  options: MarkdownRenderOptions,
+  returnFragment: boolean,
+  prewarm = false,
+): MarkdownContent | boolean {
   const renderOptions = normalizeMarkdownRenderOptions(options);
   const prepared =
     renderOptions.mode === "document" || markdownLocal.length <= MARKDOWN_PARSE_LIMIT
@@ -247,9 +267,12 @@ function prepareSanitizedMarkdown(
     stripUnsupportedCitationControlMarkers(prepared.source),
   );
   if (!renderInput.trim()) {
-    return "";
+    return prewarm ? false : "";
   }
   if (renderInput.length > MARKDOWN_CACHE_MAX_CHARS) {
+    if (prewarm) {
+      return false;
+    }
     return renderSanitizedMarkdown(
       renderInput,
       renderOptions,
@@ -277,11 +300,13 @@ function prepareSanitizedMarkdown(
     if (HIGHLIGHTABLE_CODE_RE.test(cached.html)) {
       cached.highlighting = markdownHighlightingReady();
     }
+  } else if (prewarm) {
+    return false;
   }
   markdownCache.delete(cacheKey);
   markdownCache.set(cacheKey, cached);
   pruneMapToMaxSize(markdownCache, MARKDOWN_CACHE_LIMIT);
-  return content ?? cached.html;
+  return prewarm ? true : (content ?? cached.html);
 }
 
 export function markdownRenderKey(options: MarkdownRenderEnv): string {
