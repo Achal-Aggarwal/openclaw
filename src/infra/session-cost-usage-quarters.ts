@@ -341,7 +341,17 @@ export function decodeUsageCostQuarters(
           const sourceColumn = TABLE_OFFSETS[table]! + part;
           const data = sectionOf(block, sourceColumn);
           if (data) {
-            addSection(target, data, offsets[sourceColumn]!);
+            const offset = offsets[sourceColumn]!;
+            // Separate loops per section type keep each element access monomorphic.
+            if (data instanceof Uint32Array) {
+              for (let row = 0; row < target.length; row += 1) {
+                target[row] = target[row]! + data[offset + row]!;
+              }
+            } else {
+              for (let row = 0; row < target.length; row += 1) {
+                target[row] = target[row]! + data[offset + row]!;
+              }
+            }
           }
         }
       }
@@ -447,25 +457,6 @@ export function sectionOf(
       return block.sections[3];
     default:
       return undefined;
-  }
-}
-
-// Separate loops per section type keep each element access monomorphic.
-function addUint32(target: Float64Array, data: Uint32Array, offset: number) {
-  for (let row = 0; row < target.length; row += 1) {
-    target[row] = target[row]! + data[offset + row]!;
-  }
-}
-function addFloat64(target: Float64Array, data: Float64Array, offset: number) {
-  for (let row = 0; row < target.length; row += 1) {
-    target[row] = target[row]! + data[offset + row]!;
-  }
-}
-function addSection(target: Float64Array, data: Uint32Array | Float64Array, offset: number) {
-  if (data instanceof Uint32Array) {
-    addUint32(target, data, offset);
-  } else {
-    addFloat64(target, data, offset);
   }
 }
 

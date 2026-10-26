@@ -153,42 +153,6 @@ function hostCpuUtilization(
   return total > 0 && Number.isFinite(total) ? roundMetric((total - idle) / total) : undefined;
 }
 
-function classifyGatewayEventLoopHealthReasons(
-  metrics: Pick<
-    GatewayEventLoopHealth,
-    "intervalMs" | "delayP99Ms" | "delayMaxMs" | "utilization" | "cpuCoreRatio"
-  >,
-): GatewayEventLoopHealthReason[] {
-  const reasons: GatewayEventLoopHealthReason[] = [];
-
-  if (
-    metrics.delayP99Ms >= EVENT_LOOP_DELAY_WARN_MS ||
-    metrics.delayMaxMs >= EVENT_LOOP_DELAY_WARN_MS
-  ) {
-    reasons.push("event_loop_delay");
-  }
-
-  if (metrics.intervalMs < SUSTAINED_LOAD_SAMPLE_MIN_INTERVAL_MS) {
-    return reasons;
-  }
-
-  const hasDelayCoEvidence =
-    metrics.delayP99Ms >= LOAD_DEGRADATION_DELAY_COEVIDENCE_MS ||
-    metrics.delayMaxMs >= LOAD_DEGRADATION_DELAY_COEVIDENCE_MS;
-  if (!hasDelayCoEvidence) {
-    return reasons;
-  }
-
-  if (metrics.utilization >= EVENT_LOOP_UTILIZATION_WARN) {
-    reasons.push("event_loop_utilization");
-  }
-  if (metrics.cpuCoreRatio >= CPU_CORE_RATIO_WARN) {
-    reasons.push("cpu");
-  }
-
-  return reasons;
-}
-
 export function createGatewayEventLoopHealthMonitor(deps: {
   scheduler: GatewayScheduler;
   isIdle?: () => boolean;
@@ -387,13 +351,23 @@ export function createGatewayEventLoopHealthMonitor(deps: {
     const hostCpuTimes = readHostCpuTimes();
     const hostUtilization = hostCpuUtilization(hostCpuTimes, lastHostCpuTimes);
     lastHostCpuTimes = hostCpuTimes;
-    const reasons = classifyGatewayEventLoopHealthReasons({
-      intervalMs,
-      delayP99Ms,
-      delayMaxMs,
-      utilization,
-      cpuCoreRatio,
-    });
+    const reasons: GatewayEventLoopHealthReason[] = [];
+    if (delayP99Ms >= EVENT_LOOP_DELAY_WARN_MS || delayMaxMs >= EVENT_LOOP_DELAY_WARN_MS) {
+      reasons.push("event_loop_delay");
+    }
+    if (!(intervalMs < SUSTAINED_LOAD_SAMPLE_MIN_INTERVAL_MS)) {
+      const hasDelayCoEvidence =
+        delayP99Ms >= LOAD_DEGRADATION_DELAY_COEVIDENCE_MS ||
+        delayMaxMs >= LOAD_DEGRADATION_DELAY_COEVIDENCE_MS;
+      if (hasDelayCoEvidence) {
+        if (utilization >= EVENT_LOOP_UTILIZATION_WARN) {
+          reasons.push("event_loop_utilization");
+        }
+        if (cpuCoreRatio >= CPU_CORE_RATIO_WARN) {
+          reasons.push("cpu");
+        }
+      }
+    }
     const degraded = reasons.length > 0;
     if (degraded) {
       firstDegradedAtMs ??= now;

@@ -31,7 +31,7 @@ const iterations = Number(values.iterations);
 assert(Number.isSafeInteger(iterations) && iterations >= 1000, "Use at least 1000 iterations");
 const source = readFileSync(values.source, "utf8");
 const start = source.indexOf("function readHostCpuTimes(");
-const end = source.indexOf("function classifyGatewayEventLoopHealthReasons(", start);
+const end = source.indexOf("\n}\n", source.indexOf("function hostCpuUtilization(", start)) + 3;
 const hostConstants = [...source.matchAll(/^const HOST_CPU_.*;$/gm)]
   .map((match) => match[0])
   .join("\n");
