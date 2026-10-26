@@ -50,34 +50,6 @@ export function peekPrewarmedChatSnapshot(): PrewarmedSnapshot | undefined {
   return pending;
 }
 
-export function readSharedPrewarm(
-  entry: PrewarmedSnapshot,
-  read: (onBoard: (board: ChatSessionSnapshot["board"]) => void) => PreparedSnapshotRead,
-  onBoard?: (board: ChatSessionSnapshot["board"]) => void,
-  consumerIsCurrent?: () => boolean,
-) {
-  const prepared: NonNullable<PrewarmedSnapshot["prepared"]> = (entry.prepared ??= {
-    promise: read((board) => {
-      // Keep the early Board receipt with the same parse that supplies dispatch facts.
-      prepared.board = { value: board };
-      prepared.onBoard?.(board);
-    }).then((snapshot) => {
-      prepared.snapshot = snapshot;
-      return snapshot;
-    }),
-  });
-  if (consumerIsCurrent) {
-    prepared.consumerIsCurrent = consumerIsCurrent;
-  }
-  if (onBoard) {
-    prepared.onBoard = onBoard;
-    if (prepared.board) {
-      onBoard(prepared.board.value);
-    }
-  }
-  return prepared;
-}
-
 export function discardPrewarmedChatSnapshot(cacheKey?: string): void {
   if (pending && (cacheKey === undefined || pending.cacheKey === cacheKey)) {
     pending.cancelled = true;

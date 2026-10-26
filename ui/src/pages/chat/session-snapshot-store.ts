@@ -44,7 +44,6 @@ import {
   discardPrewarmedChatSnapshot,
   loadSnapshotRecordParser,
   peekPrewarmedChatSnapshot,
-  readSharedPrewarm,
 } from "./session-snapshot-prewarm.ts";
 const CHAT_SNAPSHOT_PROJECTION_VERSION = 5;
 const CHAT_SNAPSHOT_MESSAGE_LIMIT = 80;
@@ -72,7 +71,38 @@ type SnapshotReadScope = {
   dispose: () => void;
 };
 
+type PrewarmedSnapshot = NonNullable<ReturnType<typeof peekPrewarmedChatSnapshot>>;
+type PreparedSnapshotRead = NonNullable<PrewarmedSnapshot["prepared"]>["promise"];
+
 const activeStores = new Set<SessionSnapshotStore>();
+
+function readSharedPrewarm(
+  entry: PrewarmedSnapshot,
+  read: (onBoard: (board: ChatSessionSnapshot["board"]) => void) => PreparedSnapshotRead,
+  onBoard?: (board: ChatSessionSnapshot["board"]) => void,
+  consumerIsCurrent?: () => boolean,
+) {
+  const prepared: NonNullable<PrewarmedSnapshot["prepared"]> = (entry.prepared ??= {
+    promise: read((board) => {
+      // Keep the early Board receipt with the same parse that supplies dispatch facts.
+      prepared.board = { value: board };
+      prepared.onBoard?.(board);
+    }).then((snapshot) => {
+      prepared.snapshot = snapshot;
+      return snapshot;
+    }),
+  });
+  if (consumerIsCurrent) {
+    prepared.consumerIsCurrent = consumerIsCurrent;
+  }
+  if (onBoard) {
+    prepared.onBoard = onBoard;
+    if (prepared.board) {
+      onBoard(prepared.board.value);
+    }
+  }
+  return prepared;
+}
 
 async function readSnapshotRecord(
   sessionKey: string,
