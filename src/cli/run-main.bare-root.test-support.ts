@@ -1,15 +1,4 @@
 import { expect, it, vi, type Mock } from "vitest";
-import { createCliTtyMock } from "./test-runtime-capture.js";
-
-export async function withCliTty(value: boolean, fn: () => Promise<void>): Promise<void> {
-  const tty = createCliTtyMock();
-  tty.set(value);
-  try {
-    await fn();
-  } finally {
-    tty.restore();
-  }
-}
 
 export function registerBareRootArgumentTests({
   runCli,

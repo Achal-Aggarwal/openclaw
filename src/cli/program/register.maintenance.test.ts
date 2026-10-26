@@ -5,7 +5,7 @@ import { runDoctorLintCli as runDoctorLintCliEntry } from "../../commands/doctor
 import { parseReleasedDoctorLintReport } from "../../infra/test-fixtures/update-doctor-lint.v2026-9-5.js";
 import { ExitError } from "../../runtime.js";
 import { UpdateSchemaRefusalError } from "../../state/openclaw-update-schema-refusal.js";
-import { withCliTty } from "../run-main.bare-root.test-support.js";
+import { withCliTty } from "../test-runtime-capture.js";
 import { expectNoCalls } from "./program.test-helpers.js";
 import { registerMaintenanceCommands } from "./register.maintenance.js";
 

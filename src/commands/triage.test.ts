@@ -5,6 +5,7 @@ import { PassThrough } from "node:stream";
 import JSZip from "jszip";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useAutoCleanupTempDirTracker } from "../../test/helpers/temp-dir.js";
+import { withCliTty as withTriageTerminal } from "../cli/test-runtime-capture.js";
 import { UpdateCommandFailure } from "../cli/update-cli/update-command-result.js";
 import { withUpdateFailureTriage } from "../cli/update-cli/update-command-triage.js";
 import type { HealthFinding } from "../flows/health-checks.js";
@@ -14,11 +15,7 @@ import * as logTailModule from "../logging/log-tail.js";
 import { defaultRuntime } from "../runtime.js";
 import { createDeferredCore } from "../shared/deferred.js";
 import { triageCommand } from "./triage.js";
-import {
-  createTriageRuntime,
-  resetTriageRepairRuntimeMocks,
-  withTriageTerminal,
-} from "./triage.test-support.js";
+import { createTriageRuntime, resetTriageRepairRuntimeMocks } from "./triage.test-support.js";
 
 const tempDirs = useAutoCleanupTempDirTracker(afterEach);
 const failedUpdate: UpdateRunResult = {

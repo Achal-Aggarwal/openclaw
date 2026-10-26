@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useAutoCleanupTempDirTracker } from "../../test/helpers/temp-dir.js";
+import { withCliTty as withTriageTerminal } from "../cli/test-runtime-capture.js";
 import { recordDeferredPluginMigrations } from "../infra/deferred-plugin-migrations.js";
 import { resolveInstallationTarget } from "../infra/installation-target-context.js";
 import { readPackageVersion } from "../infra/package-json.js";
@@ -14,11 +15,7 @@ import {
   recordUpdateRunStep,
 } from "../infra/update-run-ledger.js";
 import { triageCommand } from "./triage.js";
-import {
-  createTriageRuntime,
-  resetTriageRepairRuntimeMocks,
-  withTriageTerminal,
-} from "./triage.test-support.js";
+import { createTriageRuntime, resetTriageRepairRuntimeMocks } from "./triage.test-support.js";
 
 const tempDirs = useAutoCleanupTempDirTracker(afterEach);
 let runtime: ReturnType<typeof createTriageRuntime>;

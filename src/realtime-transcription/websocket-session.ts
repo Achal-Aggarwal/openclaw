@@ -171,10 +171,6 @@ class WebSocketRealtimeTranscriptionSession<Event> implements RealtimeTranscript
 
   private async doConnect(generation: number): Promise<void> {
     await new Promise<void>((resolve, reject) => {
-      if (generation !== this.connectionGeneration || this.closed) {
-        resolve();
-        return;
-      }
       this.ready = false;
       const debugProxy = resolveDebugProxySettings();
       const proxyAgent = createDebugProxyWebSocketAgent(debugProxy);

@@ -67,6 +67,16 @@ export function createCliTtyMock(targets = [process.stdin, process.stdout]) {
   };
 }
 
+export async function withCliTty(value: boolean, fn: () => Promise<void>): Promise<void> {
+  const tty = createCliTtyMock();
+  tty.set(value);
+  try {
+    await fn();
+  } finally {
+    tty.restore();
+  }
+}
+
 export async function mockRuntimeModule<TModule extends { defaultRuntime: OutputRuntimeEnv }>(
   loadActual: () => Promise<TModule>,
   defaultRuntime: TModule["defaultRuntime"],

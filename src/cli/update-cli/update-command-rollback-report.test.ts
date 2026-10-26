@@ -1,10 +1,10 @@
 import { confirm as clackConfirm, isCancel } from "@clack/prompts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useAutoCleanupTempDirTracker } from "../../../test/helpers/temp-dir.js";
-import { withTriageTerminal } from "../../commands/triage.test-support.js";
 import { prepareGithubIssue } from "../../infra/github-issue.js";
 import * as ledger from "../../infra/update-run-ledger.js";
 import { defaultRuntime } from "../../runtime.js";
+import { withCliTty as withTriageTerminal } from "../test-runtime-capture.js";
 import { stepFixture } from "./update-command-fixtures.test-support.js";
 import {
   UpdateCommandFailure,

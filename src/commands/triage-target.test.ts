@@ -11,6 +11,7 @@ import {
 } from "../agents/bash-tools.exec-request-preparation.js";
 import type { RunEmbeddedAgentParams } from "../agents/embedded-agent-runner/run/params.js";
 import { resolveExecToolConfig } from "../agents/lazy-exec-tool.js";
+import { withCliTty as withTriageTerminal } from "../cli/test-runtime-capture.js";
 import {
   getRuntimeConfig,
   getRuntimeConfigSnapshot,
@@ -39,7 +40,7 @@ import {
 } from "../test-utils/openclaw-test-state.js";
 import * as agentExec from "./agent-exec.js";
 import { renderTriagePrompt } from "./triage-prompt.js";
-import { createTriageRuntime, withTriageTerminal } from "./triage.test-support.js";
+import { createTriageRuntime } from "./triage.test-support.js";
 
 const mocks = vi.hoisted(() => ({
   agentCommand: vi.fn(),

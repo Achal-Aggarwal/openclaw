@@ -5,7 +5,6 @@ import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import { Command } from "commander";
 import { assert, describe, expect, it, vi } from "vitest";
 import { doctorCommand } from "../../commands/doctor.js";
-import { withTriageTerminal } from "../../commands/triage.test-support.js";
 import * as doctorContributions from "../../flows/doctor-health-contributions.js";
 import * as packageRoot from "../../infra/openclaw-root.js";
 import * as packageMetadata from "../../infra/update-check-package-target.js";
@@ -28,6 +27,7 @@ import {
 import { resolveOpenClawStateSqlitePath } from "../../state/openclaw-state-db.paths.js";
 import { VERSION } from "../../version.js";
 import * as oneShotExit from "../one-shot-exit.js";
+import { withCliTty as withTriageTerminal } from "../test-runtime-capture.js";
 import { invokeUpdateCli } from "../update-cli-invocation.test-support.js";
 import { registerUpdateCli } from "../update-cli.js";
 import * as shared from "./shared.js";

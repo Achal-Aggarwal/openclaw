@@ -29,7 +29,8 @@ import { describe, expect, it, vi } from "vitest";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { withSecureTestNodeExecPath } from "../secrets/test-node-command.test-support.js";
 import { withEnvAsync } from "../test-utils/env.js";
-import { registerBareRootArgumentTests, withCliTty } from "./run-main.bare-root.test-support.js";
+import { registerBareRootArgumentTests } from "./run-main.bare-root.test-support.js";
+import { withCliTty } from "./test-runtime-capture.js";
 
 const TLS_FINGERPRINT = "ab".repeat(32);
 const PREFIXED_TLS_FINGERPRINT = `sha256:${TLS_FINGERPRINT.toUpperCase()}`;

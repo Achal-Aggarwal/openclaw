@@ -4,10 +4,10 @@ import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { GATEWAY_OWNER_PROFILE_ID } from "../../../packages/gateway-protocol/src/schema/users.js";
 import { createDeferred } from "../../../test/helpers/promise.js";
+import { withCliTty as withTriageTerminal } from "../../cli/test-runtime-capture.js";
 import { UpdateCommandFailure } from "../../cli/update-cli/update-command-result.js";
 import { completeUpdateCommandRun } from "../../cli/update-cli/update-command-run.js";
 import { withUpdateFailureTriage } from "../../cli/update-cli/update-command-triage.js";
-import { withTriageTerminal } from "../../commands/triage.test-support.js";
 import type { RunGithubCli } from "../../infra/github-issue.js";
 import {
   readUpdateFailureReportReceipt,

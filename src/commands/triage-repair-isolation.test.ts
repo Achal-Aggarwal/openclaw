@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
+import { withCliTty as withTriageTerminal } from "../cli/test-runtime-capture.js";
 import * as configPaths from "../config/paths.js";
 import * as repairRuntime from "../infra/update-repair-agent.runtime.js";
 import { repairRoute } from "../infra/update-repair-agent.test-support.js";
@@ -8,7 +9,7 @@ import { withOpenClawTestState } from "../test-utils/openclaw-test-state.js";
 import { beginDoctorMaintenance } from "./doctor-maintenance.js";
 import * as doctorPolicy from "./doctor-service-repair-policy.js";
 import { triageCommand } from "./triage.js";
-import { createTriageRuntime, withTriageTerminal } from "./triage.test-support.js";
+import { createTriageRuntime } from "./triage.test-support.js";
 
 const mocks = vi.hoisted(() => ({
   runEmbeddedAgent: vi.fn(),

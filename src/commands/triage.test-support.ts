@@ -1,6 +1,5 @@
 import path from "node:path";
 import { vi, type Mock } from "vitest";
-import { createCliTtyMock } from "../cli/test-runtime-capture.js";
 import type { UpdateRepairInferenceResult } from "../infra/update-repair-inference.js";
 
 export function createTriageInferenceSelection(stateDir: string): UpdateRepairInferenceResult {
@@ -45,14 +44,4 @@ export function resetTriageRepairRuntimeMocks(
 
 export function createTriageRuntime() {
   return { log: vi.fn(), error: vi.fn(), exit: vi.fn(), writeStdout: vi.fn(), writeJson: vi.fn() };
-}
-
-export async function withTriageTerminal(interactive: boolean, run: () => Promise<void>) {
-  const tty = createCliTtyMock();
-  tty.set(interactive);
-  try {
-    await run();
-  } finally {
-    tty.restore();
-  }
 }

@@ -1,6 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
 import * as prompts from "../../commands/configure.shared.js";
-import { withTriageTerminal } from "../../commands/triage.test-support.js";
 import * as contributions from "../../flows/doctor-health-contributions.js";
 import * as processAncestors from "../../infra/restart-stale-pids.js";
 import { POST_CORE_UPDATE_ENV } from "../../infra/update-post-core-context.js";
@@ -8,6 +7,7 @@ import { defaultRuntime, ExitError } from "../../runtime.js";
 import { closeOpenClawStateDatabaseForTest } from "../../state/openclaw-state-db.js";
 import { createTempHomeEnv, type TempHomeEnv } from "../../test-utils/temp-home.js";
 import { mockProcessPlatform } from "../../test-utils/vitest-spies.js";
+import { withCliTty as withTriageTerminal } from "../test-runtime-capture.js";
 import { UpdatePreMutationError } from "./shared.js";
 import { reportPreMutationUpdateResult } from "./update-command-admission-report.js";
 import { handoffUpdateFromGateway } from "./update-command-handoff.js";

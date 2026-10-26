@@ -154,8 +154,7 @@ export function resolveWebSearchProviderId(params: {
         config,
       }),
   );
-  const raw =
-    search && "provider" in search ? normalizeLowercaseStringOrEmpty(search.provider) : "";
+  const raw = normalizeLowercaseStringOrEmpty(search?.provider);
 
   if (raw) {
     const explicit = providers.find((provider) => provider.id === raw);
@@ -319,10 +318,7 @@ function selectWebSearchCandidates(
     if (!runtimeProviderId) {
       return undefined;
     }
-    const configuredProviderId =
-      search && "provider" in search
-        ? normalizeOptionalLowercaseString(search.provider)
-        : undefined;
+    const configuredProviderId = normalizeOptionalLowercaseString(search?.provider);
     if (configuredProviderId) {
       const configuredProvider = providers.find((entry) => entry.id === configuredProviderId);
       return configuredProvider?.id === runtimeProviderId ? runtimeProviderId : undefined;
@@ -500,10 +496,7 @@ function hasExplicitWebSearchSelection(params: {
   const availableProviderIds = new Set(
     (params.providers ?? []).map((provider) => normalizeLowercaseStringOrEmpty(provider.id)),
   );
-  const configuredProviderId =
-    params.search && "provider" in params.search && typeof params.search.provider === "string"
-      ? normalizeLowercaseStringOrEmpty(params.search.provider)
-      : "";
+  const configuredProviderId = normalizeLowercaseStringOrEmpty(params.search?.provider);
   if (configuredProviderId && availableProviderIds.has(configuredProviderId)) {
     return true;
   }

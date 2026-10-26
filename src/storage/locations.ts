@@ -380,24 +380,15 @@ export async function initStorageLocation(params: StorageLocationParams): Promis
   try {
     let marker = await readStorageMarker(prepared.backend, params.signal);
     if (!marker) {
-      const candidate = await createStorageMarker(params.name, prepared.passphrase);
-      const bytes = Buffer.from(JSON.stringify(candidate) + "\n");
-      try {
-        await prepared.backend.putObject(
-          STORAGE_MARKER_KEY,
-          (async function* () {
-            yield bytes;
-          })(),
-          { sizeBytes: bytes.length, signal: params.signal },
-        );
-        marker = candidate;
-      } catch (error) {
-        // Concurrent init may have won its conditional create; verify that winner.
-        marker = await readStorageMarker(prepared.backend, params.signal);
-        if (!marker || marker.locationId === candidate.locationId) {
-          throw error;
-        }
-      }
+      marker = await createStorageMarker(params.name, prepared.passphrase);
+      const bytes = Buffer.from(JSON.stringify(marker) + "\n");
+      await prepared.backend.putObject(
+        STORAGE_MARKER_KEY,
+        (async function* () {
+          yield bytes;
+        })(),
+        { sizeBytes: bytes.length, signal: params.signal },
+      );
     }
     return await makeLocation(params, prepared, marker);
   } catch (error) {

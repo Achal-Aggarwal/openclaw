@@ -1,7 +1,7 @@
 import { expectDefined } from "@openclaw/normalization-core/expect";
 import { Command } from "commander";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { withCliTty } from "../run-main.bare-root.test-support.js";
+import { withCliTty } from "../test-runtime-capture.js";
 import { registerCoreCliCommands } from "./command-registry-core.js";
 import { createProgramContext } from "./context.js";
 import { expectNoCalls } from "./program.test-helpers.js";

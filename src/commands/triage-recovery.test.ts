@@ -4,6 +4,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { withCliTty as withTriageTerminal } from "../cli/test-runtime-capture.js";
 import { resolveInstallationTarget } from "../infra/installation-target-context.js";
 import { readRestartSentinelReadOnly, writeRestartSentinel } from "../infra/restart-sentinel.js";
 import { withEnvAsync } from "../test-utils/env.js";
@@ -13,7 +14,7 @@ import {
 } from "../test-utils/openclaw-test-state.js";
 import type { TriageUpdateFailure } from "./triage-update.js";
 import { triageCommand } from "./triage.js";
-import { createTriageRuntime, withTriageTerminal } from "./triage.test-support.js";
+import { createTriageRuntime } from "./triage.test-support.js";
 
 const mocks = vi.hoisted(() => ({
   collectDoctorFindings: vi.fn(),

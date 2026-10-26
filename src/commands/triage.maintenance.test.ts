@@ -2,13 +2,10 @@ import path from "node:path";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { createManagedHandoffTestBinding } from "../../test/helpers/managed-handoff-isolation.js";
 import { useAutoCleanupTempDirTracker } from "../../test/helpers/temp-dir.js";
+import { withCliTty as withTriageTerminal } from "../cli/test-runtime-capture.js";
 import { resolveManagedUpdateLeaseDatabasePath } from "../infra/update-managed-service-handoff-lease.js";
 import { triageCommand } from "./triage.js";
-import {
-  createTriageInferenceSelection,
-  createTriageRuntime,
-  withTriageTerminal,
-} from "./triage.test-support.js";
+import { createTriageInferenceSelection, createTriageRuntime } from "./triage.test-support.js";
 
 const mocks = vi.hoisted(() => ({
   turn: vi.fn(),
