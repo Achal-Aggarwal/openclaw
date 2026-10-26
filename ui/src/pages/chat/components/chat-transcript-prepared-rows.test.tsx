@@ -235,12 +235,14 @@ it.each([600, 1400])(
     expect(view.container.querySelector(`[data-virtual-row-key="${warmed.key}"]`)).toBeNull();
     expect(view.container.querySelectorAll(".chat-virtual-row")).toHaveLength(elements);
     expect(prewarmGroupedMessage(view.groups[index]!.messages[0]!.message, {})).toBe(false);
-    for (let turn = 0; turn < 16; turn++) {
+    for (let turn = 0; turn < 80; turn++) {
       await view.idle();
     }
     const last = view.renderRow.mock.calls.at(-1)![0];
     expect(last.kind === "item" ? last.item : -1).toBeGreaterThan(index);
     expect(view.container.querySelectorAll(".chat-virtual-row")).toHaveLength(elements);
+    // A fast first movement can cross several viewports before scroll warming runs.
+    expect(prewarmGroupedMessage(view.groups[48]!.messages[0]!.message, {})).toBe(false);
     const completed = view.renderRow.mock.calls.length;
     await view.idle();
     expect(view.renderRow.mock.calls).toHaveLength(completed);

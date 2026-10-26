@@ -4,6 +4,9 @@ import type { TranscriptRow } from "./chat-transcript-layout.ts";
 // A few viewports avoid repeat mounts without making every scroll restyle a
 // large parked subtree. Geometry and prepared Markdown outlive DOM eviction.
 const PREPARED_ROW_LIMIT = 12;
+// Cover the first fast scroll before direction sampling can warm its next viewport.
+// These are HTML cache entries; the smaller DOM and pristine-fragment limits stay unchanged.
+const IDLE_PREWARM_ROW_LIMIT = 64;
 
 /** Own initial tail placement and bounded preparation ahead of the visible range. */
 export class TranscriptInitialRange {
@@ -284,8 +287,8 @@ export class TranscriptInitialRange {
       const lookahead =
         opposite && predicted
           ? Math.abs(opposite.index - predicted.index) + 1
-          : prewarm
-            ? Math.max(8, domLookahead)
+          : prewarm && !moving
+            ? IDLE_PREWARM_ROW_LIMIT
             : domLookahead;
       let admitted = 0;
       let warmed = false;
