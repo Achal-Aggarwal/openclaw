@@ -31,7 +31,12 @@ import type { SubagentRunRecord } from "../agents/subagents/registry/subagent-re
 import { getSubagentRunRuntimeKey } from "../agents/subagents/registry/subagent-run-generation.js";
 import * as swarm from "../agents/subagents/swarm/swarm-scheduler.js";
 import * as sessions from "../config/sessions/session-accessor.js";
-import { emitAgentEvent } from "../infra/agent-events.js";
+import { emitAgentEventForOwner } from "../infra/agent-events.js";
+import {
+  claimAgentRunContext,
+  hasLiveAgentRunContext,
+  releaseAgentRunContext,
+} from "../infra/agent-run-registry.js";
 import {
   beginSessionEffect,
   getSessionMutationCount,
@@ -440,6 +445,7 @@ test("measures natural descendant settlement in the session-list owner", async (
     "sessions.json",
   );
   const leases: SessionEffectRef[] = [];
+  const executionClaims = new Map<string, string>();
   const frames: GatewayEventFrame[] = [];
   const receive = (data: { toString(): string }) => {
     const frame = JSON.parse(data.toString()) as GatewayEventFrame;
@@ -476,17 +482,25 @@ test("measures natural descendant settlement in the session-list owner", async (
       );
     });
     lease.release();
-    emitAgentEvent({
-      runId,
-      sessionKey,
-      stream: "lifecycle",
-      data: {
-        phase: "end",
-        endedAt: Date.now(),
-        terminalReply: { disposition: "visible", text: "Synthetic descendant completion." },
-      },
-    });
+    const claimId = expectDefined(executionClaims.get(runId), "live execution claim");
+    expect(
+      emitAgentEventForOwner(
+        {
+          runId,
+          sessionKey,
+          stream: "lifecycle",
+          data: {
+            phase: "end",
+            endedAt: Date.now(),
+            terminalReply: { disposition: "visible", text: "Synthetic descendant completion." },
+          },
+        },
+        claimId,
+      ),
+    ).toBe(true);
     await withinTest(published, signal);
+    releaseAgentRunContext(runId, claimId);
+    executionClaims.delete(runId);
     await flushPendingSessionsChangedEvents(context);
   };
   try {
@@ -531,6 +545,17 @@ test("measures natural descendant settlement in the session-list owner", async (
         onInterrupt: () => ({ runId }),
       });
       leases.push(lease);
+      executionClaims.set(
+        runId,
+        expectDefined(
+          claimAgentRunContext(
+            runId,
+            { agentId: "main", sessionKey: key, sessionId: entry.sessionId },
+            { trackOwner: true, ownsContext: true, exclusive: true },
+          ),
+          "execution claim",
+        ),
+      );
       await registerSubagentRun({
         runId,
         childSessionKey: key,
@@ -554,7 +579,12 @@ test("measures natural descendant settlement in the session-list owner", async (
       expect(before.sessions.find((row) => row.key === key)?.hasActiveSubagentRun).toBe(true);
     }
     expect(before.sessions.find((row) => row.key === parentKey)?.hasActiveRun).toBe(false);
-    expect(before.sessions.find((row) => row.key === leafKey)?.hasActiveRun).toBe(true);
+    expect(hasLiveAgentRunContext(runs[1][0])).toBe(true);
+    expect(before.sessions.find((row) => row.key === leafKey)).toMatchObject({
+      hasActiveRun: true,
+      hasActiveSubagentRun: true,
+      subagentRunState: "active",
+    });
     socket.on("message", receive);
     await finish(runs[1][0], leafKey, leases[1]!);
     const after = await readList();
@@ -657,6 +687,9 @@ test("measures natural descendant settlement in the session-list owner", async (
     socket.off("message", receive);
     for (const lease of leases) {
       lease.release();
+    }
+    for (const [runId, claimId] of executionClaims) {
+      releaseAgentRunContext(runId, claimId);
     }
     socket.close();
   }
