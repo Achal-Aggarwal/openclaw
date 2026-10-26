@@ -351,6 +351,7 @@ export const databaseWorkerCoreTestFiles = [
   "src/agents/core-coding-tools.exec-workdir.test.ts",
   "src/agents/sessions/agent-session-tool-result-redaction.test.ts",
   "src/agents/subagents/registry/subagent-registry-sweeper-recovery.test.ts",
+  "src/agents/subagents/registry/subagent-registry-sweeper-retire.test.ts",
   "src/agents/subagents/spawn/acp-spawn.authority.test.ts",
   "src/agents/subagents/spawn/acp-spawn.test.ts",
   "src/node-host/invoke-agent-cli-claude.test.ts",

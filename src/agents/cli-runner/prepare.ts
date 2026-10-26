@@ -1,7 +1,4 @@
-import {
-  ensureSystemPromptCacheBoundary,
-  splitSystemPromptRelocatableBoundary,
-} from "@openclaw/ai/internal/shared";
+import { splitSystemPromptRelocatableBoundary } from "@openclaw/ai/internal/shared";
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
 import { uniqueStrings } from "@openclaw/normalization-core/string-normalization";
 import {
@@ -107,10 +104,8 @@ import type { ResolvedProviderAuth } from "../model-auth-runtime-shared.js";
 import { loadManifestModelCatalog, overlayConfiguredModelCatalog } from "../model-catalog.js";
 import { resolveModelContextWindowProfile } from "../model-context-window.js";
 import { recordAdmittedModelRoutingDecision } from "../model-routing-decision.js";
-import { applyPluginTextReplacements } from "../plugin-text-transforms.js";
 import { collectRuntimeChannelCapabilities } from "../runtime-capabilities.js";
 import { buildSystemPromptReport } from "../system-prompt-report.js";
-import { appendModelIdentitySystemPrompt, buildModelIdentityPromptLine } from "../system-prompt.js";
 import { normalizeToolPolicyName } from "../tool-policy.js";
 import { assertNativeCronCreatorCapabilities } from "../tools/cron-tool-creator-cap.js";
 import { redactRunIdentifier, resolveRunWorkspaceDir } from "../workspace-run.js";
@@ -153,6 +148,7 @@ import {
 } from "./prepare-tool-policy.js";
 import {
   composeCliPromptContext,
+  finalizeCliSystemPrompt,
   prependCliSessionResumeUserContext,
   prepareCliSystemPrompt,
   prepareCliTurnPromptContext,
@@ -1660,23 +1656,9 @@ async function prepareCliRunContextWithinReadFence(
           maxHistoryChars: autoReseedHistoryChars,
         })
       : undefined;
-    const systemPromptWithReplacements = skipsTurnPreparation
-      ? systemPrompt
-      : applyPluginTextReplacements(systemPrompt, backendResolved.textTransforms?.input);
-    // Ensure the cache boundary before appending the model identity so the identity lands in the
-    // dynamic suffix, not the cached prefix, for marker-free hook overrides — otherwise an idle
-    // turn's prefix (O + identity) diverges from an active media turn's prefix (O) and breaks
-    // prompt caching. Skip empty prompts and turns with no identity line, which need no boundary.
     systemPrompt = skipsTurnPreparation
-      ? systemPromptWithReplacements
-      : appendModelIdentitySystemPrompt({
-          systemPrompt:
-            buildModelIdentityPromptLine(modelDisplay) &&
-            systemPromptWithReplacements.trim().length > 0
-              ? ensureSystemPromptCacheBoundary(systemPromptWithReplacements)
-              : systemPromptWithReplacements,
-          model: modelDisplay,
-        });
+      ? systemPrompt
+      : finalizeCliSystemPrompt(systemPrompt, modelDisplay, backendResolved.textTransforms?.input);
     if (sessionPromptContext?.resumeContext) {
       promptForHooks = composeCliPromptContext(promptForHooks ?? preparedPrompt, {
         prependContext: sessionPromptContext.resumeContext,

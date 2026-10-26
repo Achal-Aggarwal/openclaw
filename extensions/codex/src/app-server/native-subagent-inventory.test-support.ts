@@ -244,3 +244,13 @@ export async function submitFollowup(client: ReturnType<typeof createClient>) {
     successfulSendInputOutput({ callId: "followup", submissionId: "followup-turn" }),
   );
 }
+
+export async function startAssignment(observeTurn = true) {
+  const f = await fixture();
+  const client = createClient();
+  const parent = await f.register(client);
+  await parent.ready;
+  parent.bindTurn("parent-turn");
+  await f.spawn(client, observeTurn);
+  return { f, client, parent };
+}

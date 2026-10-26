@@ -214,6 +214,7 @@ export const databaseWorkerExtensionTestFiles = [
   "extensions/codex/src/app-server/remote-workspace-media.test.ts",
   "extensions/codex/src/app-server/native-provenance.test.ts",
   "extensions/codex/src/app-server/native-subagent-completion-delivery.contention.test.ts",
+  "extensions/codex/src/app-server/native-subagent-inventory.restore.test.ts",
   "extensions/codex/src/app-server/native-subagent-inventory.retirement.test.ts",
   "extensions/codex/src/app-server/native-subagent-inventory.settlement.test.ts",
   "extensions/codex/src/app-server/native-subagent-inventory.test.ts",
