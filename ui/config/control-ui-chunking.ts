@@ -148,7 +148,6 @@ export function controlUiStableChunkName(id: string): string | undefined {
     case "ui/src/pages/new-session/draft-project-picker.ts":
     case "ui/src/pages/new-session/place-browser-state.ts":
     case "ui/src/pages/new-session/place-browser-view.ts":
-    case "ui/src/pages/new-session/recent-places.ts":
       // The first open loads the picker and its interaction owner together.
       return "project-picker-runtime";
     case "ui/src/lib/page-request.ts":

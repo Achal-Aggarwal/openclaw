@@ -102,7 +102,7 @@ export class DraftProjectPicker {
           })
           .then((branches) => {
             // Typing keeps this listing valid; replacement or reset retires its probe.
-            if (this.browser.listing === listing && branches.repositoryStatus === "git") {
+            if (this.browserValue?.listing === listing && branches.repositoryStatus === "git") {
               this.browserProjectPathValue = listing.path;
               this.callbacks.changed();
             }

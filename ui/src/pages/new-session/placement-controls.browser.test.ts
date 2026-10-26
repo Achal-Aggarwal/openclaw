@@ -1,4 +1,4 @@
-import { createComponent } from "solid-js";
+import { createComponent, createSignal } from "solid-js";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { page } from "vitest/browser";
 import { mountSolid, cleanupSolid } from "../../test-helpers/mount-solid.ts";
@@ -58,7 +58,14 @@ it.each([
       ],
     });
     const { place } = where.params;
-    vi.spyOn(place.browser, "popoverOpen").mockReturnValue(false);
+    const [open, setOpen] = createSignal<"where" | "project" | "checkout" | null>(null);
+    vi.spyOn(place.browser, "popoverOpen").mockImplementation((kind) => open() === kind);
+    vi.spyOn(place.browser, "popoverCallbacks").mockImplementation((kind) => ({
+      popoverOpen: open() === kind,
+      onPopoverShow: () => setOpen(kind),
+      onPopoverHide: () => setOpen(null),
+      onPopoverAfterHide: vi.fn(),
+    }));
     vi.spyOn(place, "folder", "get").mockReturnValue(workspace);
     vi.spyOn(place, "workspacePath").mockReturnValue(workspace);
     vi.spyOn(place, "browseAvailable").mockReturnValue(true);
@@ -73,6 +80,7 @@ it.each([
         selectedRemoteProject: null,
         projects: [],
       }),
+      recents: [],
       nativeTerminal: false,
     };
     mountSolid(() => [createComponent(WhereChip, where), createComponent(ProjectChip, project)], {

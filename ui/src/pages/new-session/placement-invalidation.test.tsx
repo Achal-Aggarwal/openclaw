@@ -8,6 +8,7 @@ import { DraftProjectPicker } from "./draft-project-picker.ts";
 import { placementControls } from "./placement.test-support.ts";
 import { resolveProjectChip } from "./project-chip.ts";
 import { ProjectChip } from "./project-chip.tsx";
+import { NewSessionPlaceControls } from "./target-controls-view.tsx";
 import { pickerParams } from "./where-chip.test-support.ts";
 import { WhereChip } from "./where-chip.tsx";
 
@@ -93,6 +94,7 @@ it("retains project artwork while current labels and selection remain live", asy
       selectedRemoteProject: null,
       projects,
     }),
+    recents: [],
     nativeTerminal: false,
   };
   const [current, setCurrent] = createSignal(params);
@@ -116,4 +118,46 @@ it("retains project artwork while current labels and selection remain live", asy
   expect(view.container.querySelector('[data-value="project:sample"]')).toBe(row);
   expect(row.textContent).toContain("Sample Project refreshed");
   expect(row.getAttribute("aria-pressed")).toBe("true");
+});
+
+it("updates visible recents when a Gateway listing approves another workspace root", async () => {
+  const { state: place, browser, gateway, context, request, changed } = createRepositoryFixture();
+  Object.assign(gateway, {
+    connected: true,
+    client: context.gateway.snapshot.client,
+    connectionEpoch: 1,
+    gatewayName: "",
+  });
+  Object.assign(context.gateway.snapshot.hello!, {
+    auth: { role: "operator", scopes: ["operator.write"] },
+    features: { methods: ["projects.list"] },
+  });
+  request.mockResolvedValue({
+    projects: [],
+    recents: [
+      { kind: "folder", folder: "/approved/recent", displayName: "Approved recent" },
+      { kind: "folder", folder: "/unapproved/recent", displayName: "Unapproved recent" },
+    ],
+  });
+  vi.spyOn(browser, "popoverOpen").mockImplementation((kind) => kind === "project");
+  const params = placementControls({ place, gateway, context });
+  const [current, setCurrent] = createSignal(params);
+  changed.mockImplementation(() => setCurrent({ ...params }));
+  onTestFinished(() => browser.disconnect());
+  browser.synchronize();
+  const view = mountSolid(() => <NewSessionPlaceControls params={current()} />);
+  await waitForSolid(() => {
+    expect(view.queryByRole("searchbox")).not.toBeNull();
+    expect(browser.projectRecents).toHaveLength(2);
+  });
+  expect(view.container.querySelector('[data-value="recent:/approved/recent"]')).toBeNull();
+  expect(view.container.querySelector('[data-value="recent:/unapproved/recent"]')).toBeNull();
+
+  place.recordGatewayApprovedListing({ path: "/approved", home: "/home/fixture", entries: [] });
+
+  await waitForSolid(() =>
+    expect(view.container.querySelector('[data-value="recent:/approved/recent"]')).not.toBeNull(),
+  );
+  expect(view.getByText("Approved recent")).toBeDefined();
+  expect(view.container.querySelector('[data-value="recent:/unapproved/recent"]')).toBeNull();
 });

@@ -122,21 +122,54 @@ export function NewSessionPlaceControls(props: {
   });
   const folderValue = liveValue(() => props.params.place.folder);
   const deviceFolderValue = liveValue(() => props.params.place.deviceFolder?.path ?? "");
+  // Typing publishes a page revision; only placement receipts should rebuild recents.
+  const recentInputs = createMemo(
+    () => {
+      const { context, data, place } = props.params;
+      const browser = place.browser;
+      const projects = browser.projects;
+      return {
+        browser,
+        nativeTerminal: catalog.isTarget(data),
+        projects: projects.length ? projects : undefined,
+        catalogRecents: browser.projectRecents,
+        sessions: context?.sessions.state.result?.sessions,
+        workspace: place.workspacePath(),
+        workspaceRoots: place.knownWorkspaceRoots(),
+        isAdmin: place.isAdmin(),
+      };
+    },
+    {
+      equals: (previous, next) =>
+        previous.browser === next.browser &&
+        previous.nativeTerminal === next.nativeTerminal &&
+        previous.projects === next.projects &&
+        previous.catalogRecents === next.catalogRecents &&
+        previous.sessions === next.sessions &&
+        previous.workspace === next.workspace &&
+        previous.isAdmin === next.isAdmin &&
+        previous.workspaceRoots.length === next.workspaceRoots.length &&
+        previous.workspaceRoots.every((root, index) => root === next.workspaceRoots[index]),
+    },
+  );
+  const recents = createMemo(() => {
+    const input = recentInputs();
+    return input.nativeTerminal
+      ? []
+      : input.browser.resolveProjectRecents({
+          sessions: input.sessions ?? [],
+          workspace: input.workspace,
+          workspaceRoots: input.workspaceRoots,
+          isAdmin: input.isAdmin,
+        });
+  });
   const view = createMemo(() => {
-    const { context, data, gateway, place } = props.params;
+    const { data, gateway, place } = props.params;
     const browser = place.browser;
     const nativeTerminal = catalog.isTarget(data);
     const cloudProfiles = nativeTerminal || !place.isAdmin() ? [] : gateway.cloudProfiles;
     const branches = place.repository.kind === "git" ? place.repository : null;
     const projects = nativeTerminal ? [] : browser.projects;
-    const recents = nativeTerminal
-      ? []
-      : browser.resolveProjectRecents({
-          sessions: context?.sessions.state.result?.sessions ?? [],
-          workspace: place.workspacePath(),
-          workspaceRoots: place.knownWorkspaceRoots(),
-          isAdmin: place.isAdmin(),
-        });
     const whereState = resolveWhereChip(draftWhereChipParams(place, gateway, cloudProfiles));
     const projectState = resolveProjectChip({
       folder: place.deviceFolder?.path ?? place.folder,
@@ -160,7 +193,6 @@ export function NewSessionPlaceControls(props: {
       browser,
       whereState,
       projectState,
-      recents,
       checkoutState,
     };
   });
@@ -230,7 +262,7 @@ export function NewSessionPlaceControls(props: {
               <ProjectChip
                 params={props.params}
                 state={view().projectState}
-                recents={view().recents}
+                recents={recents()}
                 nativeTerminal={view().nativeTerminal}
                 focus={view().browser.projectFocus}
               />
