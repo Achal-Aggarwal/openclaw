@@ -14,15 +14,13 @@ export type AuthCredentialReasonCode =
 
 export const DEFAULT_OAUTH_REFRESH_MARGIN_MS = 5 * 60 * 1000;
 
-export type TokenExpiryState = "missing" | "valid" | "expiring" | "expired" | "invalid_expires";
-
 export function resolveTokenExpiryState(
   expires: unknown,
   now = Date.now(),
   opts?: {
     expiringWithinMs?: number;
   },
-): TokenExpiryState {
+): "missing" | "valid" | "expiring" | "expired" | "invalid_expires" {
   if (expires === undefined) {
     return "missing";
   }

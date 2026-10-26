@@ -134,15 +134,6 @@ function legacyEntryExplicitNonDefaultRuntimeId(
   return undefined;
 }
 
-export function agentIdFromAgentPath(agentPath: string): string | undefined {
-  for (const prefix of ["agents.entries.", "agents.list."]) {
-    if (agentPath.startsWith(prefix)) {
-      return agentPath.slice(prefix.length);
-    }
-  }
-  return undefined;
-}
-
 type PreRepairRuntimePin = {
   runtimeId: string;
   // Resolver source "model" covers agent model maps and provider catalog entries;

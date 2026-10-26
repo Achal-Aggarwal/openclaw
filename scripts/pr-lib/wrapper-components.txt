@@ -552,7 +552,6 @@ src/commands/doctor/shared/legacy-config-migrations.web-search.ts
 src/commands/doctor/shared/legacy-config-record-shared.ts
 src/commands/doctor/shared/legacy-context-budget.ts
 src/commands/doctor/shared/legacy-copilot-discovery.ts
-src/commands/doctor/shared/legacy-model-ref-normalization.ts
 src/commands/doctor/shared/legacy-models-add-metadata.ts
 src/commands/doctor/shared/legacy-runtime-model-policy.ts
 src/commands/doctor/shared/legacy-runtime-model-providers.ts
