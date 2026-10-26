@@ -312,7 +312,10 @@ it.each(["clone", "clone cleanup", "truncate", "fsync", "close"] as const)(
     expect(injected).toBe(true);
     expect(wait).not.toHaveBeenCalled();
     if (targetFd !== undefined) {
-      expect(() => fs.fstatSync(targetFd)).toThrowError(expect.objectContaining({ code: "EBADF" }));
+      const closedDescriptor = targetFd;
+      expect(() => fs.fstatSync(closedDescriptor)).toThrowError(
+        expect.objectContaining({ code: "EBADF" }),
+      );
     }
     expect(snapshotSqliteFamily(fixture.sourcePath)).toEqual(before);
     expect(fs.readdirSync(fixture.stagingRoot)).toEqual([]);
