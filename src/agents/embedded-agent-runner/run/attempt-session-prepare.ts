@@ -536,6 +536,11 @@ export async function prepareEmbeddedAttemptSessionManager(
   let latestRuntimeUserMessage: AgentMessage | undefined;
   let latestUserTurnTranscriptRecorder = attempt.userTurnTranscriptRecorder;
   const userTranscriptContextRegistry = createUserTranscriptContextRegistry();
+  // The transcript keeps failed pre-reads retryable; only this run skips them.
+  const attachRunMediaFacts = (
+    message: AgentMessage,
+    media: Parameters<typeof applyRunHydrationSuppression>[0],
+  ) => attachRuntimePromptMediaFacts(message, applyRunHydrationSuppression(media, attempt.media));
   const openSignal = attempt.abortSignal
     ? AbortSignal.any([attempt.abortSignal, input.runAbortSignal])
     : input.runAbortSignal;
@@ -642,11 +647,7 @@ export async function prepareEmbeddedAttemptSessionManager(
       if (runtimeMessage) {
         const media = readPersistedMediaFacts(message);
         if (media?.length) {
-          // The transcript keeps failed pre-reads retryable; only this run skips them.
-          attachRuntimePromptMediaFacts(
-            runtimeMessage,
-            applyRunHydrationSuppression(media, attempt.media),
-          );
+          attachRunMediaFacts(runtimeMessage, media);
         }
         userTranscriptContextRegistry.record(runtimeMessage, message);
       }
@@ -656,10 +657,7 @@ export async function prepareEmbeddedAttemptSessionManager(
       latestRuntimeUserMessage = runtimeMessage;
       const media = runtimeMessage ? readPersistedMediaFacts(message) : undefined;
       if (runtimeMessage && media?.length) {
-        attachRuntimePromptMediaFacts(
-          runtimeMessage,
-          applyRunHydrationSuppression(media, attempt.media),
-        );
+        attachRunMediaFacts(runtimeMessage, media);
       }
       // Replay suppresses the append of a user that is already durable. Report it
       // like an adopted append so retries and fallbacks do not append it again;

@@ -8,6 +8,7 @@ import { createPluginBackgroundRunner } from "./plugin-instance-background.js";
 import { createPluginInstanceBindings } from "./plugin-instance-bindings.js";
 import { DisposalFailures, type DisposalCleanup } from "./plugin-instance-disposal.js";
 import {
+  forcedRetirementError,
   PluginInstanceDrainTimeoutError,
   PluginInstanceUnavailableError,
 } from "./plugin-instance-error.js";
@@ -23,6 +24,7 @@ import { waitForPluginInstanceSettlement } from "./plugin-instance-settlement.js
 import type {
   PluginInstanceCallLease,
   PluginInstanceConsumer,
+  PluginInstanceDisposal,
   PluginInstanceDisposalResult,
   PluginInstanceLifecycle,
   PluginModuleLoaderRecovery,
@@ -82,10 +84,7 @@ export class PluginInstance {
     <T>(run: () => T) => this.run(run),
     <T>(run: () => T) => this.runConsumer(run),
   );
-  private disposal?: {
-    observed: Promise<PluginInstanceDisposalResult>;
-    settled: Promise<PluginInstanceDisposalResult>;
-  };
+  private disposal?: PluginInstanceDisposal;
   readonly owner?: PluginInstanceOwner;
   private readonly runtimeScope: Parameters<typeof withPluginRuntimePluginScope>[0];
 
@@ -648,12 +647,7 @@ export class PluginInstance {
           }
           // Admitted consumers keep their own authority until the host closes or releases them.
           this.abortDisposal(work);
-          const error = new PluginInstanceDrainTimeoutError(
-            `Plugin ${this.pluginId} forced retirement after ${SHUTDOWN_TIMEOUT_MS}ms: ${fact.activeCallCount} still-running call(s), ${fact.retainedConsumerCount} retained consumer(s); resource cleanup remains pending.`,
-            settled,
-            {},
-            fact,
-          );
+          const error = forcedRetirementError(this.pluginId, SHUTDOWN_TIMEOUT_MS, fact, settled);
           log.warn(error.message);
           resolve(terminalFailures.result([error, ...terminalFailures]));
         }, SHUTDOWN_TIMEOUT_MS);
