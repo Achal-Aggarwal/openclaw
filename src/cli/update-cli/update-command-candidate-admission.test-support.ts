@@ -144,7 +144,6 @@ export function registerCandidateAdmissionTests(f: CandidateAdmissionFixture) {
   it.each([
     { source: "candidate", check: "database-schema" },
     { source: "unsupported", check: "config" },
-    { source: "fallback", check: "node-runtime" },
   ] as const)(
     "candidate admission: reports $check refusals from $source before mutation",
     async ({ source, check }) => {
@@ -152,7 +151,6 @@ export function registerCandidateAdmissionTests(f: CandidateAdmissionFixture) {
       const { pkgRoot, stages, contexts } = await prepareCandidateAdmissionFixture({
         marker: source !== "unsupported",
         verdict,
-        ...(source === "fallback" ? { exitCode: 2 } : {}),
       });
       if (check === "config") {
         vi.mocked(readConfigFileSnapshot).mockResolvedValue({
@@ -160,7 +158,7 @@ export function registerCandidateAdmissionTests(f: CandidateAdmissionFixture) {
           valid: false,
           issues: [{ path: "gateway.port", message: "Expected a number." }],
         });
-      } else if (check === "database-schema") {
+      } else {
         vi.mocked(fetchNpmPackageTargetStatus).mockResolvedValue(
           packageTargetStatus({ schemaVersions: { state: 3, agent: 9 } }),
         );
@@ -170,8 +168,6 @@ export function registerCandidateAdmissionTests(f: CandidateAdmissionFixture) {
           ],
           indeterminate: [],
         });
-      } else {
-        nodeVersionSatisfiesEngine.mockReturnValue(false);
       }
       vi.mocked(defaultRuntime.writeJson).mockImplementation((value) => {
         if (isRecord(value) && value.status === "error") {
@@ -321,7 +317,7 @@ export function registerCandidateAdmissionTests(f: CandidateAdmissionFixture) {
   );
 
   it.each(["existing", "fresh"] as const)(
-    "candidate admit with warn does not bypass runtime recovery (%s profile)",
+    "keeps installed runtime admission authoritative (%s profile)",
     async (profile) => {
       const verdict = candidateAdmissionVerdict();
       verdict.facts.nodeEngines = ">=26.12.1";
@@ -370,7 +366,7 @@ export function registerCandidateAdmissionTests(f: CandidateAdmissionFixture) {
           createConfigIO({ observe: false, pluginValidation: "skip" }).readConfigFileSnapshot(),
         );
       }
-      await withEnvAsync(env, () =>
+      const updating = withEnvAsync(env, () =>
         invokeUpdateCli({
           admission: "auto",
           yes: true,
@@ -381,6 +377,18 @@ export function registerCandidateAdmissionTests(f: CandidateAdmissionFixture) {
             : {}),
         }),
       );
+      if (profile === "existing") {
+        await expect(updating).rejects.toEqual(new ExitError(1));
+        expect(recoverNode).not.toHaveBeenCalled();
+        expect(stages).toEqual([]);
+        expect(contexts).toEqual([]);
+        expect(lastWriteJsonCall()).toMatchObject({
+          status: "error",
+          reason: "preflight-node-runtime-incompatible",
+        });
+        return;
+      }
+      await updating;
 
       expect(recoverNode).toHaveBeenCalledOnce();
       expect(events).toContain("runtime-provision");
@@ -400,27 +408,6 @@ export function registerCandidateAdmissionTests(f: CandidateAdmissionFixture) {
     },
   );
 
-  it("candidate admission: retains a check the candidate did not report", async () => {
-    const verdict = candidateAdmissionVerdict();
-    verdict.facts.checks = verdict.facts.checks.filter((check) => check.name !== "node-runtime");
-    const { stages, contexts } = await prepareCandidateAdmissionFixture({ marker: true, verdict });
-    nodeVersionSatisfiesEngine.mockReturnValue(false);
-
-    await expect(
-      updateCommand({ admission: "auto", yes: true, json: true, restart: false }),
-    ).rejects.toEqual(new ExitError(1));
-
-    expect(contexts).toHaveLength(1);
-    expect(nodeVersionSatisfiesEngine).toHaveBeenCalled();
-    expect(stages.every((root) => !fsSync.existsSync(root))).toBe(true);
-    expect(lastWriteJsonCall()).toMatchObject({
-      status: "error",
-      reason: "node-runtime-preflight",
-      run: { admission: { owner: "candidate" } },
-    });
-    expectNoSideEffects(serviceStop, candidateValidation);
-  });
-
   it("candidate admission: forces installed checks through the option before staging", async () => {
     const { stages, contexts } = await prepareCandidateAdmissionFixture({
       marker: true,
@@ -436,8 +423,7 @@ export function registerCandidateAdmissionTests(f: CandidateAdmissionFixture) {
     expect(contexts).toEqual([]);
     expect(lastWriteJsonCall()).toMatchObject({
       status: "error",
-      reason: "node-runtime-preflight",
-      run: { admission: { owner: "installed", fallbackReason: "forced-installed" } },
+      reason: "preflight-node-runtime-incompatible",
     });
     expectNoSideEffects(serviceStop, candidateValidation);
   });
@@ -520,7 +506,7 @@ export function registerCandidateAdmissionTests(f: CandidateAdmissionFixture) {
     expect(lastWriteJsonCall()).toMatchObject({
       dryRun: true,
       failures: expect.arrayContaining([
-        expect.objectContaining({ reason: "node-runtime-preflight" }),
+        expect.objectContaining({ reason: "preflight-node-runtime-incompatible" }),
       ]),
     });
     expectNoSideEffects(serviceStop, candidateValidation);
@@ -654,7 +640,7 @@ export function registerCandidateAdmissionTests(f: CandidateAdmissionFixture) {
 
     expectNoSideEffects(updateGitCheckout, defaultRuntime.exit);
     expect(packageInstallCommandCall()?.[0]).toBeUndefined();
-    expect(listUpdateRuns({ limit: 1 })[0]?.reason).toBe("node-runtime-preflight");
+    expect(listUpdateRuns({ limit: 1 })[0]?.reason).toBe("preflight-node-runtime-incompatible");
     expect(defaultRuntime.log).toHaveBeenCalledWith(
       `openclaw@2026.3.23-2 requires Node >=22.19.0; selected runtime is Node ${process.versions.node}.\n${runtimeRecovery.expectedPlainRecovery("2026.3.23-2", "24.22.1", "absent", undefined, root)}`,
     );

@@ -45,6 +45,26 @@ describe("update.run handoff refusal diagnostics", () => {
     );
   });
 
+  it("preserves the Node engine refusal and serving observation for update.run", async () => {
+    const message =
+      "Node 26.10.0 at /fixture/node requires >=24.22.1 <25 || >=26.12.1. Install Node 24.22.1 and update the service definition selecting /fixture/node.";
+    detectRespawnSupervisorMock.mockReturnValueOnce("launchd");
+    mockGlobalInstallSurface();
+    startManagedServiceUpdateHandoffMock.mockRejectedValueOnce(
+      new UpdatePreMutationError("preflight-node-runtime-incompatible", message),
+    );
+
+    const payload = await captureUpdateRunPayload();
+    const run = getUpdateRun(expectDefined(payload, "update response").runId);
+    expect(payload).toMatchObject({
+      ok: false,
+      result: { status: "error", reason: "preflight-node-runtime-incompatible" },
+    });
+    expect(scheduleGatewayRestartMock).not.toHaveBeenCalled();
+    expect(run?.origin.nextAction).toBe(message);
+    expect(renderUpdateRunReport(expectDefined(run, "update run")).markdown).toContain(message);
+  });
+
   it.each(["helper-start", "sentinel-write"] as const)(
     "cancels its exact helper when admission ends during %s",
     async (boundary) => {

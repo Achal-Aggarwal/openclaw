@@ -283,7 +283,7 @@ describe("update-cli", () => {
     { capability: "writable", restart: true, currentRunner: false, compatible: false },
     { capability: "sealed", restart: true, currentRunner: false, compatible: true },
   ] as const)(
-    "preserves target compatibility for an unchanged service launcher ($capability, restart=$restart, current=$currentRunner, compatible=$compatible)",
+    "refuses incompatible registry targets before mutating an unchanged service launcher ($capability, restart=$restart, current=$currentRunner, compatible=$compatible)",
     async ({ capability, restart, currentRunner, compatible }) => {
       const fixture = await setupServicePackageAtPrefix({
         prefix: tempDirs.make("preserved-runtime-"),
@@ -349,13 +349,14 @@ describe("update-cli", () => {
         onGatewayInstall: (argv) =>
           primeServiceCommand([requireValue(argv[0], "Node"), fixture.entrypoint, "gateway"]),
       });
-      if (!compatible && (!restart || capability !== "writable")) {
+      if (!compatible) {
+        // Registry admission refuses before staging, provisioning, or service mutation.
         await expect(updateCommand({ yes: true, json: true, restart })).rejects.toEqual(
           new ExitError(1),
         );
         expect(lastWriteJsonCall()).toMatchObject({
           status: "error",
-          reason: "node-runtime-preflight",
+          reason: "preflight-node-runtime-incompatible",
         });
         expect(
           commandCalls().find(([argv]) => argv[1] === "i" && argv[2] === "-g"),
@@ -370,14 +371,8 @@ describe("update-cli", () => {
         await updateCommand({ yes: true, json: true, restart });
         expect(commandCalls().find(([argv]) => argv[1] === "i" && argv[2] === "-g")).toBeDefined();
         expect(lastWriteJsonCall()).toMatchObject({ status: "ok" });
-        expect((await serviceReadCommand(process.env)).programArguments[0]).toBe(
-          compatible ? serviceNode : replacementNode,
-        );
-        if (compatible) {
-          expect(recoverNode).not.toHaveBeenCalled();
-        } else {
-          expect(recoverNode).toHaveBeenCalledOnce();
-        }
+        expect((await serviceReadCommand(process.env)).programArguments[0]).toBe(serviceNode);
+        expect(recoverNode).not.toHaveBeenCalled();
       }
     },
   );

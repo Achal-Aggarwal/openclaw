@@ -373,6 +373,8 @@ export async function readManagedGatewayServiceForUpdate(
 }
 
 export async function resolvePackageRuntimePreflight(params: {
+  /** Read-only target admission before staging; activation retains capability and identity checks. */
+  engineOnly?: boolean;
   channel?: UpdateChannel;
   requestedChannel?: UpdateChannel | null;
   target?: { version: string; nodeEngine: string | null };
@@ -425,6 +427,9 @@ export async function resolvePackageRuntimePreflight(params: {
     }
     // Bun has its own capability contract; its emulated Node version is not an engine.
     if (nodeRunner ? isBunRuntime(nodeRunner) : process.versions.bun) {
+      if (params.engineOnly) {
+        return ok(unchanged());
+      }
       const runtimeEnv = params.service?.serviceEnv ?? process.env;
       try {
         await resolvePinnedDaemonRuntimePath(nodeRunner, "bun", runtimeEnv);
@@ -441,9 +446,10 @@ export async function resolvePackageRuntimePreflight(params: {
       nodeRunner,
       timeoutMs: params.timeoutMs,
     });
-    const satisfies = runtime.failure
-      ? false
-      : nodeVersionSatisfiesEngine(runtime.version, target.nodeEngine);
+    const satisfies =
+      runtime.failure && !params.engineOnly
+        ? false
+        : nodeVersionSatisfiesEngine(runtime.version, target.nodeEngine);
     const targetVersion = target.version;
     const unchangedRuntime = { ...unchanged(), targetVersion };
     if (satisfies === true) {
@@ -451,16 +457,17 @@ export async function resolvePackageRuntimePreflight(params: {
     }
     const canRefreshCurrentService =
       params.service?.running && verdict?.kind === "owned" && verdict.refreshDefinition;
-    const fallbackNodeRunner =
-      params.fallbackNodeRunner ??
-      (params.shouldRestart &&
-      !process.versions.bun &&
-      nodeRunner &&
-      (params.alreadyCurrent
-        ? canRefreshCurrentService
-        : await gatewayServiceCommandUsesRoot({ root: params.root }))
-        ? resolveNodeRunner()
-        : undefined);
+    const fallbackNodeRunner = params.engineOnly
+      ? undefined
+      : (params.fallbackNodeRunner ??
+        (params.shouldRestart &&
+        !process.versions.bun &&
+        nodeRunner &&
+        (params.alreadyCurrent
+          ? canRefreshCurrentService
+          : await gatewayServiceCommandUsesRoot({ root: params.root }))
+          ? resolveNodeRunner()
+          : undefined));
     if (nodeRunner && fallbackNodeRunner && fallbackNodeRunner !== nodeRunner) {
       const fallbackRuntime = await resolvePackageRuntimeForPreflight({
         nodeRunner: fallbackNodeRunner,
@@ -480,7 +487,7 @@ export async function resolvePackageRuntimePreflight(params: {
     if (satisfies !== false) {
       return ok(unchangedRuntime);
     }
-    if (params.runtimeRecovery && target.nodeEngine) {
+    if (!params.engineOnly && params.runtimeRecovery && target.nodeEngine) {
       const { resolveTargetNodeRuntime } =
         await import("./update-command-node-runtime-resolution.js");
       const recovered = await resolveTargetNodeRuntime({
@@ -565,6 +572,10 @@ export async function resolvePackageRuntimePreflight(params: {
       : recommendation
         ? "Select a published OpenClaw version before installing it under a supported Node runtime."
         : `No Node version satisfies both this range and this updater's supported range (${SUPPORTED_NODE_VERSION_RANGE}). This candidate version cannot be run by this updater with a supported Node release; install a supported Node and select a compatible OpenClaw target.`;
+    const serviceHint =
+      params.engineOnly && runtime.nodeRunner
+        ? `Gateway service Node ${runtime.version ?? "unknown"} at ${runtime.nodeRunner} requires ${target.nodeEngine}. Install ${recommendation ? `Node ${recommendation}` : "a compatible Node runtime"} and update that service definition, then retry; changing the shell's Node alone does not update the service.`
+        : undefined;
     return {
       ...(recoverySteps ? { recoverySteps } : {}),
       ...resultError<PackageRuntimePreflight, string>(
@@ -572,6 +583,7 @@ export async function resolvePackageRuntimePreflight(params: {
           `openclaw@${targetVersion} requires ${requirement}; selected runtime is ${runtimeLabel}.`,
           ...(runtime.failure ? [runtime.failure] : []),
           upgrade,
+          ...(serviceHint ? [serviceHint] : []),
         ].join("\n"),
       ),
       failureFacts: [

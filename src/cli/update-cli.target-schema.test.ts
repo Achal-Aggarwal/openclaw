@@ -460,7 +460,7 @@ describe("update-cli", () => {
         expect(packageInstallCommandCall()?.[0]).toContain("openclaw@9999.0.0");
       } else {
         expect(packageInstallCommandCall()?.[0]).toBeUndefined();
-        expect(listUpdateRuns({ limit: 1 })[0]?.reason).toBe("node-runtime-preflight");
+        expect(listUpdateRuns({ limit: 1 })[0]?.reason).toBe("preflight-node-runtime-incompatible");
         expect(defaultRuntime.log).toHaveBeenCalledWith(
           `openclaw@9999.0.0 requires Node >=999.0.0; selected runtime is Node ${process.versions.node}.\n${runtimeRecovery.expectedPlainRecovery("9999.0.0", "999.0.0", "absent", undefined, root)}`,
         );

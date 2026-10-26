@@ -51,35 +51,6 @@ export function expectedPlainRecovery(
     .join("\n");
 }
 
-export function expectedManagedRuntimeRecoverySteps(
-  manager: "nvm" | "system",
-  root: string,
-): UpdateRecoveryStep[] {
-  return [
-    {
-      kind: "preserve-context",
-      instruction:
-        "Use the same service account and keep the existing OPENCLAW_STATE_DIR and OPENCLAW_CONFIG_PATH overrides throughout recovery.",
-    },
-    {
-      kind: "preserve-context",
-      command:
-        "unset OPENCLAW_HOME OPENCLAW_STATE_DIR OPENCLAW_CONFIG_PATH OPENCLAW_PROFILE OPENCLAW_GATEWAY_PORT OPENCLAW_LAUNCHD_LABEL OPENCLAW_SYSTEMD_UNIT OPENCLAW_WINDOWS_TASK_NAME OPENCLAW_WORKSPACE_DIR",
-    },
-    manager === "nvm"
-      ? { kind: "select-runtime", command: expectedRuntimeSelectionCommand("nvm", "24.22.1") }
-      : {
-          kind: "select-runtime",
-          instruction:
-            "Install and select Node 24.22.1 using your system package manager or https://nodejs.org/en/download.",
-        },
-    {
-      kind: "continue-update",
-      command: `node ${process.platform === "win32" ? quotePowerShellArg(path.join(root, "openclaw.mjs")) : quoteCliArg(path.join(root, "openclaw.mjs"))} update --tag 2026.5.20`,
-    },
-  ];
-}
-
 export const unsupportedServiceRuntimeFixture = {
   status: "unsupported",
   version: "22.18.0",
