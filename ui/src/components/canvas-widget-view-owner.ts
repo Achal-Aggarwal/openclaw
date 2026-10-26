@@ -200,6 +200,7 @@ export function createCanvasWidget(
     resourceError: boolean;
     contentHeight?: number;
     sandboxGeneration: number;
+    scriptFrameAdmitted: boolean;
     pending: boolean;
   } = {
     error: "",
@@ -208,6 +209,7 @@ export function createCanvasWidget(
     runtimeError: "",
     resourceError: false,
     sandboxGeneration: 0,
+    scriptFrameAdmitted: false,
     pending: false,
   };
   let activeBinding: ViewBinding | undefined;
@@ -225,6 +227,7 @@ export function createCanvasWidget(
   let retryTimer: number | undefined;
   let slowTimer: number | undefined;
   let retryDelayMs = 1_000;
+  let cancelFrameAdmission: (() => void) | undefined;
   Object.defineProperties(element, {
     documentHtml: {
       configurable: true,
@@ -309,6 +312,9 @@ export function createCanvasWidget(
   }
 
   function clearSandbox(): void {
+    cancelFrameAdmission?.();
+    cancelFrameAdmission = undefined;
+    state.scriptFrameAdmitted = false;
     scrollNonce = "";
     sandboxHost?.dispose();
     sandboxHost = undefined;
@@ -493,6 +499,14 @@ export function createCanvasWidget(
   function syncSandbox(): void {
     const active = props.presentationActive && isCurrent(validatedBinding);
     sandboxHost?.setActive(active);
+    if (!active) {
+      cancelFrameAdmission?.();
+      cancelFrameAdmission = undefined;
+    }
+    if (active && props.allowScripts && state.view && !state.error && !state.scriptFrameAdmitted) {
+      scheduleFrameAdmission();
+      return;
+    }
     const frame = frameElement;
     const view = state.view;
     const binding = activeBinding;
@@ -530,6 +544,40 @@ export function createCanvasWidget(
       },
     });
     sandboxHost.setActive(active);
+  }
+
+  function scheduleFrameAdmission(): void {
+    if (cancelFrameAdmission) {
+      return;
+    }
+    if (typeof requestIdleCallback !== "function") {
+      // Preserve eager admission where the browser has no idle scheduler.
+      state.scriptFrameAdmitted = true;
+      notify();
+      return;
+    }
+    const binding = validatedBinding;
+    const view = state.view;
+    const handle = requestIdleCallback((idle) => {
+      cancelFrameAdmission = undefined;
+      if (
+        !isCurrent(binding) ||
+        state.view !== view ||
+        !props.allowScripts ||
+        !props.presentationActive
+      ) {
+        return;
+      }
+      // Creating the browsing context costs about 30 ms. Keep its first mount
+      // and ready-message listener together, after scrolling leaves room for it.
+      if (idle.timeRemaining() < 32) {
+        scheduleFrameAdmission();
+        return;
+      }
+      state.scriptFrameAdmitted = true;
+      notify();
+    });
+    cancelFrameAdmission = () => cancelIdleCallback(handle);
   }
 
   function syncFrameError(): void {

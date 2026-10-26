@@ -215,7 +215,39 @@ describe("Canvas widget view", () => {
     document.body.replaceChildren();
     delete (document as unknown as Record<string, unknown>).activeElement;
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
     vi.useRealTimers();
+  });
+
+  it("keeps a sized loading notice until a new script frame has idle time", async () => {
+    const callbacks: IdleRequestCallback[] = [];
+    vi.stubGlobal("requestIdleCallback", (callback: IdleRequestCallback) =>
+      callbacks.push(callback),
+    );
+    vi.stubGlobal("cancelIdleCallback", () => callbacks.splice(0));
+    const runIdle = async (time: number, view: OpenClawCanvasWidgetView) => {
+      callbacks.shift()!({ didTimeout: false, timeRemaining: () => time });
+      await settle(view);
+    };
+    const view = mount();
+    await settle(view);
+    expect(view.documentHtml).toBe(documentView.html);
+    expect(view.querySelector("iframe")).toBeNull();
+    expect(notice(view)).toContain("Loading");
+    expect(view.querySelector<HTMLElement>('[role="status"]')?.style.minHeight).toBe("420px");
+    await runIdle(8, view);
+    expect(view.querySelector("iframe")).toBeNull();
+    await runIdle(50, view);
+    const frame = await frameFor(view);
+    const post = vi.spyOn(frame.contentWindow!, "postMessage");
+    message(frame, {
+      method: "ui/notifications/sandbox-proxy-ready",
+      params: { sandboxUrl: frame.src },
+    });
+    await settle(view);
+    expect(
+      post.mock.calls.some(([data]) => data.method === "ui/notifications/sandbox-resource-ready"),
+    ).toBe(true);
   });
 
   it("loads authenticated HTML once for concurrent views and waits for the exact isolated proxy", async () => {
