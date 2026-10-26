@@ -1,5 +1,6 @@
-import type { GatewaySessionRow } from "../api/types.ts";
 import type { createTeamScaleDuplicateReadFixture } from "./control-ui-duplicate-read-fixture.ts";
+import type { ControlUiMockPresenceUser } from "./control-ui-mock-presence.ts";
+import type { ControlUiSessionFixture } from "./control-ui-session-fixtures.ts";
 
 export const LONG_SESSION_SCENARIOS = ["mixed", "paging", "single-run", "direct-run"] as const;
 export type LongSessionScenario = (typeof LONG_SESSION_SCENARIOS)[number];
@@ -27,10 +28,31 @@ export function createTeamScaleHistoryFixture(options: {
   largeSnapshot?: boolean;
   richTranscript?: boolean;
   longSessionScenario?: LongSessionScenario;
-  session?: GatewaySessionRow & { sessionId: string };
+  sessionInfo: ControlUiSessionFixture;
+  sender?: ControlUiMockPresenceUser;
   historyStateReceipt?: boolean;
   attachments?: ReturnType<typeof createTeamScaleDuplicateReadFixture>["attachments"];
 }) {
+  const session = options.sessionInfo;
+  const configureHistory = <T>(messages: T[]) =>
+    options.largeSnapshot || options.historyStateReceipt
+      ? {
+          messages,
+          sessionId: session.sessionId,
+          sessionInfo: session,
+          hasMore: false,
+          totalMessages: messages.length,
+          metadata: { commands: [], models: [] },
+          ...(options.historyStateReceipt
+            ? {
+                stateRevision: {
+                  sessionInfo: "fixture-session-v1",
+                  commands: "fixture-commands-v1",
+                },
+              }
+            : {}),
+        }
+      : undefined;
   const messageIds = Array.from(
     { length: options.messageCount },
     (_, index) => `team-message-${index + 1}`,
@@ -52,6 +74,13 @@ export function createTeamScaleHistoryFixture(options: {
           id,
           seq: index + 1,
           ...(first ? { idempotencyKey: `${runId}:user` } : { runId }),
+          ...(first && options.sender
+            ? {
+                senderIdentity: options.sender.identity,
+                senderName: options.sender.name,
+                senderProfileAvatarUrl: options.sender.avatarUrl,
+              }
+            : {}),
         },
         timestamp: options.now - (options.messageCount - index) * 1_000,
         ...(tool ? { toolCallId, toolName: "read" } : {}),
@@ -97,7 +126,7 @@ export function createTeamScaleHistoryFixture(options: {
       historyMessages,
       workload,
       pagination: undefined,
-      configuredHistory: undefined,
+      configuredHistory: configureHistory(historyMessages),
     };
   }
   const messagesPerWidget = Math.ceil(options.messageCount / options.inlineWidgets);
@@ -108,7 +137,20 @@ export function createTeamScaleHistoryFixture(options: {
         : index % 2
           ? "assistant"
           : "user",
-    __openclaw: { id, seq: index + 1 },
+    __openclaw: {
+      id,
+      seq: index + 1,
+      ...(options.sender &&
+      index % 2 === 0 &&
+      !(options.largeSnapshot && index % 4 === 2) &&
+      !(options.richTranscript && index % 8 === 6)
+        ? {
+            senderIdentity: options.sender.identity,
+            senderName: options.sender.name,
+            senderProfileAvatarUrl: options.sender.avatarUrl,
+          }
+        : {}),
+    },
     ...(options.richTranscript && index % 8 === 6
       ? { toolCallId: `long-session-tool-${index - 1}`, toolName: "read" }
       : {}),
@@ -176,32 +218,10 @@ export function createTeamScaleHistoryFixture(options: {
         : []),
     ],
   }));
-  const session = options.session;
-  const configuredHistory =
-    session && (options.largeSnapshot || options.historyStateReceipt)
-      ? {
-          messages: historyMessages,
-          sessionId: session.sessionId,
-          sessionInfo: session,
-          hasMore: false,
-          totalMessages: options.messageCount,
-          metadata: { commands: [], models: [] },
-          ...(options.historyStateReceipt
-            ? {
-                stateRevision: {
-                  sessionInfo: "fixture-session-v1",
-                  commands: "fixture-commands-v1",
-                },
-              }
-            : {}),
-        }
-      : undefined;
+  const configuredHistory = configureHistory(historyMessages);
   if (options.longSessionScenario !== "paging") {
     const workload: LongSessionWorkload = { scenario: "mixed" };
     return { messageIds, historyMessages, workload, pagination: undefined, configuredHistory };
-  }
-  if (!session) {
-    throw new Error("Paged history fixture requires its session identity");
   }
   const initialMessageCount = Math.min(80, historyMessages.length);
   const pages = Array.from(
