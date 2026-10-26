@@ -195,10 +195,10 @@ it("reuses a recent completed row after scrolling away and back, with a bounded 
   await view.replaceRenderer();
   expect(first?.textContent).toBe("Updated 2002");
 
-  for (let index = 16; index < 240; index += 16) {
+  for (let index = 16; index < 240; index += 8) {
     await view.scrollTo(index);
     await view.frame(2);
-    expect(transcriptRows(view.container).length).toBeLessThan(48);
+    expect(transcriptRows(view.container).length).toBeLessThan(144);
     expect(
       view.container.querySelector(`[data-virtual-row-key="fragment:${index}"]`),
     ).not.toBeNull();
@@ -263,9 +263,9 @@ it("places a fresh long transcript at its tail and warms a bounded upward window
   expect(view.container.scrollTop).toBeGreaterThan(24_000);
   expect(view.container.querySelector('[data-virtual-row-key="fragment:255"]')).not.toBeNull();
   expect(transcriptRows(view.container).every((row) => Number(row.dataset.index) > 230)).toBe(true);
-  await view.frame(48);
-  expect(transcriptRows(view.container).some((row) => Number(row.dataset.index) < 230)).toBe(true);
-  expect(transcriptRows(view.container).length).toBeLessThanOrEqual(32);
+  await view.frame(160);
+  expect(transcriptRows(view.container).some((row) => Number(row.dataset.index) < 160)).toBe(true);
+  expect(transcriptRows(view.container).length).toBeLessThanOrEqual(128);
   const preparations = view.renderRow.mock.calls.length;
   await view.frame(16);
   expect(view.renderRow.mock.calls).toHaveLength(preparations);

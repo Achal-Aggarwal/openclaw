@@ -3,7 +3,8 @@ import type { TranscriptRow } from "./chat-transcript-layout.ts";
 import { transcriptOverscan } from "./chat-transcript-range.ts";
 import { CHAT_TRANSCRIPT_OVERSCAN } from "./chat-transcript-session.ts";
 
-const PREPARED_ROW_LIMIT = 32;
+// Keep several fast-scroll viewports ready without retaining the full session.
+const PREPARED_ROW_LIMIT = 128;
 
 /** Own initial tail placement and bounded preparation ahead of the visible range. */
 export class TranscriptInitialRange {
