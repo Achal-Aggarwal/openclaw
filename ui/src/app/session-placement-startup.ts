@@ -2,7 +2,7 @@ import { registerListener } from "../../../src/shared/listeners.js";
 import { t } from "../i18n/index.ts";
 import type { ChatAttachment, ChatQueueItem } from "../lib/chat/chat-types.ts";
 import { formatUiError } from "../lib/format-error.ts";
-import type { SessionCapability } from "../lib/sessions/index.ts";
+import type { SessionCapability } from "../lib/sessions/session-capability.ts";
 import {
   listSessionPlacementRecoveryStorageKeys,
   sessionPlacementRecoveryExactStorageKeys,

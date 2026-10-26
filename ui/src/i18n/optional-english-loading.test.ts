@@ -162,13 +162,13 @@ it("loads optional chat copy with its view while keeping admission errors synchr
   expect(manager.t("chat.workspaceFiles.search")).toBe("Search files");
   await import("../pages/chat/components/chat-permission-card.tsx");
   expect(manager.t("chat.permissions.tryAgain")).toBe("Try again");
-  await import("../pages/chat/components/chat-composer-menu-rows.tsx");
-  expect(manager.t("chat.composer.menu.addMcpServer")).toBe("Add MCP server…");
+  await import("../pages/chat/components/chat-composer-plus-menu-content.tsx");
+  expect(manager.t("chat.composer.menu.addMcpServer")).toBe("Add MCP server");
   registerChatSessionEnglish();
   registerChatComposerEnglish();
   expect(manager.t("chat.workspaceFiles.search")).toBe("Search files");
   expect(manager.t("chat.activityPills.publication.confirm")).toBe("Confirm publication");
-  expect(manager.t("chat.composer.menu.addMcpServer")).toBe("Add MCP server…");
+  expect(manager.t("chat.composer.menu.addMcpServer")).toBe("Add MCP server");
   expect(manager.t("chat.composer.menu.toolAccess.noTools")).toBe(
     "No tools available for this MCP server.",
   );

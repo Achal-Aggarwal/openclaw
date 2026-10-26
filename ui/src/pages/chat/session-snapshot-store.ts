@@ -78,6 +78,7 @@ async function readSnapshotRecord(
   value: unknown,
   isCurrent: () => boolean,
   onBoard?: (board: ChatSessionSnapshot["board"]) => void,
+  parseRecord?: typeof import("./session-snapshot-decoder.ts").parseSnapshotRecord,
 ): Promise<ChatSessionSnapshot | null> {
   if (
     value === undefined ||
@@ -87,7 +88,8 @@ async function readSnapshotRecord(
   ) {
     return null;
   }
-  const { parseSnapshotRecord } = await import("./session-snapshot-decoder.ts");
+  const parseSnapshotRecord =
+    parseRecord ?? (await import("./session-snapshot-decoder.ts")).parseSnapshotRecord;
   if (!isCurrent()) {
     return null;
   }
@@ -112,7 +114,9 @@ export async function readPrewarmedChatSnapshot(
   // Consumption transfers an in-flight parse to the pane's cancellable read.
   const isCurrent = () => !entry.cancelled && (entry.prepared?.consumerIsCurrent?.() ?? true);
   const snapshot = await readSharedPrewarm(entry, (onBoard) =>
-    entry.promise.then((value) => readSnapshotRecord(entry.cacheKey, value, isCurrent, onBoard)),
+    entry.promise.then((value) =>
+      readSnapshotRecord(entry.cacheKey, value, isCurrent, onBoard, entry.parseSnapshotRecord),
+    ),
   ).promise;
   return snapshot && !entry.cancelled && peekPrewarmedChatSnapshot() === entry ? snapshot : null;
 }
@@ -428,7 +432,13 @@ export class SessionSnapshotStore implements ChatCacheObserver {
       };
       const read = (receiveBoard = presentBoard) =>
         (prewarm?.promise ?? readStoredChatSnapshotRecord(sessionKey)).then((value) =>
-          readSnapshotRecord(sessionKey, value, scope.isCurrent, receiveBoard),
+          readSnapshotRecord(
+            sessionKey,
+            value,
+            scope.isCurrent,
+            receiveBoard,
+            prewarm?.parseSnapshotRecord,
+          ),
         );
       const prepared = prewarm
         ? readSharedPrewarm(prewarm, read, presentBoard, scope.isCurrent)

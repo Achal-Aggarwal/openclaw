@@ -632,8 +632,8 @@ it("filters skills across groups and restores the catalog when header search clo
   setMenu((previous) => ({
     ...previous,
     view: "library:release",
-    capabilityMenu: {
-      ...previous.capabilityMenu!,
+    capabilityMenu: makeCapabilities({
+      ...previous.capabilityMenu!.read()!,
       library: {
         loading: false,
         busy: false,
@@ -666,7 +666,7 @@ it("filters skills across groups and restores the catalog when header search clo
           },
         },
       },
-    },
+    }),
   }));
   await waitForSolid(() =>
     expect(view.getByRole("menuitem", { name: "release-notes", hidden: true })).not.toBeNull(),

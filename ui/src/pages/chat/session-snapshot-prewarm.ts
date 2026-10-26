@@ -19,6 +19,7 @@ type PrewarmedSnapshot = {
   cacheKey: string;
   cancelled: boolean;
   promise: Promise<unknown>;
+  parseSnapshotRecord?: typeof import("./session-snapshot-decoder.ts").parseSnapshotRecord;
   prepared?: {
     promise: PreparedSnapshotRead;
     snapshot?: Awaited<PreparedSnapshotRead>;
@@ -85,11 +86,19 @@ export async function prewarmChatSnapshot(cacheKey: string): Promise<void> {
   const entry: PrewarmedSnapshot = {
     cacheKey,
     cancelled: false,
-    promise: import("./session-snapshot-database.ts")
-      .then(({ readStoredChatSnapshotRecord }) => readStoredChatSnapshotRecord(cacheKey))
-      .then((record) =>
-        entry.cancelled || generation !== snapshotStoreGeneration ? undefined : record,
-      )
+    promise: Promise.all([
+      import("./session-snapshot-database.ts").then(({ readStoredChatSnapshotRecord }) =>
+        readStoredChatSnapshotRecord(cacheKey),
+      ),
+      import("./session-snapshot-decoder.ts"),
+    ])
+      .then(([record, { parseSnapshotRecord }]) => {
+        if (entry.cancelled || generation !== snapshotStoreGeneration) {
+          return undefined;
+        }
+        entry.parseSnapshotRecord = parseSnapshotRecord;
+        return record;
+      })
       .catch(() => undefined),
   };
   pending = entry;
