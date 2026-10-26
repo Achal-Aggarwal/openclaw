@@ -118,6 +118,23 @@ describe("backup outcome ownership", () => {
     expect(runs.find((run) => run.target === "omitted")).not.toHaveProperty("bytes");
   });
 
+  it("escapes terminal controls in record output while preserving persisted and JSON targets", async () => {
+    await fixture();
+    const runtime = createTestRuntime();
+    const target = "café\u001b[31m\nforged\tend\rrow\u0007";
+    await backupRecordCommand(runtime, { status: "ok", target, bytes: "42" });
+    expect(runtime.log).toHaveBeenCalledWith("External backup: café\\nforged\\tend\\rrow (ok)");
+    expect(await readBackupRuns(process.env)).toMatchObject([
+      { target, archivePath: target, bytes: 42 },
+    ]);
+    vi.mocked(runtime.log).mockClear();
+    await backupRecordCommand(runtime, { status: "ok", target, json: true });
+    expect(JSON.parse(String(vi.mocked(runtime.log).mock.lastCall?.[0]))).toMatchObject({
+      target,
+      archivePath: target,
+    });
+  });
+
   it("records offline under exclusive custody and leaves an absent database absent", async () => {
     const { databasePath } = await fixture(false);
     const runtime = createTestRuntime();
