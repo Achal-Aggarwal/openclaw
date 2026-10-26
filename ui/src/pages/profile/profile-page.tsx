@@ -14,7 +14,9 @@ import {
   Show,
 } from "solid-js";
 import { subtitleForRoute, titleForRoute } from "../../app-navigation.ts";
+import { ScopeUpgradeOwner } from "../../app/device-scope-upgrade-owner.runtime.ts";
 import { ShellLayoutBoundary } from "../../app/shell-layout-traits-solid.tsx";
+import { ScopeUpgradeActions, scopeUpgradeText } from "../../components/scope-upgrade-actions.tsx";
 import {
   LearnMoreLink,
   SettingsEmpty,
@@ -73,6 +75,12 @@ function accessSummary(scopes: readonly string[] | null) {
 
 export function ProfilePage() {
   const context = useApplication();
+  const upgrade = projectOwner(context.scopeUpgrade, (source) => source.state);
+  const visibleUpgrade = () => {
+    const current = upgrade.read();
+    return current.phase === "hidden" ? null : current;
+  };
+  onSettled(() => context.scopeUpgrade.activate(ScopeUpgradeOwner));
   const agents = projectOwner(context.agents, (source) => source.state.agentsList);
   const identities = projectOwner(context.agentIdentity, (source) => source);
   const [revision, setRevision] = createSignal(0, { ownedWrite: true });
@@ -314,6 +322,27 @@ export function ProfilePage() {
                     </button>
                   }
                 />
+                <Show when={visibleUpgrade()}>
+                  {(current) => (
+                    <SettingsRow
+                      title={t("profilePage.access.adminRequest")}
+                      description={
+                        current().phase === "available"
+                          ? t("profilePage.access.adminRequestHint")
+                          : scopeUpgradeText(current())
+                      }
+                      stackedOnNarrow
+                      control={
+                        <ScopeUpgradeActions
+                          state={current()}
+                          onRequest={() => context.scopeUpgrade.request()}
+                          onRetry={() => context.scopeUpgrade.retry()}
+                          onCancel={() => context.scopeUpgrade.cancel()}
+                        />
+                      }
+                    />
+                  )}
+                </Show>
                 <details class="settings-row settings-row--stacked">
                   <summary>{t("profilePage.access.details")}</summary>
                   <SettingsRow

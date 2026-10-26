@@ -18,6 +18,9 @@ const enProfile = {
       nextStep:
         "Ask your server administrator to review your access. Reconnect after they make changes.",
       reconnect: "Reconnect",
+      adminRequest: "Administrator access",
+      adminRequestHint:
+        "After an administrator updates your role, reconnect and request administrator access for this browser. Device approval is still required.",
       connecting: "Connecting… Your access will appear when the connection is ready.",
       details: "Technical details",
       description:
