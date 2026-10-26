@@ -27,9 +27,12 @@ const { values } = parseArgs({
     "team-shape": { type: "boolean", default: false },
     sessions: { type: "string", default: "10800" },
     workload: { type: "string", default: "owner" },
+    "list-path": { type: "string", default: "churn" },
+    lists: { type: "string", default: "30" },
+    serialized: { type: "boolean", default: false },
   },
 });
-const integer = (name: "parents" | "children" | "updates" | "warmup" | "sessions") =>
+const integer = (name: "parents" | "children" | "updates" | "warmup" | "sessions" | "lists") =>
   parseStrictIntegerOption({ raw: values[name], label: `--${name}`, min: 1, fallback: 1 });
 const parentCount = integer("parents");
 const childCount = integer("children");
@@ -39,6 +42,8 @@ assert.ok(values["state-dir"], "--state-dir must name a new isolated directory")
 assert.ok(["timing", "allocation", "census"].includes(values.mode), "Invalid --mode");
 assert.ok(values.workload === "owner" || values.workload === "list", "Invalid --workload");
 assert.ok(values.workload !== "list" || values["team-shape"], "--workload list needs --team-shape");
+assert.ok(["churn", "hit", "miss"].includes(values["list-path"]), "Invalid --list-path");
+assert.ok(values["list-path"] === "churn" || values.workload === "list");
 const collectGarbage = global.gc;
 assert.ok(collectGarbage, "Run with --expose-gc");
 const root = path.resolve(values["state-dir"]);
@@ -249,6 +254,7 @@ const resident =
       )
     : undefined;
 const { parseAgentSessionKey } = await import("../../src/sessions/session-key-utils.js");
+const { serializeGatewayFrame } = await import("../../src/gateway/serialized-json.js");
 const ownerRows = rows.map((row) => ({ ...row, parsedKey: parseAgentSessionKey(row.key) }));
 const requesterRoots = [
   ...new Set(Array.from(snapshot.values(), (entry) => entry.requesterSessionKey)),
@@ -262,13 +268,15 @@ let ownerCpuMicros = 0;
 let ownerReads = 0;
 let returnedRows = 0;
 let descendantQueries = 0;
+let responseBytes = 0;
 let sampleOwnerRegions = false;
 const allocationRegions: {
   owner: HeapProfiler.SamplingHeapProfile[];
   descendant: HeapProfiler.SamplingHeapProfile[];
-} = { owner: [], descendant: [] };
+  list: HeapProfiler.SamplingHeapProfile[];
+} = { owner: [], descendant: [], list: [] };
 async function sampleAllocationRegion(
-  read: () => void,
+  read: () => void | Promise<void>,
   profiles: HeapProfiler.SamplingHeapProfile[],
 ): Promise<void> {
   // Temporal attribution survives V8 inlining; retain profiles only after sampling stops.
@@ -278,7 +286,7 @@ async function sampleAllocationRegion(
     includeObjectsCollectedByMinorGC: true,
   });
   try {
-    read();
+    await read();
   } finally {
     const { profile } = await inspector.post("HeapProfiler.stopSampling");
     profiles.push(profile);
@@ -330,6 +338,7 @@ async function resolveList() {
     const pageSize = Math.min(100, rows.length);
     const result = await listSessions({
       projection,
+      acceptsSerializedJson: values.serialized,
       opts: {
         archived: "all",
         limit: pageSize,
@@ -341,6 +350,10 @@ async function resolveList() {
     assert.equal(result.sessions.length, pageSize, "The complete requested page must be presented");
     returnedRows += result.sessions.length;
     checksum += result.sessions.length + (result.totalCount ?? 0);
+    if (values.serialized) {
+      const frame = serializeGatewayFrame({ type: "res", id: "list", ok: true, payload: result });
+      responseBytes += typeof frame === "string" ? Buffer.byteLength(frame) : frame.byteLength;
+    }
     return;
   }
   const clock = now + Math.floor((sequence * 1000) / 48);
@@ -380,6 +393,30 @@ async function run(count: number) {
   let lists = 0;
   let updateCpuMicros = 0;
   let resolutionCpuMicros = 0;
+  if (values["list-path"] !== "churn") {
+    for (let list = 0; list < count; list++) {
+      let before = process.threadCpuUsage();
+      if (values["list-path"] === "miss") {
+        for (let step = 0; step < 33; step++) {
+          updateRun();
+          completed++;
+        }
+      }
+      let cpu = process.threadCpuUsage(before);
+      updateCpuMicros += cpu.user + cpu.system;
+      before = process.threadCpuUsage();
+      if (sampleListRegions) {
+        await sampleAllocationRegion(resolveList, allocationRegions.list);
+      } else {
+        await resolveList();
+      }
+      cpu = process.threadCpuUsage(before);
+      resolutionCpuMicros += cpu.user + cpu.system;
+      lists++;
+      await nextTurn();
+    }
+    return { updates: completed, lists, updateCpuMicros, resolutionCpuMicros };
+  }
   while (completed < count) {
     // 48 updates/s : 1.44 lists/s = 100 updates per three resolution passes.
     const batch = Math.min(count - completed, [33, 33, 34][lists % 3]!);
@@ -410,6 +447,7 @@ const observer = new PerformanceObserver((list) => {
 });
 observer.observe({ entryTypes: ["gc"] });
 const inspector = new Session();
+let sampleListRegions = false;
 try {
   await run(warmup);
   collectGarbage();
@@ -422,6 +460,7 @@ try {
   ownerReads = 0;
   returnedRows = 0;
   descendantQueries = 0;
+  responseBytes = 0;
   const heapBefore = process.memoryUsage().heapUsed;
   if (values.mode !== "timing") {
     inspector.connect();
@@ -429,7 +468,11 @@ try {
   if (values.mode === "census") {
     await inspector.post("Profiler.enable");
     await inspector.post("Profiler.startPreciseCoverage", { callCount: true, detailed: false });
-  } else if (values.mode === "allocation" && values.workload === "list") {
+  } else if (
+    values.mode === "allocation" &&
+    values.workload === "list" &&
+    values["list-path"] === "churn"
+  ) {
     await inspector.post("HeapProfiler.startSampling", {
       samplingInterval: 32768,
       includeObjectsCollectedByMajorGC: true,
@@ -437,9 +480,10 @@ try {
     });
   }
   sampleOwnerRegions = values.mode === "allocation" && values.workload === "owner";
+  sampleListRegions = values.mode === "allocation" && values["list-path"] !== "churn";
   const started = performance.now();
   const before = process.threadCpuUsage();
-  const work = await run(updates);
+  const work = await run(values["list-path"] === "churn" ? updates : integer("lists"));
   const cpu = process.threadCpuUsage(before);
   const ended = performance.now();
   await nextTurn();
@@ -478,6 +522,13 @@ try {
     );
     assert.equal(allocationRegions.owner.length, work.lists);
     assert.equal(allocationRegions.descendant.length, work.lists);
+  } else if (sampleListRegions) {
+    writeFileSync(path.join(root, "allocation-regions.json"), JSON.stringify(allocationRegions));
+    allocatedBytes = allocationRegions.list.reduce(
+      (bytes, profile) => bytes + totalAllocatedBytes(profile.head),
+      0,
+    );
+    assert.equal(allocationRegions.list.length, work.lists);
   } else if (values.mode === "allocation") {
     const { profile } = await inspector.post("HeapProfiler.stopSampling");
     writeFileSync(path.join(root, "allocation.heapprofile"), JSON.stringify(profile));
@@ -503,6 +554,9 @@ try {
   const result = {
     mode: values.mode,
     workload: values.workload,
+    listPath: values["list-path"],
+    serialized: values.serialized,
+    responseBytes,
     fixture: fixture?.summary,
     parentCount,
     childCount,
