@@ -75,7 +75,7 @@ async function createStartupState({ ui = false, anonymous = false } = {}) {
   return port;
 }
 
-it("completes startup and projection preparation before marking while retaining readiness gates", async ({
+it("retains projection and recovery readiness gates while startup completes", async ({
   signal,
 }) => {
   const port = await createStartupState({ ui: true });

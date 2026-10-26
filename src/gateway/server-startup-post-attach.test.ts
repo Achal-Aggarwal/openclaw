@@ -387,107 +387,6 @@ describe("startGatewayPostAttachRuntime", () => {
     expect(fs.existsSync(testState.root)).toBe(false);
   });
 
-  it("finishes sidecar startup before marking while keeping agent admission gated", async () => {
-    const methods = ["chat.history", "models.list", "agent", "sessions.send", "chat.send"];
-    const unavailableGatewayMethods = new Set(methods);
-    const startupOrder: string[] = [];
-    const postReadyWork = createDeferred();
-    const markingEntered = createDeferred();
-    const releaseMarking = createDeferred();
-    const startChannels = vi.fn(async () => {});
-    hoisted.markStartupOrphanedMainSessionsForRecovery.mockImplementationOnce(async () => {
-      markingEntered.resolve();
-      await releaseMarking.promise;
-      return { marked: 0, skipped: 0 };
-    });
-    const recoveryActivated = createDeferred();
-    const chatReady = createDeferred();
-    const methodsAtRecoveryRegistration: string[][] = [];
-    const currentConfig = { agents: { entries: { main: {}, work: {} } } };
-    hoisted.scheduleRestartAbortedMainSessionRecovery.mockImplementationOnce(
-      (params: { getConfig: () => unknown }) => {
-        methodsAtRecoveryRegistration.push([...unavailableGatewayMethods]);
-        expect(params.getConfig()).toBe(currentConfig);
-      },
-    );
-    const onSidecarsReady = vi.fn(() => startupOrder.push("ready"));
-    hoisted.activateSubagentRegistry.mockImplementationOnce(() => {
-      expect([...unavailableGatewayMethods]).toStrictEqual(["chat.send"]);
-      startupOrder.push("registry");
-      recoveryActivated.resolve();
-      return hoisted.createRecoveryProgress();
-    });
-    const log = { info: vi.fn(), warn: vi.fn() };
-
-    try {
-      await startGatewayPostAttachRuntime({
-        ...createPostAttachParams(),
-        getConfig: () => currentConfig,
-        startChannels,
-        waitForPostReadyWork: () => postReadyWork.promise,
-        log,
-        unlockStartupMethods: (options) => {
-          startupOrder.push("unlock");
-          createStartupMethodUnlocker(unavailableGatewayMethods)(options);
-          if (unavailableGatewayMethods.size === 0) {
-            chatReady.resolve();
-          }
-        },
-        onSidecarsReady,
-      });
-
-      expect([...unavailableGatewayMethods]).toStrictEqual(methods);
-      expect(hoisted.startPluginServices).toHaveBeenCalledTimes(1);
-      expect(hoisted.prepareInternalHooks).toHaveBeenCalledWith(
-        { hooks: { internal: { enabled: false } } },
-        testState.workspaceDir,
-        {
-          failureMode: "best-effort",
-          selection: { configured: false, names: new Set(), declaredNames: new Set() },
-        },
-      );
-      expect(hoisted.commitInternalHooks).toHaveBeenCalledWith({ initial: true });
-      expect(hoisted.logGatewayStartup).toHaveBeenCalledTimes(1);
-      expect(firstStartupLog().loadedPluginIds).toEqual(["beta", "alpha"]);
-      expect(hoisted.logGatewayStartup).toHaveBeenCalledWith(
-        expect.objectContaining({
-          activationSourceConfig: { hooks: { internal: { enabled: false } } },
-        }),
-      );
-      expect(hoisted.scheduleRestartAbortedMainSessionRecovery).toHaveBeenCalledWith({
-        getConfig: expect.any(Function),
-        shouldContinue: expect.any(Function),
-        startupCheckedStorePaths: expect.any(Set),
-        waitForStart: expect.any(Function),
-        gatewayRuntime: expect.any(Object),
-      });
-      expect(hoisted.activateSubagentRegistry).not.toHaveBeenCalled();
-      expect(startupOrder).toEqual([]);
-      expect(startChannels).not.toHaveBeenCalled();
-      expect(hoisted.markStartupOrphanedMainSessionsForRecovery).not.toHaveBeenCalled();
-      postReadyWork.resolve();
-      await markingEntered.promise;
-      expect(onSidecarsReady).not.toHaveBeenCalled();
-      expect(startChannels).not.toHaveBeenCalled();
-      expect(hoisted.activateSubagentRegistry).not.toHaveBeenCalled();
-      expect([...unavailableGatewayMethods]).toStrictEqual(methods);
-      releaseMarking.resolve();
-      await recoveryActivated.promise;
-      expect(startChannels).toHaveBeenCalledOnce();
-      await chatReady.promise;
-      expect([...unavailableGatewayMethods]).toStrictEqual([]);
-      expect(hoisted.activateSubagentRegistry).toHaveBeenCalledWith(
-        expect.any(Function),
-        undefined,
-      );
-      expect(startupOrder).toEqual(["unlock", "ready", "registry", "unlock"]);
-      expect(methodsAtRecoveryRegistration).toStrictEqual([methods]);
-    } finally {
-      postReadyWork.resolve();
-      releaseMarking.resolve();
-    }
-  });
-
   registerGatewayStartupReadinessTests({
     start: startGatewayPostAttachRuntime,
     createParams: createPostAttachParams,
@@ -2736,6 +2635,8 @@ describe("startGatewayPostAttachRuntime", () => {
   });
 
   registerGatewayStartupAdmissionTests({
+    mocks: hoisted,
+    workspaceDir: () => testState.workspaceDir,
     start: startGatewayPostAttachRuntime,
     createParams: createPostAttachParams,
     createRuntimeDeps: createPostAttachRuntimeDeps,

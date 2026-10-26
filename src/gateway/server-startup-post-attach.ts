@@ -127,7 +127,6 @@ export async function startGatewayPostAttachRuntime(params: {
   const subagentRecoverySettled = createDeferredCore();
   const mainSessionOrphansReady = params
     .trackStartupWork(async (signal) => {
-      await params.waitForPostReadyWork?.();
       if (params.minimalTestGateway || candidateCanary || signal.aborted || params.isClosing?.()) {
         return;
       }
