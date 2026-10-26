@@ -34,6 +34,7 @@ export type TranscriptCallbacks = {
   getComposerActivityLayout?: () => ComposerActivityLayout | null;
   onViewportResize?: () => void;
   onReaderScroll?: (towardEnd?: boolean) => void;
+  onNativeScroll?: (event: Event) => void;
   /** The pane owns reader intent; geometry-only follow must honor that policy. */
   canFollowEnd?: () => boolean;
 };

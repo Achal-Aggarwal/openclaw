@@ -281,7 +281,6 @@ function MessageMetadata(props: { meta: GroupMeta | null }) {
 }
 
 export function MessageMeta(props: { timestamp: number; meta: GroupMeta | null }) {
-  const metadata = [<MessageMetadata meta={props.meta} />];
   const hasMetadata = () =>
     props.meta &&
     Boolean(
@@ -294,7 +293,8 @@ export function MessageMeta(props: { timestamp: number; meta: GroupMeta | null }
       props.meta.contextPercent !== null ||
       props.meta.model,
     );
-  return (
-    <ChatTimestamp timestamp={props.timestamp} metadata={hasMetadata() ? metadata : undefined} />
+  const metadata = createMemo(() =>
+    hasMetadata() ? [<MessageMetadata meta={props.meta} />] : undefined,
   );
+  return <ChatTimestamp timestamp={props.timestamp} metadata={metadata()} />;
 }

@@ -139,6 +139,7 @@ type OffsetOwner = {
   invalidate(): void;
   onOffset(readerDelta: number): void;
   onReaderScroll(towardEnd?: boolean): void;
+  onNativeScroll?(event: Event): void;
   onComposerLayout(changed: boolean): void;
 };
 
@@ -372,13 +373,17 @@ export function observeTranscriptOffset(
     touchY = nextY;
     publishInput(event);
   };
-  // Commit editor-induced geometry before the pane's bubble listener classifies
-  // the native offset. Only the actual correction carries maintenance provenance.
-  const commitComposerResize = () => owner.onComposerLayout(true);
+  // Read the corrected viewport before the virtualizer's bubble listener writes rows.
+  const captureScroll = (event: Event) => {
+    owner.onComposerLayout(true);
+    if (event.target === element) {
+      owner.onNativeScroll?.(event);
+    }
+  };
   const listeners = new AbortController();
   const passive = { passive: true, signal: listeners.signal };
   if (element) {
-    listen(element, "scroll", commitComposerResize, { ...passive, capture: true });
+    listen(element, "scroll", captureScroll, { ...passive, capture: true });
     listen(element, "touchmove", moveTouch, passive);
     for (const type of ["wheel", "touchstart", "keydown", "pointerdown"]) {
       listen(element, type, interrupt, passive);

@@ -241,7 +241,6 @@ export function createChatProps(overrides: Partial<ChatProps> = {}): ChatProps {
     currentAgentId: "main",
     onSessionSelect: () => undefined,
     onOpenSidebar: () => undefined,
-    onChatScroll: () => undefined,
     basePath: "",
     ...overrides,
     transcript,

@@ -21,7 +21,30 @@ import {
   type NativeMessageGroupOptions,
 } from "./chat-message-group-view.tsx";
 import { prepareChatMessageRender } from "./chat-message-markdown-view.tsx";
+import { MessageMeta } from "./chat-message-timestamp-view.tsx";
 import { createMessageGroup, createToolResultMessage } from "./chat-message.test-support.ts";
+
+it("adds and removes usage details on a retained plain timestamp", () => {
+  const [meta, setMeta] = createSignal<Parameters<typeof MessageMeta>[0]["meta"]>(null);
+  const view = mountSolid(() => <MessageMeta timestamp={1000} meta={meta()} />);
+  const tooltip = view.container.querySelector("openclaw-tooltip");
+  expect(view.container.querySelector(".msg-meta__details")).toBeNull();
+  setMeta({
+    input: 21,
+    output: 0,
+    cacheRead: 0,
+    cacheWrite: 0,
+    cost: 0,
+    model: null,
+    contextPercent: null,
+  });
+  flush();
+  expect(view.container.querySelector(".msg-meta__details")?.textContent).toContain("↑21");
+  setMeta(null);
+  flush();
+  expect(view.container.querySelector(".msg-meta__details")).toBeNull();
+  expect(view.container.querySelector("openclaw-tooltip")).toBe(tooltip);
+});
 
 it("shares the mobile layout query while preserving initial and updated message actions", () => {
   const query =

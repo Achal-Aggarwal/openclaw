@@ -243,7 +243,6 @@ export function ChatThread(input: {
         tabindex={0}
         onFocusIn={(event) => current().session.handleFocusIn(event)}
         onFocusOut={(event) => current().session.handleFocusOut(event)}
-        onScroll={(event) => input.props.onChatScroll?.(event)}
         onKeyDown={(event) => {
           if (
             !event.defaultPrevented &&

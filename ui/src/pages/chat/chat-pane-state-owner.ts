@@ -420,6 +420,7 @@ export abstract class ChatPaneStateOwner {
     onViewportResize: () => this.chatState.handleTranscriptResize(),
     canFollowEnd: () => this.state !== undefined && canAutoFollowChat(this.state),
     onReaderScroll: (towardEnd) => this.state && handleChatScrollTakeover(this.state, towardEnd),
+    onNativeScroll: (event) => this.handleTranscriptScroll(event),
   });
   protected get progressCards() {
     return sessionProgressCardsForGateway(this.context.gateway);
@@ -718,5 +719,6 @@ export abstract class ChatPaneStateOwner {
   protected abstract cancelHeaderRename(): void;
   protected abstract handleArchiveSessionShortcut(event: KeyboardEvent): boolean;
   protected abstract resetOlderMessagesViewport(): void;
+  protected abstract handleTranscriptScroll(event: Event): void;
   protected abstract syncQueuedEditRetention(): void;
 }

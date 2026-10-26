@@ -87,7 +87,9 @@ it.each([
   virtualizer.targetWindow = window;
   const state = new TranscriptOffsetState();
   const onOffset = vi.fn();
-  const deliver = vi.fn();
+  const order: string[] = [];
+  const deliver = vi.fn(() => order.push("virtualizer"));
+  const onNativeScroll = vi.fn(() => order.push("pane"));
   onTestFinished(
     observeTranscriptOffset(
       {
@@ -102,17 +104,26 @@ it.each([
         invalidate: vi.fn(),
         onOffset,
         onReaderScroll: vi.fn(),
-        onComposerLayout: vi.fn(),
+        onComposerLayout: () => order.push("composer"),
+        onNativeScroll,
       },
       virtualizer,
       deliver,
     ),
   );
+  order.length = 0;
   element.scrollTop = 20;
   element.dispatchEvent(new Event("scroll"));
+  expect(order).toEqual(["composer", "pane", "virtualizer"]);
   expect(deliver).toHaveBeenCalledWith(20, true);
   expect(onOffset).toHaveBeenCalledOnce();
   expect(readGeometry).not.toHaveBeenCalled();
+  const nested = document.createElement("div");
+  element.append(nested);
+  order.length = 0;
+  nested.dispatchEvent(new Event("scroll"));
+  expect(order).toEqual(["composer"]);
+  expect(onNativeScroll).toHaveBeenCalledOnce();
   if (logicalDrift) {
     Object.defineProperties(element, {
       clientHeight: { value: 200 },

@@ -239,6 +239,7 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
             },
             onComposerLayout: (changed) => this.commitComposerResize(changed),
             onReaderScroll: (towardEnd) => this.callbacks.onReaderScroll?.(towardEnd),
+            onNativeScroll: callbacks.onNativeScroll,
           },
           instance,
           callback,
@@ -645,10 +646,9 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
     );
   }
 
-  revealMessage(messageId: string): boolean {
-    const rowKey =
-      this.messageRowKeysById.get(messageId) ?? this.candidateMessageRowKeysById.get(messageId);
-    if (!rowKey) {
+  revealMessage(id: string): boolean {
+    const key = this.messageRowKeysById.get(id) ?? this.candidateMessageRowKeysById.get(id);
+    if (!key) {
       return false;
     }
     this.initialRange.finish();
@@ -657,9 +657,9 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
     this.offsetState.scrollCommand = {
       behavior: resolveScrollBehavior(),
       target: "message",
-      messageId,
+      messageId: id,
     };
-    const rowIndex = this.initialRange.rowIndexes.get(rowKey);
+    const rowIndex = this.initialRange.rowIndexes.get(key);
     if (rowIndex !== undefined) {
       this.virtualizer.scrollToIndex(rowIndex, { align: "center" });
     }
