@@ -23,6 +23,10 @@ on:
         description: Collect the temporary resource timeline
         type: boolean
         default: true
+      boot_probe:
+        description: Temporary nonpublishing simulator startup investigation
+        type: boolean
+        default: false
 
 permissions:
   actions: read
@@ -185,7 +189,18 @@ jobs:
         id: install-end
         run: echo "epoch=$(date +%s)" >> "$GITHUB_OUTPUT"
 
+      - name: Probe simulator startup without app tests
+        if: inputs.boot_probe
+        env:
+          OPENCLAW_IOS_RESOURCE_DIAGNOSTICS: "1"
+        run: |
+          node scripts/ios-resource-timeline.mjs --output "$RUNNER_TEMP/ios-resource-timeline.jsonl" -- \
+            node --import ./scripts/tsx.mjs scripts/ios-simulator-boot-probe.ts \
+            --target-sha "$TARGET_SHA" --output "$PROOF_PATH" \
+            --gateway-selection "$GATEWAY_SELECTION_DIR"
+
       - name: Qualify native pairing and chat
+        if: ${{ !inputs.boot_probe }}
         env:
           OPENCLAW_CI_SIMSLIM_BINARY: ${{ steps.simslim.outputs.binary }}
           OPENCLAW_IOS_RESOURCE_DIAGNOSTICS: ${{ inputs.resource_diagnostics && '1' || '0' }}
