@@ -8,6 +8,7 @@ import {
   pruneCronRunHistoryInDatabase,
   readCronRunRecordsInDatabase,
   reconcileCronRunHistoryInDatabase,
+  withCronRunReconciliationPayloads,
 } from "./run-history.kernel.js";
 import { readActiveCronRunReceiptsInDatabase } from "./run-receipt-read.js";
 import { listActiveCronRunReceiptJobIdsInDatabase } from "./run-receipt-store.js";
@@ -31,7 +32,9 @@ export function maintainCronRunHistoryInWorker(
   return runOpenClawStateWriteTransaction(
     ({ db }) => {
       const schema = prepareCronRunReceiptWriteSchema(db);
-      const records = readCronRunRecordsInDatabase(db);
+      // Planning facts decide this sweep; retained payloads load below only for runs it reconciles,
+      // so a large history is never materialized whole in the heap-limited worker.
+      const records = readCronRunRecordsInDatabase(db, undefined, { planningOnly: true });
       const jobIds = [
         ...new Set(
           records.flatMap((row) =>
@@ -52,11 +55,12 @@ export function maintainCronRunHistoryInWorker(
         jobIds,
         receipts,
       });
+      const protectedJobIds = new Set(preparation.protectedJobIds);
       const reconciled = reconcileCronRunHistoryInDatabase(
         db,
-        records,
+        withCronRunReconciliationPayloads(db, records, preparation.nowMs, protectedJobIds),
         preparation.nowMs,
-        new Set(preparation.protectedJobIds),
+        protectedJobIds,
       );
       // Newly lost rows retain their first lost observation until the next sweep, as before.
       const pruned = pruneCronRunHistoryInDatabase(

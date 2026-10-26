@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 import { isRecord } from "@openclaw/normalization-core/record-coerce";
+import { sql } from "kysely";
 import { executeSqliteQuerySync, getNodeSqliteKysely } from "../../infra/kysely-sync.js";
 import { normalizeSqliteNumber } from "../../infra/sqlite-number.js";
 import type { DB } from "../../state/openclaw-state-db.generated.js";
@@ -52,11 +53,27 @@ function normalizeCronRunTimestamps(record: CronRunRecord): CronRunRecord {
   return { ...record, createdAt, startedAt, endedAt, lastEventAt };
 }
 
+/** Detail members the maintenance planner reads: `storeKey` groups rows, `kind` partitions retention. */
+const CRON_RUN_PLANNING_DETAIL_KEYS = ["storeKey", "kind"];
+
 /** Reads only Cron facts from the admitted released table, without restoring Tasks. */
-export function readCronRunRecordsInDatabase(db: DatabaseSync, jobId?: string): CronRunRecord[] {
+export function readCronRunRecordsInDatabase(
+  db: DatabaseSync,
+  jobId?: string,
+  options?: {
+    /**
+     * Read only the facts maintenance plans on: identities, lifecycle, and the `storeKey`/`kind`
+     * detail members that group and partition retention. Payloads stay in SQLite.
+     */
+    planningOnly?: boolean;
+    /** Restrict the read to these task ids. */
+    taskIds?: readonly string[];
+  },
+): CronRunRecord[] {
+  const planningOnly = options?.planningOnly === true;
   let select = query(db)
     .selectFrom("task_runs")
-    .select([
+    .select((eb) => [
       "task_id",
       "source_id",
       "run_id",
@@ -73,14 +90,29 @@ export function readCronRunRecordsInDatabase(db: DatabaseSync, jobId?: string): 
       "notify_policy",
       "terminal_outcome",
       "error",
-      "terminal_summary",
-      "detail_json",
+      planningOnly
+        ? /* kysely-allow-raw: Planning never reads the summary; keep the decoded row shape. */ sql<
+            string | null
+          >`NULL`.as("terminal_summary")
+        : "terminal_summary",
+      planningOnly
+        ? /* kysely-allow-raw: Bound large JSON to the planning members before it crosses the driver. */ sql<
+            string | null
+          >`CASE WHEN json_valid(${eb.ref("detail_json")}) THEN (SELECT json_group_object(key, CASE type
+            WHEN 'object' THEN json(value) WHEN 'array' THEN json(value)
+            WHEN 'true' THEN json('true') WHEN 'false' THEN json('false')
+            ELSE value END) FROM json_each(${eb.ref("detail_json")})
+            WHERE key IN (${sql.join(CRON_RUN_PLANNING_DETAIL_KEYS)})) END`.as("detail_json")
+        : "detail_json",
     ])
     .where("runtime", "=", "cron")
     .orderBy("created_at", "asc")
     .orderBy("task_id", "asc");
   if (jobId !== undefined) {
     select = select.where("source_id", "=", jobId);
+  }
+  if (options?.taskIds !== undefined) {
+    select = select.where("task_id", "in", [...options.taskIds]);
   }
   return executeSqliteQuerySync(db, select).rows.map((row) => {
     // These released columns remain part of row admission even when Cron does not expose them.
@@ -269,13 +301,12 @@ export function pruneCronRunHistoryInDatabase(
   return ids.length;
 }
 
-/** Caller holds the transaction and retains live job/receipt decisions through commit. */
-export function reconcileCronRunHistoryInDatabase(
-  db: DatabaseSync,
+/** Decide recovery or loss for active rows without writing; reconciliation persists the result. */
+function planCronRunReconciliations(
   records: readonly CronRunRecord[],
   now: number,
   protectedJobIds: ReadonlySet<string>,
-): Set<string> {
+): CronRunRecord[] {
   const key = (row: CronRunRecord) =>
     JSON.stringify([cronRunRecordStoreKey(row), row.jobId, row.runId]);
   const firstByRun = new Map<string, CronRunRecord>();
@@ -284,7 +315,7 @@ export function reconcileCronRunHistoryInDatabase(
       firstByRun.set(key(row), row);
     }
   }
-  const reconciled = new Set<string>();
+  const reconciliations: CronRunRecord[] = [];
   for (const row of records) {
     const active = row.status === "queued" || row.status === "running";
     const recoverableLost =
@@ -326,6 +357,57 @@ export function reconcileCronRunHistoryInDatabase(
         error: row.error ?? "backing session missing",
       });
     }
+    reconciliations.push(next);
+  }
+  return reconciliations;
+}
+
+/**
+ * Reconciliation copies the reconciled row's own payload, or that of its recovery candidate, which
+ * shares the row's exact job and run identity. Load full payloads for exactly those rows, by task
+ * id; every other row keeps its planning projection.
+ */
+export function withCronRunReconciliationPayloads(
+  db: DatabaseSync,
+  records: readonly CronRunRecord[],
+  now: number,
+  protectedJobIds: ReadonlySet<string>,
+): readonly CronRunRecord[] {
+  const draft = planCronRunReconciliations(records, now, protectedJobIds);
+  if (draft.length === 0) {
+    return records;
+  }
+  const runKey = (row: CronRunRecord) => JSON.stringify([row.jobId, row.runId]);
+  const reconciledRuns = new Set(
+    draft.flatMap((row) => (row.jobId?.trim() && row.runId?.trim() ? [runKey(row)] : [])),
+  );
+  const reconciledIds = new Set(draft.map((row) => row.id));
+  const taskIds = records.flatMap((row) =>
+    reconciledIds.has(row.id) || reconciledRuns.has(runKey(row)) ? [row.id] : [],
+  );
+  const payloads = new Map<string, CronRunRecord>();
+  for (let offset = 0; offset < taskIds.length; offset += 500) {
+    for (const row of readCronRunRecordsInDatabase(db, undefined, {
+      taskIds: taskIds.slice(offset, offset + 500),
+    })) {
+      payloads.set(row.id, row);
+    }
+  }
+  return records.map((row) => {
+    const full = payloads.get(row.id);
+    return full === undefined ? row : { ...row, summary: full.summary, detail: full.detail };
+  });
+}
+
+/** Caller holds the transaction and retains live job/receipt decisions through commit. */
+export function reconcileCronRunHistoryInDatabase(
+  db: DatabaseSync,
+  records: readonly CronRunRecord[],
+  now: number,
+  protectedJobIds: ReadonlySet<string>,
+): Set<string> {
+  const reconciled = new Set<string>();
+  for (const next of planCronRunReconciliations(records, now, protectedJobIds)) {
     executeSqliteQuerySync(
       db,
       query(db)
@@ -342,9 +424,9 @@ export function reconcileCronRunHistoryInDatabase(
           detail_json: next.detail === undefined ? null : JSON.stringify(next.detail),
         })
         .where("runtime", "=", "cron")
-        .where("task_id", "=", row.id),
+        .where("task_id", "=", next.id),
     );
-    reconciled.add(row.id);
+    reconciled.add(next.id);
   }
   return reconciled;
 }

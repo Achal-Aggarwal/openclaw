@@ -1,4 +1,5 @@
 import { expect, it, vi } from "vitest";
+import { trackSqliteStatementExecutions } from "../../test/helpers/sqlite-statement-execution-counter.js";
 import { ensureExecutionOwnerLifecycleBindingSchema } from "../audit/execution-owner-lifecycle-binding-store.js";
 import * as operationAdmission from "../infra/sqlite-worker-operation-admission.js";
 import { runOpenClawStateWriteTransaction } from "../state/openclaw-state-db.js";
@@ -494,6 +495,133 @@ it("normalizes native SQLite bigint timestamps without rounding unsafe values", 
         } finally {
           nativeBigInts.mockRestore();
         }
+      });
+    },
+  );
+});
+
+it("plans without retained payloads and reconciles with the full payloads of affected runs", async () => {
+  await withOpenClawTestState(
+    { layout: "state-only", prefix: "cron-history-payload-bounded-" },
+    async () => {
+      const day = 24 * 60 * 60_000;
+      const startedAt = Date.now() - day;
+      const detail = (fields: Record<string, unknown>) =>
+        JSON.stringify({ kind: "cron-run", storeKey: "store", status: "ok", ...fields });
+      const retainedPayload = "x".repeat(2_000_000);
+      const outcomeDetail = detail({ summary: "done", output: "y".repeat(1_000) });
+      const staleDetail = detail({ note: "partial output" });
+      runOpenClawStateWriteTransaction(({ db }) => {
+        const insert = db.prepare(
+          "INSERT INTO task_runs (task_id, runtime, source_id, run_id, owner_key, scope_kind, task, delivery_status, notify_policy, created_at, started_at, ended_at, last_event_at, status, terminal_summary, detail_json) VALUES (?, 'cron', ?, ?, '', 'system', 'job', 'not_applicable', 'silent', ?, ?, ?, ?, ?, ?, ?)",
+        );
+        insert.run(
+          "retained",
+          "other",
+          "run-0",
+          startedAt,
+          startedAt,
+          startedAt + 1,
+          null,
+          "succeeded",
+          retainedPayload,
+          detail({ output: retainedPayload }),
+        );
+        // The finished outcome precedes its stale active marker, so recovery adopts its payload.
+        insert.run(
+          "outcome",
+          "job",
+          "run-1",
+          startedAt,
+          startedAt,
+          startedAt + 1,
+          null,
+          "succeeded",
+          "done",
+          outcomeDetail,
+        );
+        insert.run(
+          "marker",
+          "job",
+          "run-1",
+          startedAt + 2,
+          startedAt,
+          null,
+          startedAt,
+          "running",
+          null,
+          detail({ marker: true }),
+        );
+        // Without a recovery candidate a stale active row becomes lost and keeps its own payload.
+        insert.run(
+          "stale",
+          "job-2",
+          "run-2",
+          startedAt,
+          startedAt,
+          null,
+          startedAt,
+          "running",
+          "partial",
+          staleDetail,
+        );
+        insert.run(
+          "unkeyed",
+          "job-3",
+          null,
+          startedAt,
+          startedAt,
+          null,
+          startedAt,
+          "running",
+          "unkeyed partial",
+          staleDetail,
+        );
+        const reads = trackSqliteStatementExecutions(db, ["history"], (sql) =>
+          /^select\b/i.test(sql) && sql.includes('from "task_runs"') ? "history" : null,
+        );
+        try {
+          const planning = readCronRunRecordsInDatabase(db, undefined, { planningOnly: true });
+          expect(reads.textBytes.history).toBeLessThan(retainedPayload.length / 10);
+          expect(planning.find((row) => row.id === "retained")).toMatchObject({
+            summary: undefined,
+            detail: { kind: "cron-run", storeKey: "store" },
+          });
+        } finally {
+          reads.restore();
+        }
+      });
+      await maintainCronRunHistory(captureOpenClawStateWorkerContext(), () => {});
+      const rows = runOpenClawStateWriteTransaction(
+        ({ db }) =>
+          db
+            .prepare(
+              "SELECT task_id, status, terminal_summary, detail_json FROM task_runs ORDER BY task_id",
+            )
+            .all() as Array<{
+            task_id: string;
+            status: string;
+            terminal_summary: string | null;
+            detail_json: string | null;
+          }>,
+      );
+      const byId = new Map(rows.map((row) => [row.task_id, row]));
+      expect(byId.get("marker")).toMatchObject({ status: "succeeded", terminal_summary: "done" });
+      expect(JSON.parse(byId.get("marker")?.detail_json ?? "null")).toEqual(
+        JSON.parse(outcomeDetail),
+      );
+      for (const [id, summary] of [
+        ["stale", "partial"],
+        ["unkeyed", "unkeyed partial"],
+      ] as const) {
+        expect(byId.get(id)).toMatchObject({ status: "lost", terminal_summary: summary });
+        expect(JSON.parse(byId.get(id)?.detail_json ?? "null")).toEqual(JSON.parse(staleDetail));
+      }
+      expect(byId.get("retained")).toEqual({
+        task_id: "retained",
+        status: "succeeded",
+        terminal_summary: retainedPayload,
+        detail_json: detail({ output: retainedPayload }),
       });
     },
   );
