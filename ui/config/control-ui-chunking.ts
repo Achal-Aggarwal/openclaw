@@ -78,6 +78,10 @@ export function controlUiStableChunkName(id: string): string | undefined {
       return "route-controls-runtime";
     case "ui/src/components/markdown-json-parser.runtime.ts":
       return "markdown-json-runtime";
+    case "ui/src/pages/chat/components/chat-ci-automation-control.tsx":
+    case "ui/src/lib/session-pr-automation-spec.ts":
+      // The status reader owns these matchers; the optional writer reuses its download.
+      return "chat-ci-automation-control";
     case "ui/src/pages/chat/components/chat-context-breakdown.tsx":
     case "ui/src/pages/chat/components/chat-context-breakdown-model.ts":
     case "ui/src/pages/chat/components/chat-context-report.tsx":

@@ -125,6 +125,9 @@ describe("Control UI build chunking", () => {
     const details = modulePath("../pages/chat/components/chat-details-environment-body.tsx");
     const snapshotDecoder = modulePath("../pages/chat/session-snapshot-decoder.ts");
     const boardLabels = modulePath("../i18n/locales/en-board.ts");
+    const automation = modulePath("../pages/chat/components/chat-ci-automation-control.tsx");
+    const automationSpec = modulePath("../lib/session-pr-automation-spec.ts");
+    const automationOperation = modulePath("../lib/session-pr-automation-operation.ts");
     const permission = modulePath("../pages/chat/components/chat-permission-card.tsx");
     const reset = modulePath("../pages/chat/chat-board-reset-confirmation.tsx");
     const modal = modulePath("../components/modal-dialog.tsx");
@@ -142,7 +145,7 @@ describe("Control UI build chunking", () => {
     const sources = new Map([
       [
         entry,
-        `export const chat = () => import(${JSON.stringify(chat)}); export const newSession = () => import(${JSON.stringify(newSessionEntry)}); export const devices = () => import(${JSON.stringify(devices)}); export const talk = () => import(${JSON.stringify(talk)}); export const plugins = () => import(${JSON.stringify(pluginLoader)}); export const mutate = () => import(${JSON.stringify(mutations)}); export const copy = () => import(${JSON.stringify(copy)}); export const online = () => import(${JSON.stringify(online)}); export const deliver = () => import(${JSON.stringify(delivery)}); export const payloads = () => import(${JSON.stringify(payloads)}); export const live = () => import(${JSON.stringify(live)}); export const tools = () => import(${JSON.stringify(tools)});`,
+        `export const chat = () => import(${JSON.stringify(chat)}); export const newSession = () => import(${JSON.stringify(newSessionEntry)}); export const devices = () => import(${JSON.stringify(devices)}); export const talk = () => import(${JSON.stringify(talk)}); export const plugins = () => import(${JSON.stringify(pluginLoader)}); export const mutate = () => import(${JSON.stringify(mutations)}); export const copy = () => import(${JSON.stringify(copy)}); export const online = () => import(${JSON.stringify(online)}); export const deliver = () => import(${JSON.stringify(delivery)}); export const payloads = () => import(${JSON.stringify(payloads)}); export const live = () => import(${JSON.stringify(live)}); export const tools = () => import(${JSON.stringify(tools)}); export const automation = () => import(${JSON.stringify(automation)});`,
       ],
       [newSessionEntry, `export { NewSession, modal } from ${JSON.stringify(newSession)};`],
       [
@@ -197,6 +200,12 @@ describe("Control UI build chunking", () => {
       [details, "export const render = () => 'details';"],
       [snapshotDecoder, "export const decode = () => 'snapshot';"],
       [boardLabels, "export const registerBoard = () => 'board labels';"],
+      [
+        automation,
+        `export { match } from ${JSON.stringify(automationSpec)}; export const write = () => import(${JSON.stringify(automationOperation)});`,
+      ],
+      [automationSpec, "export const match = () => 'automation';"],
+      [automationOperation, `export { match as write } from ${JSON.stringify(automationSpec)};`],
       [permission, "export const render = () => 'permission';"],
       [diff, "export const diff = () => 'diff';"],
       [preamble, "export const preamble = () => 'preamble';"],
@@ -300,6 +309,15 @@ describe("Control UI build chunking", () => {
     expect(staticImports(pluginChunk.fileName)).toContain(actionChunk.fileName);
     expect(staticImports(pluginChunk.fileName)).not.toContain(chatChunk.fileName);
     const entryChunk = chunks.find((chunk) => chunk.isEntry)!;
+    const automationChunk = chunks.find((chunk) => automation in chunk.modules)!;
+    const automationOperationChunk = chunks.find((chunk) => automationOperation in chunk.modules)!;
+    expect(chunks.find((chunk) => automationSpec in chunk.modules)?.fileName).toBe(
+      automationChunk.fileName,
+    );
+    expect(staticImports(automationChunk.fileName)).not.toContain(
+      automationOperationChunk.fileName,
+    );
+    expect(staticImports(entryChunk.fileName)).not.toContain(automationChunk.fileName);
     expect(staticImports(entryChunk.fileName)).not.toContain(actionChunk.fileName);
     const copyChunk = chunks.find((chunk) => copy in chunk.modules)!;
     const onlineChunk = chunks.find((chunk) => online in chunk.modules)!;
