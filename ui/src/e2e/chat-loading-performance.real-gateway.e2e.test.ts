@@ -5,7 +5,6 @@ import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import type { Locator } from "playwright";
 import { expect, it } from "vitest";
 import { persistColdLoadWarmState } from "../../../scripts/lib/control-ui-bench-warm-state.ts";
-import { warmReloadProbe } from "../../../scripts/lib/control-ui-warm-reload-probe.ts";
 import { appendTranscriptMessages } from "../../../src/config/sessions/session-accessor.js";
 import type { OpenClawConfig } from "../../../src/config/types.openclaw.js";
 import type { GatewayClient } from "../../../src/gateway/client.ts";
@@ -60,19 +59,6 @@ type LoadingPane = HTMLElement & {
   state: { chatMessages: unknown[] };
   loadingOlder: boolean;
   historyIntentTimer: number | null;
-};
-type WarmReloadDiagnostics = {
-  milestones: Record<string, number>;
-  reads: Array<{ at: number; store: string; hit: boolean; cursor?: boolean }>;
-  historyRequests: Array<{
-    method: string;
-    sentAt: number;
-    cursor: boolean;
-    receivedAt?: number;
-    responseBytes?: number;
-    kind?: string;
-    messages?: number;
-  }>;
 };
 const selectRpc = (metrics: readonly RpcMetric[], method: string, sessionKey?: string) =>
   metrics.filter(
@@ -599,39 +585,7 @@ suite.define(() => {
             key.startsWith("openclaw.control.bootRecord.v1:"),
           ),
         };
-        let currentCursorControl:
-          | { historyOk: boolean; kind: string; messages?: number; payloadBytes: number }
-          | undefined;
-        if (isRecord(storedSnapshot) && typeof storedSnapshot.deltaCursor === "string") {
-          const response = await call("sessions.messages.subscribe", {
-            key: selectedKey,
-            agentId: "main",
-            initialHistory: {
-              cursor: storedSnapshot.deltaCursor,
-              limit: 80,
-              maxBytes: 256 * 1024,
-            },
-          });
-          const receipt = isRecord(response.initialHistory) ? response.initialHistory : undefined;
-          const history =
-            receipt?.ok === true && isRecord(receipt.payload) ? receipt.payload : undefined;
-          currentCursorControl = {
-            historyOk: history !== undefined,
-            kind:
-              typeof history?.kind === "string"
-                ? history.kind
-                : Array.isArray(history?.messages)
-                  ? "window"
-                  : "error",
-            ...(Array.isArray(history?.messages) ? { messages: history.messages.length } : {}),
-            // CLI returns the parsed subscription payload, without the WebSocket envelope.
-            payloadBytes: Buffer.byteLength(JSON.stringify(response)),
-          };
-        }
         await page.evaluate(() => sessionStorage.setItem("loading-proof-warm-reload", "true"));
-        await page.addInitScript({
-          content: `;(() => { if (window !== window.top || location.protocol === "about:") return; const __name = (fn) => fn; (${warmReloadProbe.toString()})(); })();`,
-        });
         const warmStart = rpc.length;
         pending.clear();
         startedAt = Date.now();
@@ -655,17 +609,6 @@ suite.define(() => {
             (_, index) => transcriptLength - warmMessageNumbers.length + index + 1,
           ),
         );
-        const diagnostics = await page.evaluate(() => {
-          const probe: { read(): WarmReloadDiagnostics } | undefined = Reflect.get(
-            window,
-            "__warmReload",
-          );
-          if (!probe) {
-            throw new Error("Warm reload diagnostic probe was not installed");
-          }
-          const { milestones, reads, historyRequests } = probe.read();
-          return { milestones, reads, historyRequests, pathname: location.pathname };
-        });
         const warmHistory = selectStartupHistory(rpc.slice(warmStart), selectedKey);
         await writeFile(
           path.join(suite.artifactDir, "warm-history-payload.json"),
@@ -673,12 +616,11 @@ suite.define(() => {
             {
               transcriptLength,
               shortLinkReload: selectStartupHistory(startupMetrics, selectedKey),
-              currentCursorControl,
               warmReload: {
+                pathname: new URL(page.url()).pathname,
                 cacheBeforeReload,
                 messages: warmMessageNumbers.length,
                 history: warmHistory,
-                diagnostics,
               },
             },
             null,
