@@ -497,6 +497,7 @@ export const databaseWorkerCoreTestFiles = [
   "src/state/agent-provenance.test.ts",
   "src/state/user-profiles.avatar-worker.test.ts",
   "src/state/user-channel-identities.test.ts",
+  "src/state/user-channel-identities.worker.test.ts",
   "src/state/user-profiles.schema.test.ts",
   "src/state/user-profile-writes.role.test.ts",
   "src/state/user-profile-email.test.ts",

@@ -166,7 +166,10 @@ export function executeUserProfileCommand(
     return executeUserProfileWrite(command, options);
   }
   if (command.type === "userProfiles.channelIdentity.change") {
-    return executeUserChannelIdentityChange(command.input, options);
+    return executeUserChannelIdentityChange(command.input, {
+      ...options,
+      database: options.database ?? openOpenClawStateDatabase(options),
+    });
   }
   if (command.type === "userProfiles.list" || command.type === "userProfiles.directory") {
     return executeUserProfileReadCommand(command, options);

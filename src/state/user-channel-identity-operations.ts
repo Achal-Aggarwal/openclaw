@@ -115,13 +115,20 @@ async function changeIdentity(
           context.admission.assertCurrent();
           assertCurrent?.();
           if (request.stage === "commit" && captured.action !== "authorize") {
-            fence ??= fenceUserProfileMutationAuthority(context.admission, {
+            // The fence must precede the grant; a retried commit fences its own current facts.
+            fence = fenceUserProfileMutationAuthority(context.admission, {
               profiles: request.facts.profiles,
               identities: [],
               channels: request.facts.channels,
             });
+            if (!grant()) {
+              // An expired grant cannot commit; release its fence before another attempt.
+              fence.settle(true);
+              fence = undefined;
+            }
+          } else {
+            grant();
           }
-          grant();
         });
         void operation.settled.then((settlement) => {
           const committed = admission.committed;

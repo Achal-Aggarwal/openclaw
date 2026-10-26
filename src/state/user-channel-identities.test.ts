@@ -11,10 +11,12 @@ import {
   openOpenClawStateDatabase,
   runOpenClawStateWriteTransaction,
 } from "./openclaw-state-db.js";
+import { captureOpenClawStateWorkerContext } from "./openclaw-state-worker-context.js";
 import {
   linkUserChannelIdentity,
   resolveUserChannelIdentity,
   unlinkUserChannelIdentity,
+  userChannelIdentitySubject,
 } from "./user-channel-identities.js";
 import {
   changeCanonicalUserChannelIdentity,
@@ -23,7 +25,10 @@ import {
   prepareUserProfileRoleAuthority,
   prepareUserProfileSelectionAuthority,
 } from "./user-channel-identity-operations.js";
-import { readUserProfileAliasRevision } from "./user-profile-events.js";
+import {
+  captureUserProfileAuthorityRead,
+  readUserProfileAliasRevision,
+} from "./user-profile-events.js";
 import {
   getUserProfileDisplay,
   readUserProfileIdentity,
@@ -129,6 +134,69 @@ it("does not create state or identity tables while resolving absent links", asyn
   expect(await listCanonicalUserChannelIdentities("absent", options)).toEqual([]);
   expect(tableExists(db, "user_profiles")).toBe(false);
   expect(tableExists(db, "user_profile_identities")).toBe(false);
+});
+
+it("releases an expired commit fence before retrying a channel identity change", async () => {
+  const options = stateOptions();
+  const profile = ensureProfileForEmail("owner@example.test", options);
+  linkUserChannelIdentity(profile.id, identity, options);
+  const authority = await captureUserProfileAuthorityRead(
+    captureOpenClawStateWorkerContext(options).admission,
+    userChannelIdentitySubject(identity),
+  );
+  const fenced = () => {
+    try {
+      authority.assertSettled([]);
+      return false;
+    } catch {
+      return true;
+    }
+  };
+  const observed: Record<string, boolean> = {};
+  let commits = 0;
+  const createAdmission = operationAdmission.createSqliteWorkerOperationAdmission;
+  const admissionSpy = vi
+    .spyOn(operationAdmission, "createSqliteWorkerOperationAdmission")
+    .mockImplementation((admit, attachment) =>
+      createAdmission((request, grant) => {
+        if (request.stage !== "commit" || commits++ > 0) {
+          observed[`${request.stage}-${commits}`] = fenced();
+          admit(request, grant);
+          return;
+        }
+        admit(request, () => {
+          observed.beforeExpiredGrant = fenced();
+          const clock = vi.spyOn(process.hrtime, "bigint");
+          try {
+            // Expire the real shared decision without delaying the native worker.
+            clock.mockReturnValue(process.hrtime.bigint() + 2_000_000_000n);
+            observed.expiredGrant = grant();
+          } finally {
+            clock.mockRestore();
+          }
+          return observed.expiredGrant;
+        });
+        observed.afterExpiredGrant = fenced();
+      }, attachment),
+    );
+  try {
+    await expect(
+      changeCanonicalUserChannelIdentity("unlink", profile.id, identity, options),
+    ).resolves.toEqual({ kind: "unlinked", removed: true });
+  } finally {
+    admissionSpy.mockRestore();
+  }
+  expect(observed).toEqual({
+    "transaction-0": false,
+    beforeExpiredGrant: true,
+    expiredGrant: false,
+    afterExpiredGrant: false,
+    // The retry enters with fresh admission while no stale fence is pending.
+    "transaction-1": false,
+    "commit-2": false,
+  });
+  expect(resolveUserChannelIdentity(identity, options)).toBeUndefined();
+  expect(fenced()).toBe(false);
 });
 
 it("revokes the exact prepared binding before worker commit acknowledgement", async () => {
