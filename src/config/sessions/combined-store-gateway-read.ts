@@ -33,8 +33,10 @@ import {
   prepareSessionStoreTargetInventory,
 } from "./session-store-target-inventory.js";
 import {
+  projectionLane,
   targetDiscoveryLane,
   withSessionHistoryWorkerReadCandidates,
+  type SessionHistoryWorkerLane,
 } from "./session-transcript-worker-resources.js";
 import { withSessionHistoryWorkerDatabases } from "./session-transcript-worker-runtime.js";
 import { listConfiguredSessionStoreAgentIds, type SessionStoreTarget } from "./targets.js";
@@ -201,13 +203,14 @@ export async function prepareCombinedSessionStoreForGatewayAsync(
     env,
     "recovery",
   );
-  return readCombinedSessionStoreTopology(inventory, options, scopeAgentIds);
+  return readCombinedSessionStoreTopology(inventory, options, scopeAgentIds, projectionLane);
 }
 
 async function readCombinedSessionStoreTopology(
   inventory: ReturnType<typeof prepareSessionStoreTargetInventory>,
   options: CombinedReadOptions,
   scopeAgentIds?: readonly string[],
+  lane: SessionHistoryWorkerLane = targetDiscoveryLane,
 ): Promise<CombinedSessionStoreTopologyResult> {
   const { config, env } = inventory;
   const discovery = options.discovery ?? {
@@ -259,7 +262,7 @@ async function readCombinedSessionStoreTopology(
       }));
       return result;
     },
-    targetDiscoveryLane,
+    lane,
   );
 }
 
