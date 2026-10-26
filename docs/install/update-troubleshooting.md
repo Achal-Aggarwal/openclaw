@@ -3,6 +3,7 @@ summary: "Recover from failed OpenClaw updates in the Control UI or CLI"
 read_when:
   - An OpenClaw update failed
   - The Gateway did not report a final update result
+  - An update prints a state database schema warning or a publication journal refusal
 title: "Update troubleshooting"
 ---
 
@@ -319,6 +320,127 @@ openclaw node restart
 For a foreground node, stop `openclaw node run` and start it again instead.
 Later releases report File Transfer commands as idle between invocations, so
 subsequent automatic node updates activate normally.
+
+## Schema warning from the 2026.8.35 updater
+
+When an installation on 2026.8.35 updates to 2026.9.x, the old updater can
+print this warning near the end of the update, before the Gateway restarts:
+
+```text
+Config health-state write failed: This OpenClaw build cannot open your existing data.
+OpenClaw state database <state-dir>/state/openclaw.sqlite uses newer schema version 19; this build supports 15.
+Refused by OpenClaw 2026.8.35 (<commit>) installed at <install-root>.
+Use a build that supports schema 19 or newer with this state directory. To start fresh with this build, point OPENCLAW_STATE_DIR at a separate directory.
+See https://docs.openclaw.ai/reference/database-schemas.
+```
+
+This is expected and does not fail the update. The new release's Doctor has
+already migrated the state database to schema 19. The 2026.8.35 updater process
+is still running the old code, and it tries to save a small config-tracking
+record to that database. The database refuses the old code, and the updater
+logs the refusal as a warning and continues. Your data is on the new schema.
+
+Do not follow the advice in the warning. Do not point `OPENCLAW_STATE_DIR` at a
+new directory, and do not go back to 2026.8.35. That text is written for
+someone running an old build against newer data, not for an update in
+progress.
+
+After the update finishes, check the new installation:
+
+```bash
+openclaw --version
+openclaw gateway status --deep
+openclaw update status
+openclaw doctor --fix
+```
+
+`openclaw --version` should report the new 2026.9.x version. Running
+`openclaw doctor --fix` also completes checks that the 2026.8.35 updater's
+Doctor timeout can defer; see [Doctor](/cli/doctor/running).
+
+An update started from the Control UI or chat can also print
+`Failed to write update.run restart sentinel: SqliteSchemaVersionError: This OpenClaw build cannot open…`.
+This is the same cause and also a warning. The Gateway might not post its
+usual "update finished" message afterward; use the commands above to confirm
+the result.
+
+A different message, `Update refused: state database ... has schema 19; target supports 15`,
+means an updater tried to install a release that cannot read the current
+database, for example a 2026.8.x target after the database reached schema 19.
+That update stops before changing anything. Choose a 2026.9.x or newer target
+instead.
+
+## Publication journal refusal after a reboot or remount
+
+On a 2026.9.x npm installation, `openclaw update status --json` can report
+`packageActivationError: Package publication journal does not match its installation`
+after a reboot or remount. `openclaw update --dry-run` reports the same message,
+and `openclaw update` and `openclaw update repair` refuse with it. In reported
+cases the running Gateway kept serving; only updates are blocked.
+
+The publication journal records filesystem identities (device and inode
+numbers) for the installation's parent directory, its
+`.openclaw.package-activation-<key>.control` directory, and the journal. A
+reboot or remount can change device numbers while every inode stays the same;
+this has been reported on macOS after an ordinary reboot. 2026.9.x compares
+these identities exactly, and its message does not say which one changed. See
+[#170031](https://github.com/openclaw/openclaw/issues/170031).
+
+2026.9.x has no self-service fix for this state:
+
+- `openclaw update repair --yes` completes Doctor and plugin convergence, but
+  the refusal remains.
+- Reinstalling the same version with npm, or running `openclaw doctor`, does
+  not clear it.
+- Releases before 2026.10.5 cannot settle device-number changes either.
+
+`openclaw update repair` can settle device-number changes starting with
+2026.10.5. The supported recovery is to install 2026.10.5 or newer manually,
+then run repair from the new installation:
+
+1. Create a [verified backup](/install/updating/rollback-and-recovery#before-updating-create-a-verified-backup).
+2. Follow the [manual npm procedure](/install/updating/update-methods#alternative-manual-npm-pnpm-or-bun),
+   including stopping the managed Gateway first, with an exact version:
+
+   ```bash
+   npm i -g openclaw@<version> --allow-scripts=openclaw
+   ```
+
+   On npm 11.15 and earlier, omit `--allow-scripts=openclaw`.
+
+3. From the new installation, run:
+
+   ```bash
+   openclaw update repair --yes
+   ```
+
+This moves the installation off the 2026.9 extended-stable line. The newer
+release migrates state, so returning to 2026.9.x requires the backup; see
+[Downgrade](/install/updating/rollback-and-recovery#downgrade). A direct npm
+install does not change `update.channel`; see
+[Release channels](/install/development-channels). To stay on 2026.9.x, leave
+the journal in place: in reported cases the installed Gateway kept running,
+but updates stay blocked.
+
+Newer releases also ship a standalone recovery helper,
+`dist/package-update-activation-recovery.mjs`. It is not confirmed to work for
+2026.9.x journals. In one report, its `repair` action from 2026.10.5 refused a
+2026.9.33 journal in phase `publication-complete` because the anchor directory
+held only `previous`:
+
+```text
+Package publication recovery refused: ENOENT: no such file or directory, lstat '<installation-parent>/.openclaw.package-activation-<key>/launchers'
+```
+
+No supported procedure covers that layout yet. If repair or the helper refuses,
+stop and report the exact output on the issue.
+
+Preserve the recovery evidence while you recover. Do not edit, move, or delete
+the `.openclaw.package-activation-<key>` directory, its `.control` directory,
+the journal, or the retained `previous` generation, and do not rewrite saved
+identities. Removing them does not bypass the refusal, and it destroys the
+evidence that recovery and rollback rely on. Keep other package managers
+stopped while recovering.
 
 ## Plugin repair warnings
 
