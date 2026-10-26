@@ -203,12 +203,11 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
       invalidate,
     });
     this.virtualizer = new Virtualizer({
-      onChange: (instance) => {
+      onChange: (view) => {
         // Settled motion redraws locally; initial placement and held history need the caller.
-        (instance.isScrolling && this.isPositionSettled && !this.prependAnchor.hasPrepend
-          ? (this.renderPreviousRows ?? invalidate)
-          : invalidate)();
-        this.scheduleEndReconcile(instance.getTotalSize());
+        const redraw = view.isScrolling && this.isPositionSettled && !this.prependAnchor.hasPrepend;
+        (redraw ? (this.renderPreviousRows ?? invalidate) : invalidate)();
+        this.scheduleEndReconcile(view.getTotalSize());
       },
       count: 0,
       getScrollElement: () => this.scrollElement,
