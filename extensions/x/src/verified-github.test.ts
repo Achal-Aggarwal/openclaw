@@ -294,6 +294,24 @@ describe("X GitHub verification sync", () => {
 });
 
 describe("X GitHub verification service", () => {
+  it("names reauthorization when the X refresh token is rejected", async () => {
+    const test = githubFixture();
+    setXTestFetch("api.x.com", async () =>
+      Response.json(
+        { error: "invalid_grant", error_description: "private provider details" },
+        { status: 400 },
+      ),
+    );
+    await withService(test, test.cfg, async (clock) => {
+      await clock.wake();
+      expect(await test.status()).toMatchObject({
+        stale: true,
+        message: expect.stringContaining("reauthorize the X account"),
+      });
+      expect(test.logger.warn.mock.calls[0]?.[0]).not.toContain("private provider details");
+    });
+  });
+
   it("schedules no work when the feature is absent", async () => {
     const host = fixture({ posts: [] });
     const clock = createGatewaySchedulerClock(Date.now());
@@ -379,5 +397,38 @@ describe("X GitHub verification service", () => {
       await service.stop?.(context);
       await gateway.stop();
     }
+  });
+
+  it("keeps sync status and the X client for mixed-case account keys under the runtime account id", async () => {
+    const test = githubFixture();
+    const { verifiedFromGitHub, ...credentials } = test.cfg.channels!.x!;
+    const cfg: OpenClawConfig = {
+      ...test.cfg,
+      channels: {
+        x: {
+          accounts: {
+            Work: { ...credentials, verifiedFromGitHub },
+            Ops: { ...credentials, userId: "200", verifiedFromGitHub: { repo: "test/repo" } },
+          },
+        },
+      },
+    };
+    await withService(test, cfg, async (clock) => {
+      await clock.wake();
+      const status = (key: string) => getXGitHubStatus(test.runtime, resolveXAccount(cfg, key));
+      expect({
+        lookupAccounts: vi.mocked(getXApi).mock.calls.map(([accountId]) => accountId),
+        work: await status("Work"),
+        ops: await status("Ops"),
+      }).toMatchObject({
+        lookupAccounts: ["work"],
+        work: { stale: false, entries: [{ xUserId: "101" }] },
+        ops: {
+          stale: true,
+          message:
+            "Configure verifiedFromGitHub.token with a GitHub credential that can list repository collaborators.",
+        },
+      });
+    });
   });
 });
