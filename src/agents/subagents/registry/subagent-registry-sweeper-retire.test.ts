@@ -11,6 +11,7 @@ import type { SubagentRegistryWrite } from "./subagent-registry.store.kernel.js"
 import type { SubagentRunRecord } from "./subagent-registry.types.js";
 
 const removeInternalSessionEffectsSession = vi.hoisted(() => vi.fn(async () => {}));
+// mock-isolation: session-effect removal writes agent state; tests assert only the retirement call.
 vi.mock("../../internal-session-effects.js", () => ({
   removeInternalSessionEffectsSession,
 }));

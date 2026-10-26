@@ -81,6 +81,7 @@ vi.mock("./typing.js", () => ({
   addTypingIndicator: addTypingIndicatorMock,
   removeTypingIndicator: removeTypingIndicatorMock,
 }));
+// mock-isolation: the streaming card client talks to Feishu; tests drive a recording fake.
 vi.mock("./streaming-card.js", async () => {
   class FeishuStreamingFinalizationError extends Error {
     result: { visibleReplySent: boolean; content?: string; messageId?: string };
