@@ -2,6 +2,7 @@ import { readSessionMessageIdentity } from "@openclaw/gateway-client/browser";
 import { asNullableRecord } from "@openclaw/normalization-core/record-coerce";
 import type { Accessor } from "solid-js";
 import { CHAT_PENDING_INPUT_MESSAGE_PREFIX } from "../../../../../packages/gateway-protocol/src/schema/chat-history-constants.js";
+import { isToolCallContentType } from "../../../../../src/chat/tool-content.js";
 import { parseMarkdownJson } from "../../../components/markdown-json.ts";
 import type { MarkdownRenderOptions } from "../../../components/markdown-render-options.ts";
 import { prewarmSanitizedMarkdown } from "../../../components/markdown.ts";
@@ -170,9 +171,11 @@ export function prewarmGroupedMessage(
     return false;
   }
   const prepared = prepareChatMessageRender(message);
+  // Tool calls preserve the text source; media instead renders ordered slot markers.
   if (
     prepared.normalizedMessage.content.some(
-      (part) => part.type !== "text" && part.type !== "thinking",
+      (part) =>
+        part.type !== "text" && part.type !== "thinking" && !isToolCallContentType(part.type),
     )
   ) {
     return false;

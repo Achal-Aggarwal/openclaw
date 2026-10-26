@@ -39,7 +39,7 @@ async function transcriptFixture(
   plainFirstRow = false,
   ordinary = false,
   viewportHeight = 600,
-  completedFrame = false,
+  completedFrame: boolean | "toolCall" = false,
 ) {
   let now = 1;
   let nextFrame = 0;
@@ -104,7 +104,18 @@ async function transcriptFixture(
                   key: `idle-frame-${index}-${part}`,
                   message: {
                     role: "assistant",
-                    content: `**idle-frame-${index}-${part}**`,
+                    content:
+                      completedFrame === "toolCall"
+                        ? [
+                            { type: "text", text: `**idle-frame-${index}-${part}-toolCall**` },
+                            {
+                              type: "toolCall",
+                              id: `idle-tool-${index}-${part}`,
+                              name: "read",
+                              arguments: {},
+                            },
+                          ]
+                        : `**idle-frame-${index}-${part}**`,
                     timestamp: index,
                   },
                 })),
@@ -284,37 +295,40 @@ it.each([600, 1400])(
   },
 );
 
-it("warms completed frame messages one per idle callback before their first mount", async () => {
-  const parse = vi.spyOn(DOMParser.prototype, "parseFromString");
-  const view = await transcriptFixture(0, true, false, true, 600, true);
-  const rendered = view.renderRow.mock.calls.length;
-  const elements = view.container.querySelectorAll(".chat-virtual-row").length;
-  await view.idle(0);
-  expect(view.renderRow.mock.calls).toHaveLength(rendered);
+it.each([true, "toolCall"] as const)(
+  "warms completed frame messages with %s one per idle callback before their first mount",
+  async (content) => {
+    const parse = vi.spyOn(DOMParser.prototype, "parseFromString");
+    const view = await transcriptFixture(0, true, false, true, 600, content);
+    const rendered = view.renderRow.mock.calls.length;
+    const elements = view.container.querySelectorAll(".chat-virtual-row").length;
+    await view.idle(0);
+    expect(view.renderRow.mock.calls).toHaveLength(rendered);
 
-  await view.idle();
-  const warmed = view.renderRow.mock.calls.slice(rendered).at(-1)![0];
-  const index = warmed.kind === "item" ? warmed.item : -1;
-  expect(index).toBeGreaterThan(0);
-  const first = `idle-frame-${index}-first`;
-  const second = `idle-frame-${index}-second`;
-  const parsesFor = (text: string) =>
-    parse.mock.calls.filter(([input]) => input.includes(text)).length;
-  expect(parsesFor(first)).toBeGreaterThan(0);
-  expect(parsesFor(second)).toBe(0);
-  expect(view.container.querySelector(`[data-virtual-row-key="${warmed.key}"]`)).toBeNull();
-  expect(view.container.querySelectorAll(".chat-virtual-row")).toHaveLength(elements);
+    await view.idle();
+    const warmed = view.renderRow.mock.calls.slice(rendered).at(-1)![0];
+    const index = warmed.kind === "item" ? warmed.item : -1;
+    expect(index).toBeGreaterThan(0);
+    const first = `idle-frame-${index}-first`;
+    const second = `idle-frame-${index}-second`;
+    const parsesFor = (text: string) =>
+      parse.mock.calls.filter(([input]) => input.includes(text)).length;
+    expect(parsesFor(first)).toBeGreaterThan(0);
+    expect(parsesFor(second)).toBe(0);
+    expect(view.container.querySelector(`[data-virtual-row-key="${warmed.key}"]`)).toBeNull();
+    expect(view.container.querySelectorAll(".chat-virtual-row")).toHaveLength(elements);
 
-  await view.idle();
-  expect(parsesFor(second)).toBeGreaterThan(0);
-  expect(view.container.querySelector(`[data-virtual-row-key="${warmed.key}"]`)).toBeNull();
-  const beforeMount = [parsesFor(first), parsesFor(second)];
-  await view.scrollTo(index);
-  const row = view.container.querySelector(`[data-virtual-row-key="${warmed.key}"]`);
-  expect(row?.textContent).toContain(first);
-  expect(row?.textContent).toContain(second);
-  expect([parsesFor(first), parsesFor(second)]).toEqual(beforeMount);
-});
+    await view.idle();
+    expect(parsesFor(second)).toBeGreaterThan(0);
+    expect(view.container.querySelector(`[data-virtual-row-key="${warmed.key}"]`)).toBeNull();
+    const beforeMount = [parsesFor(first), parsesFor(second)];
+    await view.scrollTo(index);
+    const row = view.container.querySelector(`[data-virtual-row-key="${warmed.key}"]`);
+    expect(row?.textContent).toContain(first);
+    expect(row?.textContent).toContain(second);
+    expect([parsesFor(first), parsesFor(second)]).toEqual(beforeMount);
+  },
+);
 
 it.each([1, -1])(
   "warms the next ordinary viewport in direction %s without idle delivery",
