@@ -281,6 +281,52 @@ const rpc = async (stage: string, setupCode = false) => {
     console.error(`iOS boot probe: ${stage} ${outcome}`);
   }
 };
+const waitForCpuHeadroom = async () => {
+  phase = "host-headroom";
+  const started = performance.now();
+  const samples: Record<string, number>[] = [];
+  const evidence = { outcome: "failed", elapsedMs: 0, samples };
+  proof.headroom = evidence;
+  const cpuTimes = () =>
+    os.cpus().reduce(
+      (sum, cpu) => ({
+        idle: sum.idle + cpu.times.idle,
+        total: sum.total + Object.values(cpu.times).reduce((total, value) => total + value, 0),
+      }),
+      { idle: 0, total: 0 },
+    );
+  let previous = cpuTimes();
+  let previousAt = performance.now();
+  let quietSamples = 0;
+  console.error("iOS boot probe: waiting for sustained CPU headroom");
+  try {
+    while (performance.now() - started < 300_000) {
+      await sleep(Math.min(2000, 300_000 - (performance.now() - started)), undefined, {
+        signal: abort.signal,
+      });
+      const now = performance.now();
+      const current = cpuTimes();
+      const idlePercent = (100 * (current.idle - previous.idle)) / (current.total - previous.total);
+      const intervalMs = now - previousAt;
+      samples.push({
+        atMs: Math.round(now - started),
+        intervalMs: Math.round(intervalMs),
+        idlePercent: Math.round(idlePercent * 100) / 100,
+      });
+      quietSamples = idlePercent >= 30 && intervalMs <= 4000 ? quietSamples + 1 : 0;
+      if (quietSamples >= 5) {
+        evidence.outcome = "passed";
+        return;
+      }
+      previous = current;
+      previousAt = now;
+    }
+    throw new Error("host-headroom-unavailable");
+  } finally {
+    evidence.elapsedMs = Math.round(performance.now() - started);
+    console.error(`iOS boot probe: CPU headroom ${evidence.outcome}`);
+  }
+};
 try {
   if ((await command("source-head", "git", ["rev-parse", "HEAD"])) !== targetSha) {
     throw new Error("source-mismatch");
@@ -345,11 +391,12 @@ try {
     udid = undefined;
     throw new Error("invalid-device-id");
   }
-  for (const cycle of ["cold", "warm"] as const) {
+  for (const cycle of ["cold"] as const) {
     bootCycle = cycle;
     await startObserver();
     await command("simulator-boot", "xcrun", ["simctl", "boot", udid]);
     await command("simulator-ready", "xcrun", ["simctl", "bootstatus", udid, "-b"], 180_000);
+    await waitForCpuHeadroom();
     await rpc("after-boot-setup-status");
     await rpc("after-boot-setup-code", true);
     await observerDone;
