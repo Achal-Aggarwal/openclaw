@@ -12,19 +12,49 @@ import {
   toSanitizedMarkdownHtml,
 } from "./markdown.ts";
 
-it("shares idle-prepared HTML with visible callers without retaining fragments", () => {
+it("hands idle-prepared DOM to the first visible caller without parsing it again", () => {
   const source = 'idle-cache-paragraph <img src="x" onerror="alert(1)">';
+  const html = Object.getOwnPropertyDescriptor(Element.prototype, "innerHTML")!;
+  let parses = 0;
+  Object.defineProperty(Element.prototype, "innerHTML", {
+    ...html,
+    set(value: string) {
+      if (this instanceof HTMLTemplateElement && value.includes("idle-cache-paragraph")) {
+        parses++;
+      }
+      html.set!.call(this, value);
+    },
+  });
+  onTestFinished(() => Object.defineProperty(Element.prototype, "innerHTML", html));
   expect(prewarmSanitizedMarkdown(source, {})).toBe(true);
   expect(prewarmSanitizedMarkdown(source, {})).toBe(false);
+  const cachedHtml = toSanitizedMarkdownHtml(source);
   const cached = toSanitizedMarkdownContent(source);
-  expect(typeof cached).toBe("string");
+  expect(typeof cached).not.toBe("string");
   const view = renderSolidRef(() => createMarkdownRef(() => ({ content: cached })), {
     targetElement: document.createElement("div"),
   });
   expect(view.container.querySelector("[onerror]")).toBeNull();
-  expect(toSanitizedMarkdownHtml(source)).toBe(cached);
+  expect(parses).toBe(0);
+  const reused = toSanitizedMarkdownContent(source);
+  expect(reused).toBe(cachedHtml);
+  const second = renderSolidRef(() => createMarkdownRef(() => ({ content: reused })), {
+    targetElement: document.createElement("div"),
+  });
+  expect(second.container.innerHTML).toBe(view.container.innerHTML);
+  expect(parses).toBe(1);
   expect(prewarmSanitizedMarkdown(source, { interactiveImages: true })).toBe(true);
   expect(prewarmSanitizedMarkdown("oversized ".repeat(6000), {})).toBe(false);
+});
+
+it("bounds prepared DOM while keeping evicted HTML reusable", () => {
+  const source = (index: number) => `bounded-idle-fragment-${index}`;
+  for (let index = 0; index < 33; index++) {
+    expect(prewarmSanitizedMarkdown(source(index), {})).toBe(true);
+  }
+  expect(typeof toSanitizedMarkdownContent(source(0))).toBe("string");
+  expect(typeof toSanitizedMarkdownContent(source(32))).not.toBe("string");
+  expect(typeof toSanitizedMarkdownContent(source(32))).toBe("string");
 });
 
 it("mounts fresh chat Markdown without reparsing and keeps only HTML in its cache", () => {
@@ -72,6 +102,8 @@ it("mounts fresh chat Markdown without reparsing and keeps only HTML in its cach
 it("isolates ordinary and progress policies for fragment and HTML callers", () => {
   const source =
     '<progress value="2" max="5">fragment-policy-progress</progress><img src="x" onerror="alert(1)"><a href="javascript:alert(2)">Link</a>';
+  expect(prewarmSanitizedMarkdown(source, { progressBars: true })).toBe(true);
+  expect(prewarmSanitizedMarkdown(source, {})).toBe(true);
   const progress = toSanitizedMarkdownContent(source, { progressBars: true });
   const ordinary = toSanitizedMarkdownContent(source);
   if (typeof progress === "string" || typeof ordinary === "string") {

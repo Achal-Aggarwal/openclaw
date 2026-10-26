@@ -37,7 +37,11 @@ export const MARKDOWN_CHAR_LIMIT = 140_000;
 // up to 50k characters enter this 500-entry LRU, keeping memory bounded.
 const MARKDOWN_CACHE_LIMIT = 500;
 const MARKDOWN_CACHE_MAX_CHARS = 50_000;
-const markdownCache = new Map<string, { html: string; highlighting?: boolean }>();
+type MarkdownCacheEntry = { html: string; highlighting?: boolean };
+const markdownCache = new Map<string, MarkdownCacheEntry>();
+// Carry recent idle work into its first mount; the larger cache remains HTML-only.
+const preparedFragments = new Map<MarkdownCacheEntry, DocumentFragment>();
+const PREPARED_FRAGMENT_LIMIT = 32;
 export const HIGHLIGHTABLE_CODE_RE = /<pre><code(?! class="markdown-block-art")/u;
 
 export function appendMarkdownTruncationNotice(truncated: {
@@ -220,7 +224,7 @@ export function toSanitizedMarkdownHtml(
   return markdownContentHtml(prepareSanitizedMarkdown(markdownLocal, options, false));
 }
 
-/** Chat can mount a fresh sanitized fragment; the shared cache retains only HTML strings. */
+/** Chat can mount a fresh fragment or consume one prepared during idle time. */
 export function toSanitizedMarkdownContent(
   markdownLocal: string,
   options: MarkdownRenderOptions = {},
@@ -228,7 +232,7 @@ export function toSanitizedMarkdownContent(
   return prepareSanitizedMarkdown(markdownLocal, options, true);
 }
 
-/** Prepare a cacheable row without retaining DOM or touching an existing entry. */
+/** Prepare a cacheable row without touching an existing entry. */
 export function prewarmSanitizedMarkdown(
   markdownLocal: string,
   options: MarkdownRenderOptions,
@@ -289,19 +293,32 @@ function prepareSanitizedMarkdown(
     !cached ||
     (cached.highlighting !== undefined && cached.highlighting !== markdownHighlightingReady())
   ) {
+    if (cached) {
+      preparedFragments.delete(cached);
+    }
     content = renderSanitizedMarkdown(
       renderInput,
       renderOptions,
       undefined,
       undefined,
-      returnFragment,
+      returnFragment || prewarm,
     );
     cached = { html: markdownContentHtml(content) };
     if (HIGHLIGHTABLE_CODE_RE.test(cached.html)) {
       cached.highlighting = markdownHighlightingReady();
     }
+    if (prewarm && typeof content !== "string") {
+      preparedFragments.set(cached, content.fragment);
+      pruneMapToMaxSize(preparedFragments, PREPARED_FRAGMENT_LIMIT);
+    }
   } else if (prewarm) {
     return false;
+  } else if (returnFragment) {
+    const fragment = preparedFragments.get(cached);
+    if (fragment) {
+      preparedFragments.delete(cached);
+      content = { html: cached.html, fragment };
+    }
   }
   markdownCache.delete(cacheKey);
   markdownCache.set(cacheKey, cached);
