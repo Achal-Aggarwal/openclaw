@@ -98,6 +98,8 @@ function applyObservedChatSessionRow(
 ): void {
   const selectedAgentId = resolveChatAgentId(state);
   if (!row) {
+    // The row owner retired this target even if a list already projected its successor.
+    retireSessionMutations();
     const result = state.sessionsResult;
     if (!result || state.sessionsResultAgentId !== selectedAgentId) {
       return;
@@ -110,7 +112,6 @@ function applyObservedChatSessionRow(
     if (sessions.length === result.sessions.length) {
       return;
     }
-    retireSessionMutations();
     state.sessionsResult = { ...result, sessions, count: sessions.length };
     return;
   }
@@ -226,18 +227,6 @@ export abstract class ChatPaneSessionObservation extends ChatPaneSessionCreation
       !isUiSelectedGlobalSessionKey(state, state.sessionKey) ||
       presentation.agentId === resolveChatAgentId(state)
     ) {
-      const previousSession = selectedChatSessionRow(state);
-      const nextSession = presentation.result?.sessions.find((row) =>
-        visibleSessionMatches(state, row.key, row.agentId),
-      );
-      if (
-        previousSession?.sessionId &&
-        nextSession?.sessionId &&
-        previousSession.sessionId !== nextSession.sessionId
-      ) {
-        // Canonical publication precedes the retired row observer's notification.
-        this.retireHeaderSessionMutations();
-      }
       state.sessionsResult = presentation.result;
       state.sessionsResultAgentId = presentation.agentId;
     }
