@@ -86,6 +86,40 @@ function expectAvailableShellToSucceed(
 }
 
 describe("completion-runtime", () => {
+  it.skipIf(process.platform === "win32")(
+    "escapes terminal controls in installation messages without changing profile paths",
+    async () => {
+      await withBashCompletionHome(async ({ homeDir }) => {
+        const profileDir = path.join(
+          homeDir,
+          "profiles-café\u001b[31m\noperator-forged\tend\rrow\u0007",
+        );
+        await withEnvAsync({ ZDOTDIR: profileDir }, async () => {
+          const log = vi.spyOn(console, "log").mockImplementation(() => {});
+          const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+          const cachePath = await writeCompletionCache("zsh", "# completion\n");
+
+          await installCompletion("zsh", false);
+          const profilePath = path.join(profileDir, ".zshrc");
+          const installed = await fs.readFile(profilePath, "utf8");
+          expect(installed).toContain(cachePath);
+          await installCompletion("zsh", false);
+          expect(await fs.readFile(profilePath, "utf8")).toBe(installed);
+
+          const messages = [...warn.mock.calls, ...log.mock.calls].map((args) => args.join(" "));
+          expect(messages.some((message) => message.includes("Profile not found"))).toBe(true);
+          expect(messages.some((message) => message.includes("Installing completion"))).toBe(true);
+          expect(messages).toContain("Completion installed. Restart your shell to load it.");
+          expect(messages.some((message) => message.includes("already installed"))).toBe(true);
+          for (const message of messages) {
+            expect(message).not.toMatch(/\p{Cc}/u);
+          }
+          expect(messages.join("\n")).toContain("profiles-café\\noperator-forged\\tend\\rrow");
+        });
+      });
+    },
+  );
+
   it("preserves zsh's set-but-empty startup directory contract", () => {
     expect(
       resolveCompletionProfilePath("zsh", {
