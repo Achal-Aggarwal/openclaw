@@ -40,7 +40,6 @@ it("preserves archived ownership with half a million metadata entries", async ()
     });
     vi.spyOn(migrationReaders, "readLegacyPrimaryTranscriptIdentity").mockReturnValue({
       sessionId: `history-${ENTRY_COUNT - 1}`,
-      filenameId: `history-${ENTRY_COUNT - 1}`,
       updatedAt: 1,
     });
     const move = (sourcePath: string, retainedPath: string) => ({

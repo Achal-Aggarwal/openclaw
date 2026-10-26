@@ -2,6 +2,7 @@ import { expect, it, vi } from "vitest";
 import type { loadSessionEntry } from "../../config/sessions/session-accessor.js";
 import { appendAssistantMessageToSessionTranscript } from "../../config/sessions/transcript.js";
 import { callGateway } from "../../gateway/call.js";
+import type { GatewayRecoveryRuntime } from "../../gateway/server-instance-runtime.types.js";
 import { GatewayOperatorRecoveryOwnershipError } from "../../infra/restart-recovery-errors.js";
 import type { SessionEntryFixture } from "../subagent-test-fixtures.test-helpers.js";
 import { createRestartRecoveryStoreFixture } from "./main-session-restart-recovery-fixture.test-support.js";
@@ -14,7 +15,12 @@ export function registerStaleOperatorSourceCase(params: {
     sessionsDir: string;
     readEntry: () => ReturnType<typeof loadSessionEntry>;
   }>;
-  recoverRestartAbortedMainSessions: typeof recoverRestartAbortedMainSessions;
+  // The caller's wrapper supplies its mocked gateway recovery runtime.
+  recoverRestartAbortedMainSessions: (
+    params: Omit<Parameters<typeof recoverRestartAbortedMainSessions>[0], "gatewayRuntime"> & {
+      gatewayRuntime?: GatewayRecoveryRuntime;
+    },
+  ) => ReturnType<typeof recoverRestartAbortedMainSessions>;
 }) {
   const { writeCompletedToolTranscript } = createRestartRecoveryStoreFixture(params.getStateDir);
   it("retires a stale operator recovery source once with a local notice", async () => {

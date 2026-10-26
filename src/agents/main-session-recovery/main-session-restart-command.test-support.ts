@@ -164,7 +164,12 @@ export function registerAcceptedRecoveryStopCase(params: {
     sessionId: string,
     messages: readonly unknown[],
   ) => Promise<void>;
-  recoverRestartAbortedMainSessions: typeof recoverRestartAbortedMainSessions;
+  // The suite wrapper supplies its mocked gateway recovery runtime unless a case overrides it.
+  recoverRestartAbortedMainSessions: (
+    params: Omit<Parameters<typeof recoverRestartAbortedMainSessions>[0], "gatewayRuntime"> & {
+      gatewayRuntime?: GatewayRecoveryRuntime;
+    },
+  ) => ReturnType<typeof recoverRestartAbortedMainSessions>;
   retryRestartAbortedMainSessionRecovery: typeof retryRestartAbortedMainSessionRecovery;
   sendRecoveryNotice: GatewayRecoveryRuntime["sendRecoveryNotice"];
 }): void {

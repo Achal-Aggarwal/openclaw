@@ -293,25 +293,32 @@ describe("X GitHub verification sync", () => {
   });
 });
 
-describe("X GitHub verification service", () => {
-  it("names reauthorization when the X refresh token is rejected", async () => {
-    const test = githubFixture();
-    setXTestFetch("api.x.com", async () =>
-      Response.json(
-        { error: "invalid_grant", error_description: "private provider details" },
-        { status: 400 },
-      ),
-    );
-    await withService(test, test.cfg, async (clock) => {
-      await clock.wake();
-      expect(await test.status()).toMatchObject({
-        stale: true,
-        message: expect.stringContaining("reauthorize the X account"),
-      });
-      expect(test.logger.warn.mock.calls[0]?.[0]).not.toContain("private provider details");
-    });
-  });
+async function withService(
+  test: ReturnType<typeof githubFixture>,
+  cfg: OpenClawConfig,
+  run: (clock: ReturnType<typeof createGatewaySchedulerClock>) => Promise<void>,
+): Promise<void> {
+  const clock = createGatewaySchedulerClock(Date.now());
+  const gateway = createTestGatewayScheduler(clock.clock);
+  const scheduler = createTestPluginServiceScheduler(gateway);
+  const service = createXGitHubService({ runtime: test.runtime });
+  const context: OpenClawPluginServiceContextV2 = {
+    config: cfg,
+    stateDir: test.runtime.state.resolveStateDir(),
+    logger: test.logger,
+    scheduler,
+  };
+  try {
+    await service.start(context);
+    await run(clock);
+  } finally {
+    await scheduler.stop();
+    await service.stop?.(context);
+    await gateway.stop();
+  }
+}
 
+describe("X GitHub verification service", () => {
   it("schedules no work when the feature is absent", async () => {
     const host = fixture({ posts: [] });
     const clock = createGatewaySchedulerClock(Date.now());

@@ -178,7 +178,7 @@ it(
         clientId: successor.getInstanceId(),
         ownerClientId: old.getInstanceId(),
         threadId: sibling.thread.id,
-        lifecycleTiming: createCodexThreadLifecycleTimingTracker(false),
+        lifecycleTiming: createCodexThreadLifecycleTimingTracker({ enabled: false }),
         signal: stop.signal,
       }).finally(() => {
         settled = true;
