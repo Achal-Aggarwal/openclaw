@@ -111,6 +111,22 @@ describe("isPidDefinitelyDead", () => {
   });
 });
 
+describe("Linux process liveness", () => {
+  it("rejects a reused worker TID but protects its live process leader", async () => {
+    vi.spyOn(process, "kill").mockImplementation(() => true);
+    mockProcReads({
+      "/proc/42/status": "Name:\tnode\nState:\tS\nTgid:\t42\nPid:\t42\nThreads:\t2\n",
+      "/proc/43/status": "Name:\tworker\nState:\tS\nTgid:\t42\nPid:\t43\nThreads:\t2\n",
+    });
+    await withMockedPlatform("linux", async () => {
+      expect(isPidAlive(42)).toBe(true);
+      expect(isPidDefinitelyDead(42)).toBe(false);
+      expect(isPidAlive(43)).toBe(false);
+      expect(isPidDefinitelyDead(43)).toBe(true);
+    });
+  });
+});
+
 describe.each(["success", "EPERM"])("Linux process liveness (probe=%s)", (probe) => {
   it.each([
     { state: "S", threads: "1", dead: false },

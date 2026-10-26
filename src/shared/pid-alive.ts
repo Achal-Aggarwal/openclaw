@@ -97,7 +97,8 @@ function isValidPid(pid: number): boolean {
 }
 
 /**
- * Check if every thread has exited by reading Linux /proc/<pid>/status.
+ * Reject recycled worker TIDs and zombie leaders without live sibling threads by
+ * reading Linux /proc/<pid>/status.
  * Returns false on non-Linux platforms or if the proc file can't be read.
  */
 function isZombieProcess(pid: number): boolean {
@@ -106,6 +107,11 @@ function isZombieProcess(pid: number): boolean {
   }
   try {
     const status = fsSync.readFileSync(`/proc/${pid}/status`, "utf8");
+    // process.pid records a leader; kill(pid, 0) also accepts recycled worker TIDs.
+    const tgid = status.match(/^Tgid:[ \t]+(\d+)[ \t]*$/m)?.[1];
+    if (tgid !== undefined && Number(tgid) !== pid) {
+      return true;
+    }
     const stateMatch = status.match(/^State:\s+(\S)/m);
     // pthread_exit can leave a zombie leader with live workers; missing thread
     // evidence must not revoke a live process's locks or cleanup obligations.
