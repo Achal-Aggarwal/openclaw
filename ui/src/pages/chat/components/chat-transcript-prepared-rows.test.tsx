@@ -39,6 +39,7 @@ async function transcriptFixture(
   plainFirstRow = false,
   ordinary = false,
   viewportHeight = 600,
+  completedFrame = false,
 ) {
   let now = 1;
   let nextFrame = 0;
@@ -97,23 +98,57 @@ async function transcriptFixture(
         createMessageGroup(
           { role: "assistant", content: `Idle ordinary message ${index}`, timestamp: index },
           "assistant",
+          completedFrame
+            ? {
+                messages: ["first", "second"].map((part) => ({
+                  key: `idle-frame-${index}-${part}`,
+                  message: {
+                    role: "assistant",
+                    content: `**idle-frame-${index}-${part}**`,
+                    timestamp: index,
+                  },
+                })),
+              }
+            : {},
         ),
       )
     : [];
   let presented = true;
   let queued = false;
   let disposed = false;
-  const renderRow = vi.fn((row: TranscriptRow<number>) =>
-    ordinary ? (
-      new GuardedTranscriptItem([groups[row.kind === "item" ? row.item : 0]], {
-        kind: "group",
-        group: groups[row.kind === "item" ? row.item : 0]!,
-        options: { showReasoning: false },
-      })
-    ) : (
-      <span>Message {row.kind === "item" ? row.item : ""}</span>
-    ),
-  );
+  const renderRow = vi.fn((row: TranscriptRow<number>) => {
+    if (!ordinary) {
+      return <span>Message {row.kind === "item" ? row.item : ""}</span>;
+    }
+    const group = groups[row.kind === "item" ? row.item : 0]!;
+    return new GuardedTranscriptItem(
+      [group],
+      completedFrame
+        ? {
+            kind: "frame",
+            frame: {
+              kind: "agent-run-frame",
+              key: `frame:${group.key}`,
+              runId: group.key,
+              boundaryId: group.key,
+              outcome: { kind: "completed", actionOwner: group.messages.at(-1)! },
+              parts: [group],
+            },
+            options: {
+              streamOptions: {},
+              workPreviews: new Map(),
+              renderGroupOptions: () => ({ showReasoning: false }),
+              isWorkExpanded: () => false,
+              onToggleWork: () => {},
+            },
+          }
+        : {
+            kind: "group",
+            group,
+            options: { showReasoning: false },
+          },
+    );
+  });
   let renderer = renderRow;
   const draw = vi.fn(() => {
     const root = host.render(rows, renderer, null, false, null, null, presented);
@@ -248,6 +283,38 @@ it.each([600, 1400])(
     expect(view.renderRow.mock.calls).toHaveLength(completed);
   },
 );
+
+it("warms completed frame messages one per idle callback before their first mount", async () => {
+  const parse = vi.spyOn(DOMParser.prototype, "parseFromString");
+  const view = await transcriptFixture(0, true, false, true, 600, true);
+  const rendered = view.renderRow.mock.calls.length;
+  const elements = view.container.querySelectorAll(".chat-virtual-row").length;
+  await view.idle(0);
+  expect(view.renderRow.mock.calls).toHaveLength(rendered);
+
+  await view.idle();
+  const warmed = view.renderRow.mock.calls.slice(rendered).at(-1)![0];
+  const index = warmed.kind === "item" ? warmed.item : -1;
+  expect(index).toBeGreaterThan(0);
+  const first = `idle-frame-${index}-first`;
+  const second = `idle-frame-${index}-second`;
+  const parsesFor = (text: string) =>
+    parse.mock.calls.filter(([input]) => input.includes(text)).length;
+  expect(parsesFor(first)).toBeGreaterThan(0);
+  expect(parsesFor(second)).toBe(0);
+  expect(view.container.querySelector(`[data-virtual-row-key="${warmed.key}"]`)).toBeNull();
+  expect(view.container.querySelectorAll(".chat-virtual-row")).toHaveLength(elements);
+
+  await view.idle();
+  expect(parsesFor(second)).toBeGreaterThan(0);
+  expect(view.container.querySelector(`[data-virtual-row-key="${warmed.key}"]`)).toBeNull();
+  const beforeMount = [parsesFor(first), parsesFor(second)];
+  await view.scrollTo(index);
+  const row = view.container.querySelector(`[data-virtual-row-key="${warmed.key}"]`);
+  expect(row?.textContent).toContain(first);
+  expect(row?.textContent).toContain(second);
+  expect([parsesFor(first), parsesFor(second)]).toEqual(beforeMount);
+});
 
 it.each([1, -1])(
   "warms the next ordinary viewport in direction %s without idle delivery",

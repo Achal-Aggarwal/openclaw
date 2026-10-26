@@ -196,9 +196,28 @@ export class ChatTranscriptRenderer {
   prewarmRow(index: number): boolean {
     const content = this.contentSource?.getContent(index);
     const view = content instanceof GuardedTranscriptItem ? content.native : undefined;
-    return view?.kind === "group" && !view.group.isStreaming && view.group.messages.length === 1
-      ? prewarmGroupedMessage(view.group.messages[0]!.message, view.options)
-      : false;
+    if (view?.kind === "group" && !view.group.isStreaming) {
+      for (const message of view.group.messages) {
+        if (prewarmGroupedMessage(message.message, view.options)) {
+          return true;
+        }
+      }
+    } else if (view?.kind === "frame" && view.frame.outcome.kind === "completed") {
+      // Only this fragment's visible groups participate; collapsed work stays cold.
+      // Admit one message per callback so a whole run cannot consume the slice.
+      for (const part of view.frame.parts) {
+        if (part.kind !== "group" || part.isStreaming) {
+          continue;
+        }
+        const options = view.options.renderGroupOptions(part);
+        for (const message of part.messages) {
+          if (prewarmGroupedMessage(message.message, options)) {
+            return true;
+          }
+        }
+      }
+    }
+    return false;
   }
 
   get columnElement(): HTMLDivElement | undefined {
