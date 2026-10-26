@@ -55,6 +55,7 @@ import {
 } from "./chat-transcript-scroll-restore.ts";
 import {
   CHAT_TRANSCRIPT_ESTIMATED_ROW_PX,
+  CHAT_TRANSCRIPT_OVERSCAN,
   createTranscriptPresentation,
   type ChatTranscriptSession,
   type TranscriptCallbacks,
@@ -245,7 +246,7 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
       // scheduleCommittedChatScroll owns end-follow on content changes and source: "resize".
       // Disable isAtEnd()'s default too; callers must supply an explicit threshold.
       scrollEndThreshold: -1,
-      overscan: this.initialRange.overscan,
+      overscan: CHAT_TRANSCRIPT_OVERSCAN,
     });
     // Initial placement owns compensation; an estimated end is not a native scroll target.
     this.virtualizer.shouldAdjustScrollPositionOnItemSizeChange = () => false;
@@ -718,7 +719,7 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
       getItemKey: (index) => nextKeys[index]!,
       rangeExtractor: (range) => this.initialRange.extract(range),
       // Fragment overscan is prepared incrementally, outside the scroll commit.
-      overscan: this.initialRange.overscan,
+      overscan: CHAT_TRANSCRIPT_OVERSCAN,
       scrollMargin,
     });
   }

@@ -1,7 +1,5 @@
 import type { Range, Virtualizer } from "@tanstack/virtual-core";
 import type { TranscriptRow } from "./chat-transcript-layout.ts";
-import { transcriptOverscan } from "./chat-transcript-range.ts";
-import { CHAT_TRANSCRIPT_OVERSCAN } from "./chat-transcript-session.ts";
 
 // Keep several fast-scroll viewports ready without retaining the full session.
 const PREPARED_ROW_LIMIT = 128;
@@ -12,7 +10,6 @@ export class TranscriptInitialRange {
   private tailRows: number;
   private viewportOnly = false;
   private preparingOverscan = false;
-  overscan = CHAT_TRANSCRIPT_OVERSCAN;
   private rows: readonly TranscriptRow[] = [];
   // Completed fragments have no widget custody. Retain their keyed DOM while
   // keeping inactive rows outside the visible range's flow.
@@ -139,7 +136,6 @@ export class TranscriptInitialRange {
     const indexes = this.rowIndexes;
     indexes.clear();
     rows.forEach((row, index) => indexes.set(row.key, index));
-    this.overscan = transcriptOverscan(rows);
     for (const key of this.preparedRowKeys) {
       const index = indexes.get(key);
       if (index === undefined || rows[index]?.estimatedSize === undefined) {
@@ -216,7 +212,6 @@ export class TranscriptInitialRange {
     if (
       this.cancelPreparation ||
       this.preparingRowKey ||
-      this.overscan !== 0 ||
       this.pending ||
       this.tailRows > 0 ||
       !this.canPrepare()

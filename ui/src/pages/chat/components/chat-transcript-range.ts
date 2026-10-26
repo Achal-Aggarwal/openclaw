@@ -6,10 +6,6 @@ import {
   CHAT_TRANSCRIPT_OVERSCAN,
 } from "./chat-transcript-session.ts";
 
-export function transcriptOverscan(rows: readonly TranscriptRow[]): number {
-  return rows.some((row) => row.estimatedSize !== undefined) ? 0 : CHAT_TRANSCRIPT_OVERSCAN;
-}
-
 export function extractTranscriptRange(
   range: Range,
   rowIndexesByKey: ReadonlyMap<string, number>,
@@ -47,7 +43,7 @@ export function previewTranscriptRowKeys(
     count: nextRows.length,
     getItemKey: (index) => nextRows[index]!.key,
     estimateSize: (index) => nextRows[index]?.estimatedSize ?? CHAT_TRANSCRIPT_ESTIMATED_ROW_PX,
-    overscan: transcriptOverscan(nextRows),
+    overscan: CHAT_TRANSCRIPT_OVERSCAN,
   });
   return new Set(preview.getVirtualIndexes().map((index) => nextRows[index]!.key));
 }

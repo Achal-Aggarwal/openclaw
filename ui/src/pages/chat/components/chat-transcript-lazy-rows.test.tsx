@@ -50,6 +50,7 @@ it("commits a cached run's message body with its row shell", () => {
           }}
           options={{
             streamOptions: {},
+            workPreviews: new Map(),
             renderGroupOptions: () => ({ showReasoning: false }),
             isWorkExpanded: () => false,
             onToggleWork: () => {},

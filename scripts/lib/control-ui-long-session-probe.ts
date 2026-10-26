@@ -272,10 +272,18 @@ export async function probeLongSession(options: {
           host &&
           Reflect.get(host, "sessionKey") === targetKey &&
           viewport &&
-          [...active.querySelectorAll<HTMLElement>(".chat-virtual-row")].some((row) => {
+          [
+            ...active.querySelectorAll<HTMLElement>(".chat-virtual-row:not([data-prepared-row])"),
+          ].some((row) => {
             const rect = row.getBoundingClientRect();
             return (
-              row.checkVisibility() && rect.bottom > viewport.top && rect.top < viewport.bottom
+              row.checkVisibility({
+                checkOpacity: true,
+                checkVisibilityCSS: true,
+                contentVisibilityAuto: true,
+              }) &&
+              rect.bottom > viewport.top &&
+              rect.top < viewport.bottom
             );
           })
         );

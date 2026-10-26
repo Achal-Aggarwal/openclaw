@@ -479,6 +479,7 @@ describe("grouped chat images", () => {
       createAssistantImageMessage(source, "Generated image body stall", dimensions),
     );
 
+    await vi.dynamicImportSettled();
     await vi.advanceTimersByTimeAsync(0);
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [, fetchInit] = requireFetchCallForUrl(fetchMock, thumbnail(source));
@@ -490,6 +491,8 @@ describe("grouped chat images", () => {
 
     await vi.advanceTimersByTimeAsync(0);
     expectAbsent(".chat-message-image");
+    // The mounted timestamp owns a clock until its message is removed.
+    harness.render([]);
     expect(vi.getTimerCount()).toBe(0);
   });
 
