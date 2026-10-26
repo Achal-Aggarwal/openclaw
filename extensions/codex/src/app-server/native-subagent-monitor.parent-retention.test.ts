@@ -99,7 +99,7 @@ it("keeps an interrupted assignment resumable without pinning its restored paren
       lifecycleTiming: createCodexThreadLifecycleTimingTracker({ enabled: false }),
     });
   await expect(releaseForResume()).resolves.toBe(true);
-  expect(await store.readNativeSubagentAssignments?.(identity, historyOwner)).toEqual([assignment]);
+  expect(store.readNativeSubagentAssignments?.(identity, historyOwner)).toEqual([assignment]);
   expect(runtime.deliverAgentHarnessCompletion).not.toHaveBeenCalled();
 
   await retainCodexAppServerLiveThread(client.client, binding.threadId);
@@ -110,7 +110,7 @@ it("keeps an interrupted assignment resumable without pinning its restored paren
     childTurnCompletedNotification({ turnId: "continued-turn", status: "interrupted" }),
   );
   await expect(releaseForResume()).resolves.toBe(true);
-  expect(await store.readNativeSubagentAssignments?.(identity, historyOwner)).toHaveLength(1);
+  expect(store.readNativeSubagentAssignments?.(identity, historyOwner)).toHaveLength(1);
   await continued.unregister();
 });
 

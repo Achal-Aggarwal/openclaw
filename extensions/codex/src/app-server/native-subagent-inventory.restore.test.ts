@@ -88,9 +88,9 @@ describe("native pending assignment restoration", () => {
         await parent.unregister();
         if (change === "different turn") {
           expect(f.deliver).not.toHaveBeenCalled();
-          expect(
-            await f.store.readNativeSubagentAssignments?.(f.identity, f.historyOwner()),
-          ).toEqual([surviving]);
+          expect(f.store.readNativeSubagentAssignments?.(f.identity, f.historyOwner())).toEqual([
+            surviving,
+          ]);
         } else {
           expect(f.deliver).toHaveBeenCalledExactlyOnceWith(
             expect.objectContaining({
@@ -98,9 +98,7 @@ describe("native pending assignment restoration", () => {
               result: "Recovered result",
             }),
           );
-          expect(
-            await f.store.readNativeSubagentAssignments?.(f.identity, f.historyOwner()),
-          ).toEqual([]);
+          expect(f.store.readNativeSubagentAssignments?.(f.identity, f.historyOwner())).toEqual([]);
         }
       } finally {
         history.resolve(recovered);
@@ -131,7 +129,7 @@ describe("native pending assignment restoration", () => {
     const replacement = await f.register(replacementClient);
     await entered.promise;
     await vi.advanceTimersByTimeAsync(600_000);
-    expect(await f.store.readNativeSubagentAssignments?.(f.identity, f.historyOwner())).toEqual([]);
+    expect(f.store.readNativeSubagentAssignments?.(f.identity, f.historyOwner())).toEqual([]);
     const attempts = f.deliver.mock.calls.length;
     history.resolve(
       threadRead({ turnId: "child-turn", result: "Result", resultPhase: "final_answer" }),
@@ -139,7 +137,7 @@ describe("native pending assignment restoration", () => {
     await replacement.ready;
     await replacement.unregister();
     expect(f.deliver).toHaveBeenCalledTimes(attempts);
-    expect(await f.store.readNativeSubagentAssignments?.(f.identity, f.historyOwner())).toEqual([]);
+    expect(f.store.readNativeSubagentAssignments?.(f.identity, f.historyOwner())).toEqual([]);
     client.close();
     replacementClient.close();
   });

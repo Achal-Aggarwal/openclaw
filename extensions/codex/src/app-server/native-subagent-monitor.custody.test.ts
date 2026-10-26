@@ -580,7 +580,7 @@ async function createSubmissionFixture(acknowledgePredecessor = true) {
         submissionId,
       }),
     );
-    await vi.waitFor(async () => expect(await submissionStore.read()).toHaveLength(1));
+    await vi.waitFor(async () => expect(submissionStore.read()).toHaveLength(1));
     if (detach) {
       await parent.unregister();
       expect(holds).toEqual({ client: 0, parent: 0, child: 0 });
@@ -623,13 +623,13 @@ it.each([true, false])(
         lifecycleTiming: createCodexThreadLifecycleTimingTracker({ enabled: false }),
       });
     await expect(releaseForResume()).rejects.toThrow("claimed by active work; stop it first");
-    const receipt = structuredClone(await submissionStore.read());
+    const receipt = structuredClone(submissionStore.read());
     await completeTurn(client, "turn-b", "result B");
 
     await expect(releaseForResume()).resolves.toBe(true);
     expect(holds.parent).toBe(0);
     expect(isCodexAppServerLiveThreadProtected(client.client, "child-thread")).toBe(false);
-    expect(await submissionStore.read()).toEqual(receipt);
+    expect(submissionStore.read()).toEqual(receipt);
     expect(consume).not.toHaveBeenCalled();
     expect(runtime.deliverAgentHarnessCompletion).toHaveBeenCalledWith(
       expect.objectContaining({ result: "result B" }),
@@ -637,7 +637,7 @@ it.each([true, false])(
 
     runtime.deliverAgentHarnessCompletion.mockResolvedValue({ delivered: true, path: "direct" });
     await vi.advanceTimersByTimeAsync(5_000);
-    await vi.waitFor(async () => expect(await submissionStore.read()).toEqual([]));
+    await vi.waitFor(async () => expect(submissionStore.read()).toEqual([]));
     await completeTurn(client, "turn-b", "result B");
     expect(consume).toHaveBeenCalledOnce();
     expect(holds).toEqual({ client: 0, parent: 0, child: 0 });

@@ -66,7 +66,7 @@ async function startNestedAssignment() {
 describe("native pending assignment inventory through registered monitor admission", () => {
   it("acknowledges a grandchild's native completion without root delivery or restart replay", async () => {
     const { f, client, parent } = await startNestedAssignment();
-    expect(await f.store.readNativeSubagentAssignments?.(f.identity, f.historyOwner())).toEqual([
+    expect(f.store.readNativeSubagentAssignments?.(f.identity, f.historyOwner())).toEqual([
       expect.objectContaining({ childThreadId: "child-thread" }),
       expect.objectContaining({
         childThreadId: "grandchild",
@@ -85,7 +85,7 @@ describe("native pending assignment inventory through registered monitor admissi
     );
     await completeInForeground(client);
     await parent.unregister();
-    expect(await f.store.readNativeSubagentAssignments?.(f.identity, f.historyOwner())).toEqual([]);
+    expect(f.store.readNativeSubagentAssignments?.(f.identity, f.historyOwner())).toEqual([]);
     expect(f.deliver).not.toHaveBeenCalled();
     client.close();
     const recovered = await f.register(createClient());
@@ -101,7 +101,7 @@ describe("native pending assignment inventory through registered monitor admissi
       await completeInForeground(client);
       await parent.unregister();
       client.close();
-      const saved = await f.store.readNativeSubagentAssignments?.(f.identity, f.historyOwner());
+      const saved = f.store.readNativeSubagentAssignments?.(f.identity, f.historyOwner());
       expect(saved).toEqual([expect.objectContaining({ childThreadId: "grandchild" })]);
       const recoveredClient = createClient();
       recoveredClient.setThreadRead(
@@ -136,7 +136,7 @@ describe("native pending assignment inventory through registered monitor admissi
       await recovered.ready;
       await recovered.unregister();
       expect(f.deliver).not.toHaveBeenCalled();
-      expect(await f.store.readNativeSubagentAssignments?.(f.identity, f.historyOwner())).toEqual(
+      expect(f.store.readNativeSubagentAssignments?.(f.identity, f.historyOwner())).toEqual(
         scenario === "available" ? [] : saved,
       );
       if (scenario !== "available") {
@@ -144,9 +144,7 @@ describe("native pending assignment inventory through registered monitor admissi
         const retry = await f.register(recoveredClient);
         await retry.ready;
         await retry.unregister();
-        expect(await f.store.readNativeSubagentAssignments?.(f.identity, f.historyOwner())).toEqual(
-          [],
-        );
+        expect(f.store.readNativeSubagentAssignments?.(f.identity, f.historyOwner())).toEqual([]);
       }
       recoveredClient.close();
       const restarted = await f.register(createClient());
@@ -770,9 +768,9 @@ describe("native pending assignment inventory through registered monitor admissi
       await settled.unregister();
       await vi.advanceTimersByTimeAsync(600_000);
       expect(f.deliver).toHaveBeenCalledTimes(attempts);
-      const saved = await f.store.readNativeSubagentAssignments?.(f.identity, f.historyOwner());
+      const saved = f.store.readNativeSubagentAssignments?.(f.identity, f.historyOwner());
       expect(saved).toEqual([]);
-      expect(await f.store.readNativeSubagentSubmissions(f.identity, f.historyOwner())).toEqual([]);
+      expect(f.store.readNativeSubagentSubmissions(f.identity, f.historyOwner())).toEqual([]);
       const notes = await readVisibleSessionTranscriptMessageEntries(f.identity);
       expect(notes).toHaveLength(assignment === "empty" ? 0 : 1);
       if (assignment !== "empty") {
@@ -805,10 +803,8 @@ describe("native pending assignment inventory through registered monitor admissi
       await recovered.ready;
       await recovered.unregister();
       expect(f.deliver).not.toHaveBeenCalled();
-      expect(await f.store.readNativeSubagentAssignments?.(f.identity, f.historyOwner())).toEqual(
-        [],
-      );
-      expect(await f.store.readNativeSubagentSubmissions(f.identity, f.historyOwner())).toEqual([]);
+      expect(f.store.readNativeSubagentAssignments?.(f.identity, f.historyOwner())).toEqual([]);
+      expect(f.store.readNativeSubagentSubmissions(f.identity, f.historyOwner())).toEqual([]);
       recoveredClient.close();
       const duplicate = await f.register(createClient());
       await duplicate.ready;
@@ -861,9 +857,7 @@ describe("native pending assignment inventory through registered monitor admissi
         () => {},
       );
     }
-    expect(
-      await f.store.readNativeSubagentAssignments?.(f.identity, f.historyOwner()),
-    ).toHaveLength(2);
+    expect(f.store.readNativeSubagentAssignments?.(f.identity, f.historyOwner())).toHaveLength(2);
     const row = f.state.lookup(bindingStoreKey(f.identity));
     assert(row?.state === "active");
     f.state.register(bindingStoreKey(f.identity), {
@@ -902,9 +896,7 @@ describe("native pending assignment inventory through registered monitor admissi
         "First result",
         "Second result",
       ]);
-      expect(await f.store.readNativeSubagentAssignments?.(f.identity, f.historyOwner())).toEqual(
-        [],
-      );
+      expect(f.store.readNativeSubagentAssignments?.(f.identity, f.historyOwner())).toEqual([]);
     } finally {
       await peer?.unregister();
       await parent.unregister();
@@ -944,18 +936,16 @@ describe("native pending assignment inventory through registered monitor admissi
         }),
       );
       await parent.unregister();
-      expect(
-        await f.store.readNativeSubagentAssignments?.(f.identity, f.historyOwner()),
-      ).toHaveLength(failure === "lost reply" ? 0 : 1);
+      expect(f.store.readNativeSubagentAssignments?.(f.identity, f.historyOwner())).toHaveLength(
+        failure === "lost reply" ? 0 : 1,
+      );
       expect(await readVisibleSessionTranscriptMessageEntries(f.identity)).toHaveLength(0);
       await vi.advanceTimersByTimeAsync(5_000);
       const settled = await f.register(client);
       await settled.ready;
       await settled.unregister();
       expect(f.deliver).toHaveBeenCalledOnce();
-      expect(await f.store.readNativeSubagentAssignments?.(f.identity, f.historyOwner())).toEqual(
-        [],
-      );
+      expect(f.store.readNativeSubagentAssignments?.(f.identity, f.historyOwner())).toEqual([]);
       expect(await readVisibleSessionTranscriptMessageEntries(f.identity)).toHaveLength(1);
       client.close();
     },

@@ -57,7 +57,6 @@ import { getMcpAppModelContext, updateMcpAppModelContext } from "./mcp-app-model
 import { createMcpProofPluginRegistry } from "./mcp-connection-resolver.test-fixtures.js";
 import { fetchMcpAppView, getMcpAppViewLease } from "./mcp-ui-resource.js";
 import { testing as mcpUiResourceTesting } from "./mcp-ui-resource.test-support.js";
-import { createAgentCleanupScope } from "./run-cleanup-timeout.js";
 
 vi.mock("./embedded-agent-mcp.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./embedded-agent-mcp.js")>();

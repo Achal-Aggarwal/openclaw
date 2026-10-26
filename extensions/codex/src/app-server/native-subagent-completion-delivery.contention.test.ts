@@ -57,9 +57,7 @@ describe("native completion durable receipts", () => {
       await observer.ready;
       await retirement;
       await observer.unregister();
-      expect(await f.store.readNativeSubagentAssignments?.(f.identity, f.historyOwner())).toEqual(
-        [],
-      );
+      expect(f.store.readNativeSubagentAssignments?.(f.identity, f.historyOwner())).toEqual([]);
       expect(await readVisibleSessionTranscriptMessageEntries(f.identity)).toEqual([]);
       expect(f.deliver).toHaveBeenCalledOnce();
     } finally {

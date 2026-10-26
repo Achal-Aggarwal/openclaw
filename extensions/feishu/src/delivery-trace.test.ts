@@ -467,7 +467,7 @@ describe("feishu delivery trace goldens", () => {
             if (preFinal) {
               await created.delivery.deliver({ text: "I will check." }, { kind: "final" });
             }
-            await created.replyOptions.onItemEvent?.({
+            created.replyOptions.onItemEvent?.({
               itemId: "tool:lookup",
               kind: "tool",
               name: "web_search",
