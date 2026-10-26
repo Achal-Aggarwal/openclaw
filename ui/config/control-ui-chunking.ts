@@ -231,6 +231,7 @@ export function controlUiStableChunkName(id: string): string | undefined {
     case "ui/src/pages/new-session/instant-thread-handoff.ts":
     case "ui/src/pages/new-session/instant-thread-navigation.ts":
     case "ui/src/pages/new-session/initial-session-turn-handoff.ts":
+    case "ui/src/lib/sessions/session-placement-submit.ts":
     case "ui/src/lib/sessions/session-placement-startup.ts":
       // New Session intent and placement share these operations; idle Chat hints exclude them.
       return "new-session-submission-runtime";
