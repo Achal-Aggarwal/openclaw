@@ -67,7 +67,7 @@ describe("storage CLI with filesystem transport", () => {
     async () => {
       const target = path.join(root, "café\u001b[31m\nforged\tend\rrow\u0007");
       await fs.mkdir(target);
-      fixture.config.storage!.locations!.archive.settings = { path: target };
+      fixture.config.storage!.locations!.archive!.settings = { path: target };
 
       await runStorageCli(["list"]);
       const uninitialized = fixture.runtime.log.mock.calls.flat().join("\n");
@@ -84,7 +84,9 @@ describe("storage CLI with filesystem transport", () => {
         `Storage location archive initialized: ${root}${path.sep}café\\nforged\\tend\\rrow`,
       );
       await runStorageCli(["list", "--json"]);
-      expect(JSON.parse(String(fixture.runtime.log.mock.lastCall?.[0])).locations[0].displayTarget).toBe(target);
+      expect(
+        JSON.parse(String(fixture.runtime.log.mock.lastCall?.[0])).locations[0].displayTarget,
+      ).toBe(target);
       await runStorageCli(["test", "archive", "--json"]);
       expect(JSON.parse(String(fixture.runtime.log.mock.lastCall?.[0])).displayTarget).toBe(target);
       expect(await fs.readdir(target)).toEqual(["openclaw-storage.json"]);
