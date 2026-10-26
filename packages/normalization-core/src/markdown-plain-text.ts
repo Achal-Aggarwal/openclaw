@@ -109,15 +109,16 @@ function findDestinationEnd(
   return text.charAt(index) === ")" ? index : undefined;
 }
 
-/**
- * Maps each link label's `[` to its `]` and that `]` to the end of the `(destination "title")`
- * that follows it, skipping backslash-escaped characters. Brackets inside a destination or title
- * are not labels, so they never pair with a label bracket.
- */
-function matchLinks(text: string): {
-  labelEnds: Map<number, number>;
-  destinationEnds: Map<number, number>;
-} {
+/** Strips inline link destinations, retaining nested labels and optionally omitting images entirely. */
+export function stripInlineLinks(
+  text: string,
+  options: { images?: "label" | "omit" } = {},
+): string {
+  /**
+   * Maps each link label's `[` to its `]` and that `]` to the end of the `(destination "title")`
+   * that follows it, skipping backslash-escaped characters. Brackets inside a destination or title
+   * are not labels, so they never pair with a label bracket.
+   */
   const labelEnds = new Map<number, number>();
   const destinationEnds = new Map<number, number>();
   const parenClosers = matchParens(text);
@@ -144,15 +145,6 @@ function matchLinks(text: string): {
       }
     }
   }
-  return { labelEnds, destinationEnds };
-}
-
-/** Strips inline link destinations, retaining nested labels and optionally omitting images entirely. */
-export function stripInlineLinks(
-  text: string,
-  options: { images?: "label" | "omit" } = {},
-): string {
-  const { labelEnds, destinationEnds } = matchLinks(text);
   const suffixEnds = new Map<number, number>();
   let output = "";
   let cursor = 0;
