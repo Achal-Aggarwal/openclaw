@@ -115,8 +115,10 @@ function TranscriptRows(props: {
               const index = createMemo(() => virtualRow().index);
               const row = createMemo(() => props.snapshot.rows[index()]);
               const content = createMemo(() => {
-                row();
-                return getContent()(index());
+                // Content rows may replace their DOM without replacing the row model.
+                const source =
+                  row()?.kind === "content" ? props.snapshot.getContent : getContent();
+                return source(index());
               });
               const active = () => props.snapshot.activeRowKeys.has(row()?.key ?? "");
               const gap = () => gaps().get(virtualRow().key) ?? 0;

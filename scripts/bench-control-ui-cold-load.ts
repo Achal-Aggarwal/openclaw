@@ -2775,6 +2775,16 @@ try {
     if (values["long-session"] && cpuProfile) {
       await cdp.send("Profiler.start");
     }
+    const longSessionTrace: unknown[] = [];
+    if (values["long-session"] && captureTrace) {
+      collectedTrace = longSessionTrace;
+      await cdp.send("Tracing.start", {
+        categories: values["filmstrip-only"]
+          ? "blink.user_timing,disabled-by-default-devtools.screenshot"
+          : "toplevel,blink.user_timing,devtools.timeline,disabled-by-default-devtools.timeline.stack,v8",
+        transferMode: "ReportEvents",
+      });
+    }
     const longSession = values["long-session"]
       ? await probeLongSession({
           page,
@@ -2791,6 +2801,17 @@ try {
       : undefined;
     if (values["long-session"] && cpuProfile) {
       await recordCpu("long-session", (await cdp.send("Profiler.stop")).profile);
+    }
+    if (values["long-session"] && captureTrace) {
+      const complete = new Promise<void>((resolve) => {
+        cdp.once("Tracing.tracingComplete", () => resolve());
+      });
+      await cdp.send("Tracing.end");
+      await complete;
+      await writeFile(
+        path.join(artifactDir, `run-${run + 1}.long-session.trace.json`),
+        JSON.stringify({ traceEvents: longSessionTrace }),
+      );
     }
     let sessionSwitch;
     if (values["session-switch"]) {

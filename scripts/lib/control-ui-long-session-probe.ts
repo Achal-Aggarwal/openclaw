@@ -18,6 +18,7 @@ async function sampleTranscriptScrollFrames(
     throw new Error("Transcript is not an HTML scroll element");
   }
   const frames: Array<{
+    atMs: number;
     intervalMs: number;
     coverage: number;
     rows: number;
@@ -51,6 +52,7 @@ async function sampleTranscriptScrollFrames(
       end = Math.max(end, bottom);
     }
     frames.push({
+      atMs: now,
       intervalMs: now - previous,
       coverage: covered / viewport.height,
       rows: rows.length,
@@ -301,6 +303,8 @@ export async function probeLongSession(options: {
     const elapsedMs = await page.evaluate((origin) => performance.now() - origin, start);
     const after = await metrics();
     return {
+      startMs: start,
+      endMs: start + elapsedMs,
       elapsedMs,
       milliseconds: Object.fromEntries(
         cpuMetrics.map((name) => {
