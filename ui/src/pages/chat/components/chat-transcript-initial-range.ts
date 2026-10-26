@@ -3,7 +3,7 @@ import type { TranscriptRow } from "./chat-transcript-layout.ts";
 
 // A few viewports avoid repeat mounts without making every scroll restyle a
 // large parked subtree. Geometry and prepared Markdown outlive DOM eviction.
-const PREPARED_ROW_LIMIT = 32;
+const PREPARED_ROW_LIMIT = 12;
 
 /** Own initial tail placement and bounded preparation ahead of the visible range. */
 export class TranscriptInitialRange {

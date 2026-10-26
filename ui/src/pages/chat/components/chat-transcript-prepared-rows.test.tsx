@@ -231,7 +231,7 @@ it("warms ordinary rows only in idle time without mounting their DOM", async () 
     await view.idle();
   }
   const last = view.renderRow.mock.calls.at(-1)![0];
-  expect(last.kind === "item" ? last.item : -1).toBeGreaterThan(index + 8);
+  expect(last.kind === "item" ? last.item : -1).toBeGreaterThan(index);
   expect(view.container.querySelectorAll(".chat-virtual-row")).toHaveLength(elements);
 });
 
@@ -301,36 +301,36 @@ it("keeps warming in the reader's direction through opposite size compensation",
   expect(Math.min(...downward)).toBeGreaterThan(180);
 });
 
-it("reuses a recent completed row after scrolling away and back, with a bounded DOM cache", async () => {
+it("reuses a nearby completed row after scrolling away and back, with a bounded DOM cache", async () => {
   const view = await transcriptFixture();
   await view.frame(8);
-  const first = view.container.querySelector('[data-virtual-row-key="fragment:2"]');
+  const first = view.container.querySelector('[data-virtual-row-key="fragment:5"]');
   expect(first).not.toBeNull();
   const preparations = () =>
-    view.renderRow.mock.calls.filter(([row]) => row.key === "fragment:2").length;
+    view.renderRow.mock.calls.filter(([row]) => row.key === "fragment:5").length;
   const initialPreparations = preparations();
-  await view.scrollTo(24);
+  await view.scrollTo(8);
   await view.frame(3);
-  expect(view.container.querySelector('[data-virtual-row-key="fragment:2"]')).toBe(first);
+  expect(view.container.querySelector('[data-virtual-row-key="fragment:5"]')).toBe(first);
   expect(first?.getAttribute("data-prepared-row")).toBe("true");
   expect(first?.hasAttribute("inert")).toBe(true);
   expect(first?.getAttribute("aria-hidden")).toBe("true");
   await view.scrollTo(0);
-  expect(view.container.querySelector('[data-virtual-row-key="fragment:2"]')).toBe(first);
+  expect(view.container.querySelector('[data-virtual-row-key="fragment:5"]')).toBe(first);
   expect(first?.hasAttribute("data-prepared-row")).toBe(false);
   expect(first?.hasAttribute("inert")).toBe(false);
   expect(first?.hasAttribute("aria-hidden")).toBe(false);
   expect(preparations()).toBe(initialPreparations);
-  await view.updateRow(2, 2002);
+  await view.updateRow(5, 2005);
   expect(preparations()).toBe(initialPreparations + 1);
-  expect(first?.textContent).toBe("Message 2002");
+  expect(first?.textContent).toBe("Message 2005");
   await view.replaceRenderer();
-  expect(first?.textContent).toBe("Updated 2002");
+  expect(first?.textContent).toBe("Updated 2005");
 
   for (let index = 16; index < 240; index += 8) {
     await view.scrollTo(index);
     await view.frame(2);
-    expect(transcriptRows(view.container).length).toBeLessThan(144);
+    expect(transcriptRows(view.container).length).toBeLessThan(32);
     expect(
       view.container.querySelector(`[data-virtual-row-key="fragment:${index}"]`),
     ).not.toBeNull();
@@ -349,7 +349,7 @@ it("pauses queued preparation while hidden and retires it on disconnect", async 
 
   await view.present(true);
   await view.frame(3);
-  expect(transcriptRows(view.container).length).toBeGreaterThan(hiddenRows.length);
+  expect(transcriptRows(view.container).some((row) => !hiddenRows.includes(row))).toBe(true);
   await view.scrollTo(160);
   view.host.disconnect();
   await settle();
@@ -418,8 +418,8 @@ it("places a fresh long transcript at its tail and warms a bounded upward window
   expect(view.container.querySelector('[data-virtual-row-key="fragment:255"]')).not.toBeNull();
   expect(transcriptRows(view.container).every((row) => Number(row.dataset.index) > 230)).toBe(true);
   await view.frame(160);
-  expect(transcriptRows(view.container).some((row) => Number(row.dataset.index) < 240)).toBe(true);
-  expect(transcriptRows(view.container).length).toBeLessThanOrEqual(32);
+  expect(transcriptRows(view.container).some((row) => Number(row.dataset.index) < 250)).toBe(true);
+  expect(transcriptRows(view.container).length).toBeLessThanOrEqual(12);
   const preparations = view.renderRow.mock.calls.length;
   await view.frame(16);
   expect(view.renderRow.mock.calls).toHaveLength(preparations);
@@ -459,7 +459,6 @@ it("waits for idle time to mount prepared rows and uses the latest viewport", as
   await view.task();
   expect(transcriptRows(view.container)).toEqual(afterScroll);
   await view.idle();
-  expect(transcriptRows(view.container)).toHaveLength(afterScroll.length + 1);
   const prepared = transcriptRows(view.container).find((row) => !afterScroll.includes(row));
   expect(prepared).toBeDefined();
   expect(Number(prepared!.dataset.index)).toBeGreaterThan(120);
