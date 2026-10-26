@@ -9,6 +9,7 @@ import {
   asRecord,
   readStringField,
 } from "@openclaw/normalization-core/record-coerce";
+import packageManifest from "../../package.json" with { type: "json" };
 import { getEnvApiKey } from "../env-api-keys.js";
 import { getAiTransportHost, resolveAiTransportHeaderSentinels } from "../host.js";
 import { calculateCost } from "../model-utils.js";
@@ -26,6 +27,7 @@ import {
 import { streamFragmentError } from "../transports/transport-utils.js";
 import type {
   Model,
+  ModelRequestHeaders,
   SimpleStreamOptions,
   StreamFunction,
   TextContent,
@@ -35,7 +37,6 @@ import type {
 import { AssistantMessageEventStream } from "../utils/event-stream.js";
 import {
   buildGoogleInteractionsParams,
-  resolveGoogleApiClientHeaders,
   type GoogleInteractionsRequestBody,
 } from "./google-interactions-request.js";
 import {
@@ -46,6 +47,7 @@ import {
 import { buildBaseOptions } from "./simple-options.js";
 
 let toolCallCounter = 0;
+let packageVersionMemo: string | undefined;
 
 function resolveGoogleInteractionsApiKey<T extends GoogleApiType>(
   model: Model<T>,
@@ -117,10 +119,20 @@ export const streamGoogleInteractions: StreamFunction<
       }
       const url = `${baseUrl}/interactions?alt=sse`;
 
-      const googleClientHeaders = resolveGoogleApiClientHeaders({
+      const hostHeaders = getAiTransportHost().resolveProviderRequestHeaders({
+        provider: "google",
+        api: "google-generative-ai",
         baseUrl,
         model,
       });
+      const googleClientHeaders: ModelRequestHeaders = hostHeaders?.["x-goog-api-client"]
+        ? hostHeaders
+        : {
+            ...hostHeaders,
+            "x-goog-api-client": `openclaw/${(packageVersionMemo ||=
+              (typeof process !== "undefined" && process.env?.OPENCLAW_VERSION) ||
+              packageManifest.version)}`,
+          };
 
       const headers = resolveAiTransportHeaderSentinels({
         "Content-Type": "application/json",
