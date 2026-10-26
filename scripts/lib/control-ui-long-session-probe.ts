@@ -761,11 +761,29 @@ export async function probeLongSession(options: {
     await page.keyboard.press(shortcut);
     const input = pane.getByRole("textbox", { name: "Search messages", exact: true });
     await input.fill(needle);
-    await pane
-      .locator(".chat-thread")
-      .getByText(needle, { exact: false })
-      .first()
-      .waitFor({ state: "visible" });
+    await page.waitForFunction(
+      ({ selector, query }) => {
+        const thread = document.querySelector(`${selector} .chat-thread`);
+        if (!thread) {
+          return false;
+        }
+        const viewport = thread.getBoundingClientRect();
+        return [...thread.querySelectorAll<HTMLElement>(".chat-text")].some((text) => {
+          const rect = text.getBoundingClientRect();
+          return (
+            text.textContent?.includes(query) &&
+            text.checkVisibility({
+              checkOpacity: true,
+              checkVisibilityCSS: true,
+              contentVisibilityAuto: true,
+            }) &&
+            rect.bottom > viewport.top &&
+            rect.top < viewport.bottom
+          );
+        });
+      },
+      { selector: paneSelector, query: needle },
+    );
     return { query: needle, renderedRows: await pane.locator(".chat-virtual-row").count() };
   });
   await page.screenshot({ path: path.join(artifactDir, `${prefix}.search.png`) });
