@@ -35,6 +35,25 @@ describe("detectToolCallShapedText", () => {
     ).toEqual({ kind: "bracketed_tool_call", toolName: "web_search" });
   });
 
+  it("names the tool in a legacy bracketed call", () => {
+    expect(
+      detectToolCallShapedText(
+        'note [TOOL_CALL]{tool => "read", args => {"path":"proof.txt"}}[/TOOL_CALL]',
+      ),
+    ).toEqual({ kind: "bracketed_tool_call", toolName: "read" });
+    expect(detectToolCallShapedText('[TOOL_CALL]{tool => "read"}')).toBeNull();
+  });
+
+  // Each reply shape below took seconds on the former single-regex checks.
+  it.each([
+    ["repeated legacy openers", `{${'[TOOL_CALL]{TOOL=>"G"'.repeat(950)}a`],
+    ["an Action line before blank lines", `Action: x${"\n".repeat(2_000)}y`],
+  ] as const)("returns promptly for %s", (_label, text) => {
+    const started = performance.now();
+    expect(detectToolCallShapedText(text)).toBeNull();
+    expect(performance.now() - started).toBeLessThan(500);
+  });
+
   it("ignores normal JSON and prose mentions", () => {
     expect(detectToolCallShapedText('{"status":"ok","message":"done"}')).toBeNull();
     expect(detectToolCallShapedText("Use tool_call tags only in examples.")).toBeNull();
