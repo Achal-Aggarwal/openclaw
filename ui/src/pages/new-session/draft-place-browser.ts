@@ -1,35 +1,24 @@
 import type {
-  FsListDirResult,
   ProjectRecord,
   ProjectRecent,
 } from "../../../../packages/gateway-protocol/src/index.js";
 import type { ApplicationContext } from "../../app/context.ts";
 import { projectsForGateway, type ProjectCatalog } from "../../lib/projects.ts";
 import type { DraftGatewayState } from "./draft-gateway-state.ts";
+import type {
+  DraftPlaceBrowserCallbacks,
+  DraftPlaceBrowserSnapshot,
+  ProjectBrowserFocus,
+} from "./draft-place-browser.types.ts";
 import type { DraftProjectPicker } from "./draft-project-picker.ts";
 import type { DraftRemoteProject } from "./project-chip.ts";
 
 type DraftPickerKind = "where" | "project" | "checkout";
-export type ProjectBrowserFocus = Partial<Record<"browse" | "path", HTMLElement>>;
-
-export type DraftPlaceBrowserSnapshot = Readonly<{
-  context: ApplicationContext | undefined;
-  isAdmin: boolean;
-}>;
 
 type DraftProjectSelection =
   | { kind: "local"; id: string }
   | { kind: "remote"; project: DraftRemoteProject }
   | null;
-
-export type DraftPlaceBrowserCallbacks = {
-  changed: () => void;
-  updateComplete: () => Promise<unknown>;
-  onProjectMissing: () => void;
-  onSelectProject: (projectId: string) => void;
-  onApprovedListing: (listing: FsListDirResult) => void;
-  activeElement: () => Element | null;
-};
 
 export class DraftPlaceBrowser {
   readonly projectFocus: ProjectBrowserFocus = {};
@@ -51,12 +40,7 @@ export class DraftPlaceBrowser {
   ) {}
 
   projectPicker(Picker: typeof DraftProjectPicker): DraftProjectPicker {
-    return (this.projectPickerValue ??= new Picker(
-      this.gateway,
-      this.read,
-      this.callbacks,
-      this,
-    ));
+    return (this.projectPickerValue ??= new Picker(this.gateway, this.read, this.callbacks, this));
   }
 
   synchronize() {

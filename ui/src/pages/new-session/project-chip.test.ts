@@ -12,13 +12,15 @@ const projects = [
 
 describe("What chip state", () => {
   it("uses the selected project for the closed trigger", () => {
-    expect(resolveProjectChip({
-      folder: "/workspace/elsewhere",
-      workspace: "/workspace",
-      projectId: "openclaw",
-      selectedRemoteProject: null,
-      projects,
-    }).label).toBe("OpenClaw");
+    expect(
+      resolveProjectChip({
+        folder: "/workspace/elsewhere",
+        workspace: "/workspace",
+        projectId: "openclaw",
+        selectedRemoteProject: null,
+        projects,
+      }).label,
+    ).toBe("OpenClaw");
   });
 
   it.each([

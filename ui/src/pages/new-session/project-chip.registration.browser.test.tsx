@@ -48,7 +48,9 @@ function mountBrowser() {
   browser.synchronize();
   const open = async () => {
     browser.projectPicker(DraftProjectPicker).selectGatewayBrowser("/workspace");
-    await waitForSolid(() => expect(browser.projectPicker(DraftProjectPicker).browserProjectPath).toBe("/workspace"));
+    await waitForSolid(() =>
+      expect(browser.projectPicker(DraftProjectPicker).browserProjectPath).toBe("/workspace"),
+    );
     await waitForSolid(() =>
       expect(view.queryByRole("button", { name: "Register as project" })).not.toBeNull(),
     );
@@ -136,7 +138,9 @@ describe("project registration presentation", () => {
       const previous = createDeferred<ProjectsRegisterResult>();
       request.mockImplementationOnce(() => previous.promise);
       register().click();
-      await waitForSolid(() => expect(browser.projectPicker(DraftProjectPicker).browserRegistering).toBe(true));
+      await waitForSolid(() =>
+        expect(browser.projectPicker(DraftProjectPicker).browserRegistering).toBe(true),
+      );
       if (retirement === "close") {
         browser.close();
       } else if (retirement === "disconnect") {

@@ -249,10 +249,14 @@ describe("DraftPlaceBrowser", () => {
     });
     const { browser } = createBrowser(request, undefined, true, true);
     browser.projectPicker(DraftProjectPicker).selectGatewayBrowser("/workspace");
-    await waitForFast(() => expect(browser.projectPicker(DraftProjectPicker).browser.listing?.path).toBe("/workspace"));
+    await waitForFast(() =>
+      expect(browser.projectPicker(DraftProjectPicker).browser.listing?.path).toBe("/workspace"),
+    );
     browser.projectPicker(DraftProjectPicker).browser.setDraft("/workspace/pa");
     branches.resolve({ repositoryStatus: "git" });
-    await waitForFast(() => expect(browser.projectPicker(DraftProjectPicker).browserProjectPath).toBe("/workspace"));
+    await waitForFast(() =>
+      expect(browser.projectPicker(DraftProjectPicker).browserProjectPath).toBe("/workspace"),
+    );
   });
 
   it.each([
@@ -295,10 +299,14 @@ describe("DraftPlaceBrowser", () => {
       true,
     );
     browser.projectPicker(DraftProjectPicker).selectGatewayBrowser("/workspace");
-    await waitForFast(() => expect(browser.projectPicker(DraftProjectPicker).browserProjectPath).toBe("/workspace"));
+    await waitForFast(() =>
+      expect(browser.projectPicker(DraftProjectPicker).browserProjectPath).toBe("/workspace"),
+    );
     if (change === "retry") {
       await browser.projectPicker(DraftProjectPicker).registerBrowserProject("/workspace");
-      expect(browser.projectPicker(DraftProjectPicker).browser.error).toContain("registry unavailable");
+      expect(browser.projectPicker(DraftProjectPicker).browser.error).toContain(
+        "registry unavailable",
+      );
       expect(browser.projectPicker(DraftProjectPicker)).toMatchObject({
         browserRegistering: false,
         browserProjectPath: "/workspace",
@@ -320,7 +328,9 @@ describe("DraftPlaceBrowser", () => {
         if (change === "navigate away and back") {
           directoryPath = "/workspace";
           await browser.projectPicker(DraftProjectPicker).browser.navigate(directoryPath);
-          await waitForFast(() => expect(browser.projectPicker(DraftProjectPicker).browserProjectPath).toBe("/workspace"));
+          await waitForFast(() =>
+            expect(browser.projectPicker(DraftProjectPicker).browserProjectPath).toBe("/workspace"),
+          );
         }
       } else if (change === "typed directory" || failedDirectory) {
         browser.projectPicker(DraftProjectPicker).browser.setDraft("/elsewhere/x");
@@ -337,7 +347,9 @@ describe("DraftPlaceBrowser", () => {
       } else if (change === "reopen") {
         browser.close();
         browser.projectPicker(DraftProjectPicker).selectGatewayBrowser("/workspace");
-        await waitForFast(() => expect(browser.projectPicker(DraftProjectPicker).browserProjectPath).toBe("/workspace"));
+        await waitForFast(() =>
+          expect(browser.projectPicker(DraftProjectPicker).browserProjectPath).toBe("/workspace"),
+        );
       } else if (change === "connection loss") {
         context.gateway.snapshot.phase = "reconnecting";
         // The write must not publish even before the browser observes this disconnect.
@@ -345,7 +357,9 @@ describe("DraftPlaceBrowser", () => {
       }
       const stillBusy = browser.projectPicker(DraftProjectPicker).browserRegistering;
       const duplicate =
-        change === "reopen" ? undefined : browser.projectPicker(DraftProjectPicker).registerBrowserProject(directoryPath);
+        change === "reopen"
+          ? undefined
+          : browser.projectPicker(DraftProjectPicker).registerBrowserProject(directoryPath);
       registration.resolve(registered);
       await Promise.all([pending, duplicate]);
 

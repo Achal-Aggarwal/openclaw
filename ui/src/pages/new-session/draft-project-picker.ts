@@ -12,10 +12,10 @@ import { createPageRequest } from "../../lib/page-request.ts";
 import { pathDisplayName } from "../../lib/path-display.ts";
 import type { DraftGatewayState } from "./draft-gateway-state.ts";
 import type {
-  DraftPlaceBrowser,
   DraftPlaceBrowserCallbacks,
   DraftPlaceBrowserSnapshot,
-} from "./draft-place-browser.ts";
+  DraftProjectPickerOwner,
+} from "./draft-place-browser.types.ts";
 import { isAbsolutePath, isKnownWorkspacePath } from "./path.ts";
 import { PICKER_INPUT_DEBOUNCE_MS, PlaceBrowserState } from "./place-browser-state.ts";
 import { projectCloneInput } from "./project-chip.ts";
@@ -70,7 +70,7 @@ export class DraftProjectPicker {
     private readonly gateway: DraftGatewayState,
     private readonly read: () => DraftPlaceBrowserSnapshot,
     private readonly callbacks: DraftPlaceBrowserCallbacks,
-    private readonly owner: DraftPlaceBrowser,
+    private readonly owner: DraftProjectPickerOwner,
   ) {
     this.browser = new PlaceBrowserState(
       (path) => {

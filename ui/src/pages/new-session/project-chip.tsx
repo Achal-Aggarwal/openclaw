@@ -1,7 +1,7 @@
 import { lazy } from "solid-js";
 import { Icon } from "../../components/solid/icon.tsx";
 import { t } from "../../lib/reactive/i18n.ts";
-import type { ProjectBrowserFocus } from "./draft-place-browser.ts";
+import type { ProjectBrowserFocus } from "./draft-place-browser.types.ts";
 import { SessionPicker } from "./picker.tsx";
 import type { resolveProjectChip } from "./project-chip.ts";
 import type { NewSessionPlaceControlsOptions } from "./target-controls.ts";

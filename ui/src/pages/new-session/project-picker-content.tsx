@@ -51,14 +51,17 @@ export function ProjectPickerContent(props: ProjectChipProps) {
     const cloneInput = projectCloneInput(picker().projectQuery);
     const query = picker().projectQuery.trim();
     const browseNeedsAdmin = !props.params.place.browseAvailable() && !props.params.place.isAdmin();
-    const recentItems = props.nativeTerminal || query
-      ? []
-      : picker().resolveProjectRecents({
-          sessions: props.params.context?.sessions.state.result?.sessions ?? [],
-          workspace,
-          workspaceRoots: props.params.place.knownWorkspaceRoots(),
-          isAdmin: props.params.place.isAdmin(),
-        }).filter((recent) => recent.kind !== "project");
+    const recentItems =
+      props.nativeTerminal || query
+        ? []
+        : picker()
+            .resolveProjectRecents({
+              sessions: props.params.context?.sessions.state.result?.sessions ?? [],
+              workspace,
+              workspaceRoots: props.params.place.knownWorkspaceRoots(),
+              isAdmin: props.params.place.isAdmin(),
+            })
+            .filter((recent) => recent.kind !== "project");
     const recentSuffixes = disambiguate(recentItems, (recent) => recent.displayName, [
       (recent) => (recent.kind === "folder" ? parentFolderDisplayName(recent.folder) : undefined),
       (recent) => (recent.kind === "folder" ? recent.folder : undefined),
@@ -97,7 +100,8 @@ export function ProjectPickerContent(props: ProjectChipProps) {
       query,
       browseNeedsAdmin,
       recentItems,
-      showWorkspace: !query || pathDisplayName(workspace).toLowerCase().includes(query.toLowerCase()),
+      showWorkspace:
+        !query || pathDisplayName(workspace).toLowerCase().includes(query.toLowerCase()),
       recentSuffixes,
       deviceBrowse,
       browserLabel,
@@ -231,9 +235,7 @@ export function ProjectPickerContent(props: ProjectChipProps) {
           !props.params.submitting &&
           !props.params.pendingPlacement
         ) {
-          picker().selectGatewayBrowser(
-            props.params.place.folder.trim() || view().workspace,
-          );
+          picker().selectGatewayBrowser(props.params.place.folder.trim() || view().workspace);
         }
       }}
     >
@@ -250,9 +252,7 @@ export function ProjectPickerContent(props: ProjectChipProps) {
       {picker().browserOpen ? (
         <PlaceBrowser
           pathRef={(node) => props.focus && (props.focus.path = node)}
-          registeringProject={
-            registration().saving() || picker().browserRegistering
-          }
+          registeringProject={registration().saving() || picker().browserRegistering}
           params={{
             browser: picker().browser,
             id: "new-session-place-browser",

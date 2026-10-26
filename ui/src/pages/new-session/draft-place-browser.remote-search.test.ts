@@ -70,12 +70,16 @@ describe("remote project search", () => {
     browser.projectPicker(DraftProjectPicker).changeProjectQuery("failed");
     await vi.advanceTimersByTimeAsync(PICKER_INPUT_DEBOUNCE_MS);
     // Closed pickers do not consume the outcome, so failures must not reject here.
-    await expect(browser.projectPicker(DraftProjectPicker).projectSearchRead!.completed).resolves.toEqual({ error: failure });
+    await expect(
+      browser.projectPicker(DraftProjectPicker).projectSearchRead!.completed,
+    ).resolves.toEqual({ error: failure });
 
     request.mockResolvedValueOnce(project);
     browser.projectPicker(DraftProjectPicker).changeProjectQuery("current");
     await vi.advanceTimersByTimeAsync(PICKER_INPUT_DEBOUNCE_MS);
-    await expect(browser.projectPicker(DraftProjectPicker).projectSearchRead!.completed).resolves.toEqual({ result: project });
+    await expect(
+      browser.projectPicker(DraftProjectPicker).projectSearchRead!.completed,
+    ).resolves.toEqual({ result: project });
 
     const disconnected = createDeferred<ProjectsSearchRemoteResult>();
     request.mockReturnValueOnce(disconnected.promise);
