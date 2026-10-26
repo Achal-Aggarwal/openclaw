@@ -1,0 +1,267 @@
+name: Shared runtime pilot
+
+# Qualification only. Production CI does not depend on this workflow.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-shared-runtime-pilot
+  cancel-in-progress: false
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  NODE_VERSION: "24.22.1"
+  CI: "true"
+  NODE_OPTIONS: --max-old-space-size=8192
+  OPENCLAW_BUILD_PRIVATE_QA: "1"
+  VITEST: "1"
+  OPENCLAW_CI_TEST_RUNTIME_POLICY: node
+  OPENCLAW_VITEST_MAX_WORKERS: "2"
+  OPENCLAW_NODE_TEST_PLAN_CONCURRENCY: "1"
+  OPENCLAW_E2E_USE_PREBUILT_DIST: "1"
+  OPENCLAW_VITEST_NO_OUTPUT_TIMEOUT_MS: "300000"
+
+jobs:
+  plan:
+    if: github.repository == 'openclaw/openclaw' && github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+    steps:
+      - &checkout
+        name: Checkout exact workflow source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - &setup
+        name: Setup Node environment
+        uses: ./.github/actions/setup-node-env
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          install-bun: "false"
+          frozen-lockfile: "true"
+          cache-mode: off
+          semantic-checks: "true"
+      - name: Plan existing worker shards
+        id: plan
+        run: node --import ./scripts/tsx.mjs scripts/ci-shared-runtime-pilot.mts plan .artifacts/shared-runtime-pilot/plan.json
+
+  control:
+    if: github.repository == 'openclaw/openclaw' && github.event_name == 'workflow_dispatch'
+    needs: [plan]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    env:
+      PILOT_ARM: control
+      PILOT_CHECK_NAME: ${{ matrix.check_name }}
+    steps:
+      - &start-clock
+        name: Start job clock
+        shell: bash
+        run: echo "PILOT_JOB_STARTED_MS=$(date +%s%3N)" >> "$GITHUB_ENV"
+      - *checkout
+      - *setup
+      - &setup-clock
+        name: Record setup elapsed
+        shell: bash
+        run: echo "PILOT_SETUP_FINISHED_MS=$(date +%s%3N)" >> "$GITHUB_ENV"
+      - name: Build independent private QA runtime
+        run: node --import ./scripts/tsx.mjs scripts/ci-shared-runtime-pilot.mts measure "$PILOT_ARM-$PILOT_CHECK_NAME-build" ".artifacts/shared-runtime-pilot/receipts/$PILOT_ARM-$PILOT_CHECK_NAME-build.json" -- pnpm build qaRuntime
+      - &run-shard
+        name: Run unchanged Node worker shard
+        env:
+          PILOT_ROW_JSON: ${{ toJSON(matrix) }}
+        shell: bash
+        run: node --import ./scripts/tsx.mjs scripts/ci-shared-runtime-pilot.mts run "$PILOT_ROW_JSON" ".artifacts/shared-runtime-pilot/receipts/$PILOT_ARM-$PILOT_CHECK_NAME-test.json"
+      - &record-job
+        name: Record job receipt
+        if: always()
+        env:
+          PILOT_JOB_STATUS: ${{ job.status }}
+        shell: bash
+        run: |
+          node --input-type=module <<'JS'
+          import { mkdirSync, existsSync, statSync, writeFileSync } from 'node:fs';
+          import os from 'node:os';
+          const endedAtMs = Date.now();
+          const startedAtMs = Number(process.env.PILOT_JOB_STARTED_MS);
+          const setupFinishedMs = Number(process.env.PILOT_SETUP_FINISHED_MS) || null;
+          const transferStartedMs = Number(process.env.PILOT_TRANSFER_STARTED_MS) || null;
+          const transferFinishedMs = Number(process.env.PILOT_TRANSFER_FINISHED_MS) || null;
+          const runtimeArchive = '.artifacts/shared-runtime-pilot/runtime/runtime.tgz';
+          const receipt = {
+            kind: 'job',
+            arm: process.env.PILOT_ARM,
+            checkName: process.env.PILOT_CHECK_NAME,
+            label: process.env.PILOT_ARM + '-' + process.env.PILOT_CHECK_NAME + '-job',
+            revision: process.env.GITHUB_SHA,
+            runId: process.env.GITHUB_RUN_ID,
+            attempt: process.env.GITHUB_RUN_ATTEMPT,
+            status: process.env.PILOT_JOB_STATUS,
+            exitCode: process.env.PILOT_JOB_STATUS === 'success' ? 0 : 1,
+            startedAt: startedAtMs, finishedAt: endedAtMs, seconds: (endedAtMs - startedAtMs) / 1000,
+            setupElapsedMs: setupFinishedMs ? setupFinishedMs - startedAtMs : null,
+            transferElapsedMs: transferFinishedMs && transferStartedMs ? transferFinishedMs - transferStartedMs : null,
+            artifactBytes: existsSync(runtimeArchive) ? statSync(runtimeArchive).size : null,
+            nodeVersion: process.version,
+            runner: { label: 'ubuntu-24.04', os: process.platform, arch: process.arch,
+              image: process.env.ImageVersion ?? null, cpuCount: os.availableParallelism(),
+              totalMemoryBytes: os.totalmem() },
+          };
+          const directory = '.artifacts/shared-runtime-pilot/receipts';
+          mkdirSync(directory, { recursive: true });
+          writeFileSync(directory + '/' + receipt.arm + '-' + receipt.checkName + '-job.json', JSON.stringify(receipt, null, 2) + '\n');
+          JS
+      - &upload-receipts
+        name: Upload job receipts
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: shared-runtime-receipts-${{ env.PILOT_ARM }}-${{ env.PILOT_CHECK_NAME }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .artifacts/shared-runtime-pilot/receipts/*.json
+          compression-level: 0
+          retention-days: 1
+          if-no-files-found: error
+
+  producer:
+    if: github.repository == 'openclaw/openclaw' && github.event_name == 'workflow_dispatch'
+    needs: [plan]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    outputs:
+      artifact-id: ${{ steps.runtime-upload.outputs.artifact-id }}
+    env:
+      PILOT_ARM: producer
+      PILOT_CHECK_NAME: runtime
+    steps:
+      - *start-clock
+      - *checkout
+      - *setup
+      - *setup-clock
+      - name: Build shared private QA runtime once
+        run: node --import ./scripts/tsx.mjs scripts/ci-shared-runtime-pilot.mts measure producer-build .artifacts/shared-runtime-pilot/receipts/producer-runtime-build.json -- pnpm build qaRuntime
+      - name: Pack runtime with source identity
+        run: node --import ./scripts/tsx.mjs scripts/ci-shared-runtime-pilot.mts measure producer-pack .artifacts/shared-runtime-pilot/receipts/producer-runtime-pack.json -- node scripts/ci-node-runtime-artifact.mjs pack .artifacts/shared-runtime-pilot/runtime "${{ github.sha }}" private-qa
+      - &start-transfer
+        name: Start runtime transfer clock
+        shell: bash
+        run: echo "PILOT_TRANSFER_STARTED_MS=$(date +%s%3N)" >> "$GITHUB_ENV"
+      - name: Upload same-run runtime
+        id: runtime-upload
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: shared-runtime-private-qa-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            .artifacts/shared-runtime-pilot/runtime/runtime.tgz
+            .artifacts/shared-runtime-pilot/runtime/manifest.json
+          compression-level: 0
+          retention-days: 1
+          if-no-files-found: error
+      - &finish-transfer
+        name: Finish runtime transfer clock
+        shell: bash
+        run: echo "PILOT_TRANSFER_FINISHED_MS=$(date +%s%3N)" >> "$GITHUB_ENV"
+      - *record-job
+      - *upload-receipts
+
+  shared:
+    if: github.repository == 'openclaw/openclaw' && github.event_name == 'workflow_dispatch'
+    needs: [plan, producer]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    env:
+      PILOT_ARM: shared
+      PILOT_CHECK_NAME: ${{ matrix.check_name }}
+    steps:
+      - *start-clock
+      - *checkout
+      - *setup
+      - *setup-clock
+      - *start-transfer
+      - name: Download exact producer artifact
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          artifact-ids: ${{ needs.producer.outputs.artifact-id }}
+          path: .artifacts/shared-runtime-pilot/runtime
+          merge-multiple: true
+      - name: Verify and restore shared runtime
+        run: node --import ./scripts/tsx.mjs scripts/ci-shared-runtime-pilot.mts measure "$PILOT_ARM-$PILOT_CHECK_NAME-restore" ".artifacts/shared-runtime-pilot/receipts/$PILOT_ARM-$PILOT_CHECK_NAME-restore.json" -- node scripts/ci-node-runtime-artifact.mjs restore .artifacts/shared-runtime-pilot/runtime "${{ github.sha }}" private-qa
+      - *finish-transfer
+      - *run-shard
+      - *record-job
+      - *upload-receipts
+
+  report:
+    if: ${{ always() && github.repository == 'openclaw/openclaw' && github.event_name == 'workflow_dispatch' }}
+    needs: [plan, control, producer, shared]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - *checkout
+      - *setup
+      - name: Download this attempt's receipts
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: shared-runtime-receipts-*-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .artifacts/shared-runtime-pilot/receipts
+          merge-multiple: true
+      - name: Require all experiment arms
+        env:
+          PILOT_MATRIX_JSON: ${{ needs.plan.outputs.matrix }}
+          PILOT_NEEDS_JSON: ${{ toJSON(needs) }}
+        shell: bash
+        run: |
+          node --input-type=module <<'JS'
+          import assert from 'node:assert/strict';
+          import { readFileSync } from 'node:fs';
+          const needs = JSON.parse(process.env.PILOT_NEEDS_JSON);
+          for (const [name, job] of Object.entries(needs)) {
+            assert.equal(job.result, 'success', name + ' did not complete successfully');
+          }
+          const rows = JSON.parse(process.env.PILOT_MATRIX_JSON).include;
+          assert.equal(rows.length, 2, 'Expected both existing worker shards');
+          const jobs = [['producer', 'runtime'], ...['control', 'shared'].flatMap(arm => rows.map(row => [arm, row.check_name]))];
+          const jobReceipts = [];
+          for (const [arm, name] of jobs) {
+            const prefix = '.artifacts/shared-runtime-pilot/receipts/' + arm + '-' + name;
+            const receipt = JSON.parse(readFileSync(prefix + '-job.json', 'utf8'));
+            assert.equal(receipt.status, 'success', prefix + ' failed');
+            assert.equal(receipt.revision, process.env.GITHUB_SHA, prefix + ' source mismatch');
+            assert.equal(receipt.runId, process.env.GITHUB_RUN_ID, prefix + ' run mismatch');
+            assert.equal(receipt.attempt, process.env.GITHUB_RUN_ATTEMPT, prefix + ' attempt mismatch');
+            assert(receipt.seconds > 0, prefix + ' missing job timing');
+            jobReceipts.push(receipt);
+            for (const phase of arm === 'producer' ? ['build', 'pack'] : arm === 'control' ? ['build', 'test'] : ['restore', 'test']) {
+              const phaseReceipt = JSON.parse(readFileSync(prefix + '-' + phase + '.json', 'utf8'));
+              assert.equal(phaseReceipt.exitCode, 0, prefix + '-' + phase + ' failed');
+              assert.equal(phaseReceipt.revision, process.env.GITHUB_SHA, prefix + '-' + phase + ' source mismatch');
+              assert.equal(phaseReceipt.runId, process.env.GITHUB_RUN_ID, prefix + '-' + phase + ' run mismatch');
+              assert.equal(phaseReceipt.attempt, process.env.GITHUB_RUN_ATTEMPT, prefix + '-' + phase + ' attempt mismatch');
+            }
+          }
+          const control = jobReceipts.filter(receipt => receipt.arm === 'control');
+          const shared = jobReceipts.filter(receipt => receipt.arm !== 'control');
+          const work = rows => rows.reduce((sum, row) => sum + row.seconds, 0);
+          const span = rows => (Math.max(...rows.map(row => row.finishedAt)) - Math.min(...rows.map(row => row.startedAt))) / 1000;
+          const comparison = { controlJobSeconds: work(control), sharedJobSeconds: work(shared), controlSpanSeconds: span(control), sharedSpanSeconds: span(shared) };
+          console.log(JSON.stringify(comparison));
+          const { appendFileSync } = await import('node:fs');
+          if (process.env.GITHUB_STEP_SUMMARY) {
+            appendFileSync(process.env.GITHUB_STEP_SUMMARY, '## Complete arms (producer included)\n\n' + Object.entries(comparison).map(([name, value]) => '- ' + name + ': ' + value.toFixed(2)).join('\n') + '\n\nJob seconds exclude initial provisioning, receipt upload and post-job cleanup; spans include the producer dependency wait between observed jobs. These are not billable CPU seconds.\n');
+          }
+          JS
+      - name: Report raw preparation and execution measurements
+        run: node --import ./scripts/tsx.mjs scripts/ci-shared-runtime-pilot.mts report .artifacts/shared-runtime-pilot/receipts
