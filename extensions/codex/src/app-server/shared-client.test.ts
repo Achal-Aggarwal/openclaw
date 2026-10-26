@@ -16,6 +16,7 @@ import { withCodexAppServerJsonClient } from "./request.js";
 import { createCodexTestBindingStore } from "./session-binding.test-helpers.js";
 import { registerSharedClientCompactionRetentionTests } from "./shared-client-compaction-retention.test-support.js";
 import { registerSharedClientConnectionArtifactTests } from "./shared-client-connection-artifact.test-support.js";
+import { registerSharedClientIdleTests } from "./shared-client-idle.test-support.js";
 import { registerSharedClientInferenceTests } from "./shared-client-inference.test-support.js";
 import { retireSharedCodexAppServerClientsBeforeDesktopGeneration } from "./shared-client-lifecycle.js";
 import { registerSharedClientLifetimeTests } from "./shared-client-lifetime.test-support.js";
@@ -601,6 +602,7 @@ describe("shared Codex app-server client", () => {
   });
 
   registerSharedClientCompactionRetentionTests();
+  registerSharedClientIdleTests();
   registerSharedClientLifetimeTests(
     () => {
       mocks.bridgeCodexAppServerStartOptions.mockImplementationOnce(async ({ startOptions }) => ({

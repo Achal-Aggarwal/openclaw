@@ -37,6 +37,7 @@ type ClientRuntime = ThreadOwnershipState & {
   sessionMetadata: Map<string, { sessionsRoot: string; rolloutPath: string; metadata: JsonObject }>;
   workspaceReferences: Map<string, { digest?: string; needsReintroduction: boolean }>;
   evictionTimer?: ReturnType<typeof setTimeout>;
+  onThreadOwnershipChange?: () => void;
 };
 
 /** Match Codex's native grace window without retaining inactive conversations indefinitely. */
@@ -132,6 +133,7 @@ export async function readCodexClientSessionMeta(
 export function ensureCodexAppServerClientRuntime(
   client: CodexAppServerClient,
   context: ClientRuntimeContext,
+  onThreadOwnershipChange?: () => void,
 ): void {
   const existing = configuredClients.get(client);
   if (existing) {
@@ -145,6 +147,7 @@ export function ensureCodexAppServerClientRuntime(
   }
   const runtime: ClientRuntime = {
     context,
+    onThreadOwnershipChange,
     closed: false,
     retainedThreads: new Map(),
     claimedThreads: new Map(),
@@ -255,23 +258,19 @@ export function ensureCodexAppServerClientRuntime(
         invalidateThreadOwnership(runtime, threadId);
         runtime.sessionMetadata.delete(threadId);
         runtime.workspaceReferences.delete(threadId);
-        scheduleRetainedThreadEviction(client, runtime);
+        updateThreadOwnership(client, runtime);
       }
     }
   });
 }
 
-function scheduleRetainedThreadEviction(
-  client: CodexAppServerClient,
-  runtime: ClientRuntime,
-): void {
-  if (runtime.evictionTimer) {
-    clearTimeout(runtime.evictionTimer);
-    runtime.evictionTimer = undefined;
-  }
+function updateThreadOwnership(client: CodexAppServerClient, runtime: ClientRuntime): void {
+  clearTimeout(runtime.evictionTimer);
+  runtime.evictionTimer = undefined;
   if (runtime.closed) {
     return;
   }
+  runtime.onThreadOwnershipChange?.();
   let expiresAt = Number.POSITIVE_INFINITY;
   for (const [threadId, thread] of runtime.retainedThreads) {
     if (!runtime.protectedThreads.has(threadId)) {
@@ -321,7 +320,6 @@ async function releaseRetainedThread(
     olderThreadIds.add(candidateThreadId);
   }
   runtime.retainedThreads.delete(threadId);
-  scheduleRetainedThreadEviction(client, runtime);
   // Keep release ownership addressable until unsubscribe settles. Unrelated
   // conversations must stay reusable while only this thread transitions.
   const transition: ThreadReleaseTransition = {
@@ -332,6 +330,7 @@ async function releaseRetainedThread(
     }),
   };
   runtime.releasingThreads.set(threadId, transition);
+  updateThreadOwnership(client, runtime);
   try {
     await transition.completion;
     runtime.workspaceReferences.delete(threadId);
@@ -366,7 +365,7 @@ async function releaseRetainedThread(
     if (runtime.releasingThreads.get(threadId) === transition) {
       runtime.releasingThreads.delete(threadId);
     }
-    scheduleRetainedThreadEviction(client, runtime);
+    updateThreadOwnership(client, runtime);
   }
 }
 
@@ -380,7 +379,7 @@ async function evictExpiredRetainedThreads(
       await releaseRetainedThread(client, runtime, threadId);
     }
   }
-  scheduleRetainedThreadEviction(client, runtime);
+  updateThreadOwnership(client, runtime);
 }
 
 async function evictExcessIdleThreads(
@@ -461,7 +460,7 @@ export async function retainCodexAppServerLiveThread(
     if (runtime.retainedThreads.get(threadId) === retained) {
       runtime.retainedThreads.delete(threadId);
     }
-    scheduleRetainedThreadEviction(client, runtime);
+    updateThreadOwnership(client, runtime);
     embeddedAgentLog.warn("codex retained thread capacity eviction failed", {
       threadId,
       reason: formatErrorMessage(error),
@@ -476,7 +475,7 @@ export async function retainCodexAppServerLiveThread(
   if (claimed !== undefined && runtime.claimedThreads.get(threadId) === claimed) {
     runtime.claimedThreads.delete(threadId);
   }
-  scheduleRetainedThreadEviction(client, runtime);
+  updateThreadOwnership(client, runtime);
   return true;
 }
 
@@ -544,7 +543,7 @@ function claimCodexAppServerThreadOwnership(
   runtime.claimedThreads.set(threadId, claimed);
   previousClaim?.invalidate();
   retained.ownerToken?.invalidate();
-  scheduleRetainedThreadEviction(client, runtime);
+  updateThreadOwnership(client, runtime);
   const assertCurrent = () => {
     if (claimed.invalidated || runtime.closed || runtime.claimedThreads.get(threadId) !== claimed) {
       throw new Error(`Codex thread subscription ownership changed: ${threadId}`);
@@ -605,6 +604,7 @@ function claimCodexAppServerThreadOwnership(
       if (runtime.releasingThreads.get(threadId) === transition) {
         runtime.releasingThreads.delete(threadId);
       }
+      updateThreadOwnership(client, runtime);
     }
   };
   // Compaction and bound turns transfer this callback back into idle storage;
@@ -620,7 +620,7 @@ function claimCodexAppServerThreadOwnership(
     forget: () => {
       if (forgetThreadOwnership(runtime, threadId, claimed)) {
         runtime.workspaceReferences.delete(threadId);
-        scheduleRetainedThreadEviction(client, runtime);
+        updateThreadOwnership(client, runtime);
       }
     },
   };
@@ -635,6 +635,19 @@ export function revertCodexAppServerLiveThreadSkillsCatalog(
   if (runtime && !runtime.closed) {
     revertRetainedThreadSkillsCatalog(runtime, threadId);
   }
+}
+
+/** Native subscriptions, including ephemeral history and releases, pin their physical client. */
+export function hasCodexAppServerThreadOwnership(client: CodexAppServerClient): boolean {
+  const runtime = configuredClients.get(client);
+  return Boolean(
+    runtime &&
+    !runtime.closed &&
+    (runtime.retainedThreads.size > 0 ||
+      runtime.claimedThreads.size > 0 ||
+      runtime.releasingThreads.size > 0 ||
+      runtime.protectedThreads.size > 0),
+  );
 }
 
 /** Distinguish active claimed ownership from an already-evicted idle subscription. */
@@ -700,6 +713,7 @@ export async function unsubscribeCodexAppServerLiveThread(
   } else if (runtime) {
     transition = { completion: physicalRelease, physicalRelease };
     runtime.releasingThreads.set(threadId, transition);
+    updateThreadOwnership(client, runtime);
   }
   try {
     await physicalRelease;
@@ -708,7 +722,7 @@ export async function unsubscribeCodexAppServerLiveThread(
     if (retained !== undefined && runtime?.retainedThreads.get(threadId) === retained) {
       runtime.retainedThreads.delete(threadId);
       retained.ownerToken?.invalidate();
-      scheduleRetainedThreadEviction(client, runtime);
+      updateThreadOwnership(client, runtime);
     }
     if (claimed !== undefined && runtime?.claimedThreads.get(threadId) === claimed) {
       runtime.claimedThreads.delete(threadId);
@@ -717,6 +731,7 @@ export async function unsubscribeCodexAppServerLiveThread(
   } finally {
     if (ownsTransition && runtime.releasingThreads.get(threadId) === transition) {
       runtime.releasingThreads.delete(threadId);
+      updateThreadOwnership(client, runtime);
     }
   }
 }
@@ -741,7 +756,7 @@ export function protectCodexAppServerLiveThread(
     return () => undefined;
   }
   runtime.protectedThreads.set(threadId, (runtime.protectedThreads.get(threadId) ?? 0) + 1);
-  scheduleRetainedThreadEviction(client, runtime);
+  updateThreadOwnership(client, runtime);
   let protectedThread = true;
   return () => {
     if (!protectedThread) {
@@ -767,7 +782,7 @@ export function protectCodexAppServerLiveThread(
     } else {
       runtime.protectedThreads.set(threadId, count - 1);
     }
-    scheduleRetainedThreadEviction(client, runtime);
+    updateThreadOwnership(client, runtime);
     void evictExcessIdleThreads(client, runtime).catch((error: unknown) => {
       embeddedAgentLog.warn("codex retained thread unpin eviction failed", {
         threadId,

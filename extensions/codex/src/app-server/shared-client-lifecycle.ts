@@ -15,6 +15,8 @@ export type SharedCodexAppServerClientEntry = {
   pendingAcquires: number;
   closeWhenIdle: boolean;
   closeError?: Error;
+  idleTimer?: ReturnType<typeof setTimeout>;
+  hasOwnedThreads?: () => boolean;
   startupAbort?: AbortController;
   onStartedClientCallbacks: Set<(client: CodexAppServerClient) => void>;
 };
@@ -128,6 +130,7 @@ export function retireSharedCodexAppServerClientIfCurrent(
   if (!entry || (entry.client !== client && !entry.closeError)) {
     return undefined;
   }
+  cancelSharedClientIdleRetirement(entry);
   if (currentEntry) {
     state.clients.delete(entry.key);
     entry.closeWhenIdle = true;
@@ -184,6 +187,7 @@ function closeRetiredSharedClientEntry(entry: SharedCodexAppServerClientEntry): 
     return false;
   }
   entry.client = undefined;
+  cancelSharedClientIdleRetirement(entry);
   client.close();
   return true;
 }
@@ -270,11 +274,47 @@ export function notifyDesktopGenerationDrainChecks(state: SharedCodexAppServerCl
   }
 }
 
+// Cold initialization measured 1–5 seconds; keep adjacent discovery/status requests warm.
+const CODEX_APP_SERVER_CLIENT_IDLE_GRACE_MS = 30_000;
+
+function cancelSharedClientIdleRetirement(entry: SharedCodexAppServerClientEntry): void {
+  clearTimeout(entry.idleTimer);
+  entry.idleTimer = undefined;
+}
+
+export function refreshSharedClientIdleRetirement(client: CodexAppServerClient): void {
+  const entry = getCurrentSharedClientEntry(client);
+  if (entry) {
+    scheduleSharedClientIdleRetirement(entry);
+  }
+}
+
+function scheduleSharedClientIdleRetirement(entry: SharedCodexAppServerClientEntry): void {
+  cancelSharedClientIdleRetirement(entry);
+  if (
+    entry.activeLeases > 0 ||
+    entry.pendingAcquires > 0 ||
+    !entry.client ||
+    entry.hasOwnedThreads?.() ||
+    getCurrentSharedClientEntry(entry.client) !== entry
+  ) {
+    return;
+  }
+  entry.idleTimer = setTimeout(() => {
+    entry.idleTimer = undefined;
+    if (entry.activeLeases === 0 && entry.pendingAcquires === 0 && !entry.hasOwnedThreads?.()) {
+      retireSharedCodexAppServerClientIfCurrent(entry.client);
+    }
+  }, CODEX_APP_SERVER_CLIENT_IDLE_GRACE_MS);
+  entry.idleTimer.unref?.();
+}
+
 export function retainSharedClientEntry(
   entry: SharedCodexAppServerClientEntry,
   counter: "activeLeases" | "pendingAcquires" = "activeLeases",
 ): () => void {
   let released = false;
+  cancelSharedClientIdleRetirement(entry);
   entry[counter] += 1;
   return () => {
     if (released) {
@@ -291,5 +331,6 @@ export function releaseSharedClientEntry(
 ): void {
   entry[counter] -= 1;
   closeRetiredSharedClientEntryIfIdle(entry);
+  scheduleSharedClientIdleRetirement(entry);
   notifyDesktopGenerationDrainChecks(getSharedCodexAppServerClientState());
 }
