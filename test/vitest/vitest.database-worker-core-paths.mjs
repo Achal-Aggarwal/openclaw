@@ -553,6 +553,7 @@ export const databaseWorkerCoreTestFiles = [
   "src/flows/doctor-health.fleet-preflight.test.ts",
   "src/flows/doctor-health.legacy-update.test.ts",
   "src/flows/doctor-health.update-schema.test.ts",
+  "src/flows/doctor-health.deletion-recovery.test.ts",
   "src/hooks/hooks-install.test.ts",
   "src/infra/state-migrations.audit-logs.windows.test.ts",
   "src/infra/state-migrations.workspace-setup.windows.test.ts",
