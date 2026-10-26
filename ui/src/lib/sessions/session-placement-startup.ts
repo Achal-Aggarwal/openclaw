@@ -24,6 +24,7 @@ import {
 } from "../../pages/chat/chat-send-ack.ts";
 import type { HumanMention } from "../chat/chat-types.ts";
 import type { SessionCapability } from "./session-capability.ts";
+import { sessionPlacementDispatchParams } from "./session-placement-dispatch.ts";
 import { readSessionPlacementPolicy } from "./session-placement-policy.ts";
 import type {
   SessionPlacementStartMode,
@@ -75,26 +76,6 @@ const PENDING_PLACEMENT_STATES = new Set([
   "draining",
   "reconciling",
 ]);
-
-export function sessionPlacementDispatchParams(params: {
-  key: string;
-  agentId: string;
-  target: SessionPlacementTarget;
-}) {
-  return {
-    key: params.key,
-    agentId: params.agentId,
-    ...(params.target.kind === "profile"
-      ? {
-          profileId: params.target.profileId,
-          ...(params.target.os ? { os: params.target.os } : {}),
-          ...(params.target.machineClass ? { machineClass: params.target.machineClass } : {}),
-        }
-      : params.target.kind === "device"
-        ? { deviceId: params.target.deviceId }
-        : { autoDevice: true }),
-  };
-}
 
 function isAmbiguousDispatchError(error: unknown): boolean {
   if (error instanceof GatewayRequestError) {

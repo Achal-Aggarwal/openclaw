@@ -225,6 +225,14 @@ export function controlUiStableChunkName(id: string): string | undefined {
     case "ui/src/pages/chat/chat-export.runtime.ts":
     case "ui/src/pages/chat/export.ts":
       return "chat-export-runtime";
+    case "ui/src/pages/new-session/draft-submission-operations.runtime.ts":
+    case "ui/src/pages/new-session/creation-composer.ts":
+    case "ui/src/pages/new-session/instant-thread-handoff.ts":
+    case "ui/src/pages/new-session/instant-thread-navigation.ts":
+    case "ui/src/pages/new-session/initial-session-turn-handoff.ts":
+    case "ui/src/lib/sessions/session-placement-startup.ts":
+      // Submission intent loads these operations; idle Chat hints must not download them.
+      return "new-session-submission-runtime";
     case "ui/src/lib/sessions/session-mutation-operations.runtime.ts":
     case "ui/src/lib/sessions/create.ts":
     case "ui/src/lib/sessions/session-patch-row-facts.ts":

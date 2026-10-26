@@ -16,7 +16,7 @@ import type {
   DraftSubmissionCallbacks,
   DraftSubmissionSnapshot,
 } from "./draft-submission-contract.ts";
-import { DraftSubmissionFlow } from "./draft-submission-flow.ts";
+import { DraftSubmissionFlow, preloadDraftSubmissionOperations } from "./draft-submission-flow.ts";
 import { isPlaceTopologyEvent, nodePresenceStateSignature } from "./new-session-runtime.ts";
 import type { SubmissionOutcomeReason } from "./session-placement-recovery-state.ts";
 
@@ -238,6 +238,7 @@ export class NewSessionDraft {
 
   connect() {
     if (!this.stopLifetime) {
+      void preloadDraftSubmissionOperations().catch(() => undefined);
       const stopReloadGuard = this.protectPrivateDraftFromReload();
       const wake = () => {
         this.synchronize();

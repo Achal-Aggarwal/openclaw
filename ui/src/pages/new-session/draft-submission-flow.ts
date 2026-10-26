@@ -20,13 +20,12 @@ import * as catalog from "./catalog-target.ts";
 import { createNewSessionComposerTextarea } from "./composer-textarea.ts";
 import type { DraftSessionCreateOverrides, NewSessionVisibility } from "./create-params.ts";
 import { retainCreatedComposer } from "./creation-composer-registry.ts";
-import { CreationComposer } from "./creation-composer.ts";
+import type { CreationComposer } from "./creation-composer.ts";
 import { buildSelectedSessionCreateParams } from "./draft-create-params.ts";
 import type { DraftGatewayState } from "./draft-gateway-state.ts";
 import { NewSessionDraftPersistence, type NewSessionDraftHandoff } from "./draft-persistence.ts";
 import type { DraftPlaceState } from "./draft-place-state.ts";
 import {
-  completeDraftSessionPlacement,
   projectDraftSessionPlacementRecovery,
   resolveDraftSessionPlacement,
 } from "./draft-session-placement.ts";
@@ -37,11 +36,7 @@ import type {
   DraftSubmissionSnapshot,
 } from "./draft-submission-contract.ts";
 import { prepareDraftSubmission } from "./draft-submission-input.ts";
-import { completeInitialSessionTurn } from "./initial-session-turn-handoff.ts";
-import {
-  type InstantThreadHandoff,
-  prepareInstantThreadHandoff,
-} from "./instant-thread-handoff.ts";
+import type { InstantThreadHandoff } from "./instant-thread-handoff.ts";
 import {
   PendingSessionPlacementRecoveryState,
   type SubmissionOutcomeReason,
@@ -58,6 +53,10 @@ import { submitDraftInTerminal } from "./terminal-start.ts";
 
 registerNewSessionSetupEnglish();
 
+export function preloadDraftSubmissionOperations() {
+  return import("./draft-submission-operations.runtime.ts");
+}
+
 export class DraftSubmissionFlow {
   private visibilityValue: NewSessionVisibility = "normal";
   private messageText = "";
@@ -72,7 +71,7 @@ export class DraftSubmissionFlow {
   }
   private mentionsValue: readonly HumanMention[] = [];
   private activeSubmission: {
-    phase: "creating" | "accepted";
+    phase: "preparing" | "creating" | "accepted";
     message: ReturnType<typeof buildLocalUserMessage>;
   } | null = null;
   private blockedSubmitAttempt = false;
@@ -424,6 +423,20 @@ export class DraftSubmissionFlow {
       this.callbacks.changed();
       return;
     }
+    if (startup) {
+      const access = readSessionMethodAccess(context.gateway.snapshot, {
+        method: "sessions.create",
+        params: startup.params,
+        sessionScope: true,
+      });
+      if (!access.allowed) {
+        this.sessionStartup.clear();
+        this.activeSubmission = null;
+        this.error = access.reason;
+        this.callbacks.changed();
+        return;
+      }
+    }
     const input = prepareDraftSubmission(context, this, this.place, startup, background);
     if (!input) {
       return;
@@ -440,7 +453,7 @@ export class DraftSubmissionFlow {
     );
     // The draft keeps custody until creation succeeds; this snapshot only makes
     // foreground submission visible while the Gateway is still admitting it.
-    this.activeSubmission = { phase: "creating", message: submittedMessage };
+    this.activeSubmission = { phase: "preparing", message: submittedMessage };
     this.error = null;
     this.place.browser.close();
     this.callbacks.closeTransientUi();
@@ -454,6 +467,53 @@ export class DraftSubmissionFlow {
         return;
       }
       this.startedSession.current = null;
+      // Permission prompts must retain the original input gesture, before code loading yields.
+      promptNewSessionNotifications(
+        context,
+        input.message,
+        Boolean(input.apiAttachments?.length),
+        !startup && !input.pendingPlacement,
+      );
+      const {
+        CreationComposer,
+        prepareInstantThreadHandoff,
+        completeDraftSessionPlacement,
+        completeInitialSessionTurn,
+      } = await preloadDraftSubmissionOperations();
+      if (
+        requestSignal.aborted ||
+        !this.read().isConnected ||
+        this.read().context !== context ||
+        context.gateway.snapshot.client !== input.client ||
+        context.gateway.connection.gatewayUrl !== input.gatewayUrl ||
+        context.gateway.snapshot.hello?.auth?.recoveryScope !== input.recoveryScope ||
+        input.client.recoveryScope !== input.recoveryScope ||
+        this.gateway.client !== input.client ||
+        this.gateway.gatewayUrl !== input.gatewayUrl ||
+        this.gateway.recoveryScope !== input.recoveryScope
+      ) {
+        return;
+      }
+      // In particular, projects.add below must use authority current after the import.
+      const preparationAccess = startup
+        ? readSessionMethodAccess(context.gateway.snapshot, {
+            method: "sessions.create",
+            params: startup.params,
+            sessionScope: true,
+          })
+        : readNewSessionSubmissionAccess({
+            gateway: context.gateway.snapshot,
+            place: this.place,
+            pendingPlacement: pending,
+            hasInitialTurn: input.hasInitialTurn,
+            createParams: pending.createParams ?? this.buildDraftSessionCreateParams(),
+          });
+      if (!preparationAccess.allowed) {
+        this.sessionStartup.clear();
+        this.error = preparationAccess.reason;
+        return;
+      }
+      this.activeSubmission = { phase: "creating", message: submittedMessage };
       if (
         !background &&
         this.callbacks.retainForHandoff &&
@@ -471,12 +531,6 @@ export class DraftSubmissionFlow {
         this.creationComposer.incognito = true;
       }
       const placementTarget = startup ? null : resolveDraftSessionPlacement(pending, this.place);
-      promptNewSessionNotifications(
-        context,
-        input.message,
-        Boolean(input.apiAttachments?.length),
-        !startup && !input.pendingPlacement,
-      );
       const remoteProject =
         !this.place.hostedEnvironment &&
         !startup &&

@@ -2,6 +2,7 @@ import type { RouteLoadCause } from "@openclaw/uirouter";
 import type { ApplicationContext } from "../../app/context.ts";
 import { listSelectableAgents } from "../../lib/agents/display.ts";
 import { resolveAgentId, resolveCreateTarget } from "./catalog-target.ts";
+import { preloadDraftSubmissionOperations } from "./draft-submission-flow.ts";
 import { takeInstantThreadRestore } from "./instant-thread-restore.ts";
 import type { NewSessionRouteData } from "./location.ts";
 import { newSessionModelLocationFromSearch } from "./model-location.ts";
@@ -11,6 +12,7 @@ export async function load(
   search: string,
   cause?: RouteLoadCause,
 ): Promise<NewSessionRouteData> {
+  void preloadDraftSubmissionOperations().catch(() => undefined);
   const restored = cause && cause !== "preload" && takeInstantThreadRestore(context, search);
   if (restored) {
     return restored;

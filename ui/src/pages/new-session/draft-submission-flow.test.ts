@@ -22,6 +22,7 @@ import {
   registerTextPayload,
   stubObjectUrls,
 } from "./draft-submission-flow.test-support.ts";
+import { preloadDraftSubmissionOperations } from "./draft-submission-flow.ts";
 
 afterEach(resetSubmissionMocks);
 
@@ -39,6 +40,7 @@ describe("DraftSubmissionFlow", () => {
   it.each([false, true])(
     "keeps startup creation client-owned beyond four minutes (cancel=%s)",
     async (cancel) => {
+      await preloadDraftSubmissionOperations();
       vi.useFakeTimers();
       const { create, flow } = createDraftFixture();
       const frames: string[] = [];
