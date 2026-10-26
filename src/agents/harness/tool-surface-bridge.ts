@@ -171,7 +171,6 @@ export function createAgentHarnessToolSurfaceRuntimeCore(params: {
       toolSearchRuntimeConfig,
       codeModeControlsEnabled,
       toolSearchConfig,
-      forceDirectMessageTool,
       sessionId: params.sessionId,
       sessionKey: params.sessionKey,
       agentId: params.agentId,

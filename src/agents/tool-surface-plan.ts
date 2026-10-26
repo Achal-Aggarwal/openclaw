@@ -102,19 +102,16 @@ type ApplyAgentToolSurfaceCatalogParams = Omit<CodeModeCatalogParams, "directToo
   toolSearchRuntimeConfig: OpenClawConfig | undefined;
   codeModeControlsEnabled: boolean;
   toolSearchConfig: ToolSearchConfig;
-  forceDirectMessageTool: boolean;
 };
 
 export function applyAgentToolSurfaceCatalog({
   codeModeControlsEnabled,
   toolSearchConfig,
   toolSearchRuntimeConfig,
-  forceDirectMessageTool,
   ...catalogParams
 }: ApplyAgentToolSurfaceCatalogParams) {
-  // When the message tool is the only reply path it must stay directly visible
-  // in every search mode; a hidden delivery tool can leave the run mute.
-  const directToolNames = forceDirectMessageTool ? ["message"] : [];
+  // Reply delivery changes per turn; keep an authorized message tool visible
+  // throughout the conversation instead of changing the provider's tool prefix.
   const applyCatalog = codeModeControlsEnabled
     ? applyCodeModeCatalog
     : toolSearchConfig.mode === "directory"
@@ -123,6 +120,6 @@ export function applyAgentToolSurfaceCatalog({
   return applyCatalog({
     ...catalogParams,
     config: codeModeControlsEnabled ? catalogParams.config : toolSearchRuntimeConfig,
-    directToolNames,
+    directToolNames: ["message"],
   });
 }
