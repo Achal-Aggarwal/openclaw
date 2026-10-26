@@ -8,62 +8,17 @@ const projects = [
     repoRoot: "/workspace/openclaw",
     source: "registered" as const,
   },
-  {
-    id: "website",
-    displayName: "Website",
-    repoRoot: "/workspace/site",
-    source: "workspace" as const,
-  },
 ];
 
 describe("What chip state", () => {
-  it.each([
-    {
-      name: "hides recent places and an unmatched workspace during a project query",
-      query: "site",
-      expectedRecents: 0,
-      showWorkspace: false,
-    },
-  ])("$name", ({ query, expectedRecents, showWorkspace }) => {
-    const state = resolveProjectChip({
-      folder: "",
+  it("uses the selected project for the closed trigger", () => {
+    expect(resolveProjectChip({
+      folder: "/workspace/elsewhere",
       workspace: "/workspace",
-      projectId: "",
+      projectId: "openclaw",
       selectedRemoteProject: null,
       projects,
-      recents: [],
-      projectQuery: query,
-    });
-    expect(state.recents).toHaveLength(expectedRecents);
-    expect(state.showWorkspace).toBe(showWorkspace);
-  });
-
-  it("omits project recents already shown in the project list", () => {
-    const folderRecent = {
-      kind: "folder" as const,
-      folder: "/workspace/scratch",
-      displayName: "scratch",
-    };
-    const repositoryRecent = {
-      kind: "repository" as const,
-      url: "https://github.com/octocat/hello-world.git",
-      displayName: "hello-world",
-    };
-    const state = resolveProjectChip({
-      folder: "",
-      workspace: "/workspace",
-      projectId: "",
-      selectedRemoteProject: null,
-      projects,
-      recents: [
-        { kind: "project", projectId: "openclaw", displayName: "OpenClaw" },
-        folderRecent,
-        repositoryRecent,
-      ],
-      projectQuery: "",
-    });
-
-    expect(state.recents).toEqual([folderRecent, repositoryRecent]);
+    }).label).toBe("OpenClaw");
   });
 
   it.each([

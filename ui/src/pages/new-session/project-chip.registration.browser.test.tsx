@@ -4,6 +4,7 @@ import type { ProjectsRegisterResult } from "../../../../packages/gateway-protoc
 import { createDeferred } from "../../../../test/helpers/promise.ts";
 import { waitForSolid } from "../../test-helpers/solid-settle.ts";
 import { createRepositoryFixture } from "./draft-place-state.test-support.ts";
+import { DraftProjectPicker } from "./draft-project-picker.ts";
 import { mountProjectChip } from "./project-chip.test-support.tsx";
 
 const project: ProjectsRegisterResult = {
@@ -43,13 +44,11 @@ function mountBrowser() {
     projectId: browser.projectId,
     selectedRemoteProject: null,
     projects: browser.projects,
-    recents: [],
-    projectQuery: "",
   }));
   browser.synchronize();
   const open = async () => {
-    browser.selectGatewayBrowser("/workspace");
-    await waitForSolid(() => expect(browser.browserProjectPath).toBe("/workspace"));
+    browser.projectPicker(DraftProjectPicker).selectGatewayBrowser("/workspace");
+    await waitForSolid(() => expect(browser.projectPicker(DraftProjectPicker).browserProjectPath).toBe("/workspace"));
     await waitForSolid(() =>
       expect(view.queryByRole("button", { name: "Register as project" })).not.toBeNull(),
     );
@@ -100,7 +99,7 @@ describe("project registration presentation", () => {
     request.mockImplementationOnce(async () => ({ projects: [project] }));
     retry.resolve(project);
     await waitForSolid(() => {
-      expect(browser.browserOpen).toBe(false);
+      expect(browser.projectPicker(DraftProjectPicker).browserOpen).toBe(false);
       expect(view.getByRole("button", { name: "Registered workspace" })).not.toBeNull();
     });
   });
@@ -125,7 +124,7 @@ describe("project registration presentation", () => {
     await waitForSolid(() =>
       expect(browser.projects.some((row) => row.id === project.id)).toBe(true),
     );
-    expect(browser.browserOpen).toBe(true);
+    expect(browser.projectPicker(DraftProjectPicker).browserOpen).toBe(true);
     expect(register().disabled).toBe(false);
   });
 
@@ -137,7 +136,7 @@ describe("project registration presentation", () => {
       const previous = createDeferred<ProjectsRegisterResult>();
       request.mockImplementationOnce(() => previous.promise);
       register().click();
-      await waitForSolid(() => expect(browser.browserRegistering).toBe(true));
+      await waitForSolid(() => expect(browser.projectPicker(DraftProjectPicker).browserRegistering).toBe(true));
       if (retirement === "close") {
         browser.close();
       } else if (retirement === "disconnect") {
@@ -159,7 +158,7 @@ describe("project registration presentation", () => {
       await previous.promise.catch(() => undefined);
       await waitForSolid(() => {
         expect(button.disabled).toBe(true);
-        expect(browser.browser.error).toBeNull();
+        expect(browser.projectPicker(DraftProjectPicker).browser.error).toBeNull();
         expect(view.container.textContent).not.toContain("Retired registration failed");
       });
       current.reject(new Error("Current registration failed"));

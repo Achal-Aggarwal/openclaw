@@ -7,6 +7,7 @@ import { waitForSolid } from "../../test-helpers/solid-settle.ts";
 import { waitForFast } from "../../test-helpers/wait-for.ts";
 import { CatalogBar } from "./catalog-target-view.tsx";
 import { createDraftFixture } from "./draft-submission-flow.test-support.ts";
+import { DraftProjectPicker } from "./draft-project-picker.ts";
 import { createNewSessionRouteData } from "./location.test-support.ts";
 import type { NewSessionRouteData } from "./location.ts";
 import { NewSessionPlaceControls } from "./target-controls-view.tsx";
@@ -125,7 +126,7 @@ it.each([
       methods: ["projects.add", ...(advertised ? ["sessions.create"] : [])],
     });
     f.place.browser.popoverCallbacks("project").onPopoverShow();
-    f.place.browser.changeProjectQuery(cloneUrl);
+    f.place.browser.projectPicker(DraftProjectPicker).changeProjectQuery(cloneUrl);
     const { container } = mountSolid(() => (
       <NewSessionPlaceControls
         params={{

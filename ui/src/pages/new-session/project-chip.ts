@@ -1,7 +1,4 @@
-import type {
-  ProjectRecord,
-  ProjectRecent,
-} from "../../../../packages/gateway-protocol/src/index.js";
+import type { ProjectRecord } from "../../../../packages/gateway-protocol/src/index.js";
 import { t } from "../../i18n/index.ts";
 import { registerNewSessionSetupEnglish } from "../../i18n/locales/en-new-session-setup.ts";
 import { pathDisplayName } from "../../lib/path-display.ts";
@@ -30,17 +27,12 @@ export function resolveProjectChip(params: {
   projectId: string;
   selectedRemoteProject: DraftRemoteProject | null;
   projects: readonly ProjectRecord[];
-  recents: readonly ProjectRecent[];
-  projectQuery: string;
   freshWorkspace?: boolean;
 }): Readonly<{
   label: string;
-  recents: readonly Exclude<ProjectRecent, { kind: "project" }>[];
-  showWorkspace: boolean;
 }> {
   const folder = params.folder.trim();
   const selectedProject = params.projects.find((project) => project.id === params.projectId);
-  const normalizedQuery = params.projectQuery.trim().toLowerCase();
   return {
     label: params.freshWorkspace
       ? t("newSession.newWorkspace")
@@ -51,8 +43,5 @@ export function resolveProjectChip(params: {
           : folder
             ? pathDisplayName(folder)
             : pathDisplayName(params.workspace) || t("newSession.folderPlaceholder"),
-    recents: normalizedQuery ? [] : params.recents.filter((recent) => recent.kind !== "project"),
-    showWorkspace:
-      !normalizedQuery || pathDisplayName(params.workspace).toLowerCase().includes(normalizedQuery),
   };
 }

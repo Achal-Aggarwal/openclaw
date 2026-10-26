@@ -40,8 +40,6 @@ it("keeps project search live through catalog reads and retires invalidated rows
         projectId: browser.projectId,
         selectedRemoteProject: browser.remoteProject,
         projects: browser.projects,
-        recents: [],
-        projectQuery: browser.projectQuery,
       }),
       () => nativeTerminal,
     );
@@ -157,4 +155,49 @@ it("keeps project search live through catalog reads and retires invalidated rows
   await waitForSolid(() => expect(rows()[0]?.textContent).toContain("Beta project"));
   expect(view.container.querySelector('[data-value="project:alpha"]')).toBeNull();
   expect(request).toHaveBeenCalledTimes(3);
+});
+
+it("shows eligible catalog recents only while the project query is empty", async () => {
+  const fixture = createRepositoryFixture();
+  const { browser, state: place, changed } = fixture;
+  const projects = [
+    {
+      id: "already-listed",
+      displayName: "Already listed",
+      repoRoot: "/workspace/listed",
+      source: "registered" as const,
+    },
+  ];
+  const repositoryUrl = "https://github.com/openclaw/example.git";
+  vi.spyOn(browser, "projects", "get").mockReturnValue(projects);
+  vi.spyOn(browser, "projectsReady", "get").mockReturnValue(true);
+  vi.spyOn(browser, "projectRecents", "get").mockReturnValue([
+    { kind: "project", projectId: "already-listed", displayName: "Already listed" },
+    { kind: "folder", folder: "/workspace/scratch", displayName: "scratch" },
+    { kind: "repository", url: repositoryUrl, displayName: "example" },
+  ]);
+  vi.spyOn(browser, "popoverOpen").mockReturnValue(true);
+  vi.spyOn(place, "workspacePath").mockReturnValue("/workspace");
+  vi.spyOn(place, "isAdmin").mockReturnValue(true);
+  onTestFinished(() => browser.disconnect());
+  const view = mountProjectChip(fixture, () => ({
+    folder: "",
+    workspace: "/workspace",
+    projectId: "",
+    selectedRemoteProject: null,
+    projects,
+  }));
+  await waitForSolid(() => expect(view.queryByRole("searchbox")).not.toBeNull());
+  expect(view.container.querySelector('[data-value="recent:/workspace/scratch"]')).not.toBeNull();
+  expect(view.container.querySelectorAll('[data-value="project:already-listed"]')).toHaveLength(1);
+  expect(view.getAllByText("Already listed")).toHaveLength(1);
+  expect(view.container.querySelector(`[data-value="repository:${repositoryUrl}"]`)).not.toBeNull();
+  const input = view.getByRole<HTMLInputElement>("searchbox");
+  input.value = "scratch";
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+  changed();
+  await waitForSolid(() => {
+    expect(view.container.querySelector('[data-value="recent:/workspace/scratch"]')).toBeNull();
+    expect(view.container.querySelector(`[data-value="repository:${repositoryUrl}"]`)).toBeNull();
+  });
 });

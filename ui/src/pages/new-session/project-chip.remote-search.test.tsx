@@ -62,8 +62,6 @@ async function mountSearch() {
     projectId: browser.projectId,
     selectedRemoteProject: browser.remoteProject,
     projects,
-    recents: [],
-    projectQuery: browser.projectQuery,
   }));
   await waitForSolid(() =>
     expect(view.container.querySelector('input[type="search"]')).not.toBeNull(),

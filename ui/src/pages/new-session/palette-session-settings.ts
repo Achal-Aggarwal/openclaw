@@ -46,8 +46,6 @@ export function resolvePaletteSessionSettings(options: SettingsOptions, search: 
     projectId: draft.browser.projectId,
     selectedRemoteProject: draft.browser.remoteProject,
     projects: draft.browser.projects,
-    recents: [],
-    projectQuery: "",
     freshWorkspace: place.freshWorkspace,
   });
   const machines: {

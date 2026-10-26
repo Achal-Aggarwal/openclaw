@@ -144,6 +144,13 @@ export function controlUiStableChunkName(id: string): string | undefined {
     case "packages/gateway-protocol/src/question-media.ts":
       // Shared catalogs and session parameters must not pull Chat into other routes.
       return "deferred-ui-support";
+    case "ui/src/pages/new-session/project-picker-content.tsx":
+    case "ui/src/pages/new-session/draft-project-picker.ts":
+    case "ui/src/pages/new-session/place-browser-state.ts":
+    case "ui/src/pages/new-session/place-browser-view.ts":
+    case "ui/src/pages/new-session/recent-places.ts":
+      // The first open loads the picker and its interaction owner together.
+      return "project-picker-runtime";
     case "ui/src/lib/page-request.ts":
     case "ui/src/lib/model-catalog-reader.ts":
     case "ui/src/components/lobster-pet-contract.ts":

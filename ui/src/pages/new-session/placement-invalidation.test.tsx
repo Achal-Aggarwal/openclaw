@@ -4,6 +4,7 @@ import { expect, it, onTestFinished, vi } from "vitest";
 import { mountSolid } from "../../test-helpers/mount-solid.ts";
 import { flush, waitForSolid } from "../../test-helpers/solid-settle.ts";
 import { createRepositoryFixture } from "./draft-place-state.test-support.ts";
+import { DraftProjectPicker } from "./draft-project-picker.ts";
 import { placementControls } from "./placement.test-support.ts";
 import { resolveProjectChip } from "./project-chip.ts";
 import { ProjectChip } from "./project-chip.tsx";
@@ -71,7 +72,7 @@ it("retains project artwork while current labels and selection remain live", asy
   vi.spyOn(place, "deviceFolderAvailable", "get").mockReturnValue(false);
   vi.spyOn(browser, "projects", "get").mockReturnValue(projects);
   vi.spyOn(browser, "projectsReady", "get").mockReturnValue(true);
-  vi.spyOn(browser, "projectQuery", "get").mockReturnValue("Sample");
+  vi.spyOn(browser.projectPicker(DraftProjectPicker), "projectQuery", "get").mockReturnValue("Sample");
   vi.spyOn(browser, "projectId", "get").mockImplementation(() => projectId);
   vi.spyOn(browser, "popoverOpen").mockReturnValue(true);
   vi.spyOn(browser, "popoverCallbacks").mockReturnValue({
@@ -89,8 +90,6 @@ it("retains project artwork while current labels and selection remain live", asy
       projectId: "",
       selectedRemoteProject: null,
       projects,
-      recents: [],
-      projectQuery: "Sample",
     }),
     nativeTerminal: false,
   };

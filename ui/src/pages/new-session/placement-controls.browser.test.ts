@@ -72,8 +72,6 @@ it.each([
         projectId: "",
         selectedRemoteProject: null,
         projects: [],
-        recents: [],
-        projectQuery: "",
       }),
       nativeTerminal: false,
     };

@@ -21,7 +21,7 @@ import { readSessionMethodAccess } from "../../lib/session-method-access.ts";
 import { nativeListener } from "../../lib/solid-native-listener.ts";
 import { SessionMenuItem } from "./cloud-target-view.tsx";
 import { findBrowsableDeviceFolderHost } from "./device-placement.ts";
-import type { BrowserProjectRegistration } from "./draft-place-browser.ts";
+import { DraftProjectPicker, type BrowserProjectRegistration } from "./draft-project-picker.ts";
 import { parentFolderDisplayName } from "./path.ts";
 import { PlaceBrowser } from "./place-browser.tsx";
 import { disambiguate } from "./place-labels.ts";
@@ -29,8 +29,9 @@ import { projectCloneInput } from "./project-chip.ts";
 import type { ProjectChipProps } from "./project-chip.tsx";
 
 export function ProjectPickerContent(props: ProjectChipProps) {
+  const picker = () => props.params.place.browser.projectPicker(DraftProjectPicker);
   const applyFolder = (folder: string) => {
-    if (!props.params.place.browser.browserNodeId) {
+    if (!picker().browserNodeId) {
       props.params.place.applyFolder(folder);
     } else if (folder) {
       // An emptied draft names no device folder; keep the current device path.
@@ -47,10 +48,17 @@ export function ProjectPickerContent(props: ProjectChipProps) {
   const view = createMemo(() => {
     const folder = props.params.place.folder.trim();
     const workspace = props.params.place.workspacePath();
-    const cloneInput = projectCloneInput(props.params.place.browser.projectQuery);
-    const query = props.params.place.browser.projectQuery.trim();
+    const cloneInput = projectCloneInput(picker().projectQuery);
+    const query = picker().projectQuery.trim();
     const browseNeedsAdmin = !props.params.place.browseAvailable() && !props.params.place.isAdmin();
-    const recentItems = props.state.recents;
+    const recentItems = props.nativeTerminal || query
+      ? []
+      : picker().resolveProjectRecents({
+          sessions: props.params.context?.sessions.state.result?.sessions ?? [],
+          workspace,
+          workspaceRoots: props.params.place.knownWorkspaceRoots(),
+          isAdmin: props.params.place.isAdmin(),
+        }).filter((recent) => recent.kind !== "project");
     const recentSuffixes = disambiguate(recentItems, (recent) => recent.displayName, [
       (recent) => (recent.kind === "folder" ? parentFolderDisplayName(recent.folder) : undefined),
       (recent) => (recent.kind === "folder" ? recent.folder : undefined),
@@ -62,7 +70,7 @@ export function ProjectPickerContent(props: ProjectChipProps) {
       place.deviceFolderAvailable && place.isAdmin()
         ? findBrowsableDeviceFolderHost(place.deviceId, place.devices())
         : undefined;
-    const browserNodeId = place.browser.browserNodeId;
+    const browserNodeId = picker().browserNodeId;
     const gatewayName = props.params.gateway.gatewayName;
     const browserLabel = browserNodeId
       ? (deviceBrowse?.label ?? browserNodeId)
@@ -89,6 +97,7 @@ export function ProjectPickerContent(props: ProjectChipProps) {
       query,
       browseNeedsAdmin,
       recentItems,
+      showWorkspace: !query || pathDisplayName(workspace).toLowerCase().includes(query.toLowerCase()),
       recentSuffixes,
       deviceBrowse,
       browserLabel,
@@ -124,7 +133,14 @@ export function ProjectPickerContent(props: ProjectChipProps) {
     const owner = browser();
     const epoch = connectionEpoch();
     const [saving, setSaving] = createOptimistic(false);
-    return { browser: owner, epoch, projects, saving, setSaving };
+    return {
+      browser: owner,
+      picker: owner.projectPicker(DraftProjectPicker),
+      epoch,
+      projects,
+      saving,
+      setSaving,
+    };
   });
   const presentRegistration = action(function* (
     presentation: ReturnType<typeof registration>,
@@ -154,7 +170,7 @@ export function ProjectPickerContent(props: ProjectChipProps) {
   const registerProject = async (path: string) => {
     const presentation = registration();
     let receipt: BrowserProjectRegistration | undefined;
-    const pending = presentation.browser.registerBrowserProject(path, (started) => {
+    const pending = presentation.picker.registerBrowserProject(path, (started) => {
       receipt = started;
     });
     if (!receipt) {
@@ -170,7 +186,7 @@ export function ProjectPickerContent(props: ProjectChipProps) {
         presentation.epoch === props.params.gateway.connectionEpoch &&
         receipt.isCurrent()
       ) {
-        presentation.browser.browser.error = formatUiError(error);
+        presentation.picker.browser.error = formatUiError(error);
         props.params.onChange();
       }
     }
@@ -184,7 +200,7 @@ export function ProjectPickerContent(props: ProjectChipProps) {
       ? accepted.filter((project) => project.displayName.toLowerCase().includes(query))
       : accepted;
   });
-  const projectSearchRead = createMemo(() => props.params.place.browser.projectSearchRead);
+  const projectSearchRead = createMemo(() => picker().projectSearchRead);
   const projectSearchResult = createMemo(() => {
     const read = projectSearchRead();
     return read
@@ -215,7 +231,7 @@ export function ProjectPickerContent(props: ProjectChipProps) {
           !props.params.submitting &&
           !props.params.pendingPlacement
         ) {
-          props.params.place.browser.selectGatewayBrowser(
+          picker().selectGatewayBrowser(
             props.params.place.folder.trim() || view().workspace,
           );
         }
@@ -231,17 +247,17 @@ export function ProjectPickerContent(props: ProjectChipProps) {
 
   return (
     <>
-      {props.params.place.browser.browserOpen ? (
+      {picker().browserOpen ? (
         <PlaceBrowser
           pathRef={(node) => props.focus && (props.focus.path = node)}
           registeringProject={
-            registration().saving() || props.params.place.browser.browserRegistering
+            registration().saving() || picker().browserRegistering
           }
           params={{
-            browser: props.params.place.browser.browser,
+            browser: picker().browser,
             id: "new-session-place-browser",
             label: view().browserLabel,
-            registerProjectPath: props.params.place.browser.browserProjectPath,
+            registerProjectPath: picker().browserProjectPath,
             onBack: () => props.params.place.browser.showRoot(),
             onRegisterProject: (path) => void registerProject(path),
             onClose: () => props.params.place.browser.close(),
@@ -290,7 +306,7 @@ export function ProjectPickerContent(props: ProjectChipProps) {
                 aria-pressed="false"
                 disabled={props.params.submitting || props.params.pendingPlacement}
                 ref={nativeListener("click", () =>
-                  props.params.place.browser.selectDeviceBrowser(
+                  picker().selectDeviceBrowser(
                     props.params.place.deviceId,
                     props.params.place.deviceFolder?.path.trim() || undefined,
                   ),
@@ -306,7 +322,7 @@ export function ProjectPickerContent(props: ProjectChipProps) {
               </button>
             )}
           </Show>
-          {view().workspace && props.state.showWorkspace ? (
+          {view().workspace && view().showWorkspace ? (
             <SessionMenuItem
               item={{
                 value: "workspace",
@@ -326,10 +342,10 @@ export function ProjectPickerContent(props: ProjectChipProps) {
             <input
               type="search"
               placeholder={t("newSession.projectSearchPlaceholder")}
-              value={props.params.place.browser.projectQuery}
+              value={picker().projectQuery}
               disabled={props.params.submitting || props.params.pendingPlacement}
               onInput={(event: Event) =>
-                props.params.place.browser.changeProjectQuery(
+                picker().changeProjectQuery(
                   event.target instanceof HTMLInputElement ? event.target.value : "",
                 )
               }
@@ -443,7 +459,7 @@ export function ProjectPickerContent(props: ProjectChipProps) {
           !props.params.place.isAdmin() ? (
             <div class="new-session-page__menu-note">{t("newSession.projectsAdminHint")}</div>
           ) : undefined}
-          {props.state.recents.length > 0 ? (
+          {view().recentItems.length > 0 ? (
             <>
               <div class="new-session-page__menu-title">{t("newSession.recentFolders")}</div>
               <For

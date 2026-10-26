@@ -7,6 +7,7 @@ import { createTestGatewayClient } from "../../test-helpers/gateway-client.ts";
 import { waitForFast } from "../../test-helpers/wait-for.ts";
 import { DraftGatewayState } from "./draft-gateway-state.ts";
 import { DraftPlaceBrowser } from "./draft-place-browser.ts";
+import { DraftProjectPicker } from "./draft-project-picker.ts";
 import type { NewSessionRouteData } from "./location.ts";
 import { PICKER_INPUT_DEBOUNCE_MS } from "./place-browser-state.ts";
 import { loadNewSessionPreference, replaceBrowserPreference } from "./preferences.ts";
@@ -162,7 +163,7 @@ describe("DraftPlaceBrowser", () => {
       browser.projectFocus.browse = browse;
       browser.popoverCallbacks("project").onPopoverShow();
       browse.focus();
-      browser.selectGatewayBrowser("/workspace");
+      browser.projectPicker(DraftProjectPicker).selectGatewayBrowser("/workspace");
       const path = document.createElement("input");
       path.className = "new-session-page__browser-path";
       popover.replaceChildren(path);
@@ -218,17 +219,19 @@ describe("DraftPlaceBrowser", () => {
     const { browser } = createBrowser(async () => ({}));
     const writeStorage = vi.spyOn(Storage.prototype, "setItem");
     onTestFinished(() => writeStorage.mockRestore());
-    browser.changeProjectQuery("openclaw");
+    browser.projectPicker(DraftProjectPicker).changeProjectQuery("openclaw");
     browser.popoverCallbacks("where").onPopoverShow();
     browser.changeEnvironmentQuery("runner");
 
-    expect(browser).toMatchObject({ environmentQuery: "runner", projectQuery: "openclaw" });
+    expect(browser.environmentQuery).toBe("runner");
+    expect(browser.projectPicker(DraftProjectPicker).projectQuery).toBe("openclaw");
     expect(writeStorage).not.toHaveBeenCalled();
 
     browser.popoverCallbacks("where").onPopoverHide();
     browser.popoverCallbacks("where").onPopoverAfterHide();
     browser.popoverCallbacks("where").onPopoverShow();
-    expect(browser).toMatchObject({ environmentQuery: "", projectQuery: "openclaw" });
+    expect(browser.environmentQuery).toBe("");
+    expect(browser.projectPicker(DraftProjectPicker).projectQuery).toBe("openclaw");
 
     browser.changeEnvironmentQuery("cloud");
     browser.popoverCallbacks("project").onPopoverShow();
@@ -245,11 +248,11 @@ describe("DraftPlaceBrowser", () => {
       "fs.listDir": () => listing(),
     });
     const { browser } = createBrowser(request, undefined, true, true);
-    browser.selectGatewayBrowser("/workspace");
-    await waitForFast(() => expect(browser.browser.listing?.path).toBe("/workspace"));
-    browser.browser.setDraft("/workspace/pa");
+    browser.projectPicker(DraftProjectPicker).selectGatewayBrowser("/workspace");
+    await waitForFast(() => expect(browser.projectPicker(DraftProjectPicker).browser.listing?.path).toBe("/workspace"));
+    browser.projectPicker(DraftProjectPicker).browser.setDraft("/workspace/pa");
     branches.resolve({ repositoryStatus: "git" });
-    await waitForFast(() => expect(browser.browserProjectPath).toBe("/workspace"));
+    await waitForFast(() => expect(browser.projectPicker(DraftProjectPicker).browserProjectPath).toBe("/workspace"));
   });
 
   it.each([
@@ -291,39 +294,39 @@ describe("DraftPlaceBrowser", () => {
       true,
       true,
     );
-    browser.selectGatewayBrowser("/workspace");
-    await waitForFast(() => expect(browser.browserProjectPath).toBe("/workspace"));
+    browser.projectPicker(DraftProjectPicker).selectGatewayBrowser("/workspace");
+    await waitForFast(() => expect(browser.projectPicker(DraftProjectPicker).browserProjectPath).toBe("/workspace"));
     if (change === "retry") {
-      await browser.registerBrowserProject("/workspace");
-      expect(browser.browser.error).toContain("registry unavailable");
-      expect(browser).toMatchObject({
+      await browser.projectPicker(DraftProjectPicker).registerBrowserProject("/workspace");
+      expect(browser.projectPicker(DraftProjectPicker).browser.error).toContain("registry unavailable");
+      expect(browser.projectPicker(DraftProjectPicker)).toMatchObject({
         browserRegistering: false,
         browserProjectPath: "/workspace",
       });
     }
-    const pending = browser.registerBrowserProject("/workspace");
-    expect(browser.browser.readCompletion).toBeNull();
-    const initiallyBusy = browser.browserRegistering;
+    const pending = browser.projectPicker(DraftProjectPicker).registerBrowserProject("/workspace");
+    expect(browser.projectPicker(DraftProjectPicker).browser.readCompletion).toBeNull();
+    const initiallyBusy = browser.projectPicker(DraftProjectPicker).browserRegistering;
     const failedDirectory = change === "typed directory fails";
     if (failedDirectory) {
       vi.useFakeTimers();
     }
     try {
       if (change === "filtering") {
-        browser.browser.setDraft("/workspace/pa");
+        browser.projectPicker(DraftProjectPicker).browser.setDraft("/workspace/pa");
       } else if (change === "navigation" || change === "navigate away and back") {
         directoryPath = "/other";
-        await browser.browser.navigate(directoryPath);
+        await browser.projectPicker(DraftProjectPicker).browser.navigate(directoryPath);
         if (change === "navigate away and back") {
           directoryPath = "/workspace";
-          await browser.browser.navigate(directoryPath);
-          await waitForFast(() => expect(browser.browserProjectPath).toBe("/workspace"));
+          await browser.projectPicker(DraftProjectPicker).browser.navigate(directoryPath);
+          await waitForFast(() => expect(browser.projectPicker(DraftProjectPicker).browserProjectPath).toBe("/workspace"));
         }
       } else if (change === "typed directory" || failedDirectory) {
-        browser.browser.setDraft("/elsewhere/x");
+        browser.projectPicker(DraftProjectPicker).browser.setDraft("/elsewhere/x");
         if (failedDirectory) {
           await vi.advanceTimersByTimeAsync(PICKER_INPUT_DEBOUNCE_MS);
-          expect(browser).toMatchObject({
+          expect(browser.projectPicker(DraftProjectPicker)).toMatchObject({
             browser: { listing: { path: "/workspace" }, loading: false, error: null },
             browserProjectPath: null,
           });
@@ -333,16 +336,16 @@ describe("DraftPlaceBrowser", () => {
         }
       } else if (change === "reopen") {
         browser.close();
-        browser.selectGatewayBrowser("/workspace");
-        await waitForFast(() => expect(browser.browserProjectPath).toBe("/workspace"));
+        browser.projectPicker(DraftProjectPicker).selectGatewayBrowser("/workspace");
+        await waitForFast(() => expect(browser.projectPicker(DraftProjectPicker).browserProjectPath).toBe("/workspace"));
       } else if (change === "connection loss") {
         context.gateway.snapshot.phase = "reconnecting";
         // The write must not publish even before the browser observes this disconnect.
         gateway.synchronize(context.gateway);
       }
-      const stillBusy = browser.browserRegistering;
+      const stillBusy = browser.projectPicker(DraftProjectPicker).browserRegistering;
       const duplicate =
-        change === "reopen" ? undefined : browser.registerBrowserProject(directoryPath);
+        change === "reopen" ? undefined : browser.projectPicker(DraftProjectPicker).registerBrowserProject(directoryPath);
       registration.resolve(registered);
       await Promise.all([pending, duplicate]);
 
@@ -350,7 +353,7 @@ describe("DraftPlaceBrowser", () => {
       expect(stillBusy).toBe(change !== "reopen");
       expect(calls(request, "projects.register")).toBe(change === "retry" ? 2 : 1);
       expect(registrations).toBe(change === "retry" ? 2 : 1);
-      expect(browser.browserRegistering).toBe(false);
+      expect(browser.projectPicker(DraftProjectPicker).browserRegistering).toBe(false);
       if (change === "filtering" || change === "retry") {
         expect(onSelectProject).toHaveBeenCalledExactlyOnceWith(registered.id);
       } else {
@@ -362,7 +365,7 @@ describe("DraftPlaceBrowser", () => {
         await pending;
       } finally {
         if (failedDirectory) {
-          browser.browser.reset();
+          browser.projectPicker(DraftProjectPicker).browser.reset();
           vi.useRealTimers();
         }
       }
@@ -434,7 +437,7 @@ describe("DraftPlaceBrowser", () => {
     await browser.refreshProjects();
 
     expect(
-      browser.resolveProjectRecents({
+      browser.projectPicker(DraftProjectPicker).resolveProjectRecents({
         sessions: [{ execCwd: "/workspace/recent" }],
         workspace: "/workspace",
         workspaceRoots: ["/workspace"],
@@ -507,7 +510,7 @@ describe("DraftGatewayState", () => {
     const fixture = createBrowser(request, undefined, false);
     fixture.hello.features.methods.push("system.info");
     fixture.hello.auth.scopes.push("operator.write");
-    fixture.browser.browser.setDraft("/draft-folder");
+    fixture.browser.projectPicker(DraftProjectPicker).browser.setDraft("/draft-folder");
     fixture.update();
     // Adding write access retires the old policy scope, independently of recovery migration.
     expect(fixture.onInvalidate).toHaveBeenCalledWith(true, "gateway-changed");
@@ -522,10 +525,8 @@ describe("DraftGatewayState", () => {
     fixture.update();
     expect(fixture.gateway.gatewayName).toBe("Gateway A");
     expect(fixture.onInvalidate).not.toHaveBeenCalled();
-    expect(fixture.browser).toMatchObject({
-      browser: { draft: "/draft-folder" },
-      projectId: "project",
-    });
+    expect(fixture.browser.projectPicker(DraftProjectPicker).browser.draft).toBe("/draft-folder");
+    expect(fixture.browser.projectId).toBe("project");
     expect(calls(request, "projects.list")).toBe(1);
     expect(calls(request, "environments.list")).toBe(1);
 
