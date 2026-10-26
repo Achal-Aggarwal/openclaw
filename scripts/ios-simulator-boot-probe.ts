@@ -11,7 +11,7 @@ import {
   type OpenClawTestInstance,
 } from "../test/helpers/openclaw-test-instance.js";
 import { gatewayEnv } from "./ios-release-e2e.js";
-import { markIosResourcePhase } from "./ios-resource-timeline.mjs";
+import { markIosResourcePhase, roles } from "./ios-resource-timeline.mjs";
 import { summarizeGatewayLogs } from "./lib/ios-release-e2e-diagnostics.js";
 import { prepareIOSReleaseGateway } from "./lib/ios-release-gateway.js";
 import { hasUnjoinedWork, runManagedCommand } from "./lib/managed-child-process.mjs";
@@ -21,13 +21,17 @@ const { values } = parseArgs({
     "target-sha": { type: "string" },
     "gateway-selection": { type: "string" },
     output: { type: "string" },
+    collector: { type: "string" },
   },
 });
 const targetSha = values["target-sha"];
 const selectionDir = values["gateway-selection"];
 const output = values.output;
-if (!targetSha || !/^[a-f0-9]{40}$/u.test(targetSha) || !selectionDir || !output) {
-  throw new Error("Required: --target-sha SHA --gateway-selection DIR --output FILE");
+const collector = values.collector;
+if (!targetSha || !/^[a-f0-9]{40}$/u.test(targetSha) || !selectionDir || !output || !collector) {
+  throw new Error(
+    "Required: --target-sha SHA --gateway-selection DIR --output FILE --collector PATH",
+  );
 }
 const abort = new AbortController();
 const cancel = () => abort.abort();
@@ -50,29 +54,21 @@ let retainRoot = false;
 const root = await mkdtemp(path.join(os.tmpdir(), "openclaw-ios-boot-probe-"));
 let instance: OpenClawTestInstance | undefined;
 let udid: string | undefined;
-let earlySnapshot: Promise<void> | undefined;
-const snapshotAbort = new AbortController();
+let observerDone: Promise<void> | undefined;
+const observerAbort = new AbortController();
 const host = () => ({
   load: os.loadavg(),
   cpuCount: os.availableParallelism(),
   totalMemoryBytes: os.totalmem(),
   freeMemoryBytes: os.freemem(),
 });
-const command = async (
-  name: string,
-  bin: string,
-  args: string[],
-  timeoutMs = 60_000,
-  observe = false,
-) => {
+const command = async (name: string, bin: string, args: string[], timeoutMs = 60_000) => {
   const started = performance.now();
   let stdout = "";
   let outcome = "passed";
-  if (!observe) {
-    phase = name;
-    markIosResourcePhase(`qualification-${name}`);
-    console.error(`iOS boot probe: ${name} started`);
-  }
+  phase = name;
+  markIosResourcePhase(`qualification-${name}`);
+  console.error(`iOS boot probe: ${name} started`);
   try {
     const code = await runManagedCommand({
       bin,
@@ -97,118 +93,142 @@ const command = async (
     if (hasUnjoinedWork(error)) {
       retainRoot = true;
     }
-    if (observe) {
-      return stdout.trim();
-    }
     throw error;
   } finally {
     operations.push({ name, outcome, ms: Math.round(performance.now() - started) });
-    if (!observe) {
-      console.error(`iOS boot probe: ${name} ${outcome}`);
-    }
+    console.error(`iOS boot probe: ${name} ${outcome}`);
   }
 };
-const snapshot = async (stage: string) => {
+type CensusRow = {
+  pid: number;
+  parentPid: number;
+  birthSec: number;
+  birthUsec: number;
+  roleHint: string;
+  userNs?: number;
+  systemNs?: number;
+  threads?: number;
+  runningThreads?: number;
+};
+type BootSnapshot = {
+  sample: number;
+  startedMs: number;
+  endedMs?: number;
+  pendingPid?: number;
+  hostBefore: ReturnType<typeof host>;
+  hostAfter?: ReturnType<typeof host>;
+  rows: CensusRow[];
+};
+const startObserver = async () => {
+  const hints = new Map<string, string>();
+  for (const role of roles) {
+    const short = role.slice(0, 16);
+    hints.set(short, hints.has(short) ? "other" : role);
+  }
+  let baselineSeen = false;
+  let ready!: () => void;
+  const baseline = new Promise<void>((resolve) => {
+    ready = resolve;
+  });
+  let buffer = "";
+  let active: BootSnapshot | undefined;
+  let byPid = new Map<number, CensusRow>();
+  let bytes = 0;
+  const observeLine = (line: string) => {
+    const fields = line.split("\t");
+    if (fields[0] === "BEGIN") {
+      active = {
+        sample: Number(fields[1]),
+        startedMs: Number(fields[2]),
+        hostBefore: host(),
+        rows: [],
+      };
+      snapshots.push(active);
+      byPid = new Map();
+    } else if (active && fields[0] === "CENSUS") {
+      const row: CensusRow = {
+        pid: Number(fields[1]),
+        parentPid: Number(fields[2]),
+        birthSec: Number(fields[3]),
+        birthUsec: Number(fields[4]),
+        roleHint: hints.get(fields[5] ?? "") ?? "other",
+      };
+      active.rows.push(row);
+      byPid.set(row.pid, row);
+    } else if (active && fields[0] === "QUERY") {
+      active.pendingPid = Number(fields[1]);
+    } else if (active && fields[0] === "TASK") {
+      const row = byPid.get(Number(fields[1]));
+      if (row) {
+        row.userNs = Number(fields[2]);
+        row.systemNs = Number(fields[3]);
+        row.threads = Number(fields[4]);
+        row.runningThreads = Number(fields[5]);
+      }
+    } else if (active && fields[0] === "END") {
+      active.endedMs = Number(fields[2]);
+      active.hostAfter = host();
+      delete active.pendingPid;
+      if (active.sample === 0) {
+        baselineSeen = true;
+        ready();
+      }
+    }
+  };
   const started = performance.now();
-  const before = host();
-  // Two samples, without memory-map or framework scans; keep partial rows on timeout.
-  const text = await command(
-    "boot-process-snapshot",
-    "/usr/bin/top",
-    [
-      "-l",
-      "2",
-      "-s",
-      "1",
-      "-n",
-      "30",
-      "-o",
-      "cpu",
-      "-R",
-      "-F",
-      "-stats",
-      "pid,cpu,threads,pstate,time,command",
-    ],
-    8_000,
-    true,
+  observerDone = runManagedCommand({
+    bin: collector,
+    args: [],
+    timeoutMs: 65_000,
+    requireProcessTreeExit: true,
+    signal: AbortSignal.any([abort.signal, observerAbort.signal]),
+    stdio: ["ignore", "pipe", "pipe"],
+    onReady(child) {
+      child.stdout?.on("data", (chunk: Buffer) => {
+        bytes += chunk.length;
+        if (bytes > 4 * 1024 * 1024) {
+          observerAbort.abort();
+          return;
+        }
+        buffer += chunk.toString();
+        let newline: number;
+        while ((newline = buffer.indexOf("\n")) >= 0) {
+          observeLine(buffer.slice(0, newline));
+          buffer = buffer.slice(newline + 1);
+        }
+      });
+      child.stderr?.resume();
+    },
+  }).then(
+    (code) => {
+      operations.push({
+        name: "boot-census",
+        outcome: code === 0 ? "passed" : "failed",
+        ms: Math.round(performance.now() - started),
+      });
+      ready();
+    },
+    (error: unknown) => {
+      if (hasUnjoinedWork(error)) {
+        retainRoot = true;
+      }
+      operations.push({
+        name: "boot-census",
+        outcome: "failed",
+        ms: Math.round(performance.now() - started),
+      });
+      ready();
+    },
   );
-  const rows = text.split("\n").flatMap((line) => {
-    const match = /^\s*(\d+)\s+([\d.]+)\s+(\d+)(?:\/(\d+))?\s+([A-Za-z]+)\s+([\d:.]+)\s+.+$/u.exec(
-      line,
-    );
-    if (!match) {
-      return [];
-    }
-    const [, pid, cpu, threads, runningThreads, state, time] = match;
-    return [
-      {
-        pid: Number(pid),
-        cpuPercent: Number(cpu),
-        threads: Number(threads),
-        runningThreads: runningThreads ? Number(runningThreads) : 0,
-        state: ["running", "sleeping", "stuck", "idle", "stopped", "zombie"].includes(state!)
-          ? state
-          : "other",
-        cpuTime: time,
-        role: "other",
-        origin: "other",
-      },
-    ];
-  });
-  // Resolve only the selected PIDs. No arguments, environments, or raw paths leave this process.
-  let paths: Record<string, string> = {};
+  const readinessAbort = new AbortController();
   try {
-    paths = JSON.parse(
-      (await command(
-        "boot-process-paths",
-        "/usr/bin/python3",
-        [
-          "-c",
-          "import ctypes,json,sys\nlib=ctypes.CDLL('/usr/lib/libproc.dylib')\nrows={}\nfor pid in sys.argv[1:]:\n b=ctypes.create_string_buffer(4096)\n if lib.proc_pidpath(int(pid),b,len(b))>0: rows[pid]=b.value.decode('utf-8',errors='replace')\nprint(json.dumps(rows))",
-          ...new Set(rows.map((row) => String(row.pid))),
-        ],
-        3_000,
-        true,
-      )) || "{}",
-    );
-  } catch {
-    // A timed-out path observer must not discard the process/thread snapshot.
-  }
-  for (const row of rows) {
-    const executable = paths[row.pid] ?? "";
-    const basename = path.basename(executable);
-    const runtime =
-      (executable.startsWith("/Library/Developer/CoreSimulator/") ||
-        executable.startsWith(
-          "/private/var/run/com.apple.security.cryptexd/mnt/com.apple.iPhoneOS.SimulatorRuntime-",
-        )) &&
-      executable.includes("/Contents/Resources/RuntimeRoot/");
-    const publicSystem = /^\/(?:System\/Library|usr\/(?:bin|sbin|libexec)|bin|sbin)\//u.test(
-      executable,
-    );
-    const runtimeSystem =
-      /\/Contents\/Resources\/RuntimeRoot\/(?:System\/Library|usr\/(?:bin|sbin|libexec))\//u.test(
-        executable,
-      );
-    if (
-      (publicSystem || (runtime && runtimeSystem)) &&
-      path.posix.normalize(executable) === executable &&
-      /^[A-Za-z][A-Za-z0-9_.+-]{0,95}$/u.test(basename)
-    ) {
-      row.role = basename;
-      row.origin = runtime ? "simulator-runtime" : "host-system";
-    } else if (row.pid === instance?.child?.pid) {
-      row.role = "gateway";
+    await Promise.race([baseline, sleep(15_000, undefined, { signal: readinessAbort.signal })]);
+    if (!baselineSeen) {
+      throw new Error("observer-baseline-unavailable");
     }
+  } finally {
+    readinessAbort.abort();
   }
-  snapshots.push({
-    stage,
-    at: new Date().toISOString(),
-    ms: Math.round(performance.now() - started),
-    before,
-    after: host(),
-    rows,
-  });
 };
 const rpc = async (stage: string, setupCode = false) => {
   if (!instance) {
@@ -307,7 +327,6 @@ try {
   });
   await instance.startGateway();
   await rpc("before-boot-setup-status");
-  await snapshot("before-boot");
   udid = await command("simulator-create", "xcrun", [
     "simctl",
     "create",
@@ -319,17 +338,9 @@ try {
     udid = undefined;
     throw new Error("invalid-device-id");
   }
-  earlySnapshot = sleep(5_000, undefined, { signal: snapshotAbort.signal })
-    .then(
-      () => snapshot("boot-plus-5s"),
-      () => {},
-    )
-    .catch(() => {
-      snapshots.push({ stage: "boot-plus-5s", outcome: "unavailable" });
-    });
+  await startObserver();
   await command("simulator-boot", "xcrun", ["simctl", "boot", udid]);
   await command("simulator-ready", "xcrun", ["simctl", "bootstatus", udid, "-b"], 180_000);
-  await earlySnapshot;
   await rpc("after-boot-setup-status");
   await rpc("after-boot-setup-code", true);
   proof.status = "probe-passed";
@@ -340,8 +351,10 @@ try {
   proof.failedPhase = phase;
   proof.status = "failed";
 } finally {
-  snapshotAbort.abort();
-  await earlySnapshot;
+  if (proof.status !== "probe-passed") {
+    observerAbort.abort();
+  }
+  await observerDone;
   if (instance) {
     proof.gatewayEvents = summarizeGatewayLogs(instance.logs());
   }

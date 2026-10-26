@@ -189,6 +189,10 @@ jobs:
         id: install-end
         run: echo "epoch=$(date +%s)" >> "$GITHUB_OUTPUT"
 
+      - name: Compile temporary process census
+        if: inputs.boot_probe
+        run: xcrun clang -O2 -Wall -Wextra -Werror scripts/ios-simulator-boot-census.c -o "$RUNNER_TEMP/ios-boot-census"
+
       - name: Probe simulator startup without app tests
         if: inputs.boot_probe
         env:
@@ -196,7 +200,7 @@ jobs:
         run: |
           node scripts/ios-resource-timeline.mjs --output "$RUNNER_TEMP/ios-resource-timeline.jsonl" -- \
             node --import ./scripts/tsx.mjs scripts/ios-simulator-boot-probe.ts \
-            --target-sha "$TARGET_SHA" --output "$PROOF_PATH" \
+            --target-sha "$TARGET_SHA" --output "$PROOF_PATH" --collector "$RUNNER_TEMP/ios-boot-census" \
             --gateway-selection "$GATEWAY_SELECTION_DIR"
 
       - name: Qualify native pairing and chat

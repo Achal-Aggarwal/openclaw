@@ -68,7 +68,7 @@ const phases = new Set([
     ].map((operation) => `screenshot-${device}-${operation}`),
   ),
 ]);
-const roles = new Set([
+export const roles = new Set([
   "node",
   "bun",
   "ruby",
