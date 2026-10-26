@@ -184,6 +184,14 @@ it("distinguishes a timed-out probe even when it already printed authenticated J
   expect(await probeClaudeCliAuthStatus()).toEqual({ status: "timeout", timeoutMs: 10_000 });
 });
 
+it("reports a host without the Claude executable as not installed", () =>
+  withTempDir("anthropic-cli-auth-", async (dir) => {
+    runUtf8CommandWithTimeout.mockImplementation(actual.runUtf8CommandWithTimeout);
+    expect(await probeClaudeCliAuthStatus({ env: { PATH: dir } })).toEqual({
+      status: "not-installed",
+    });
+  }));
+
 it("does not turn a cancelled probe into a logged-out account", async () => {
   const controller = new AbortController();
   const reason = new Error("native auth cancelled");
