@@ -23,7 +23,7 @@ afterEach(async () => {
 });
 
 it.runIf(process.platform !== "win32")(
-  "retains native buffered cleanup uncertainty and snapshot artifacts after cancellation",
+  "waits for a native buffered signal result before cleaning known-settled snapshot artifacts",
   async () => {
     const root = tempDirs.make("openclaw-git-native-settlement-");
     const repo = await repository(root);
@@ -61,7 +61,7 @@ it.runIf(process.platform !== "win32")(
                 return await executeGitCommandBuffered(cwd, args, options);
               }
               // Exercise the real buffered adapter after snapshot ownership exists.
-              // The child itself causes the native uncertain result; no result is injected.
+              // The child itself causes a native signal result; no result is injected.
               const output = await runCommandBuffered(
                 [process.execPath, "-e", "process.kill(process.pid, 'SIGTERM')"],
                 { ...options, cwd, input: undefined },
@@ -86,8 +86,9 @@ it.runIf(process.platform !== "win32")(
       expect(completed).toBe(false);
       held.release();
       const outcome = await within(pending);
-      expect(outcome.rejected && hasCommandProcessCleanupError(outcome.error)).toBe(true);
-      expect(await exists(temporaryDirectory)).toBe(true);
+      expect(outcome.rejected).toBe(true);
+      expect(outcome.rejected && hasCommandProcessCleanupError(outcome.error)).toBe(false);
+      expect(await exists(temporaryDirectory)).toBe(false);
       expect(
         (
           await gitResult(repo, [
@@ -101,7 +102,7 @@ it.runIf(process.platform !== "win32")(
       abort.abort();
       held.release();
       await pending;
-      // This fixture child exited without descendants; release only its retained directory.
+      // This fixture child exited without descendants; remove any failed-test residue.
       if (temporaryDirectory) {
         await fs.rm(temporaryDirectory, { recursive: true, force: true });
       }

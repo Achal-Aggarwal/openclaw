@@ -10,8 +10,12 @@ import type {
   GitWorktreeEffectResult,
 } from "../agents/worktrees/git-worktree-operations.js";
 import { runGitBytes, runGitBuffered } from "../agents/worktrees/git.js";
-import { CommandProcessCleanupError, hasCommandProcessCleanupError, readCommandProcessFailure } from "../process/exec-result.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
+import {
+  CommandProcessCleanupError,
+  hasCommandProcessCleanupError,
+  readCommandProcessFailure,
+} from "../process/exec-result.js";
 import { withGitProcessOperation, type GitProcessOperation } from "../process/spawn-diagnostics.js";
 import { resolveGlobalSingleton } from "../shared/global-singleton.js";
 import { withContentGitSlot } from "./git-content-budget.js";

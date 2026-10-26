@@ -1,19 +1,20 @@
-import { execFile } from "node:child_process";
 import fs from "node:fs/promises";
 import { createServer, type Socket } from "node:net";
 import path from "node:path";
 import { setImmediate as nextTurn } from "node:timers/promises";
-import { pathToFileURL } from "node:url";
-import { promisify } from "node:util";
-import { asOptionalRecord } from "@openclaw/normalization-core/record-coerce";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { useAutoCleanupTempDirTracker } from "../../test/helpers/temp-dir.js";
+import { createEnteredGate } from "../agents/entered-gate.test-support.js";
 import { executeGitWorktreeOperation } from "../agents/worktrees/git-worktree-operations.runtime.js";
 import * as worktreeGit from "../agents/worktrees/git.js";
 import { runPublicationCommand } from "../gateway/github-publication-git-transport.js";
 import { runWorkspaceInventoryCommandToFile } from "../gateway/worker-environments/workspace-sync-inventory.js";
 import { ensureStagedInputDirectory, stagedInputDirectory } from "../media/staged-inputs.js";
-import { CommandProcessCleanupError, hasCommandProcessCleanupError, recordCommandProcessFailure } from "../process/exec-result.js";
+import {
+  CommandProcessCleanupError,
+  hasCommandProcessCleanupError,
+  recordCommandProcessFailure,
+} from "../process/exec-result.js";
 import { emitChildProcessSpawnSample } from "../process/spawn-diagnostics.js";
 import { createDeferredCore } from "../shared/deferred.js";
 import { drainGlobalSingletonLifecycleState } from "../shared/global-singleton.js";
@@ -26,9 +27,19 @@ import {
 } from "./diagnostic-events.js";
 import * as gitExec from "./git-exec.js";
 import { installUnknownDirentFixture } from "./git-worker-dir.test-support.js";
+import {
+  exists,
+  git,
+  gitResult,
+  partialClone,
+  repository,
+  settle,
+  traceStarts,
+  waitForLifecyclePoint,
+  within,
+} from "./git-worker-lifecycle.test-support.js";
 import { runGitWorkerOperation, type GitWorkerOperationOptions } from "./git-worker.js";
 
-const execFileAsync = promisify(execFile);
 const tempDirs = useAutoCleanupTempDirTracker(afterEach);
 const supportsRawPathBytes = process.platform === "linux";
 
@@ -37,135 +48,6 @@ afterEach(async () => {
   vi.restoreAllMocks();
   vi.unstubAllEnvs();
 });
-
-async function gitResult(cwd: string, args: string[]) {
-  return execFileAsync("git", ["-C", cwd, ...args], {
-    encoding: "utf8",
-    env: {
-      ...process.env,
-      GIT_CONFIG_NOSYSTEM: "1",
-      GIT_CONFIG_GLOBAL: gitExec.gitNullConfigPath(),
-      GIT_TERMINAL_PROMPT: "0",
-      GIT_TRACE2_EVENT: undefined,
-      GIT_NO_LAZY_FETCH: "1",
-      GIT_AUTHOR_NAME: "OpenClaw Test",
-      GIT_AUTHOR_EMAIL: "openclaw-test@example.invalid",
-      GIT_COMMITTER_NAME: "OpenClaw Test",
-      GIT_COMMITTER_EMAIL: "openclaw-test@example.invalid",
-    },
-  }).then(
-    ({ stdout }) => ({ code: 0, stdout: stdout.trim() }),
-    (error: unknown) => ({ code: Number(asOptionalRecord(error)?.code) || -1, stdout: "" }),
-  );
-}
-
-async function git(cwd: string, ...args: string[]): Promise<string> {
-  const result = await gitResult(cwd, args);
-  expect(result.code).toBe(0);
-  return result.stdout;
-}
-
-async function repository(root: string): Promise<string> {
-  const repo = path.join(root, "repo");
-  await git(root, "init", "--template=", "-b", "main", repo);
-  await git(repo, "config", "commit.gpgSign", "false");
-  await fs.writeFile(path.join(repo, "README.md"), "base\n");
-  await git(repo, "add", "README.md");
-  await git(repo, "commit", "-m", "initial");
-  return repo;
-}
-
-async function partialClone(root: string) {
-  const source = await repository(root);
-  const origin = path.join(root, "origin.git");
-  const clone = path.join(root, "clone");
-  await git(root, "clone", "--bare", source, origin);
-  await git(origin, "config", "uploadpack.allowFilter", "true");
-  await git(origin, "config", "uploadpack.allowAnySHA1InWant", "true");
-  await git(
-    root,
-    "clone",
-    "--no-checkout",
-    "--filter=blob:none",
-    pathToFileURL(origin).href,
-    clone,
-  );
-  const commit = await git(clone, "rev-parse", "HEAD");
-  const objects = await git(
-    clone,
-    "rev-list",
-    "--objects",
-    "--missing=print",
-    "--no-object-names",
-    "--max-count=1",
-    commit,
-  );
-  expect(objects.split("\n").filter((line) => line.startsWith("?")).length).toBe(1);
-  return { clone, commit };
-}
-
-async function traceStarts(file: string, command: string) {
-  const rows = (await fs.readFile(file, "utf8")).trim().split("\n");
-  return rows.flatMap((line) => {
-    const entry = asOptionalRecord(JSON.parse(line));
-    return entry?.event === "start" && Array.isArray(entry.argv) && entry.argv.includes(command)
-      ? [entry]
-      : [];
-  });
-}
-
-function settle<T>(operation: Promise<T>) {
-  return operation.then(
-    (value) => ({ rejected: false as const, value }),
-    (error: unknown) => ({ rejected: true as const, error }),
-  );
-}
-
-async function exists(directory: string): Promise<boolean> {
-  return fs.stat(directory).then(
-    () => true,
-    (error: unknown) => {
-      if (asOptionalRecord(error)?.code === "ENOENT") {
-        return false;
-      }
-      throw error;
-    },
-  );
-}
-
-async function within<T>(
-  pending: Promise<T>,
-  timeoutMessage = "Git worker lifecycle wait timed out",
-): Promise<T> {
-  let timer: NodeJS.Timeout | undefined;
-  try {
-    return await Promise.race([
-      pending,
-      new Promise<never>((_, reject) => {
-        timer = setTimeout(() => reject(new Error(timeoutMessage)), 10_000);
-      }),
-    ]);
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-function waitForLifecyclePoint(
-  reached: Promise<unknown>,
-  operation: Promise<unknown>,
-  endedMessage: string,
-  timeoutMessage?: string,
-) {
-  return within(
-    Promise.race([
-      reached,
-      operation.then(() => {
-        throw new Error(endedMessage);
-      }),
-    ]),
-    timeoutMessage,
-  );
-}
 
 describe("Git operation host lifecycle", () => {
   it.each([
@@ -941,7 +823,9 @@ describe("Git operation host lifecycle", () => {
           if (ending === "cancel" || ending === "uncertain") {
             await release.promise;
           }
-          if (ending === "uncertain") { throw cleanupError; }
+          if (ending === "uncertain") {
+            throw cleanupError;
+          }
         }
         return undefined;
       };
