@@ -184,7 +184,9 @@ export function measureTranscriptRow(
   entry: ResizeObserverEntry | undefined,
   virtualizer: Virtualizer<HTMLDivElement, HTMLElement>,
 ): number {
-  if (entry || !virtualizer.targetWindow?.ResizeObserver) {
+  const parked =
+    element.dataset.preparedRow === "true" && !element.hasAttribute("data-preparing-row");
+  if (!parked && (entry || !virtualizer.targetWindow?.ResizeObserver)) {
     // Rounded row heights accumulate when skipped overscan uses those measurements.
     const size =
       entry?.borderBoxSize?.[0]?.blockSize ?? measureElement(element, entry, virtualizer);
@@ -192,8 +194,8 @@ export function measureTranscriptRow(
       return size;
     }
   }
-  // Row registration waits for the observer's first layout; hidden panels retain
-  // their last measurement instead of replacing it with zero and moving the viewport.
+  // Parked rows have no layout box. Retain their geometry until preparation or
+  // presentation resumes, also while a whole pane is hidden or awaiting layout.
   const index = virtualizer.indexFromElement(element);
   return (
     virtualizer.itemSizeCache.get(virtualizer.options.getItemKey(index)) ??

@@ -30,18 +30,25 @@ class GeometryPane extends ChatPaneRuntime {
   private messages: unknown[] = [];
   private rowHeight = 120;
 
-  initialize(context: ApplicationContext, followEnd = false, rowHeight = followEnd ? 360 : 120) {
+  initialize(
+    context: ApplicationContext,
+    followEnd = false,
+    rowHeight = followEnd ? 360 : 120,
+    messages?: unknown[],
+  ) {
     projectChatFields(this, ["fixtureStream"]);
     this.context = context;
     this.paneId = "geometry-render";
     this.sessionKey = "agent:main:geometry-render";
     this.rowHeight = rowHeight;
-    this.messages = Array.from({ length: 100 }, (_, index) => ({
-      role: index % 2 === 0 ? "user" : "assistant",
-      content: `Row ${index}`,
-      timestamp: index + 1,
-      __openclaw: { id: `geometry-row-${index}` },
-    }));
+    this.messages =
+      messages ??
+      Array.from({ length: 100 }, (_, index) => ({
+        role: index % 2 === 0 ? "user" : "assistant",
+        content: `Row ${index}`,
+        timestamp: index + 1,
+        __openclaw: { id: `geometry-row-${index}` },
+      }));
     saveChatSessionScrollPosition(this.paneId, this.sessionKey, {
       scrollTop: 0,
       anchorToEnd: followEnd,
@@ -113,7 +120,7 @@ async function settleLayout() {
   }
 }
 
-async function mountPane(followEnd = false, rowHeight?: number) {
+async function mountPane(followEnd = false, rowHeight?: number, messages?: unknown[]) {
   const fixture = createMountedPanes([
     { key: "agent:main:geometry-render", kind: "direct", updatedAt: 1 },
   ]);
@@ -124,7 +131,7 @@ async function mountPane(followEnd = false, rowHeight?: number) {
   });
   pane = createPaneTestHost("test-transcript-geometry-pane", GeometryPane);
   Object.assign(pane, { render: pane.renderGeometry.bind(pane) });
-  pane.initialize(fixture.context, followEnd, rowHeight);
+  pane.initialize(fixture.context, followEnd, rowHeight, messages);
   pane.style.cssText = "display: block; width: 800px";
   document.body.append(pane.element);
   await pane.updateComplete;
@@ -187,6 +194,79 @@ it.each([120, 360, 1200])(
     }
   },
 );
+
+it("parks retained rows without layout and restores their resized geometry and nested scroll", async () => {
+  const prose = "A retained paragraph wraps to the current conversation width. ".repeat(20);
+  const source = [prose, "```text", "wide".repeat(160), "```"].join("\n\n");
+  // Twelve rows fit the DOM-retention budget, so background preparation cannot
+  // evict the target while this test exercises its native box lifecycle.
+  const messages = Array.from({ length: 12 }, (_, index) => ({
+    role: index % 2 === 0 ? "user" : "assistant",
+    content: index === 1 ? source : `Row ${index}`,
+    timestamp: index + 1,
+    __openclaw: { id: `geometry-row-${index}` },
+  }));
+  const { host, viewport, session, virtualizer } = await mountPane(false, 120, messages);
+  const row = requireElement(host, '.chat-virtual-row[data-index="1"]');
+  // Other fixture rows have fixed heights. This row uses its real Markdown
+  // height so the narrower pane must produce a new browser measurement.
+  row.style.height = "auto";
+  await settleLayout();
+  const key = expectDefined(row.dataset.virtualRowKey, "retained row key");
+  const code = requireElement(row, ".code-block-viewport");
+  const height = row.getBoundingClientRect().height;
+  const extent = viewport.scrollHeight;
+  expect(height).toBeGreaterThan(120);
+  expect(virtualizer.itemSizeCache.get(key)).toBeCloseTo(height, 1);
+  expect(code.scrollWidth - code.clientWidth).toBeGreaterThan(80);
+  code.scrollLeft = 37;
+  expect(code.scrollLeft).toBe(37);
+
+  const deliveredHeights: number[] = [];
+  const observer = new ResizeObserver((entries) => {
+    for (const entry of entries) {
+      if (entry.target === row) {
+        deliveredHeights.push(entry.borderBoxSize[0]?.blockSize ?? entry.contentRect.height);
+      }
+    }
+  });
+  observer.observe(row, { box: "border-box" });
+  try {
+    virtualizer.scrollToIndex(6, { align: "start", behavior: "auto" });
+    await expect.poll(() => row.hasAttribute("data-prepared-row")).toBe(true);
+    await settleLayout();
+    expect(row.isConnected).toBe(true);
+    // Parked DOM must create no layout box, while its cached height still
+    // contributes to the native scroll extent after the real zero-size receipt.
+    expect(row.getClientRects()).toHaveLength(0);
+    expect(deliveredHeights).toContain(0);
+    expect(virtualizer.itemSizeCache.get(key)).toBeCloseTo(height, 1);
+    expect(Math.abs(viewport.scrollHeight - extent)).toBeLessThanOrEqual(1);
+
+    host.style.width = "480px";
+    session.syncViewportGeometry();
+    await settleLayout();
+    expect(row.getClientRects()).toHaveLength(0);
+    expect(virtualizer.itemSizeCache.get(key)).toBeCloseTo(height, 1);
+    expect(Math.abs(viewport.scrollHeight - extent)).toBeLessThanOrEqual(1);
+
+    virtualizer.scrollToIndex(1, { align: "start", behavior: "auto" });
+    await expect.poll(() => row.hasAttribute("data-prepared-row")).toBe(false);
+    await settleLayout();
+    expect(requireElement(host, '.chat-virtual-row[data-index="1"]')).toBe(row);
+    expect(requireElement(row, ".code-block-viewport")).toBe(code);
+    expect(code.scrollLeft).toBe(37);
+    const resizedHeight = row.getBoundingClientRect().height;
+    expect(resizedHeight).toBeGreaterThan(height);
+    expect(virtualizer.itemSizeCache.get(key)).toBeCloseTo(resizedHeight, 1);
+    expect(deliveredHeights.some((value) => value > height)).toBe(true);
+    expect(Math.abs(viewport.scrollHeight - extent - (resizedHeight - height))).toBeLessThanOrEqual(
+      1,
+    );
+  } finally {
+    observer.disconnect();
+  }
+});
 
 it("reconciles the streaming end only when native row geometry changes", async () => {
   const { host, viewport, virtualizer } = await mountPane(true);
