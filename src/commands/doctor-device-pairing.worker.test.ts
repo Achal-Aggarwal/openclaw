@@ -2,8 +2,10 @@ import fs from "node:fs/promises";
 import { DatabaseSync } from "node:sqlite";
 import { afterEach, expect, it, vi } from "vitest";
 import { withClientCredentialStore } from "../infra/client-credential-store.test-support.js";
-import { loadDeviceAuthTokens } from "../infra/device-auth-store.js";
-import { seedDeviceAuthToken } from "../infra/device-auth-store.test-support.js";
+import {
+  loadDeviceAuthTokens,
+  storeDeviceAuthToken as seedDeviceAuthToken,
+} from "../infra/device-auth-store.js";
 import {
   loadOrCreateDeviceIdentity,
   publicKeyRawBase64UrlFromPem,
@@ -32,22 +34,26 @@ it("creates and reads the token inventory off the host, preserving role order an
     await expect(fs.stat(state.statePath("client", "credentials.sqlite"))).rejects.toMatchObject({
       code: "ENOENT",
     });
-    const operator = seedDeviceAuthToken({
+    const operatorClock = vi.spyOn(Date, "now").mockReturnValueOnce(20);
+    const operatorWrite = seedDeviceAuthToken({
       deviceId: "synthetic-device",
       role: " operator ",
       token: "synthetic-operator-token",
       scopes: ["operator.write", " operator.read ", "operator.read"],
-      updatedAtMs: 20,
       env: state.env,
     });
-    const node = seedDeviceAuthToken({
+    operatorClock.mockRestore();
+    const operator = await operatorWrite;
+    const nodeClock = vi.spyOn(Date, "now").mockReturnValueOnce(10);
+    const nodeWrite = seedDeviceAuthToken({
       deviceId: "synthetic-device",
       role: "node",
       token: "synthetic-node-token",
-      updatedAtMs: 10,
       env: state.env,
     });
-    seedDeviceAuthToken({
+    nodeClock.mockRestore();
+    const node = await nodeWrite;
+    await seedDeviceAuthToken({
       deviceId: "another-device",
       role: "operator",
       token: "synthetic-other-token",
@@ -87,13 +93,15 @@ it("detects stale local tokens from the active state view while checking legacy 
       scopes: ["operator.read"],
     });
     await approveDevicePairing(pairing.request.requestId, { callerScopes: ["operator.read"] });
-    seedDeviceAuthToken({
+    const staleTokenClock = vi.spyOn(Date, "now").mockReturnValueOnce(1);
+    const staleTokenWrite = seedDeviceAuthToken({
       deviceId: identity.deviceId,
       role: "operator",
       token: "synthetic-stale-token",
       scopes: ["operator.read"],
-      updatedAtMs: 1,
     });
+    staleTokenClock.mockRestore();
+    await staleTokenWrite;
     const sourceDir = state.path("source-state");
     await fs.mkdir(`${sourceDir}/identity`, { recursive: true });
     await fs.writeFile(`${sourceDir}/identity/device-auth.json`, '{"version":1}');
