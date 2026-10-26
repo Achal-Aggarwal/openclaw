@@ -249,6 +249,7 @@ export async function withInterruptedTurn(
       workspaceDir: state.workspaceDir,
       prompt: "Finish this exact turn",
       userTurnTranscriptRecorder: recorder,
+      timeoutMs: 120_000,
     } as EmbeddedRunAttemptParams;
     const lifecycle = createEmbeddedAttemptTranscriptLifecycle(attempt);
     const selected = options.selectedOwner ? await loadSessionEntryForAdmission(target) : undefined;
