@@ -6,7 +6,11 @@ import * as displayText from "../../lib/strip-thinking-tags.ts";
 import { buildChatItems, type BuildChatItemsProps } from "./chat-thread-build.ts";
 import * as duplicatePreparation from "./chat-thread-duplicates.ts";
 import { createProps } from "./chat-thread.test-support.ts";
-import { buildCachedChatItems, resetChatThreadState } from "./chat-thread.ts";
+import {
+  buildCachedChatItems,
+  getChatItemsGeneration,
+  resetChatThreadState,
+} from "./chat-thread.ts";
 
 function deepFreeze(value: unknown): void {
   if (value && typeof value === "object" && !Object.isFrozen(value)) {
@@ -144,6 +148,45 @@ function freezeProjectedMessages(items: ReturnType<typeof buildChatItems>): void
     }
   }
 }
+
+it("does not rebuild settled history when background loading changes", () => {
+  resetChatThreadState();
+  try {
+    const props = createProps({
+      messages: [
+        message("request", "user", 1, "Request"),
+        message("reply", "assistant", 2, "Reply"),
+      ],
+      loading: true,
+    });
+    const initial = buildCachedChatItems(props);
+    const generation = getChatItemsGeneration(initial);
+    for (const loading of [false, true, false]) {
+      const items = buildCachedChatItems({ ...props, loading });
+      expect(items).toBe(initial);
+      expect(getChatItemsGeneration(items)).toBe(generation);
+    }
+  } finally {
+    resetChatThreadState();
+  }
+});
+
+it.each([{ runWorking: true }, { subagentWait: { runId: "child", startedAt: 1 } }])(
+  "preserves initial loading progress transitions for %j",
+  (progress) => {
+    resetChatThreadState();
+    try {
+      const props = createProps({ ...progress, messages: [], loading: true });
+      expect(buildCachedChatItems(props)).toEqual([]);
+      expect(buildCachedChatItems({ ...props, loading: false })).toContainEqual(
+        expect.objectContaining({ kind: "reading-indicator" }),
+      );
+      expect(buildCachedChatItems(props)).toEqual([]);
+    } finally {
+      resetChatThreadState();
+    }
+  },
+);
 
 describe("incremental history build equivalence", () => {
   it.each([
