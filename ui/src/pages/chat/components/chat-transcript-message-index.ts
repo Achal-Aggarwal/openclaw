@@ -44,7 +44,7 @@ import { CHAT_TRANSCRIPT_ESTIMATED_ROW_PX } from "./chat-transcript-session.ts";
 import type { projectTranscriptWorkPreviews } from "./chat-transcript-work-previews.ts";
 
 type ChatRenderItem = SystemEventRenderItem;
-const COMPLETED_FRAME_ROW_MESSAGE_LIMIT = 2;
+const COMPLETED_FRAME_ROW_MESSAGE_LIMIT = 1;
 
 type TranscriptChain = Readonly<{
   searchActive: boolean;
@@ -266,117 +266,111 @@ export function projectTranscriptIndex(
     props.userId,
     props.userName,
   ];
-  return indexes(chain, key, () => buildTranscriptIndex(chain, expandedToolCards, props));
-}
-
-function buildTranscriptIndex(
-  chain: TranscriptIndexSource,
-  expandedToolCards: Map<string, boolean>,
-  props: Pick<ChatThreadProps, "assistantName" | "userId" | "userName">,
-): TranscriptIndex {
-  // Smaller transcripts scroll more cheaply without repeatedly mounting fragments.
-  let sourceCount = 0;
-  const windowCompletedFrames = chain.transcriptItems.some((item) => {
-    for (const group of chatItemGroups(item)) {
-      sourceCount += group.messages.length;
-      if (sourceCount > 256) {
-        return true;
+  return indexes(chain, key, (): TranscriptIndex => {
+    // Smaller transcripts scroll more cheaply without repeatedly mounting fragments.
+    let sourceCount = 0;
+    const windowCompletedFrames = chain.transcriptItems.some((item) => {
+      for (const group of chatItemGroups(item)) {
+        sourceCount += group.messages.length;
+        if (sourceCount > 256) {
+          return true;
+        }
       }
-    }
-    return false;
-  });
-  const loadedReplySources = new Map<string, LoadedReplySource>();
-  const messageRowKeysById = new Map<string, string>();
-  const transcriptMessageKeys = new Map<string, string>();
-  // New row keys measure expanded work immediately; existing keys keep their
-  // cached height until ResizeObserver reports the changed layout.
-  const rows: TranscriptRow<ChatRenderItem>[] = [];
-  for (const item of chain.transcriptItems) {
-    const rendered =
-      windowCompletedFrames && item.kind === "agent-run-frame"
-        ? completedFrameRows(item, expandedToolCards)
-        : [item];
-    for (const rowItem of rendered) {
-      // Rich work sources include their Markdown and paired tool output.
-      const estimatedSize =
-        rowItem.kind === "agent-run-frame" && rowItem.fragment
-          ? rowItem.parts.reduce(
-              (size, part) =>
-                size +
-                (part.kind === "group" && part.role === "assistant" ? part.messages.length : 1),
-              0,
-            ) *
-            CHAT_TRANSCRIPT_ESTIMATED_ROW_PX *
-            2
-          : undefined;
-      rows.push({ kind: "item", key: rowItem.key, item: rowItem, estimatedSize });
-    }
-    if (item.kind === "work-group" && expandedToolCards.get(item.key)) {
-      for (const group of item.groups) {
-        rows.push({ kind: "item", key: `${item.key}:${group.key}`, item: group });
-      }
-    }
-    const parts = item.kind === "agent-run-frame" ? item.parts : [item];
-    const groups = chatItemGroups(item);
-    const firstGroup = groups.find((group) => group.role === "assistant") ?? groups[0];
-    const fragmentKeys = new Map<string, string>();
-    if (rendered.length > 1) {
+      return false;
+    });
+    const loadedReplySources = new Map<string, LoadedReplySource>();
+    const messageRowKeysById = new Map<string, string>();
+    const transcriptMessageKeys = new Map<string, string>();
+    // New row keys measure expanded work immediately; existing keys keep their
+    // cached height until ResizeObserver reports the changed layout.
+    const rows: TranscriptRow<ChatRenderItem>[] = [];
+    for (const item of chain.transcriptItems) {
+      const rendered =
+        windowCompletedFrames && item.kind === "agent-run-frame"
+          ? completedFrameRows(item, expandedToolCards)
+          : [item];
       for (const rowItem of rendered) {
-        for (const group of chatItemGroups(rowItem)) {
+        // Rich work sources include their Markdown and paired tool output.
+        const estimatedSize =
+          rowItem.kind === "agent-run-frame" && rowItem.fragment
+            ? rowItem.parts.reduce(
+                (size, part) =>
+                  size +
+                  (part.kind === "group" && part.role === "assistant" ? part.messages.length : 1),
+                0,
+              ) *
+              CHAT_TRANSCRIPT_ESTIMATED_ROW_PX *
+              2
+            : undefined;
+        rows.push({ kind: "item", key: rowItem.key, item: rowItem, estimatedSize });
+      }
+      if (item.kind === "work-group" && expandedToolCards.get(item.key)) {
+        for (const group of item.groups) {
+          rows.push({ kind: "item", key: `${item.key}:${group.key}`, item: group });
+        }
+      }
+      const parts = item.kind === "agent-run-frame" ? item.parts : [item];
+      const groups = chatItemGroups(item);
+      const firstGroup = groups.find((group) => group.role === "assistant") ?? groups[0];
+      const fragmentKeys = new Map<string, string>();
+      if (rendered.length > 1) {
+        for (const rowItem of rendered) {
+          for (const group of chatItemGroups(rowItem)) {
+            for (const source of group.messages) {
+              fragmentKeys.set(source.key, rowItem.key);
+            }
+          }
+        }
+      }
+      // The anchor owner uses the first key, so keep stream and persisted keys
+      // in their actual presentation order, including within a mixed run frame.
+      for (const part of parts) {
+        if (part.kind === "stream-run") {
+          for (const stream of part.parts) {
+            if (stream.kind === "stream") {
+              transcriptMessageKeys.set(stream.key, item.key);
+            }
+          }
+        } else if (part.kind === "stream") {
+          transcriptMessageKeys.set(part.key, item.key);
+        }
+        for (const group of chatItemGroups(part)) {
+          const senderLabel = resolveMessageGroupSenderLabel(firstGroup ?? group, props);
+          const rowKey =
+            item.kind === "work-group" && expandedToolCards.get(item.key)
+              ? item.key + ":" + group.key
+              : item.key;
           for (const source of group.messages) {
-            fragmentKeys.set(source.key, rowItem.key);
+            const sourceRowKey = fragmentKeys.get(source.key) ?? rowKey;
+            transcriptMessageKeys.set(source.key, sourceRowKey);
+            const sourceMessageId = persistedMessageEntryId(source.message);
+            if (sourceMessageId) {
+              messageRowKeysById.set(sourceMessageId, sourceRowKey);
+              loadedReplySources.set(sourceMessageId, {
+                message: source.message,
+                messageId: source.key,
+                senderLabel,
+              });
+            }
           }
         }
       }
     }
-    // The anchor owner uses the first key, so keep stream and persisted keys
-    // in their actual presentation order, including within a mixed run frame.
-    for (const part of parts) {
-      if (part.kind === "stream-run") {
-        for (const stream of part.parts) {
-          if (stream.kind === "stream") {
-            transcriptMessageKeys.set(stream.key, item.key);
-          }
-        }
-      } else if (part.kind === "stream") {
-        transcriptMessageKeys.set(part.key, item.key);
-      }
-      for (const group of chatItemGroups(part)) {
-        const senderLabel = resolveMessageGroupSenderLabel(firstGroup ?? group, props);
-        const rowKey =
-          item.kind === "work-group" && expandedToolCards.get(item.key)
-            ? item.key + ":" + group.key
-            : item.key;
-        for (const source of group.messages) {
-          const sourceRowKey = fragmentKeys.get(source.key) ?? rowKey;
-          transcriptMessageKeys.set(source.key, sourceRowKey);
-          const sourceMessageId = persistedMessageEntryId(source.message);
-          if (sourceMessageId) {
-            messageRowKeysById.set(sourceMessageId, sourceRowKey);
-            loadedReplySources.set(sourceMessageId, {
-              message: source.message,
-              messageId: source.key,
-              senderLabel,
-            });
-          }
-        }
-      }
-    }
-  }
-  const positionIndex = projectChatPositions(
-    chain.transcriptItems,
-    expandedToolCards,
-    messageRowKeysById,
-    chain.searchActive,
-  );
-  return {
-    messageRowKeysById,
-    transcriptMessageKeys,
-    loadedReplySources,
-    positionIndex,
-    rows,
-    liveItem: chain.live?.item,
-  };
+    const positionIndex = projectChatPositions(
+      chain.transcriptItems,
+      expandedToolCards,
+      messageRowKeysById,
+      chain.searchActive,
+    );
+    return {
+      messageRowKeysById,
+      transcriptMessageKeys,
+      loadedReplySources,
+      positionIndex,
+      rows,
+      liveItem: chain.live?.item,
+    };
+  });
 }
 
 function completedFrameRows(
