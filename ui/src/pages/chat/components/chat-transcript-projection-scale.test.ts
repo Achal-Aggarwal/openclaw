@@ -34,6 +34,8 @@ import {
 } from "./chat-transcript.test-support.ts";
 
 const cleanups: (() => void)[] = [];
+const renderedText = (container: ParentNode, selector: string) =>
+  [...container.querySelectorAll(selector)].map((node) => node.textContent);
 let frame: ReturnType<typeof stubAnimationFrames>;
 function createTestTranscript(...args: Parameters<typeof createTranscript>) {
   const transcript = createTranscript(...args);
@@ -53,6 +55,20 @@ function personMessage(id: string, name: string, timestamp: number) {
       senderIdentity: { type: "profile" as const, id },
     },
   };
+}
+
+function projectSession(props: ChatThreadProps, transcript: ReturnType<typeof createTranscript>) {
+  return transcript.renderSession(props.sessionKey, (session) => {
+    projectChatTranscript(props, session);
+    return null;
+  });
+}
+
+function cleanupTranscripts() {
+  for (const cleanup of cleanups.splice(0).toReversed()) {
+    cleanup();
+  }
+  resetTranscriptTestDom();
 }
 
 function drawThread(props: ReturnType<typeof threadProps>) {
@@ -92,10 +108,7 @@ describe("transcript projection", () => {
   });
 
   afterEach(() => {
-    for (const cleanup of cleanups.splice(0).toReversed()) {
-      cleanup();
-    }
-    resetTranscriptTestDom();
+    cleanupTranscripts();
     vi.useRealTimers();
   });
 
@@ -143,40 +156,32 @@ describe("transcript projection", () => {
     await waitForSolid(() => expect(currentBubble()).not.toBeNull());
     const bubble = currentBubble()!;
     expect(bubble).not.toBeNull();
-    projectRows.mockClear();
-
-    for (const text of ["Reply grows", "Reply grows again", "Reply grows again."]) {
+    const changeText = (text: string | null, projected = false) => {
+      projectRows.mockClear();
       updateText(text);
       flush();
+      expect(projectRows).toHaveBeenCalledTimes(projected ? 1 : 0);
+    };
+
+    for (const text of ["Reply grows", "Reply grows again", "Reply grows again."]) {
+      changeText(text);
       expect(currentBubble()!).toBe(bubble);
       expect(bubble.textContent).toContain(text);
-      expect(projectRows).not.toHaveBeenCalled();
     }
 
     // A sibling projection update replaces the live resolver's reactive owner.
     updateContext(true);
     flush();
     expect(projectRows).toHaveBeenCalledOnce();
-    projectRows.mockClear();
-    updateText("Reply after sibling update");
-    flush();
+    changeText("Reply after sibling update");
     expect(bubble.textContent).toContain("Reply after sibling update");
-    expect(projectRows).not.toHaveBeenCalled();
 
-    updateText("<thinking>Private planning</thinking>");
-    flush();
+    changeText("<thinking>Private planning</thinking>", true);
     expect(view.container.textContent).not.toContain("Private planning");
-    expect(projectRows).toHaveBeenCalledOnce();
-    projectRows.mockClear();
-    updateText("Visible again");
-    flush();
+    changeText("Visible again", true);
     expect(currentBubble()!.textContent).toContain("Visible again");
-    expect(projectRows).toHaveBeenCalledOnce();
-    projectRows.mockClear();
-    updateText(null);
-    flush();
+    changeText(null, true);
     expect(currentBubble()).toBeNull();
-    expect(projectRows).toHaveBeenCalledOnce();
   });
 
   it("updates and parks voice captions without projecting the transcript for each fragment", async () => {
@@ -339,11 +344,7 @@ describe("transcript projection", () => {
       };
       const transcript = createTestTranscript(props.paneId);
       const build = vi.spyOn(chatThreadBuild, "buildChatItems");
-      const project = () =>
-        transcript.renderSession(props.sessionKey, (session) => {
-          projectChatTranscript(props, session);
-          return null;
-        });
+      const project = () => projectSession(props, transcript);
       project();
       expect(reads).toBeGreaterThan(0);
       transcript.renderSession(props.sessionKey, (session) => {
@@ -425,8 +426,7 @@ describe("transcript projection", () => {
     props.userId = "alex";
     props.userName = "Alex";
     const view = drawThread(props);
-    const names = () =>
-      [...view.container.querySelectorAll(".chat-sender-name")].map((node) => node.textContent);
+    const names = () => renderedText(view.container, ".chat-sender-name");
     view.draw();
     await view.settle();
     expect(names()).toEqual([]);
@@ -503,10 +503,7 @@ describe("transcript projection", () => {
     ]);
     Object.assign(props, { runId: "active", runActive: true, showToolCalls: true });
     const view = drawThread(props);
-    const liveLabels = () =>
-      [...view.container.querySelectorAll(".chat-activity-group__label--live")].map(
-        (node) => node.textContent,
-      );
+    const liveLabels = () => renderedText(view.container, ".chat-activity-group__label--live");
     view.draw();
     await view.settle();
     await waitForSolid(() => expect(liveLabels()).toEqual(["Latest operation…"]));
@@ -541,10 +538,7 @@ describe("transcript projection", () => {
     const transcript = createTestTranscript(props.paneId);
     const build = vi.spyOn(chatThreadBuild, "buildChatItems");
     const project = () => {
-      transcript.renderSession(props.sessionKey, (session) => {
-        projectChatTranscript(props, session);
-        return null;
-      });
+      projectSession(props, transcript);
       return state.transcriptRenderContext.turnVideoMessages
         ?.values()
         .next()
@@ -635,19 +629,12 @@ describe("voice reconciliation", () => {
         renderRows.mockRestore();
         return null;
       });
-      return [...container.querySelectorAll(".agent-chat__voice-turn-text")].map(
-        (turn) => turn.textContent,
-      );
+      return renderedText(container, ".agent-chat__voice-turn-text");
     };
   }
 
   beforeEach(installTranscriptDomMocks);
-  afterEach(() => {
-    for (const cleanup of cleanups.splice(0).toReversed()) {
-      cleanup();
-    }
-    resetTranscriptTestDom();
-  });
+  afterEach(cleanupTranscripts);
 
   it.each(["absent", "empty", "ID-less"] as const)(
     "skips the voice membership scan for %s captions",
