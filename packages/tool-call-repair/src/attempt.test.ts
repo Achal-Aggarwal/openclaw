@@ -116,4 +116,4 @@ it.each([
 });
 
 const detects = (text: string) => isPlainTextToolCallAttempt(text, hasToolName);
-const legacy = '[TOOL_CALL]{tool => "read"}[/TOOL_CALL]';
+const legacy = '[TOOL_CALL]{tool => "read", args => {"path":"proof.txt"}}[/TOOL_CALL]';
