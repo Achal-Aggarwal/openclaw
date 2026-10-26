@@ -6,6 +6,7 @@ import type { ApplicationPlacementStartupStatus } from "../../app/session-placem
 import type { UiSettings } from "../../app/settings.ts";
 import type { BoardWidgetPageMenu } from "../../components/board/board-widget-cell-options.ts";
 import { COMMAND_PALETTE_OPEN_EVENT } from "../../components/command-palette-contract.ts";
+import { resolveChatPaneDesktopTarget } from "../../components/desktop/desktop-source.ts";
 import { personActivityRouting } from "../../components/person-activity-link.ts";
 import { EMPTY_SESSION_MENU_DATA } from "../../components/session-menu-data.ts";
 import { i18n, t } from "../../i18n/index.ts";
@@ -31,7 +32,7 @@ import {
 } from "./chat-pane-header-identity.ts";
 import { ChatPaneHeaderMemo } from "./chat-pane-header-memo.ts";
 import { ChatPaneHeaderPeople } from "./chat-pane-header-people.ts";
-import { resolveChatPaneDesktopTarget, resolveChatPanePlacement } from "./chat-pane-placement.ts";
+import { resolveChatPanePlacement } from "./chat-pane-placement.ts";
 import type { createChatPaneRails } from "./chat-pane-rails.ts";
 import { isChatRunWorking } from "./chat-run-working.ts";
 import "./components/chat-header-session-menu.ts";
