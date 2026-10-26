@@ -14,7 +14,8 @@ export function isRestoredRequesterWakeRunnable(
     entry.killIntent ||
     entry.killReconciliation ||
     entry.suppressCompletionDelivery ||
-    false
+    entry.execution.restartRecovery ||
+    entry.terminalOwner === "interrupted-recovery"
   ) {
     return false;
   }
@@ -42,6 +43,8 @@ export function isRestoredRequesterWakeRunnable(
       (child) =>
         child.execution.status === "terminal" &&
         child.execution.endedAt !== undefined &&
+        !child.execution.restartRecovery &&
+        child.terminalOwner !== "interrupted-recovery" &&
         settled(child),
     );
   };
