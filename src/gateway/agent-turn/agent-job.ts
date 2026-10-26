@@ -305,57 +305,6 @@ function createPendingErrorTimeoutSnapshot(snapshot: AgentJobObservation): Agent
   };
 }
 
-function createSnapshotFromLifecycleEvent(params: {
-  runId: string;
-  phase: "end" | "error";
-  data?: Record<string, unknown>;
-  session?: AgentJobSession;
-}): AgentRunObservation {
-  const { runId, phase, data } = params;
-  const startedAt =
-    typeof data?.startedAt === "number" ? data.startedAt : agentRunStarts.get(runId);
-  const endedAt = typeof data?.endedAt === "number" ? data.endedAt : undefined;
-  const terminalOutcome = buildAgentRunTerminalOutcomeFromLifecycleEvent({
-    phase,
-    data,
-    startedAt,
-    endedAt,
-  });
-  // agent.wait historically treats a bare abort flag as a retryable timeout.
-  // Modern explicit stop reasons keep the canonical cancellation projection.
-  const legacyBareAbort =
-    !hasExecutionSettlement(data) &&
-    terminalOutcome.reason === "aborted" &&
-    data?.stopReason == null &&
-    data?.status == null;
-  const terminalDelivery = normalizeAgentRunTerminalDeliverySnapshot(data?.terminalDelivery);
-  const terminalReply = normalizeAgentRunTerminalReplySnapshot(data?.terminalReply);
-  const normalizedTerminalReceipt = normalizeAgentRunTerminalReceipt(data?.terminalReceipt);
-  const terminalReceipt =
-    normalizedTerminalReceipt?.runId === runId ? normalizedTerminalReceipt : undefined;
-  return {
-    runId,
-    source: "lifecycle",
-    session: params.session,
-    recordedAt: Date.now(),
-    status: legacyBareAbort ? "timeout" : terminalOutcome.status,
-    startedAt,
-    endedAt,
-    error: legacyBareAbort ? undefined : terminalOutcome.error,
-    stopReason: legacyBareAbort ? undefined : terminalOutcome.stopReason,
-    livenessState: terminalOutcome.livenessState,
-    ...(data?.yielded === true ? { yielded: true } : {}),
-    ...(terminalOutcome.timeoutPhase ? { timeoutPhase: terminalOutcome.timeoutPhase } : {}),
-    ...(terminalOutcome.providerStarted !== undefined
-      ? { providerStarted: terminalOutcome.providerStarted }
-      : {}),
-    ...(terminalDelivery ? { terminalDelivery } : {}),
-    ...(terminalReply ? { terminalReply } : {}),
-    ...(terminalReceipt ? { terminalReceipt } : {}),
-    version: nextAgentRunVersion(),
-  };
-}
-
 function ensureAgentRunListener() {
   if (agentRunListenerStarted) {
     return;
@@ -374,12 +323,50 @@ function ensureAgentRunListener() {
     if (phase !== "end" && phase !== "error") {
       return;
     }
-    const snapshot = createSnapshotFromLifecycleEvent({
-      runId: evt.runId,
+    const { runId, data } = evt;
+    const session = captureAgentJobSession(evt);
+    const startedAt =
+      typeof data?.startedAt === "number" ? data.startedAt : agentRunStarts.get(runId);
+    const endedAt = typeof data?.endedAt === "number" ? data.endedAt : undefined;
+    const terminalOutcome = buildAgentRunTerminalOutcomeFromLifecycleEvent({
       phase,
-      data: evt.data,
-      session: captureAgentJobSession(evt),
+      data,
+      startedAt,
+      endedAt,
     });
+    // agent.wait historically treats a bare abort flag as a retryable timeout.
+    // Modern explicit stop reasons keep the canonical cancellation projection.
+    const legacyBareAbort =
+      !hasExecutionSettlement(data) &&
+      terminalOutcome.reason === "aborted" &&
+      data?.stopReason == null &&
+      data?.status == null;
+    const terminalDelivery = normalizeAgentRunTerminalDeliverySnapshot(data?.terminalDelivery);
+    const terminalReply = normalizeAgentRunTerminalReplySnapshot(data?.terminalReply);
+    const normalizedTerminalReceipt = normalizeAgentRunTerminalReceipt(data?.terminalReceipt);
+    const terminalReceipt =
+      normalizedTerminalReceipt?.runId === runId ? normalizedTerminalReceipt : undefined;
+    const snapshot: AgentRunObservation = {
+      runId,
+      source: "lifecycle",
+      session,
+      recordedAt: Date.now(),
+      status: legacyBareAbort ? "timeout" : terminalOutcome.status,
+      startedAt,
+      endedAt,
+      error: legacyBareAbort ? undefined : terminalOutcome.error,
+      stopReason: legacyBareAbort ? undefined : terminalOutcome.stopReason,
+      livenessState: terminalOutcome.livenessState,
+      ...(data?.yielded === true ? { yielded: true } : {}),
+      ...(terminalOutcome.timeoutPhase ? { timeoutPhase: terminalOutcome.timeoutPhase } : {}),
+      ...(terminalOutcome.providerStarted !== undefined
+        ? { providerStarted: terminalOutcome.providerStarted }
+        : {}),
+      ...(terminalDelivery ? { terminalDelivery } : {}),
+      ...(terminalReply ? { terminalReply } : {}),
+      ...(terminalReceipt ? { terminalReceipt } : {}),
+      version: nextAgentRunVersion(),
+    };
     agentRunStarts.delete(evt.runId);
     const executionSettled = hasExecutionSettlement(evt.data);
     if (
