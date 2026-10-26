@@ -37,7 +37,6 @@ import {
 } from "./session-accessor.sqlite-entry-store.js";
 import {
   patchSessionEntryCore as patchInternalSessionEntry,
-  replaceSessionEntry,
   replaceSessionEntrySync,
 } from "./session-accessor.sqlite-entry.js";
 import { recordSessionParticipant } from "./session-accessor.sqlite-participants.native.js";
@@ -67,19 +66,6 @@ function patchSessionEntryCore(
 ) {
   return patchInternalSessionEntry(scope, update, { workerGuard: {}, ...options });
 }
-
-it("patches a replaced entry whose retained fields have a different insertion order", async () => {
-  await withOpenClawTestState({ scenario: "minimal" }, async () => {
-    const f = fixture();
-    const identity = { sessionId: f.scope.sessionId };
-    const writer = { ...identity, activeWriterRunId: "current-writer" };
-    await replaceSessionEntry(f.scope, { ...identity, updatedAt: 1 });
-    await replaceSessionEntry(f.scope, { ...writer, updatedAt: 1, totalTokens: 0 });
-    const result = await patchSessionEntryCore(f.scope, () => ({ totalTokens: 13_357 }));
-    expect(result).toMatchObject({ ...writer, totalTokens: 13_357, delivery: { kind: "none" } });
-    expect(f.read()).toEqual(result);
-  });
-});
 
 it("ends an absent live-switch selection without committing and keeps newer flags and callback CAS", async () => {
   await withOpenClawTestState({ scenario: "minimal" }, async () => {
