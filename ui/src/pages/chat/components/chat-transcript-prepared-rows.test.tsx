@@ -1,6 +1,6 @@
 /* @vitest-environment jsdom */
 
-import { afterEach, beforeEach, expect, it, onTestFinished, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { mountSolid } from "../../../test-helpers/solid-render.tsx";
 import { flush } from "../../../test-helpers/solid-settle.ts";
 import { ChatTimestamp } from "./chat-message-timestamp-view.tsx";
@@ -14,7 +14,13 @@ import {
 } from "./chat-transcript.test-support.ts";
 
 beforeEach(installTranscriptDomMocks);
-afterEach(resetTranscriptTestDom);
+const disposers: Array<() => void> = [];
+afterEach(() => {
+  for (const dispose of disposers.splice(0)) {
+    dispose();
+  }
+  resetTranscriptTestDom();
+});
 
 async function settle() {
   // Row refs and the retained root's commit each cross a microtask boundary.
@@ -24,16 +30,25 @@ async function settle() {
   }
 }
 
-async function transcriptFixture(initialOffset: number | null = 0) {
+async function transcriptFixture(initialOffset: number | null = 0, idlePreparation = false) {
   let now = 1;
   let nextFrame = 0;
   const frames = new Map<number, FrameRequestCallback>();
+  let nextIdle = 0;
+  const idleCallbacks = new Map<number, IdleRequestCallback>();
   vi.spyOn(performance, "now").mockImplementation(() => now);
   vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
     frames.set(++nextFrame, callback);
     return nextFrame;
   });
   vi.stubGlobal("cancelAnimationFrame", (id: number) => frames.delete(id));
+  if (idlePreparation) {
+    vi.stubGlobal("requestIdleCallback", (callback: IdleRequestCallback) => {
+      idleCallbacks.set(++nextIdle, callback);
+      return nextIdle;
+    });
+    vi.stubGlobal("cancelIdleCallback", (id: number) => idleCallbacks.delete(id));
+  }
   const container = document.body.appendChild(document.createElement("div"));
   Object.defineProperties(container, {
     clientHeight: { configurable: true, value: 600 },
@@ -82,7 +97,7 @@ async function transcriptFixture(initialOffset: number | null = 0) {
       });
     }
   }, initialOffset);
-  onTestFinished(() => {
+  disposers.push(() => {
     disposed = true;
     host.dispose();
   });
@@ -122,6 +137,18 @@ async function transcriptFixture(initialOffset: number | null = 0) {
         }
         await settle();
       }
+    },
+    async idle(available = 10) {
+      const pending = [...idleCallbacks.values()];
+      idleCallbacks.clear();
+      for (const callback of pending) {
+        callback({ didTimeout: false, timeRemaining: () => available });
+      }
+      await settle();
+      for (const row of container.querySelectorAll<HTMLElement>("[data-prepared-row]")) {
+        emitTranscriptResize(row, 800, 100);
+      }
+      await settle();
     },
     async scrollTo(index: number) {
       container.scrollTop = index * 100;
@@ -228,6 +255,27 @@ it("places a fresh long transcript at its measured tail before preparing distant
   expect(transcriptRows(view.container).every((row) => Number(row.dataset.index) > 230)).toBe(true);
 });
 
+it("waits for idle time to prepare during scrolling and uses the latest viewport", async () => {
+  const view = await transcriptFixture(0, true);
+  await view.scrollTo(60);
+  const rendered = view.renderRow.mock.calls.length;
+  await view.frame(2);
+  expect(view.renderRow.mock.calls).toHaveLength(rendered);
+  await view.idle(2);
+  expect(view.renderRow.mock.calls).toHaveLength(rendered);
+  await view.idle();
+  expect(view.renderRow.mock.calls).toHaveLength(rendered + 1);
+
+  await view.scrollTo(120);
+  const afterScroll = view.renderRow.mock.calls.length;
+  await view.frame(2);
+  expect(view.renderRow.mock.calls).toHaveLength(afterScroll);
+  await view.idle();
+  expect(view.renderRow.mock.calls).toHaveLength(afterScroll + 1);
+  const prepared = view.renderRow.mock.calls.at(-1)![0];
+  expect(prepared.kind === "item" && prepared.item).toBeGreaterThan(120);
+});
+
 it("formats the detailed timestamp only when metadata becomes available", () => {
   const format = vi
     .spyOn(Date.prototype, "toLocaleString")
@@ -238,7 +286,7 @@ it("formats the detailed timestamp only when metadata becomes available", () => 
     );
   const timestamp = Date.UTC(2026, 9, 25, 12, 34, 56);
   const view = mountSolid<Parameters<typeof ChatTimestamp>[0]>(ChatTimestamp, { timestamp });
-  onTestFinished(view.dispose);
+  disposers.push(view.dispose);
   const detailedCalls = () =>
     format.mock.calls.filter(([, options]) => options?.weekday === "long");
   expect(detailedCalls()).toHaveLength(0);

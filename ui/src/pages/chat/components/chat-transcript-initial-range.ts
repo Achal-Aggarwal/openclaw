@@ -283,10 +283,7 @@ export class TranscriptInitialRange {
       });
       this.invalidate();
     };
-    if (
-      performance.now() - this.scrollSample.time > 100 &&
-      typeof requestIdleCallback === "function"
-    ) {
+    if (typeof requestIdleCallback === "function") {
       const idleRequest = requestIdleCallback(
         (idle) => prepare(performance.now() + (idle.timeRemaining() >= 6 ? 6 : 0)),
         { timeout: 250 },
