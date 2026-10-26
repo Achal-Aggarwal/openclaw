@@ -4,6 +4,8 @@ import type { Worker } from "node:worker_threads";
 import { normalizeAgentId } from "@openclaw/normalization-core/agent-id";
 import { toStringifiedError } from "@openclaw/normalization-core/error-coercion";
 import { isRecord } from "@openclaw/normalization-core/record-coerce";
+import { markWorkerRetirement } from "../../infra/worker-cpu.js";
+import { runInDetachedAsyncContext } from "../../shared/detached-async-context.js";
 import { resolveGlobalSingleton } from "../../shared/global-singleton.js";
 import type { OpenClawAgentDatabaseOptions } from "../../state/openclaw-agent-db-contract.js";
 import { registerOpenClawAgentDatabaseAsyncResource } from "../../state/openclaw-agent-db-resources.js";
@@ -26,9 +28,20 @@ type ArchiveConnection = {
   didExit: boolean;
   // The worker validates a strictly increasing sequence for its whole lifetime, across scopes.
   operationId: number;
+  idleTimer?: NodeJS.Timeout;
   failure?: Error;
   retiring?: Promise<void>;
 };
+
+// An idle carrier keeps its loaded heap; release it once archive work stops.
+const ARCHIVE_WORKER_IDLE_MS = 5 * 60_000;
+
+function clearIdle(connection: ArchiveConnection | undefined): void {
+  if (connection) {
+    clearTimeout(connection.idleTimer);
+    connection.idleTimer = undefined;
+  }
+}
 
 const sessions = resolveGlobalSingleton<{
   context: AsyncLocalStorage<ArchiveSession>;
@@ -143,9 +156,12 @@ class ArchiveSession {
     ) {
       throw new Error("SQLite archive request changed its captured database owner");
     }
+    // Only actual archive work renews the idle deadline.
+    clearIdle(this.connection);
     // The FIFO leaves no native handles in the idle worker; transfer execution, not authority.
     const previous = sessions.warm;
     if (previous && previous !== this) {
+      clearIdle(previous.connection);
       if (
         !previous.revoked &&
         previous.options.env.OPENCLAW_STATE_DIR === this.options.env.OPENCLAW_STATE_DIR &&
@@ -239,6 +255,7 @@ class ArchiveSession {
       if (this.dispatched === dispatched) {
         this.dispatched = undefined;
       }
+      this.armIdle(connection);
     }
     // A publication error can conceal a failed native close. Exit is the fallback proof.
     if (result.type === "published" && result.results.some((entry) => entry.error !== undefined)) {
@@ -246,6 +263,33 @@ class ArchiveSession {
     }
     this.assertCurrent();
     return result;
+  }
+
+  private armIdle(connection: ArchiveConnection): void {
+    if (
+      connection.idleTimer ||
+      this.connection !== connection ||
+      connection.retiring ||
+      connection.didExit ||
+      connection.failure
+    ) {
+      return;
+    }
+    // Detach from the archive scope so retirement never runs as that scope's work.
+    connection.idleTimer = runInDetachedAsyncContext(() =>
+      setTimeout(() => {
+        connection.idleTimer = undefined;
+        if (this.connection !== connection) {
+          return;
+        }
+        markWorkerRetirement(connection.worker, "idle_timeout");
+        // An open scope remains usable; its next request starts a fresh worker.
+        void (this.released ? this.close() : this.retire()).catch((error: unknown) => {
+          process.emitWarning(`SQLite archive worker retirement failed: ${String(error)}`);
+        });
+      }, ARCHIVE_WORKER_IDLE_MS),
+    );
+    connection.idleTimer.unref();
   }
 
   private start(createWorker: (data: object) => Worker): ArchiveConnection {
@@ -269,6 +313,7 @@ class ArchiveSession {
     });
     connection.exited = new Promise((resolve) => {
       worker.once("exit", (code) => {
+        clearIdle(connection);
         connection.didExit = true;
         if (code !== 0) {
           connection.failure ??= new Error(`SQLite archive Worker exited with code ${code}`);
@@ -284,6 +329,7 @@ class ArchiveSession {
     if (!connection) {
       return Promise.resolve();
     }
+    clearIdle(connection);
     return (connection.retiring ??= (async () => {
       // Queued requests own no native work and will refuse at FIFO admission.
       await this.dispatched?.catch(() => {});

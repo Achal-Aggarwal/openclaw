@@ -1,4 +1,5 @@
 import { AsyncLocalStorage } from "node:async_hooks";
+import { once } from "node:events";
 import fs from "node:fs";
 import path from "node:path";
 import type { Worker } from "node:worker_threads";
@@ -283,6 +284,65 @@ describe("SQLite transcript archive sessions", () => {
     await closeOpenClawAgentDatabaseByPathAsync(database.path);
     expect(archiveWorkers.replies.every(({ worker }) => worker.threadId === -1)).toBe(true);
   });
+
+  it.each([false, true])(
+    "retires the idle archive worker after five idle minutes (open scope: %s)",
+    async (keepScopeOpen) => {
+      const first = await prepareSession("idle-first", "idle archive first");
+      const second = await prepareSession("idle-second", "idle archive second");
+      const options = { agentId: "main", path: first.database.path, env: testState.env };
+      const idleTimers: Array<() => void> = [];
+      const schedule = globalThis.setTimeout;
+      const timers = vi.spyOn(globalThis, "setTimeout").mockImplementation(((
+        callback: (...callbackArgs: unknown[]) => void,
+        delay?: number,
+        ...args: unknown[]
+      ) => {
+        if (delay === 5 * 60_000) {
+          idleTimers.push(() => callback(...args));
+        }
+        return schedule(() => callback(...args), delay);
+      }) as typeof setTimeout);
+      const archiveWorkers = observeArchiveSessionWorkers();
+      const exercise = async () => {
+        const firstResult = await deleteArchivedSession(first.sessionKey);
+        expect(readArchiveLines(firstResult.archivedTranscripts[0]?.archivedPath)).toEqual([
+          JSON.stringify(first.event),
+        ]);
+        const carrier = archiveWorkers.replies[0]?.worker;
+        expect(carrier?.threadId).toBeGreaterThan(0);
+        // Each settled request re-arms the deadline; the latest one owns retirement.
+        expect(idleTimers.length).toBeGreaterThan(0);
+        const exited = once(carrier!, "exit");
+        idleTimers.at(-1)?.();
+        await exited;
+        expect(carrier?.threadId).toBe(-1);
+
+        const secondResult = await deleteArchivedSession(second.sessionKey);
+        expect(readArchiveLines(secondResult.archivedTranscripts[0]?.archivedPath)).toEqual([
+          JSON.stringify(second.event),
+        ]);
+        const replacement = archiveWorkers.replies.at(-1)?.worker;
+        expect(replacement).not.toBe(carrier);
+        expect(replacement?.threadId).toBeGreaterThan(0);
+      };
+      try {
+        if (keepScopeOpen) {
+          await withSqliteTranscriptArchiveSession(options, exercise);
+        } else {
+          await exercise();
+        }
+      } finally {
+        timers.mockRestore();
+        archiveWorkers.stop();
+      }
+      expect(new Set(archiveWorkers.replies.map(({ worker }) => worker)).size).toBe(2);
+      await closeOpenClawAgentDatabaseByPathAsync(first.database.path);
+      expect(archiveWorkers.replies.every(({ worker }) => worker.threadId === -1)).toBe(true);
+      expect(loadSessionEntry(first.scope)).toBeUndefined();
+      expect(loadSessionEntry(second.scope)).toBeUndefined();
+    },
+  );
 
   it("joins a failed publisher and recovers its committed archive after result recording fails", async () => {
     const sessionKey = "agent:main:scoped-publish-failure";

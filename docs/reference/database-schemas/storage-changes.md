@@ -1959,7 +1959,10 @@ that scope while retaining a healthy idle worker. Database retirement revokes qu
 requests, drains dispatched work, and joins native exit. The process keeps at most one
 reusable archive worker; scopes in the same state directory transfer it with fresh
 authority. Different state directories and unhealthy workers require native exit
-before replacement.
+before replacement. Five minutes without archive work retires the idle worker and
+releases its loaded heap. Only actual work renews that deadline; empty scope
+preparation does not. Admission racing retirement joins native exit before creating
+a replacement, and an open archive scope remains usable afterward.
 Cold preparation and mutations retain their separate one-shot workers; cold mutations
 join their existing page maintenance and native exit.
 
