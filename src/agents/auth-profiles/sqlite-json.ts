@@ -1,15 +1,20 @@
+import path from "node:path";
+import type { DatabaseSync } from "node:sqlite";
 import { executeWithCachedStatement } from "../../infra/kysely-sync-cache-state.js";
 import {
   executeSqliteQuerySync,
   executeSqliteQueryTakeFirstSync,
   getNodeSqliteKysely,
 } from "../../infra/kysely-sync.js";
+import { resolveSqliteFilesystemPath } from "../../infra/node-sqlite.js";
 import type { EngineConnection } from "../../infra/sql-connection.js";
 import { isPostgresSqlConnection } from "../../infra/sql-connection.js";
-import { prepareSqliteReadCache } from "../../infra/sqlite-read-cache.js";
+import { readSqliteDatabaseWriteRevision } from "../../infra/sqlite-database-admission.js";
+import { isSqliteCorruptionError } from "../../infra/sqlite-error-diagnostics.js";
 import type { SqliteAuthSchema } from "../../infra/sqlite-readonly-auth-schema.js";
 import {
   getAdmittedSqliteSchemaFacts,
+  readSqliteNativeMutationRevision,
   type SqliteSchemaFacts,
 } from "../../infra/sqlite-schema-facts.js";
 import { isArtifactPreservingStateRead } from "../../state/artifact-preserving-state-reads.js";
@@ -21,6 +26,48 @@ import {
   type AuthProfileReadDatabaseOpener,
 } from "./sqlite-read-pool.js";
 import type { AuthProfileRowRead, PersistedAuthProfileStoreInspection } from "./types.js";
+
+function readCacheToken(database: DatabaseSync): string | undefined {
+  if (database.isTransaction) {
+    return undefined;
+  }
+  const revision = readSqliteDatabaseWriteRevision(database);
+  const local = readSqliteNativeMutationRevision(database);
+  return revision === undefined || local === undefined ? undefined : `${revision}:${local}`;
+}
+
+/** Bracket rows on their existing connection; no extra source descriptors or writes. */
+function prepareSqliteReadCache(database: DatabaseSync, databasePath: string): () => boolean {
+  let before: string | undefined;
+  try {
+    const location = database.location();
+    if (
+      location &&
+      resolveSqliteFilesystemPath(path.resolve(location)) ===
+        resolveSqliteFilesystemPath(path.resolve(databasePath))
+    ) {
+      before = readCacheToken(database);
+    }
+  } catch (error) {
+    if (isSqliteCorruptionError(error)) {
+      throw error;
+    }
+    // Cache admission is optional; the row read owns source errors.
+  }
+  return () => {
+    if (before === undefined) {
+      return false;
+    }
+    try {
+      return readCacheToken(database) === before;
+    } catch (error) {
+      if (isSqliteCorruptionError(error)) {
+        throw error;
+      }
+      return false;
+    }
+  };
+}
 
 export type AgentAuthProfileDatabase = Pick<
   OpenClawAgentKyselyDatabase,

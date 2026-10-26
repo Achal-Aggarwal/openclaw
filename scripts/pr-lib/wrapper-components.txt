@@ -1193,7 +1193,6 @@ src/infra/sqlite-planner-statistics.ts
 src/infra/sqlite-post-commit.ts
 src/infra/sqlite-private-directory.ts
 src/infra/sqlite-private-snapshot-fork.ts
-src/infra/sqlite-read-cache.ts
 src/infra/sqlite-reader-lifecycle.ts
 src/infra/sqlite-readonly-auth-schema.ts
 src/infra/sqlite-readonly-auth-transfer.ts
@@ -1209,7 +1208,6 @@ src/infra/sqlite-readonly-worker-protocol.ts
 src/infra/sqlite-readonly-worker-session.ts
 src/infra/sqlite-readonly-worker.ts
 src/infra/sqlite-recovery-files.ts
-src/infra/sqlite-recovery-snapshot.ts
 src/infra/sqlite-rollback-recovery.ts
 src/infra/sqlite-runtime-version.ts
 src/infra/sqlite-schema-admission.ts
@@ -1927,7 +1925,6 @@ src/state/openclaw-agent-db-schema-refresh.ts
 src/state/openclaw-agent-db-schema.ts
 src/state/openclaw-agent-db-session-migrations.ts
 src/state/openclaw-agent-db-session-nodes-migration.ts
-src/state/openclaw-agent-db-session-provenance.ts
 src/state/openclaw-agent-db-terminal.ts
 src/state/openclaw-agent-db-transaction.ts
 src/state/openclaw-agent-db-validation-cache.ts

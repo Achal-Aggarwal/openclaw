@@ -2,7 +2,7 @@ import type { DatabaseSync } from "node:sqlite";
 import { readSqliteUserVersion } from "../infra/sqlite-user-version.js";
 import { OPENCLAW_AGENT_SCHEMA_VERSION } from "./openclaw-agent-db-contract.js";
 import { readSqliteTableColumns } from "./openclaw-agent-db-session-migrations.js";
-import { backfillTranscriptMutationWatermarks } from "./openclaw-agent-db-session-provenance.js";
+import { tableExists } from "./openclaw-state-db-schema-helpers.js";
 
 export function migrateOpenClawAgentSchema(db: DatabaseSync): void {
   if (readSqliteUserVersion(db) >= OPENCLAW_AGENT_SCHEMA_VERSION) {
@@ -26,5 +26,22 @@ export function migrateOpenClawAgentSchema(db: DatabaseSync): void {
       db.exec(`ALTER TABLE sessions ADD COLUMN ${name} ${definition};`);
     }
   }
-  backfillTranscriptMutationWatermarks(db);
+  if (!tableExists(db, "transcript_events")) {
+    return;
+  }
+  db.exec(`
+    UPDATE sessions
+    SET
+      transcript_updated_at = COALESCE(
+        transcript_updated_at,
+        (SELECT MAX(transcript_events.created_at)
+         FROM transcript_events
+         WHERE transcript_events.session_id = sessions.session_id)
+      ),
+      transcript_observed_at = COALESCE(transcript_observed_at, updated_at)
+    WHERE EXISTS (
+      SELECT 1 FROM transcript_events
+      WHERE transcript_events.session_id = sessions.session_id
+    );
+  `);
 }
