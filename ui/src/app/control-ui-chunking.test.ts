@@ -126,6 +126,9 @@ describe("Control UI build chunking", () => {
     const snapshotDecoder = modulePath("../pages/chat/session-snapshot-decoder.ts");
     const boardLabels = modulePath("../i18n/locales/en-board.ts");
     const automation = modulePath("../pages/chat/components/chat-ci-automation-control.tsx");
+    const automationView = modulePath("../pages/chat/components/chat-ci-automation.tsx");
+    const automationDetails = modulePath("../pages/chat/components/chat-ci-details.tsx");
+    const automationCopy = modulePath("../pages/chat/components/chat-pull-request-copy.ts");
     const automationSpec = modulePath("../lib/session-pr-automation-spec.ts");
     const automationOperation = modulePath("../lib/session-pr-automation-operation.ts");
     const permission = modulePath("../pages/chat/components/chat-permission-card.tsx");
@@ -202,8 +205,17 @@ describe("Control UI build chunking", () => {
       [boardLabels, "export const registerBoard = () => 'board labels';"],
       [
         automation,
-        `export { match } from ${JSON.stringify(automationSpec)}; export const write = () => import(${JSON.stringify(automationOperation)});`,
+        `export { match } from ${JSON.stringify(automationSpec)}; export { view } from ${JSON.stringify(automationView)}; export const details = () => import(${JSON.stringify(automationDetails)}); export const write = () => import(${JSON.stringify(automationOperation)});`,
       ],
+      [
+        automationView,
+        `import { label } from ${JSON.stringify(automationCopy)}; export const view = () => label();`,
+      ],
+      [
+        automationDetails,
+        `import { label } from ${JSON.stringify(automationCopy)}; export const details = () => label();`,
+      ],
+      [automationCopy, "export const label = () => 'automation';"],
       [automationSpec, "export const match = () => 'automation';"],
       [automationOperation, `export { match as write } from ${JSON.stringify(automationSpec)};`],
       [permission, "export const render = () => 'permission';"],
@@ -311,9 +323,16 @@ describe("Control UI build chunking", () => {
     const entryChunk = chunks.find((chunk) => chunk.isEntry)!;
     const automationChunk = chunks.find((chunk) => automation in chunk.modules)!;
     const automationOperationChunk = chunks.find((chunk) => automationOperation in chunk.modules)!;
-    expect(chunks.find((chunk) => automationSpec in chunk.modules)?.fileName).toBe(
-      automationChunk.fileName,
-    );
+    for (const statusModule of [
+      automationSpec,
+      automationView,
+      automationDetails,
+      automationCopy,
+    ]) {
+      expect(chunks.find((chunk) => statusModule in chunk.modules)?.fileName).toBe(
+        automationChunk.fileName,
+      );
+    }
     expect(staticImports(automationChunk.fileName)).not.toContain(
       automationOperationChunk.fileName,
     );

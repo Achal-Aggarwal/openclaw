@@ -79,8 +79,15 @@ export function controlUiStableChunkName(id: string): string | undefined {
     case "ui/src/components/markdown-json-parser.runtime.ts":
       return "markdown-json-runtime";
     case "ui/src/pages/chat/components/chat-ci-automation-control.tsx":
+    case "ui/src/pages/chat/components/chat-ci-automation.tsx":
+    case "ui/src/pages/chat/components/chat-ci-details.tsx":
+    case "ui/src/pages/chat/components/chat-ci-disclosure.ts":
+    case "ui/src/pages/chat/components/chat-ci-gateway-updates.ts":
+    case "ui/src/pages/chat/components/chat-pull-request-copy.ts":
+    case "ui/src/i18n/locales/en-chat-ci.ts":
+    case "ui/src/lib/session-pr-automation.ts":
     case "ui/src/lib/session-pr-automation-spec.ts":
-      // The status reader owns these matchers; the optional writer reuses its download.
+      // Keep the status readers' shared closure together; the optional writer stays lazy.
       return "chat-ci-automation-control";
     case "ui/src/pages/chat/components/chat-context-breakdown.tsx":
     case "ui/src/pages/chat/components/chat-context-breakdown-model.ts":
