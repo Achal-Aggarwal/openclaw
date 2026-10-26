@@ -19,7 +19,6 @@ export class TranscriptInitialRange {
   private preparingRowKey: string | undefined;
   readonly rowIndexes = new Map<string, number>();
   private cancelPreparation?: () => void;
-  private preparationIsIdle = false;
   private prepareStarted = 0;
   private prepareLatency = 16;
   private scrollSample = { offset: 0, time: 0, velocity: 0, direction: -1 };
@@ -190,11 +189,6 @@ export class TranscriptInitialRange {
     const offset = virtualizer.scrollOffset ?? 0;
     const previous = this.scrollSample;
     if (offset !== previous.offset) {
-      if (this.preparationIsIdle) {
-        this.cancelPreparation?.();
-        this.cancelPreparation = undefined;
-        this.preparationIsIdle = false;
-      }
       const delta = offset - previous.offset;
       this.scrollSample = {
         offset,
@@ -230,7 +224,6 @@ export class TranscriptInitialRange {
     }
     const prepare = (deadline: number) => {
       this.cancelPreparation = undefined;
-      this.preparationIsIdle = false;
       if (performance.now() >= deadline) {
         this.queuePreparation();
         return;
@@ -299,11 +292,11 @@ export class TranscriptInitialRange {
       this.invalidate();
     };
     if (typeof requestIdleCallback === "function") {
+      // Keep this slot through scrolling; prepare reads the latest viewport.
       const idleRequest = requestIdleCallback(
         (idle) => prepare(performance.now() + (idle.timeRemaining() >= 6 ? 6 : 0)),
         { timeout: 250 },
       );
-      this.preparationIsIdle = true;
       this.cancelPreparation = () => cancelIdleCallback(idleRequest);
     } else {
       // Admit one atomic fragment early in the frame, then await its measurement.
@@ -316,7 +309,6 @@ export class TranscriptInitialRange {
   disconnect(): void {
     this.cancelPreparation?.();
     this.cancelPreparation = undefined;
-    this.preparationIsIdle = false;
     this.prepareStarted = 0;
     this.preparingRowKey = undefined;
     this.preparedRowKeys.clear();

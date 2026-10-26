@@ -43,11 +43,17 @@ async function transcriptFixture(initialOffset: number | null = 0, idlePreparati
   });
   vi.stubGlobal("cancelAnimationFrame", (id: number) => frames.delete(id));
   if (idlePreparation) {
-    vi.stubGlobal("requestIdleCallback", (callback: IdleRequestCallback) => {
-      idleCallbacks.set(++nextIdle, callback);
-      return nextIdle;
-    });
-    vi.stubGlobal("cancelIdleCallback", (id: number) => idleCallbacks.delete(id));
+    vi.stubGlobal(
+      "requestIdleCallback",
+      vi.fn((callback: IdleRequestCallback) => {
+        idleCallbacks.set(++nextIdle, callback);
+        return nextIdle;
+      }),
+    );
+    vi.stubGlobal(
+      "cancelIdleCallback",
+      vi.fn((id: number) => idleCallbacks.delete(id)),
+    );
   }
   const container = document.body.appendChild(document.createElement("div"));
   Object.defineProperties(container, {
@@ -267,7 +273,10 @@ it("places a fresh long transcript at its tail and warms a bounded upward window
 
 it("waits for idle time to prepare during scrolling and uses the latest viewport", async () => {
   const view = await transcriptFixture(0, true);
+  const scheduled = vi.mocked(requestIdleCallback).mock.calls.length;
   await view.scrollTo(60);
+  expect(vi.mocked(requestIdleCallback).mock.calls).toHaveLength(scheduled);
+  expect(cancelIdleCallback).not.toHaveBeenCalled();
   const rendered = view.renderRow.mock.calls.length;
   await view.frame(2);
   expect(view.renderRow.mock.calls).toHaveLength(rendered);
@@ -276,7 +285,10 @@ it("waits for idle time to prepare during scrolling and uses the latest viewport
   await view.idle();
   expect(view.renderRow.mock.calls).toHaveLength(rendered + 1);
 
+  const nextScheduled = vi.mocked(requestIdleCallback).mock.calls.length;
   await view.scrollTo(120);
+  expect(vi.mocked(requestIdleCallback).mock.calls).toHaveLength(nextScheduled);
+  expect(cancelIdleCallback).not.toHaveBeenCalled();
   const afterScroll = view.renderRow.mock.calls.length;
   await view.frame(2);
   expect(view.renderRow.mock.calls).toHaveLength(afterScroll);
