@@ -4,6 +4,7 @@ import { makeProviderModel } from "../providers/provider-model.test-support.js";
 import { cleanupSessionResources } from "../session-resources.js";
 import { createOpenAIResponsesTransportStreamFn } from "./openai-responses-client.js";
 import { captureOpenAIResponses } from "./openai-responses-live-capture.test-support.js";
+import { userMessage } from "./openai-stream-cases.test-support.js";
 
 // Capture the real native endpoint: a proxy base URL would disable continuation eligibility.
 const LIVE = process.env.OPENCLAW_LIVE_TEST === "1";
@@ -11,10 +12,6 @@ const OPENAI_KEY = process.env.OPENAI_API_KEY ?? "";
 const describeLive = LIVE && OPENAI_KEY ? describe : describe.skip;
 const LIVE_MODEL_ID = process.env.OPENCLAW_LIVE_RESPONSES_MODEL || "gpt-5.6-luna";
 const LIVE_TIMEOUT_MS = 120_000;
-
-function userMessage(text: string, timestamp: number) {
-  return { role: "user" as const, content: text, timestamp };
-}
 
 async function runTurn(
   model: Model<"openai-responses">,

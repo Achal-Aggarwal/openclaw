@@ -37,6 +37,7 @@ import {
 import { collectProviderApiKeys } from "../agents/live-auth-keys.js";
 import { isModelNotFoundErrorMessage } from "../agents/live-model-errors.js";
 import {
+  formatFailurePreview,
   isLiveProfileKeyModeEnabled,
   isLiveTestEnabled,
   readLiveTestConfig,
@@ -747,23 +748,6 @@ function restoreOptionalEnv(key: string, value: string | undefined): void {
   } else {
     setTestEnvValue(key, value);
   }
-}
-
-function formatFailurePreview(
-  failures: Array<{ model: string; error: string }>,
-  maxItems: number,
-): string {
-  const limit = Math.max(1, maxItems);
-  const lines = failures.slice(0, limit).map((failure, index) => {
-    const normalized = failure.error.replace(/\s+/g, " ").trim();
-    const clipped = normalized.length > 320 ? `${normalized.slice(0, 317)}...` : normalized;
-    return `${index + 1}. ${failure.model}: ${clipped}`;
-  });
-  const remaining = failures.length - limit;
-  if (remaining > 0) {
-    lines.push(`... and ${remaining} more`);
-  }
-  return lines.join("\n");
 }
 
 function assertNoReasoningTags(params: {

@@ -4,6 +4,7 @@ import { makeProviderModel } from "../providers/provider-model.test-support.js";
 import { cleanupSessionResources } from "../session-resources.js";
 import { createOpenAIResponsesTransportStreamFn } from "./openai-responses-client.js";
 import { captureOpenAIResponses } from "./openai-responses-live-capture.test-support.js";
+import { userMessage } from "./openai-stream-cases.test-support.js";
 
 // Live coverage for the idle-TTL default bump and the ready-entry
 // count/byte-budget cache (this PR's own changes) against the *real* native
@@ -31,10 +32,6 @@ const LIVE_TIMEOUT_MS = 120_000;
 // for over a genuine network round trip.
 const PAST_FORMER_TTL_DELAY_MS = 6 * 60 * 1000;
 const DELAYED_TIMEOUT_MS = PAST_FORMER_TTL_DELAY_MS + LIVE_TIMEOUT_MS;
-
-function userMessage(text: string, timestamp: number) {
-  return { role: "user" as const, content: text, timestamp };
-}
 
 function model(): Model<"openai-responses"> {
   return makeProviderModel("openai-responses", "openai", LIVE_MODEL_ID, {

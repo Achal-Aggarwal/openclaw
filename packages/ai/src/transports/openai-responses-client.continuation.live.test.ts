@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { makeProviderModel } from "../providers/provider-model.test-support.js";
 import { cleanupSessionResources } from "../session-resources.js";
 import { createOpenAIResponsesTransportStreamFn } from "./openai-responses-client.js";
+import { userMessage } from "./openai-stream-cases.test-support.js";
 
 // Live coverage for HTTP continuation against the *real* OpenAI Responses API.
 // A unit/mocked test can only prove openclaw's own selection logic; it cannot
@@ -67,10 +68,6 @@ class CapturingOpenAIForwardProxy {
       this.server?.close((error) => (error ? reject(error) : resolve()));
     });
   }
-}
-
-function userMessage(text: string, timestamp: number) {
-  return { role: "user" as const, content: text, timestamp };
 }
 
 async function run(
