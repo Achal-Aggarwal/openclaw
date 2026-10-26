@@ -1,10 +1,81 @@
 import { createSignal, flush } from "solid-js";
 import { expect, it, onTestFinished, vi } from "vitest";
+import { prepareMessageMarkdown } from "../pages/chat/components/chat-message-text-preparation.ts";
 import { mountSolid } from "../test-helpers/mount-solid.ts";
 import { renderSolidRef } from "../test-helpers/render-solid-ref.ts";
 import { createMarkdownRef } from "./markdown-dom-ref.ts";
 import { toStreamingMarkdownDomParts } from "./markdown-live.ts";
-import { partitionMarkdownHtml, toSanitizedMarkdownHtml } from "./markdown.ts";
+import {
+  partitionMarkdownHtml,
+  toSanitizedMarkdownContent,
+  toSanitizedMarkdownHtml,
+} from "./markdown.ts";
+
+it("mounts fresh chat Markdown without reparsing and keeps only HTML in its cache", () => {
+  const marker = "chat-sanitized-fragment-first-mount";
+  const source = `### ${marker}\n\n| State |\n| --- |\n| Ready |\n\n<img src="x" onerror="alert(1)"><script>alert(2)</script>`;
+  const html = Object.getOwnPropertyDescriptor(Element.prototype, "innerHTML")!;
+  let parses = 0;
+  Object.defineProperty(Element.prototype, "innerHTML", {
+    ...html,
+    set(value: string) {
+      if (this instanceof HTMLTemplateElement && value.includes(marker)) {
+        parses++;
+      }
+      html.set!.call(this, value);
+    },
+  });
+  onTestFinished(() => Object.defineProperty(Element.prototype, "innerHTML", html));
+  const prepare = () =>
+    prepareMessageMarkdown(
+      source,
+      marker,
+      { role: "assistant", isStreaming: false },
+      {},
+    ).parts()[0];
+  const fresh = prepare();
+  expect(typeof fresh).not.toBe("string");
+  const first = renderSolidRef(() => createMarkdownRef(() => ({ content: fresh })), {
+    targetElement: document.createElement("div"),
+  });
+  expect(first.container.querySelector("h3")?.textContent).toBe(marker);
+  expect(first.container.querySelector("td")?.textContent).toBe("Ready");
+  expect(first.container.querySelector("script, [onerror]")).toBeNull();
+  expect(parses).toBe(0);
+
+  const cached = prepare();
+  expect(typeof cached).toBe("string");
+  const second = renderSolidRef(() => createMarkdownRef(() => ({ content: cached })), {
+    targetElement: document.createElement("div"),
+  });
+  expect(second.container.innerHTML).toBe(first.container.innerHTML);
+  expect(parses).toBe(1);
+  expect(toSanitizedMarkdownHtml(source)).toBe(cached);
+});
+
+it("isolates ordinary and progress policies for fragment and HTML callers", () => {
+  const source =
+    '<progress value="2" max="5">fragment-policy-progress</progress><img src="x" onerror="alert(1)"><a href="javascript:alert(2)">Link</a>';
+  const progress = toSanitizedMarkdownContent(source, { progressBars: true });
+  const ordinary = toSanitizedMarkdownContent(source);
+  if (typeof progress === "string" || typeof ordinary === "string") {
+    throw new Error("Fresh Markdown must retain its sanitized fragment");
+  }
+  expect(progress.fragment.querySelector("progress")?.getAttribute("value")).toBe("2");
+  expect(ordinary.fragment.querySelector("progress")).toBeNull();
+  for (const fragment of [progress.fragment, ordinary.fragment]) {
+    expect(fragment.querySelector("script, [onerror], [href]")).toBeNull();
+  }
+
+  const ordinaryHtml = toSanitizedMarkdownHtml(`${source} ordinary string`);
+  const progressHtml = toSanitizedMarkdownHtml(`${source} progress string`, { progressBars: true });
+  expect(typeof ordinaryHtml).toBe("string");
+  expect(ordinaryHtml).not.toContain("<progress");
+  expect(typeof progressHtml).toBe("string");
+  expect(progressHtml).toContain('<progress value="2" max="5">');
+  expect(toSanitizedMarkdownContent(source)).toBe(ordinary.html);
+  expect(toSanitizedMarkdownContent(source, { progressBars: true })).toBe(progress.html);
+});
 
 it("mounts settled Markdown from one parse and preserves encoded carriage returns", () => {
   const content =

@@ -146,8 +146,21 @@ export function renderSanitizedMarkdown(
   renderOptions: MarkdownRenderEnv,
   blockArt?: boolean,
   renderTokens?: typeof import("./markdown-tokens.ts").renderMarkdownTokens,
+  returnFragment = false,
 ): MarkdownContent {
-  const sanitizer = markdownSanitizer(decorateMarkdownAnchor, renderOptions.progressBars);
+  const sanitizer = markdownSanitizer(
+    decorateMarkdownAnchor,
+    renderOptions.progressBars,
+    returnFragment,
+  );
+  const sanitize = (input: string | Node): MarkdownContent => {
+    if (!returnFragment) {
+      return sanitizer.sanitize(input);
+    }
+    const template = document.createElement("template");
+    template.content.append(sanitizer.sanitize(input, { RETURN_DOM_FRAGMENT: true }));
+    return { html: template.innerHTML, fragment: template.content };
+  };
   const documentMode = renderOptions.mode === "document";
   const truncated = documentMode
     ? { text: renderInput, truncated: false, total: renderInput.length }
@@ -156,15 +169,13 @@ export function renderSanitizedMarkdown(
     ? stripProgressCardRawContentBlocks(appendMarkdownTruncationNotice(truncated))
     : appendMarkdownTruncationNotice(truncated);
   if (blockArt ?? isMarkdownBlockArtText(truncated.text)) {
-    return sanitizer.sanitize(
-      renderMarkdownCodeBlock(input, "", renderOptions, { blockArt: true }),
-    );
+    return sanitize(renderMarkdownCodeBlock(input, "", renderOptions, { blockArt: true }));
   }
   if (!documentMode && truncated.text.length > MARKDOWN_PARSE_LIMIT) {
     // Large plain-text replies should stay readable without inheriting the
     // capped code-block chrome, while still preserving whitespace for logs
     // and other structured text that commonly trips the parse guard.
-    return sanitizer.sanitize(toPlainTextElement(input, renderOptions));
+    return sanitize(toPlainTextElement(input, renderOptions));
   }
   let rendered: string | HTMLDivElement;
   try {
@@ -185,7 +196,7 @@ export function renderSanitizedMarkdown(
     console.warn("[markdown] md.render failed, falling back to plain text:", err);
     rendered = toPlainTextElement(input, renderOptions);
   }
-  return sanitizer.sanitize(rendered);
+  return sanitize(rendered);
 }
 
 // Bare JSON bypasses Markdown normalization, which can alter literal Unicode separators.
@@ -206,6 +217,22 @@ export function toSanitizedMarkdownHtml(
   markdownLocal: string,
   options: MarkdownRenderOptions = {},
 ): string {
+  return markdownContentHtml(prepareSanitizedMarkdown(markdownLocal, options, false));
+}
+
+/** Chat can mount a fresh sanitized fragment; the shared cache retains only HTML strings. */
+export function toSanitizedMarkdownContent(
+  markdownLocal: string,
+  options: MarkdownRenderOptions = {},
+): MarkdownContent {
+  return prepareSanitizedMarkdown(markdownLocal, options, true);
+}
+
+function prepareSanitizedMarkdown(
+  markdownLocal: string,
+  options: MarkdownRenderOptions,
+  returnFragment: boolean,
+): MarkdownContent {
   const renderOptions = normalizeMarkdownRenderOptions(options);
   const prepared =
     renderOptions.mode === "document" || markdownLocal.length <= MARKDOWN_PARSE_LIMIT
@@ -223,16 +250,30 @@ export function toSanitizedMarkdownHtml(
     return "";
   }
   if (renderInput.length > MARKDOWN_CACHE_MAX_CHARS) {
-    return markdownContentHtml(renderSanitizedMarkdown(renderInput, renderOptions));
+    return renderSanitizedMarkdown(
+      renderInput,
+      renderOptions,
+      undefined,
+      undefined,
+      returnFragment,
+    );
   }
   const cacheKey = `${markdownRenderKey(renderOptions)}\0${renderInput}`;
   let cached = markdownCache.get(cacheKey);
+  let content: MarkdownContent | undefined;
   // Only highlightable code changes when the optional highlighter loads.
   if (
     !cached ||
     (cached.highlighting !== undefined && cached.highlighting !== markdownHighlightingReady())
   ) {
-    cached = { html: markdownContentHtml(renderSanitizedMarkdown(renderInput, renderOptions)) };
+    content = renderSanitizedMarkdown(
+      renderInput,
+      renderOptions,
+      undefined,
+      undefined,
+      returnFragment,
+    );
+    cached = { html: markdownContentHtml(content) };
     if (HIGHLIGHTABLE_CODE_RE.test(cached.html)) {
       cached.highlighting = markdownHighlightingReady();
     }
@@ -240,7 +281,7 @@ export function toSanitizedMarkdownHtml(
   markdownCache.delete(cacheKey);
   markdownCache.set(cacheKey, cached);
   pruneMapToMaxSize(markdownCache, MARKDOWN_CACHE_LIMIT);
-  return cached.html;
+  return content ?? cached.html;
 }
 
 export function markdownRenderKey(options: MarkdownRenderEnv): string {
