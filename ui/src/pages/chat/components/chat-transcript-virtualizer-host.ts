@@ -257,7 +257,6 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
       this.virtualizer,
       () => this.rowRefs.elements,
       beforeMeasure,
-      (index) => this.acceptedRows?.[index]?.estimatedSize !== undefined,
     );
     this.rowRefs = new TranscriptRowRefs(this.virtualizer, {
       isCurrentRow: (element, key) =>

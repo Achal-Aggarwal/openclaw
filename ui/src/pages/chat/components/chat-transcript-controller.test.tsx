@@ -325,33 +325,6 @@ it.each(["append", "reorder", "focused reorder"] as const)(
   },
 );
 
-it("awaits MCP teardown when rich rows narrow the offscreen window", async () => {
-  const pending = createDeferred();
-  const rows = numberedContentRows(24);
-  const view = await mountTestTranscript("narrow-mcp-window", rows);
-  const { container, renderRows } = view;
-  view.transcript.scrollToEnd({ source: "manual" });
-  renderRows(rows);
-  await flushDeferredRowPrune();
-  const edgeIndex = Number(transcriptRows(container)[0]!.dataset.index);
-  expect(edgeIndex).toBeGreaterThan(0);
-  rows[edgeIndex]!.content = <mcp-app-view />;
-  renderRows(rows);
-  const { app, teardown } = stubMcpAppLifecycle(container, () => pending.promise);
-  const nextRows = rows.map((row, index) =>
-    index === 0 ? Object.assign({}, row, { key: "rich", estimatedSize: 120 }) : row,
-  );
-
-  renderRows(nextRows);
-  expect(teardown).toHaveBeenCalledOnce();
-  expect(app.isConnected).toBe(true);
-  pending.resolve();
-  await pending.promise;
-  await flushDeferredRowPrune();
-  renderRows(nextRows);
-  expect(app.isConnected).toBe(false);
-});
-
 it("awaits MCP teardown using the candidate row heights", async () => {
   const pending = createDeferred();
   const rows = numberedContentRows(24);
@@ -660,38 +633,43 @@ it.each([
   },
 );
 
-it("preserves newer native offsets when fragment measurement precedes the scroll event", async () => {
-  const flushFrames = stubAnimationFrames();
-  transcriptDomState.measuredRowHeight = 120;
-  const rows = numberedContentRows(40).map((row) => Object.assign(row, { estimatedSize: 120 }));
-  const { container, renderRows, transcript } = await mountTestTranscript(
-    "native-before-row-measurement",
-    rows,
-  );
-  geometry(container, { clientHeight: 600, scrollHeight: 4000 });
-  emitSize(container, 600);
-  transcript.scrollToOffset(0);
-  renderRows(rows);
-  scroll(container);
-  renderRows(rows);
-  await flushDeferredRowPrune();
-  flushFrames();
-  renderRows(rows);
-  const first = requireElement(container, '[data-index="0"]');
-  container.dispatchEvent(new WheelEvent("wheel", { deltaY: -135 }));
-  scroll(container, 135);
-  expect(transcript.isProgrammaticScroll).toBe(false);
+it.each(["ordinary", "fragment"])(
+  "preserves newer native offsets when %s measurement precedes the scroll event",
+  async (kind) => {
+    const flushFrames = stubAnimationFrames();
+    transcriptDomState.measuredRowHeight = 120;
+    const rows = numberedContentRows(40).map((row) =>
+      kind === "fragment" ? Object.assign({}, row, { estimatedSize: 120 }) : row,
+    );
+    const { container, renderRows, transcript } = await mountTestTranscript(
+      "native-before-row-measurement",
+      rows,
+    );
+    geometry(container, { clientHeight: 600, scrollHeight: 4000 });
+    emitSize(container, 600);
+    transcript.scrollToOffset(0);
+    renderRows(rows);
+    scroll(container);
+    renderRows(rows);
+    await flushDeferredRowPrune();
+    flushFrames();
+    renderRows(rows);
+    const first = requireElement(container, '[data-index="0"]');
+    container.dispatchEvent(new WheelEvent("wheel", { deltaY: -135 }));
+    scroll(container, 135);
+    expect(transcript.isProgrammaticScroll).toBe(false);
 
-  // Wheel's native movement can reach the top before its scroll event and
-  // before a newly mounted row's first ResizeObserver measurement.
-  container.scrollTop = 0;
-  emitSize(first, 455);
-  expect(container.scrollTop).toBe(0);
-  scroll(container);
-  flushFrames();
-  renderRows(rows);
-  expect(container.scrollTop).toBe(0);
-});
+    // Wheel's native movement can reach the top before its scroll event and
+    // before a newly mounted row's first ResizeObserver measurement.
+    container.scrollTop = 0;
+    emitSize(first, 455);
+    expect(container.scrollTop).toBe(0);
+    scroll(container);
+    flushFrames();
+    renderRows(rows);
+    expect(container.scrollTop).toBe(0);
+  },
+);
 
 it.each([0, 252])(
   "retires an end index without losing newer native movement (%s px)",

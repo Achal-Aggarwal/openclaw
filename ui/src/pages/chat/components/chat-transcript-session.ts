@@ -105,7 +105,6 @@ export function createTranscriptPresentation(
   virtualizer: Virtualizer<HTMLDivElement, HTMLElement>,
   rowElements: () => Iterable<HTMLElement>,
   beforeMeasure: () => void,
-  needsNativeOffsetSync: (index: number) => boolean,
 ) {
   let resizeOffsetSynced = false;
   const readConnectedRows = (): (() => boolean) | null => {
@@ -120,9 +119,6 @@ export function createTranscriptPresentation(
 
   const presentation = {
     measureElement(element: HTMLElement, entry: ResizeObserverEntry | undefined) {
-      if (!needsNativeOffsetSync(virtualizer.indexFromElement(element))) {
-        return measureTranscriptRow(element, entry, virtualizer);
-      }
       if (entry && !resizeOffsetSynced) {
         // Observer entries share one native reader position. Keep the virtualizer's
         // accumulated correction between entries, including clamped scroll writes.
