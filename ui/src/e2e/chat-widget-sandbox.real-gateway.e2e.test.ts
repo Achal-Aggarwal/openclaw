@@ -156,7 +156,8 @@ suite.define(() => {
       await waitForControlUiGatewayReady(page);
       const frames = page.locator("openclaw-canvas-widget-view .chat-tool-card__preview-frame");
       const outer = frames.first();
-      const inner = outer.contentFrame().frameLocator("iframe");
+      // The sandbox replaces its initial empty frame when document bytes arrive.
+      const inner = outer.contentFrame().frameLocator("iframe[srcdoc]");
       await inner.getByRole("heading", { name: "Live widget proof" }).waitFor();
       await inner.getByRole("textbox", { name: "Local note" }).fill("Persisted bytes, isolated UI");
       expect(canvasReads).toEqual([{ docId }]);
@@ -218,7 +219,7 @@ suite.define(() => {
       const outer = board.locator(
         `.board-widget[data-widget-name="${widgetName}"] .board-widget__frame`,
       );
-      const inner = outer.contentFrame().frameLocator("iframe");
+      const inner = outer.contentFrame().frameLocator("iframe[srcdoc]");
       const readingNote = inner.getByRole("textbox", { name: "Reading note" });
       const article = inner.getByRole("article", { name: "Daily Claw article" });
       await readingNote.fill(note);
