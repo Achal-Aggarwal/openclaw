@@ -103,7 +103,7 @@ export function createPositionRail(props: PositionRailParams) {
     if (!scroller) {
       return;
     }
-    // Observer and scroll delivery supply clean geometry; the frame only publishes it.
+    // Observers supply clean geometry; the frame only publishes it.
     const height = scroller.clientHeight;
     viewportVisible = height > 0;
     if (!viewportVisible) {
@@ -634,7 +634,14 @@ export function createPositionRail(props: PositionRailParams) {
       bindMarker,
       bindScroller,
       bindPreview,
-      onScroll: observeLayout,
+      onScroll: () => {
+        // Rail movement changes only its offset; observers own dimensions and reader position.
+        const offset = scrollElement?.scrollTop;
+        if (offset !== undefined && offset !== viewportOffset) {
+          viewportOffset = offset;
+          scheduleLayout();
+        }
+      },
       stopScrollInput,
       onPointerLeave: () => {
         interaction.hoveredId = null;
