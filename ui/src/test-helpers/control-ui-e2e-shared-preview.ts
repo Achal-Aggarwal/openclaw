@@ -15,6 +15,7 @@ export type ControlUiE2ePrebuiltAssets = {
 
 declare module "vitest" {
   export interface ProvidedContext {
+    controlUiE2eSourceBaseUrl?: string | null;
     controlUiE2ePrebuiltAssets?: ControlUiE2ePrebuiltAssets;
     controlUiE2eBuildRoot?: string;
     controlUiE2eNativePluginBuilds?: PreparedNativeControlUiPluginBuild[];

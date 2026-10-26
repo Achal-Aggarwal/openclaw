@@ -2,12 +2,6 @@
 import type { TestProject } from "vitest/node";
 import { startControlUiE2eServer } from "../../ui/src/test-helpers/control-ui-e2e.ts";
 
-declare module "vitest" {
-  export interface ProvidedContext {
-    controlUiE2eSourceBaseUrl?: string | null;
-  }
-}
-
 export default async function setup(project: TestProject) {
   const root = project.vitest.getRootProject();
   if (root.getProvidedContext().controlUiE2eSourceBaseUrl !== undefined) {
