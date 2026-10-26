@@ -132,6 +132,7 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
       this.renderer.connect();
       if (this.connected && this.virtualizer.scrollElement !== this.scrollElement) {
         this.layout.connect(this.scrollElement, this.callbacks);
+        // eslint-disable-next-line no-underscore-dangle -- TanStack exposes this bound adapter lifecycle hook.
         this.virtualizer._willUpdate();
         this.invalidate();
       }
