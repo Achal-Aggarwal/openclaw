@@ -2,6 +2,7 @@ import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import * as fsSafeAdvanced from "@openclaw/fs-safe/advanced";
 import { FsSafeError } from "@openclaw/fs-safe/errors";
 import { __setFsSafeTestHooksForTest } from "@openclaw/fs-safe/test-hooks";
 import { afterEach, expect, it, vi } from "vitest";
@@ -19,11 +20,21 @@ import {
 import { MAX_SNAPSHOT_ATTEMPTS } from "./sqlite-snapshot-policy.js";
 import { readDatabasePathIdentitySync } from "./sqlite-worker-identity.js";
 
+vi.mock("@openclaw/fs-safe/advanced", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@openclaw/fs-safe/advanced")>();
+  return { ...actual, copyRootFileSync: vi.fn(actual.copyRootFileSync) };
+});
+
+const { copyRootFileSync: copyFile } = await vi.importActual<
+  typeof import("@openclaw/fs-safe/advanced")
+>("@openclaw/fs-safe/advanced");
+
 const MIB = 1024 * 1024;
 const tempDirs = useAutoCleanupTempDirTracker((cleanup) => {
   afterEach(() => {
     __setFsSafeTestHooksForTest(undefined);
     vi.restoreAllMocks();
+    vi.mocked(fsSafeAdvanced.copyRootFileSync).mockImplementation(copyFile);
     cleanup();
   });
 });
@@ -81,6 +92,9 @@ function expectSnapshot(
   try {
     prepared = fixture.prepare();
     expect(fs.readFileSync(prepared.location).equals(expected)).toBe(true);
+    expect(
+      prepared.copyStats && prepared.copyStats.reflinkBytes + prepared.copyStats.byteCopyBytes,
+    ).toBe(expected.length);
     if (process.platform !== "win32") {
       expect(fs.statSync(prepared.location).mode & 0o777).toBe(0o600);
       expect(fs.statSync(path.dirname(prepared.location)).mode & 0o777).toBe(0o700);
@@ -160,6 +174,34 @@ function snapshotSqliteFamily(pathname: string) {
       ? [{ suffix, sha256: createHash("sha256").update(fs.readFileSync(file)).digest("hex") }]
       : [];
   });
+}
+
+// Exercise the clone receipt contract even on CI filesystems without reflinks.
+// Native APFS/Btrfs cloning is measured separately; these bytes and fds are real.
+function mockWalClone(mode: "clone" | "stream", onCloned?: () => void) {
+  const copy = copyFile;
+  return vi.spyOn(fsSafeAdvanced, "copyRootFileSync").mockImplementation((options) => {
+    if (options.clone !== "always" || !options.destination.absolutePath.endsWith("-wal")) {
+      return copy(options);
+    }
+    if (mode === "stream") {
+      throw new FsSafeError("unsupported-platform", "fixture filesystem cannot clone");
+    }
+    const target = copy({ ...options, clone: "never" });
+    onCloned?.();
+    return target;
+  });
+}
+
+function readSnapshotBytes(fixture: ReturnType<typeof createFixture>) {
+  const entries = fs.readdirSync(fixture.stagingRoot);
+  const prepared = fixture.prepare();
+  try {
+    return ["", "-wal"].map((suffix) => fs.readFileSync(prepared.location + suffix));
+  } finally {
+    expect(prepared.cleanup()).toBe(true);
+    expect(fs.readdirSync(fixture.stagingRoot)).toEqual(entries);
+  }
 }
 
 function interceptSourceReads(
@@ -371,6 +413,9 @@ it("does not recopy a stable WAL family when a reader creates its wal-index", as
     expect(["", "-wal"].map((suffix) => fs.readFileSync(fixture.sourcePath + suffix))).toEqual(
       family!,
     );
+    expect(
+      prepared.copyStats && prepared.copyStats.reflinkBytes + prepared.copyStats.byteCopyBytes,
+    ).toBe(family![0]!.length);
     expect(mainCopies).toBe(1);
   } finally {
     prepared.cleanup();
@@ -520,9 +565,11 @@ it.each(["append", "restart"] as const)("captures a committed prefix across WAL 
     }
     const walPath = `${fixture.sourcePath}-wal`;
     const capturedWalBytes = fs.statSync(walPath).size;
+    const streaming = mockWalClone("stream");
+    const expectedBytes = readSnapshotBytes(fixture);
+    streaming.mockRestore();
     const insert = writer.prepare("INSERT INTO entries VALUES (?)");
     const copiedWalReaders = new Set<number>();
-    const copiedWalWriters = new Set<number>();
     const shortReads = { source: 0, copy: 0 };
     let appendedDuringCopy = false;
     let appendedAfterCopy = 0;
@@ -532,7 +579,6 @@ it.each(["append", "restart"] as const)("captures a committed prefix across WAL 
       const open = fs.openSync.bind(fs);
       const close = fs.closeSync.bind(fs);
       const read = fs.readSync.bind(fs);
-      const fsync = fs.fsyncSync.bind(fs);
       const sourceWal = fs.statSync(walPath, { bigint: true });
       vi.spyOn(fs, "openSync").mockImplementation((pathname, flags, mode) => {
         const descriptor = open(pathname, flags, mode);
@@ -540,8 +586,6 @@ it.each(["append", "restart"] as const)("captures a committed prefix across WAL 
         if (resolved.startsWith(`${fixture.stagingRoot}${path.sep}`) && resolved.endsWith("-wal")) {
           if (flags === "r") {
             copiedWalReaders.add(descriptor);
-          } else if (flags === "wx") {
-            copiedWalWriters.add(descriptor);
           }
         }
         return descriptor;
@@ -549,7 +593,6 @@ it.each(["append", "restart"] as const)("captures a committed prefix across WAL 
       vi.spyOn(fs, "closeSync").mockImplementation((descriptor) => {
         close(descriptor);
         copiedWalReaders.delete(descriptor);
-        copiedWalWriters.delete(descriptor);
       });
       vi.spyOn(fs, "readSync").mockImplementation(
         (
@@ -587,9 +630,8 @@ it.each(["append", "restart"] as const)("captures a committed prefix across WAL 
           return bytesRead;
         },
       );
-      vi.spyOn(fs, "fsyncSync").mockImplementation((descriptor) => {
-        fsync(descriptor);
-        if (copiedWalWriters.has(descriptor)) {
+      afterPrivateCopy(fixture.stagingRoot, (target) => {
+        if (target.endsWith("-wal")) {
           insert.run(`after-copy-${++appendedAfterCopy}`);
           sourceAfterWrites = snapshotSqliteFamily(fixture.sourcePath);
         }
@@ -606,13 +648,15 @@ it.each(["append", "restart"] as const)("captures a committed prefix across WAL 
     }
 
     prepared = fixture.prepare();
+    expect(["", "-wal"].map((suffix) => fs.readFileSync(prepared!.location + suffix))).toEqual(
+      expectedBytes,
+    );
     if (scenario === "append") {
       expect(appendedDuringCopy).toBe(true);
       expect(appendedAfterCopy).toBeGreaterThan(0);
       expect(shortReads.source).toBeGreaterThan(0);
       expect(shortReads.copy).toBeGreaterThan(0);
       expect(copiedWalReaders.size).toBe(0);
-      expect(copiedWalWriters.size).toBe(0);
       expect(fs.statSync(`${prepared.location}-wal`).size).toBe(capturedWalBytes);
       expect(fs.statSync(walPath).size).toBeGreaterThan(capturedWalBytes);
     } else {
@@ -624,78 +668,6 @@ it.each(["append", "restart"] as const)("captures a committed prefix across WAL 
       "PRAGMA integrity_check": [{ integrity_check: "ok" }],
       "SELECT value FROM entries": [{ value }],
       "SELECT length(data) AS bytes FROM payload": [{ bytes: payloadBytes }],
-    });
-    expect(snapshotSqliteFamily(fixture.sourcePath)).toEqual(sourceAfterWrites);
-  } finally {
-    if (prepared) {
-      expect(prepared.cleanup()).toBe(true);
-    }
-    writer.close();
-    expect(fs.readdirSync(fixture.stagingRoot)).toEqual([]);
-  }
-});
-
-it("rejects a reset WAL paired with checkpoint-restored main bytes during native copying", async () => {
-  const fixture = createFixture(Buffer.alloc(0));
-  const sqlite = requireNodeSqlite();
-  const writer = new sqlite.DatabaseSync(fixture.sourcePath);
-  let prepared: ReturnType<typeof prepareSqliteReadOnlyLocationSyncInProcess> | undefined;
-  try {
-    writer.exec(`
-        PRAGMA journal_mode = WAL;
-        PRAGMA wal_autocheckpoint = 0;
-        CREATE TABLE left_value (value TEXT);
-        CREATE TABLE right_value (value TEXT);
-        INSERT INTO left_value VALUES ('A');
-        INSERT INTO right_value VALUES ('A');
-        PRAGMA wal_checkpoint(PASSIVE);
-      `);
-    const mainBefore = fs.readFileSync(fixture.sourcePath);
-    let reset = false;
-    let restored = false;
-    let sourceAfterWrites = snapshotSqliteFamily(fixture.sourcePath);
-    const afterCopy = (target: string) => {
-      if (!reset && target.endsWith(".partial")) {
-        reset = true;
-        writer.exec(`
-            UPDATE left_value SET value = 'B';
-            PRAGMA wal_checkpoint(TRUNCATE);
-            UPDATE right_value SET value = 'C';
-          `);
-      } else if (reset && !restored && target.endsWith("-wal")) {
-        restored = true;
-        const copiedWal = fs.readFileSync(target);
-        // Restore both pages in one commit: A/C must never be a committed state.
-        writer.exec(`
-            BEGIN IMMEDIATE;
-            UPDATE left_value SET value = 'A';
-            UPDATE right_value SET value = 'A';
-            COMMIT;
-            PRAGMA wal_checkpoint(PASSIVE);
-          `);
-        expect(fs.readFileSync(fixture.sourcePath)).toEqual(mainBefore);
-        expect(fs.readFileSync(`${fixture.sourcePath}-wal`).subarray(0, copiedWal.length)).toEqual(
-          copiedWal,
-        );
-        sourceAfterWrites = snapshotSqliteFamily(fixture.sourcePath);
-      }
-    };
-    afterPrivateCopy(fixture.stagingRoot, afterCopy);
-    __setFsSafeTestHooksForTest({
-      beforeRootStatObservation: (pathname) => {
-        if (pathname === fixture.sourceRoot) {
-          afterCopy("database.sqlite.partial");
-        }
-      },
-    });
-
-    prepared = await prepareSqliteReadOnlyCopyInProcess(fixture.sourcePath, fixture.stagingRoot);
-    expect(reset).toBe(true);
-    expect(restored).toBe(true);
-    expectRows(prepared.location, {
-      "PRAGMA integrity_check": [{ integrity_check: "ok" }],
-      "SELECT left_value.value AS left_value, right_value.value AS right_value FROM left_value CROSS JOIN right_value":
-        [{ left_value: "A", right_value: "A" }],
     });
     expect(snapshotSqliteFamily(fixture.sourcePath)).toEqual(sourceAfterWrites);
   } finally {

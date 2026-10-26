@@ -2,6 +2,9 @@ import path from "node:path";
 import { toUSVString } from "node:util";
 import { isStringArray } from "@openclaw/normalization-core/record-coerce";
 import { sliceUtf16Safe } from "@openclaw/normalization-core/utf16-slice";
+import { isForegroundGatewayRunArgv } from "../../gateway-run-argv.mjs";
+import { formatConsoleDiagnosticLine } from "../logging/json-console-line.js";
+import { isTruthyEnvValue } from "./env.js";
 import { markPrivateDirectoryCreationRefused } from "./private-directory-creation.js";
 import type { SqlitePrivateSnapshotFamily } from "./sqlite-readonly-location.types.js";
 import type {
@@ -12,6 +15,8 @@ import { readDatabaseFileIdentity, type DatabaseFileIdentity } from "./sqlite-wo
 
 // Keep the one-shot execFile output limit when inspections use IPC.
 export const SQLITE_READONLY_WORKER_MAX_BUFFER = 1024 * 1024;
+// Stderr keeps the released updater's exact two-field result protocol intact.
+export const SQLITE_SNAPSHOT_COPY_STATS_PREFIX = "OpenClaw SQLite snapshot copy: ";
 
 export type SqliteReadOnlyWorkerMode =
   | "sync"
@@ -112,6 +117,7 @@ export type SqliteReadOnlyWorkerOutput =
       stdout: string;
       stderr: string;
       status: number | null;
+      copyDiagnosticsStreamed?: true;
       failure?: string;
       cause?: Error;
     }
@@ -122,6 +128,34 @@ export type SqliteReadOnlyWorkerValue =
   | SqliteAuthProfileRows
   | SqliteReadOnlyOperationResult;
 export const SQLITE_READONLY_STDERR_TAIL_CHARS = 4_000;
+
+export function reportSqliteSnapshotCopyDiagnostics(stderr: string): void {
+  if (
+    !isForegroundGatewayRunArgv(process.argv) &&
+    !isTruthyEnvValue(process.env.OPENCLAW_GATEWAY_STARTUP_TRACE)
+  ) {
+    return;
+  }
+  const match = stderr.match(/(?:^|\n)OpenClaw SQLite snapshot copy: (\d+) (\d+)(?:\r?\n|$)/u);
+  if (!match) {
+    return;
+  }
+  const reflinkBytes = Number(match[1]);
+  const byteCopyBytes = Number(match[2]);
+  if (Number.isSafeInteger(reflinkBytes) && Number.isSafeInteger(byteCopyBytes)) {
+    const mode =
+      reflinkBytes === 0 && byteCopyBytes === 0
+        ? "empty"
+        : byteCopyBytes === 0
+          ? "reflink"
+          : reflinkBytes === 0
+            ? "byte-copy"
+            : "mixed";
+    process.stderr.write(
+      `${formatConsoleDiagnosticLine({ level: "info", message: `[gateway] startup phase: sqlite.snapshot.copy mainCopyMode=${mode} mainReflinkBytes=${reflinkBytes} mainByteCopyBytes=${byteCopyBytes}` })}\n`,
+    );
+  }
+}
 
 export function isSqliteReadOnlyWorkerResult(value: unknown): value is SqliteReadOnlyWorkerResult {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -242,6 +276,9 @@ export function readSqliteReadOnlyWorkerValue(
       isSqliteSnapshotStagingMode(mode)) &&
     "location" in result
   ) {
+    if (!params.copyDiagnosticsStreamed) {
+      reportSqliteSnapshotCopyDiagnostics(params.stderr);
+    }
     return result.location;
   }
   if (mode === "content-version" && "contentVersion" in result) {

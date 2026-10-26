@@ -53,6 +53,7 @@ function copyCommittedWalFrames(
   target: number,
   generation: WalGeneration,
   walBytes: number,
+  cloned: boolean,
 ): number | false {
   const { header, byteOrder, frameBytes } = generation;
   if (readWalGeneration(source)?.header.equals(header) !== true) {
@@ -60,7 +61,9 @@ function copyCommittedWalFrames(
   }
   const salt = header.subarray(16, 24);
   let checksum: readonly [number, number] = [header.readUInt32BE(24), header.readUInt32BE(28)];
-  writeFully(target, header, 0);
+  if (!cloned) {
+    writeFully(target, header, 0);
+  }
   let committedEnd = WAL_HEADER_BYTES;
   const framesPerWindow = Math.max(1, Math.floor(COPY_BUFFER_BYTES / frameBytes));
   const buffer = Buffer.allocUnsafe(framesPerWindow * frameBytes);
@@ -90,7 +93,7 @@ function copyCommittedWalFrames(
         committedEnd = position + validBytes;
       }
     }
-    if (validBytes > 0) {
+    if (!cloned && validBytes > 0) {
       writeFully(target, window.subarray(0, validBytes), position);
     }
     if (!complete || validBytes < window.length) {
@@ -145,6 +148,7 @@ export function prepareSqliteWalPrefixCopy(
   source: number,
   destination: string,
   verifyMainCopy: () => boolean,
+  cloneTarget: () => { fd: number; close(): void } | undefined,
 ): (() => boolean) | undefined {
   const generation = readWalGeneration(source);
   if (!generation) {
@@ -158,12 +162,25 @@ export function prepareSqliteWalPrefixCopy(
     if (!Number.isSafeInteger(walBytes) || walBytes < WAL_HEADER_BYTES) {
       return false;
     }
-    const target = fs.openSync(destination, "wx", 0o600);
+    // Clone only: an automatic byte-copy fallback would copy the entire stale
+    // tail. The pinned source scan still decides the accepted committed prefix.
+    const cloned = cloneTarget();
+    const target = cloned?.fd ?? fs.openSync(destination, "wx", 0o600);
     let committedBytes: number | false;
     try {
-      committedBytes = copyCommittedWalFrames(source, target, generation, walBytes);
+      committedBytes = copyCommittedWalFrames(
+        source,
+        target,
+        generation,
+        walBytes,
+        Boolean(cloned),
+      );
     } finally {
-      fs.closeSync(target);
+      if (cloned) {
+        cloned.close();
+      } else {
+        fs.closeSync(target);
+      }
     }
     // Committed frames are immutable within one WAL generation; appends and
     // rewrites of a stale tail past them are later commits, not a change.

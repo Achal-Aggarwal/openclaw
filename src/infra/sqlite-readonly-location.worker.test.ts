@@ -31,6 +31,63 @@ afterEach(() => {
   vi.resetModules();
 });
 
+it("carries snapshot copy diagnostics without changing the released worker result", async () => {
+  process.argv = [process.execPath, "worker", "--openclaw-sqlite-readonly-child", "sync", "/db"];
+  prepareCopy.mockResolvedValueOnce({
+    location: "/private/database.sqlite",
+    copyStats: { reflinkBytes: 8192, byteCopyBytes: 0 },
+  });
+  const stdout = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+  const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+  await import("./sqlite-readonly-location.worker.js");
+  await vi.dynamicImportSettled();
+  const result = JSON.stringify({ ok: true, location: "/private/database.sqlite" });
+  expect(stdout).toHaveBeenCalledExactlyOnceWith(result);
+  expect(stderr).toHaveBeenCalledExactlyOnceWith("OpenClaw SQLite snapshot copy: 8192 0\n");
+  const captured = String(stderr.mock.calls[0]?.[0]);
+  stderr.mockClear();
+  process.argv = [process.execPath, "openclaw", "gateway", "run"];
+  const { readSqliteReadOnlyWorkerValue } = await import("./sqlite-readonly-worker-protocol.js");
+  expect(
+    readSqliteReadOnlyWorkerValue(
+      { kind: "launched", stdout: result, stderr: captured, status: 0 },
+      "sync",
+    ),
+  ).toBe("/private/database.sqlite");
+  expect(stderr).toHaveBeenCalledExactlyOnceWith(
+    expect.stringContaining(
+      "sqlite.snapshot.copy mainCopyMode=reflink mainReflinkBytes=8192 mainByteCopyBytes=0",
+    ),
+  );
+});
+
+it.each([
+  ["OpenClaw SQLite snapshot copy: 0 8192\n", "byte-copy"],
+  ["OpenClaw SQLite snapshot copy: 4 8\n", "mixed"],
+  ["unrelated child warning\n", undefined],
+  ["OpenClaw SQLite snapshot copy: 9007199254740992 0\n", undefined],
+] as const)("reports only bounded copy facts from %s", async (diagnostic, mode) => {
+  process.argv = [process.execPath, "openclaw", "gateway", "run"];
+  const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+  const { readSqliteReadOnlyWorkerValue } = await import("./sqlite-readonly-worker-protocol.js");
+  expect(
+    readSqliteReadOnlyWorkerValue(
+      {
+        kind: "launched",
+        stdout: JSON.stringify({ ok: true, location: "/private/database.sqlite" }),
+        stderr: diagnostic,
+        status: 0,
+      },
+      "sync",
+    ),
+  ).toBe("/private/database.sqlite");
+  if (mode) {
+    expect(stderr).toHaveBeenCalledExactlyOnceWith(expect.stringContaining(`mainCopyMode=${mode}`));
+  } else {
+    expect(stderr).not.toHaveBeenCalled();
+  }
+});
+
 async function readFailure(stdout: string, mode: SqliteReadOnlyWorkerMode, failure?: string) {
   const { readSqliteReadOnlyWorkerValue, SqliteReadOnlyInspectionContentionError } =
     await import("./sqlite-readonly-worker-protocol.js");

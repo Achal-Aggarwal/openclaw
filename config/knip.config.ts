@@ -131,6 +131,7 @@ const repositoryScriptEntries = [
   "scripts/perf/session-actor-residency-snapshot.mjs!",
   "scripts/perf/session-actor-retention-seed.ts!",
   "scripts/perf/session-row-materialization-measure.ts!",
+  "scripts/perf/sqlite-preserving-snapshot-bench.mts!",
   "scripts/perf/tool-result-hash-measure.ts!",
   "scripts/perf/ws-counter-stress-preload.ts!",
   "scripts/perf/ws-counter-stress.ts!",

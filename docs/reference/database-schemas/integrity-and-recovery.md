@@ -481,6 +481,11 @@ instead. A WAL copy captures main first, then a bounded WAL prefix, and verifies
 both within the same pinned WAL generation. Appended frames are allowed; resets,
 replacements, and changes to captured bytes require another attempt. SQLite
 interprets committed frames in the private copy. Source SHM stays untouched.
+Where supported, the private WAL is cloned from its pinned source inode before
+the bounded checksum scan, then truncated to the accepted committed prefix and
+synced. Unsupported cloning uses the existing streaming copy. Both paths retain
+exact main-file and WAL-prefix comparisons and generation checks. Gateway startup
+reports the main-file copy mode and bytes, distinguishing reflinks from byte copies.
 Only raw copies reuse a scoped IPC child; native backups remain one-shot to avoid
 Node 26 completion stalls with persistent IPC. Incomplete WAL families, rollback
 crash residue, and artifact-preserving inspection retain private copying and recovery.

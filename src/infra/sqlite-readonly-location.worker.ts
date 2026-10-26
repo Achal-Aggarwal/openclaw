@@ -40,6 +40,7 @@ import {
   SQLITE_READONLY_WORKER_MAX_BUFFER,
   SQLITE_INSPECTION_CONTENTION_PREFIX,
   SQLITE_SNAPSHOT_ALLOCATION_REFUSED_PREFIX,
+  SQLITE_SNAPSHOT_COPY_STATS_PREFIX,
   isSqliteSnapshotStagingMode,
   type SqliteReadOnlyWorkerResult,
 } from "./sqlite-readonly-worker-protocol.js";
@@ -207,6 +208,11 @@ async function inspect(args: string[]): Promise<SqliteReadOnlyWorkerResult> {
           : await prepareSqliteReadOnlyLocationInProcess(pathname, stagingRoot);
     }
     releaseSnapshotTempDirectory(prepared.cleanupRoot ?? path.dirname(prepared.location));
+    if (prepared.copyStats) {
+      process.stderr.write(
+        `${SQLITE_SNAPSHOT_COPY_STATS_PREFIX}${prepared.copyStats.reflinkBytes} ${prepared.copyStats.byteCopyBytes}\n`,
+      );
+    }
     return { ok: true, location: prepared.location };
   } catch (error) {
     const contention = error instanceof SqliteSourceChangedError || isSqliteLockError(error);

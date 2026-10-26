@@ -103,6 +103,41 @@ afterEach(async () => {
   }
 });
 
+it.each(["before", "after"] as const)(
+  "reports split copy diagnostics once when stderr arrives %s its IPC reply",
+  async (order) => {
+    const originalArgv = process.argv;
+    process.argv = [process.execPath, "openclaw", "gateway", "run"];
+    using stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+    try {
+      const { session, child } = createSession();
+      const first = session.run("/fixture/source.sqlite", { mode: "sync" });
+      const emitDiagnostic = () => {
+        child.stderr.emit("data", Buffer.from("unrelated warning\nOpenClaw SQLite snapshot co"));
+        child.stderr.emit("data", Buffer.from("py: 8192 0\n"));
+      };
+      if (order === "before") {
+        emitDiagnostic();
+      }
+      reply(child, { ok: true, location: "/fixture/snapshot" });
+      await expect(first).resolves.toBe("/fixture/snapshot");
+      const second = session.run("/fixture/next.sqlite", { mode: "sync" });
+      if (order === "after") {
+        emitDiagnostic();
+      }
+      reply(child, { ok: true, location: "/fixture/next-snapshot" });
+      await expect(second).resolves.toBe("/fixture/next-snapshot");
+      expect(stderr).toHaveBeenCalledExactlyOnceWith(
+        expect.stringContaining(
+          "sqlite.snapshot.copy mainCopyMode=reflink mainReflinkBytes=8192 mainByteCopyBytes=0",
+        ),
+      );
+    } finally {
+      process.argv = originalArgv;
+    }
+  },
+);
+
 it.each([
   { code: "EACCES", spawned: false },
   { code: "EPERM", spawned: true },

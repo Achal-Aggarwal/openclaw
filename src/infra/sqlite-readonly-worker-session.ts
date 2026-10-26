@@ -25,6 +25,7 @@ import {
   isSqliteReadOnlyWorkerResult,
   isSqliteSnapshotStagingMode,
   readSqliteReadOnlyWorkerValue,
+  reportSqliteSnapshotCopyDiagnostics,
   SQLITE_READONLY_STDERR_TAIL_CHARS,
   SQLITE_READONLY_WORKER_MAX_BUFFER,
   type SqliteReadOnlyWorkerMode,
@@ -110,6 +111,7 @@ export function createSqliteReadOnlyWorkerSession(
   let sequence = 0;
   let pendingOperation: Promise<SqliteReadOnlyWorkerValue> | undefined;
   let stderr = "";
+  let diagnosticLine = "";
   let outputBytes = 0;
   let pending:
     | {
@@ -221,6 +223,13 @@ export function createSqliteReadOnlyWorkerSession(
     outputBytes += data.length;
     if (isStderr) {
       stderr = sliceUtf16Safe(stderr + data.toString("utf8"), -SQLITE_READONLY_STDERR_TAIL_CHARS);
+      // Stderr and IPC have independent delivery order. Report accepted-copy
+      // facts as complete lines arrive, even after their result was delivered.
+      const lines = (diagnosticLine + data.toString("utf8")).split("\n");
+      diagnosticLine = (lines.pop() ?? "").slice(-128);
+      for (const line of lines) {
+        reportSqliteSnapshotCopyDiagnostics(line);
+      }
     }
     if (outputBytes > SQLITE_READONLY_WORKER_MAX_BUFFER) {
       retire(createSqliteReadOnlyWorkerError("exceeded its output buffer", stderr));
@@ -266,7 +275,13 @@ export function createSqliteReadOnlyWorkerSession(
           value = reply.value;
         } else {
           value = readSqliteReadOnlyWorkerValue(
-            { kind: "launched", stdout: JSON.stringify(message.result), stderr, status: 0 },
+            {
+              kind: "launched",
+              stdout: JSON.stringify(message.result),
+              stderr,
+              status: 0,
+              copyDiagnosticsStreamed: true,
+            },
             pending.mode,
           );
         }

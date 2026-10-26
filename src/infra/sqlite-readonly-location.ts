@@ -2,17 +2,18 @@
 import fs, { type BigIntStats } from "node:fs";
 import path from "node:path";
 import type { DatabaseSync } from "node:sqlite";
-import {
-  copyRootFileSync,
-  sameFileContentsSync,
-  sameFileIdentity,
-} from "@openclaw/fs-safe/advanced";
-import { coerceErrorMessage, extractErrorCode } from "@openclaw/normalization-core/error-coercion";
+import { sameFileContentsSync, sameFileIdentity } from "@openclaw/fs-safe/advanced";
+import { coerceErrorMessage } from "@openclaw/normalization-core/error-coercion";
 import { openNodeSqliteDatabase } from "./node-sqlite.js";
 import { backupNodeSqliteDatabase } from "./sqlite-backup.js";
 import { setSqliteBusyTimeout } from "./sqlite-busy-timeout.js";
 import { withSqliteInspectionOperation } from "./sqlite-error-diagnostics.js";
-import { copySqliteFile } from "./sqlite-file-copy.js";
+import {
+  clonePinnedSqliteWal,
+  copyPinnedSqliteFile,
+  copySqliteFile,
+  SqliteSourceChangedError,
+} from "./sqlite-file-copy.js";
 import { createSqliteLifecycleAggregateError } from "./sqlite-lifecycle-errors.js";
 import { resolvePrivateSqliteSnapshotStagingRoot } from "./sqlite-private-directory.js";
 import {
@@ -40,11 +41,15 @@ import { prepareSqliteWalPrefixCopy } from "./sqlite-snapshot-wal-prefix.js";
 import { withSqliteSourceReadDatabase } from "./sqlite-source-handle.js";
 import { assertDatabaseFileIdentity, type DatabaseFileIdentity } from "./sqlite-worker-identity.js";
 
+export { SqliteSourceChangedError } from "./sqlite-file-copy.js";
+
 const SQLITE_HEADER_BYTES = 20;
 const SQLITE_SOURCE_READ_BUSY_TIMEOUT_MS = 30_000;
 const SQLITE_READONLY_RESULT_CODE = 8;
 const SQLITE_RESULT_CODE_MASK = 0xff;
 const SQLITE_JOURNAL_MAGIC = Buffer.from([0xd9, 0xd5, 0x05, 0xf9, 0x20, 0xa1, 0x63, 0xd7]);
+
+type CopyStats = { reflinkBytes: number; byteCopyBytes: number };
 
 type PinnedFile = {
   descriptor: number;
@@ -59,7 +64,6 @@ type SourceSidecars = {
 };
 
 type SourceJournalMode = "empty" | "rollback" | "unknown" | "wal";
-export class SqliteSourceChangedError extends Error {}
 
 function statIfPresent(pathname: string): BigIntStats | undefined {
   try {
@@ -150,35 +154,17 @@ export function copySourceFile(
   sourcePath: string,
   targetPath: string,
   expectedSourceIdentity?: DatabaseFileIdentity,
-): void {
+): CopyStats {
   const source = openPinnedFile(sourcePath, expectedSourceIdentity);
   try {
-    // Sidecars may be aliases. Resolve only after pinning, then bind the guarded
-    // copy to that inode and revalidate the original pathname before acceptance.
-    let physicalSourcePath: string;
-    try {
-      physicalSourcePath = fs.realpathSync.native(sourcePath);
-    } catch (error) {
-      if (extractErrorCode(error) === "ENOENT") {
-        throw new SqliteSourceChangedError(`SQLite source disappeared: ${sourcePath}`, {
-          cause: error,
-        });
-      }
-      throw error;
-    }
-    // Helper failures can describe either path; retrying them could hide a
-    // destination or cleanup failure behind a simultaneous source change.
-    const target = copyRootFileSync({
-      source: { rootPath: path.dirname(physicalSourcePath), absolutePath: physicalSourcePath },
-      destination: { rootPath: path.dirname(targetPath), absolutePath: targetPath },
-      expectedSourceIdentity: source.identity,
-      sourceHardlinks: "allow",
-      clone: "auto",
-      mode: 0o600,
-    });
+    const target = copyPinnedSqliteFile(source.pathname, source.identity, targetPath, "auto");
     try {
       fs.fsyncSync(target.fd);
       assertPinnedIdentityUnchanged(source);
+      return {
+        reflinkBytes: target.method === "clone" ? target.bytes : 0,
+        byteCopyBytes: target.method === "clone" ? 0 : target.bytes,
+      };
     } finally {
       target.close();
     }
@@ -298,8 +284,9 @@ function* createStableReadOnlyCopyInTempDirectory(
     : resolvePrivateSqliteSnapshotStagingRoot(),
   expectedSourceIdentity?: DatabaseFileIdentity,
   expectedSourceContent?: SqliteFileContent,
-): Generator<CopyRequest, PreparedSqliteReadOnlyLocation, void> {
+): Generator<CopyRequest, PreparedSqliteReadOnlyLocation, CopyStats> {
   let tempDir = existingTempDir;
+  let copyStats: CopyStats | undefined;
   try {
     tempDir ??= createSqliteSnapshotStagingDirectorySync(stagingRoot);
     const snapshotPath = path.join(tempDir, "database.sqlite.partial");
@@ -316,11 +303,18 @@ function* createStableReadOnlyCopyInTempDirectory(
       const walPath = `${pathname}-wal`;
       const wal = openPinnedFile(walPath);
       try {
-        const copyPrefix = prepareSqliteWalPrefixCopy(wal.descriptor, `${snapshotPath}-wal`, () =>
-          sourceMatchesCopy(pathname, snapshotPath, expectedSourceIdentity),
+        const copyPrefix = prepareSqliteWalPrefixCopy(
+          wal.descriptor,
+          `${snapshotPath}-wal`,
+          () => sourceMatchesCopy(pathname, snapshotPath, expectedSourceIdentity),
+          () => clonePinnedSqliteWal(wal.pathname, wal.identity, `${snapshotPath}-wal`),
         );
         if (copyPrefix) {
-          yield { sourcePath: pathname, targetPath: snapshotPath, expectedSourceIdentity };
+          copyStats = yield {
+            sourcePath: pathname,
+            targetPath: snapshotPath,
+            expectedSourceIdentity,
+          };
         }
         const copied = copyPrefix?.();
         assertPinnedIdentityUnchanged(wal);
@@ -344,7 +338,7 @@ function* createStableReadOnlyCopyInTempDirectory(
       for (const suffix of sidecarSuffixes) {
         yield { sourcePath: `${pathname}${suffix}`, targetPath: `${snapshotPath}${suffix}` };
       }
-      yield { sourcePath: pathname, targetPath: snapshotPath, expectedSourceIdentity };
+      copyStats = yield { sourcePath: pathname, targetPath: snapshotPath, expectedSourceIdentity };
       if (!sourceMatchesCopy(pathname, snapshotPath, expectedSourceIdentity)) {
         throw new SqliteSourceChangedError(
           `SQLite main database changed while copying: ${pathname}`,
@@ -358,7 +352,7 @@ function* createStableReadOnlyCopyInTempDirectory(
       }
       assertExpectedSidecars(pathname, sidecars);
     } else {
-      yield { sourcePath: pathname, targetPath: firstPath, expectedSourceIdentity };
+      copyStats = yield { sourcePath: pathname, targetPath: firstPath, expectedSourceIdentity };
       assertExpectedSidecars(pathname, sidecars);
       // A generation owner can bind the private bytes to its earlier source digest
       // instead. Publication must verify that digest before any native open.
@@ -393,7 +387,7 @@ function* createStableReadOnlyCopyInTempDirectory(
       // verified private family; source recovery and sidecars remain untouched.
       recoverPrivateJournalCopy(snapshotPath);
     }
-    return publishPreparedCopy(tempDir, expectedSourceContent);
+    return { ...publishPreparedCopy(tempDir, expectedSourceContent), copyStats };
   } catch (error) {
     const stagingError = tempDir
       ? sqliteSnapshotStagingError(tempDir, error, false, pathname)
@@ -408,32 +402,38 @@ function* createStableReadOnlyCopyInTempDirectory(
 // Both drivers execute the same family coherence checks. Raw descriptor work
 // belongs in an isolated child or beside a source with no live native handles.
 function copyPreparedLocationSync(
-  steps: Generator<CopyRequest, PreparedSqliteReadOnlyLocation, void>,
+  steps: Generator<CopyRequest, PreparedSqliteReadOnlyLocation, CopyStats>,
 ): PreparedSqliteReadOnlyLocation {
   let step = steps.next();
   while (!step.done) {
+    let copied: CopyStats;
     try {
       const { sourcePath, targetPath, expectedSourceIdentity } = step.value;
-      copySourceFile(sourcePath, targetPath, expectedSourceIdentity);
+      copied = copySourceFile(sourcePath, targetPath, expectedSourceIdentity);
     } catch (error) {
       step = steps.throw(error);
       continue;
     }
-    step = steps.next();
+    step = steps.next(copied);
   }
   return step.value;
 }
 
 async function copyPreparedLocation(
-  steps: Generator<CopyRequest, PreparedSqliteReadOnlyLocation, void>,
+  steps: Generator<CopyRequest, PreparedSqliteReadOnlyLocation, CopyStats>,
 ): Promise<PreparedSqliteReadOnlyLocation> {
   let step = steps.next();
   while (!step.done) {
+    const copied: CopyStats = { reflinkBytes: 0, byteCopyBytes: 0 };
     try {
       const { sourcePath, targetPath, expectedSourceIdentity } = step.value;
       const source = openPinnedFile(sourcePath, expectedSourceIdentity);
       try {
-        await copySqliteFile(sourcePath, targetPath, source.identity);
+        await copySqliteFile(sourcePath, targetPath, source.identity, undefined, (method) => {
+          copied[method === "clone" ? "reflinkBytes" : "byteCopyBytes"] = Number(
+            source.identity.size,
+          );
+        });
       } finally {
         try {
           assertPinnedIdentityUnchanged(source);
@@ -445,7 +445,7 @@ async function copyPreparedLocation(
       step = steps.throw(error);
       continue;
     }
-    step = steps.next();
+    step = steps.next(copied);
   }
   return step.value;
 }
@@ -595,7 +595,7 @@ function* prepareArtifactPreservingCopy(
   stagingRoot?: string,
   expectedSourceIdentity?: DatabaseFileIdentity,
   expectedSourceContent?: SqliteFileContent,
-): Generator<CopyRequest, PreparedSqliteReadOnlyLocation, void> {
+): Generator<CopyRequest, PreparedSqliteReadOnlyLocation, CopyStats> {
   const canonicalPath = fs.realpathSync.native(pathname);
   let lastChange: Error | undefined;
   for (let attempt = 0; attempt < MAX_SNAPSHOT_ATTEMPTS; attempt += 1) {

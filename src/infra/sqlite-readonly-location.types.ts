@@ -16,6 +16,8 @@ export type PreparedSqliteReadOnlyLocation = {
   journalFreeContent?: SqliteFileContent & { identity: BigIntStats };
   // Only read-owned producers grant this before publishing bytes to any borrower.
   privateFamily?: SqlitePrivateSnapshotFamily;
+  // Captured main-file lengths attributed to successful copy operations.
+  copyStats?: { reflinkBytes: number; byteCopyBytes: number };
 };
 
 export type AsyncPreparedSqliteReadOnlyLocation = Omit<PreparedSqliteReadOnlyLocation, "cleanup">;
