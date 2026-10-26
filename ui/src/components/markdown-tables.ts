@@ -5,6 +5,7 @@ import { formatUiError, UserFacingError } from "../lib/format-error.ts";
 import { anchorFromNavigationEvent } from "../lib/navigation-click.ts";
 import { listen } from "../lib/reactive/listener.ts";
 import { showToast } from "../lib/toast.ts";
+import { isMarkdownBlockParked } from "./markdown-block-presentation.ts";
 import { copyMarkdownText } from "./markdown-copy.ts";
 import { createIconElement } from "./markdown-icon.ts";
 import { SESSION_TITLE_TARGET_SELECTOR } from "./session-progress-hovercard-target.ts";
@@ -54,6 +55,9 @@ export function markdownTableCopyText(table: HTMLTableElement): string {
 }
 
 function syncTableOverflow(shell: HTMLElement): void {
+  if (isMarkdownBlockParked(shell)) {
+    return;
+  }
   const viewport = shell.querySelector<HTMLElement>(tableViewportSelector);
   if (!viewport) {
     return;
@@ -107,6 +111,15 @@ export function enhanceMarkdownTables(owner: HTMLElement): TableOwnerState {
         if (!owner.contains(shell)) {
           continue;
         }
+        if (isMarkdownBlockParked(shell)) {
+          for (const node of observedNodes) {
+            if (shell.contains(node)) {
+              observedNodes.delete(node);
+              resizeObserver.unobserve(node);
+            }
+          }
+          continue;
+        }
         enhanceTableShell(shell);
         // Both boxes are observed after layout; mutation-time reads would force
         // layout again after each table's chrome is installed.
@@ -124,6 +137,11 @@ export function enhanceMarkdownTables(owner: HTMLElement): TableOwnerState {
         const target =
           record.target instanceof Element ? record.target : record.target.parentElement;
         const shell = target?.closest<HTMLElement>(tableShellSelector);
+        if (record.type === "attributes" && target instanceof HTMLElement) {
+          for (const table of target.querySelectorAll<HTMLElement>(tableShellSelector)) {
+            shells.add(table);
+          }
+        }
         // Icon/copy feedback belongs to the controls and cannot change the table's width.
         if (shell && (target === shell || target?.closest(tableViewportSelector))) {
           shells.add(shell);
@@ -193,7 +211,13 @@ export function enhanceMarkdownTables(owner: HTMLElement): TableOwnerState {
     };
     tableOwnerStates.set(owner, state);
     syncTables(owner.querySelectorAll<HTMLElement>(tableShellSelector));
-    mutationObserver.observe(owner, { childList: true, subtree: true, characterData: true });
+    mutationObserver.observe(owner, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+      attributes: true,
+      attributeFilter: ["data-prepared-row", "data-preparing-row"],
+    });
   }
   return state;
 }

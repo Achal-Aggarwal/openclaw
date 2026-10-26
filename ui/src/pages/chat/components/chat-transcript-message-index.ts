@@ -1,5 +1,6 @@
 import type { GatewaySessionRow } from "../../../api/types.ts";
 import type { MessageGroup } from "../../../lib/chat/chat-types.ts";
+import { readTranscriptMediaEntries } from "../../../lib/chat/message-extract.ts";
 import { normalizeMessage } from "../../../lib/chat/message-normalizer.ts";
 import { extractToolCardsCached } from "../../../lib/chat/tool-cards.ts";
 import {
@@ -254,6 +255,45 @@ export function projectTranscriptChain(
   return value;
 }
 
+// Approximate the visible blocks without parsing offscreen Markdown. Actual
+// border-box measurements replace these hints in the virtualizer's size cache.
+function estimateMessageGroupSize(group: MessageGroup): number | undefined {
+  if (group.role !== "user" && group.role !== "assistant") {
+    return undefined;
+  }
+  let size = 72;
+  for (const source of group.messages) {
+    for (const part of normalizeMessage(source.message).content) {
+      if (part.type === "image") {
+        size += 180;
+      } else if (part.type === "text" && part.text) {
+        let fenced = false;
+        let blank = false;
+        for (const line of part.text.split("\n")) {
+          if (/^\s*(```|~~~)/u.test(line)) {
+            fenced = !fenced;
+            size += 18;
+          } else if (!line.trim()) {
+            if (!blank) {
+              size += 16;
+            }
+            blank = true;
+            continue;
+          } else {
+            size += fenced
+              ? 18
+              : /^\s*(#{1,6} |\|)/u.test(line)
+                ? 32
+                : Math.max(1, Math.ceil(line.length / 85)) * 22;
+          }
+          blank = false;
+        }
+      }
+    }
+  }
+  return Math.max(CHAT_TRANSCRIPT_ESTIMATED_ROW_PX, size);
+}
+
 export function projectTranscriptIndex(
   chain: TranscriptIndexSource,
   expandedToolCards: Map<string, boolean>,
@@ -291,6 +331,16 @@ export function projectTranscriptIndex(
           : [item];
       for (const rowItem of rendered) {
         // Rich work sources include their Markdown and paired tool output.
+        const retainDom =
+          (rowItem.kind === "agent-run-frame" && Boolean(rowItem.fragment)) ||
+          (rowItem.kind === "group" &&
+            !rowItem.isStreaming &&
+            (rowItem.role === "user" || rowItem.role === "assistant") &&
+            rowItem.messages.length === 1 &&
+            readTranscriptMediaEntries(rowItem.messages[0]!.message).length === 0 &&
+            normalizeMessage(rowItem.messages[0]!.message).content.every(
+              (part) => part.type === "text" || part.type === "thinking",
+            ));
         const estimatedSize =
           rowItem.kind === "agent-run-frame" && rowItem.fragment
             ? rowItem.parts.reduce(
@@ -301,8 +351,10 @@ export function projectTranscriptIndex(
               ) *
               CHAT_TRANSCRIPT_ESTIMATED_ROW_PX *
               2
-            : undefined;
-        rows.push({ kind: "item", key: rowItem.key, item: rowItem, estimatedSize });
+            : rowItem.kind === "group"
+              ? estimateMessageGroupSize(rowItem)
+              : undefined;
+        rows.push({ kind: "item", key: rowItem.key, item: rowItem, estimatedSize, retainDom });
       }
       if (item.kind === "work-group" && expandedToolCards.get(item.key)) {
         for (const group of item.groups) {

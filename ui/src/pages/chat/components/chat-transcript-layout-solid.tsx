@@ -1,5 +1,5 @@
 import { dynamic, render, type JSX } from "@solidjs/web";
-import { createMemo, createSignal, For, onSettled, runWithOwner, Show } from "solid-js";
+import { createMemo, createSignal, For, onSettled, runWithOwner, Show, useContext } from "solid-js";
 import { PRESENTATION_CHANGED_EVENT, type PresentationBinding } from "../../../lib/presentation.ts";
 import { ApplicationProvider } from "../../../lib/reactive/context.ts";
 import { elementRef } from "../../../lib/reactive/element-ref.ts";
@@ -72,6 +72,7 @@ function TranscriptRows(props: {
   measureRowRefFor: TranscriptLayoutProps["measureRowRefFor"];
   columnRef: (element: HTMLDivElement) => void;
 }) {
+  const presented = useContext(ContentPresentation);
   const virtualRows = createMemo(() => {
     return props.snapshot.virtualizer.getVirtualItems();
   });
@@ -121,7 +122,8 @@ function TranscriptRows(props: {
                 const source = row()?.kind === "content" ? props.snapshot.getContent : getContent();
                 return source(index());
               });
-              const active = () => props.snapshot.activeRowKeys.has(row()?.key ?? "");
+              const active = createMemo(() => props.snapshot.activeRowKeys.has(row()?.key ?? ""));
+              const preparing = createMemo(() => row()?.key === props.snapshot.preparingRowKey);
               const gap = () => gaps().get(virtualRow().key) ?? 0;
               return (
                 <>
@@ -140,13 +142,13 @@ function TranscriptRows(props: {
                     data-index={String(virtualRow().index)}
                     data-virtual-row-key={row()?.key}
                     data-prepared-row={active() ? undefined : "true"}
-                    data-preparing-row={
-                      row()?.key === props.snapshot.preparingRowKey ? "true" : undefined
-                    }
+                    data-preparing-row={preparing() ? "true" : undefined}
                     inert={!active()}
                     aria-hidden={active() ? undefined : "true"}
                   >
-                    <RowContent value={content()} />
+                    <ContentPresentation value={() => presented() && (active() || preparing())}>
+                      <RowContent value={content()} />
+                    </ContentPresentation>
                   </div>
                 </>
               );

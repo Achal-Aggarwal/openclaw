@@ -11,7 +11,7 @@ export class TranscriptInitialRange {
   private viewportOnly = false;
   private preparingOverscan = false;
   private rows: readonly TranscriptRow[] = [];
-  // Completed fragments have no widget custody. Retain their keyed DOM while
+  // Completed text rows have no widget custody. Retain their keyed DOM while
   // keeping inactive rows outside the visible range's flow.
   readonly preparedRowKeys = new Set<string>();
   private preparingRowKey: string | undefined;
@@ -140,7 +140,7 @@ export class TranscriptInitialRange {
     rows.forEach((row, index) => indexes.set(row.key, index));
     for (const key of this.preparedRowKeys) {
       const index = indexes.get(key);
-      if (index === undefined || rows[index]?.estimatedSize === undefined) {
+      if (index === undefined || !rows[index]?.retainDom) {
         this.preparedRowKeys.delete(key);
       }
     }
@@ -203,7 +203,7 @@ export class TranscriptInitialRange {
     }
     for (let index = range.startIndex; index <= range.endIndex; index++) {
       const row = this.rows[index];
-      if (row?.estimatedSize !== undefined) {
+      if (row?.retainDom) {
         this.preparedRowKeys.delete(row.key);
         this.preparedRowKeys.add(row.key);
       }
@@ -305,13 +305,7 @@ export class TranscriptInitialRange {
         }
         const index = origin + step * searchDirection;
         const row = rows?.[index];
-        if (
-          row &&
-          prewarm &&
-          !rendered.has(row.key) &&
-          row.estimatedSize === undefined &&
-          this.prewarmRow?.(index)
-        ) {
+        if (row && prewarm && !rendered.has(row.key) && this.prewarmRow?.(index)) {
           // The shared cache owns readiness; no DOM or range invalidation is needed.
           if (warmOnly) {
             warmed = true;
@@ -322,7 +316,7 @@ export class TranscriptInitialRange {
         }
         if (
           !warmOnly &&
-          row?.estimatedSize !== undefined &&
+          row?.retainDom &&
           !rendered.has(row.key) &&
           !this.preparedRowKeys.has(row.key)
         ) {
@@ -354,8 +348,8 @@ export class TranscriptInitialRange {
       this.prewarmRow &&
       typeof requestIdleCallback === "function"
     ) {
-      // Idle delivery can starve during scrolling. Keep warming in a separate
-      // task so it does not share the rendering task's layout and mount budget.
+      // Idle delivery can starve during scrolling. Warm Markdown in a separate
+      // task; actual row mounting waits for idle or the visible range.
       const frame = requestAnimationFrame(() => {
         const task = setTimeout(() => prepare(performance.now() + 6, true, true), 0);
         this.cancelPreparation = () => clearTimeout(task);

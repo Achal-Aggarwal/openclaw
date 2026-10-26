@@ -89,7 +89,8 @@ async function transcriptFixture(
     kind: "item",
     key: `fragment:${index}`,
     item: index,
-    estimatedSize: ordinary || (index === 0 && plainFirstRow) ? undefined : 100,
+    estimatedSize: index === 0 && plainFirstRow ? undefined : 100,
+    retainDom: !ordinary && !(index === 0 && plainFirstRow),
   }));
   const groups = ordinary
     ? rows.map((_, index) =>
@@ -147,7 +148,13 @@ async function transcriptFixture(
     renderRow,
     groups,
     async updateRow(index: number, item: number) {
-      rows[index] = { kind: "item", key: `fragment:${index}`, item, estimatedSize: 100 };
+      rows[index] = {
+        kind: "item",
+        key: `fragment:${index}`,
+        item,
+        estimatedSize: 100,
+        retainDom: true,
+      };
       draw();
       await settle();
     },
@@ -417,32 +424,33 @@ it("places a fresh long transcript at its tail and warms a bounded upward window
   expect(view.renderRow.mock.calls).toHaveLength(preparations);
 });
 
-it("waits for idle time to prepare during scrolling and uses the latest viewport", async () => {
+it("waits for idle time to mount prepared rows and uses the latest viewport", async () => {
   const view = await transcriptFixture(0, true);
   const scheduled = vi.mocked(requestIdleCallback).mock.calls.length;
   await view.scrollTo(60);
   expect(vi.mocked(requestIdleCallback).mock.calls).toHaveLength(scheduled);
   expect(cancelIdleCallback).toHaveBeenCalledTimes(1);
-  const rendered = view.renderRow.mock.calls.length;
+  const mounted = transcriptRows(view.container);
   await view.frame(2);
   await view.task();
-  expect(view.renderRow.mock.calls).toHaveLength(rendered);
+  expect(transcriptRows(view.container)).toEqual(mounted);
   await view.idle(2);
-  expect(view.renderRow.mock.calls).toHaveLength(rendered);
+  expect(transcriptRows(view.container)).toEqual(mounted);
   await view.idle();
-  expect(view.renderRow.mock.calls).toHaveLength(rendered + 1);
+  expect(transcriptRows(view.container)).toHaveLength(mounted.length + 1);
 
   const nextScheduled = vi.mocked(requestIdleCallback).mock.calls.length;
   await view.scrollTo(120);
   expect(vi.mocked(requestIdleCallback).mock.calls).toHaveLength(nextScheduled);
-  const afterScroll = view.renderRow.mock.calls.length;
+  const afterScroll = transcriptRows(view.container);
   await view.frame(2);
   await view.task();
-  expect(view.renderRow.mock.calls).toHaveLength(afterScroll);
+  expect(transcriptRows(view.container)).toEqual(afterScroll);
   await view.idle();
-  expect(view.renderRow.mock.calls).toHaveLength(afterScroll + 1);
-  const prepared = view.renderRow.mock.calls.at(-1)![0];
-  expect(prepared.kind === "item" && prepared.item).toBeGreaterThan(120);
+  expect(transcriptRows(view.container)).toHaveLength(afterScroll.length + 1);
+  const prepared = transcriptRows(view.container).find((row) => !afterScroll.includes(row));
+  expect(prepared).toBeDefined();
+  expect(Number(prepared!.dataset.index)).toBeGreaterThan(120);
 });
 
 it("prepares inward when fast upward prediction reaches an ordinary first row", async () => {

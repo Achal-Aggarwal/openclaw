@@ -199,8 +199,11 @@ it("updates the visible range on native scroll without a parent render", async (
   scroll(scroller, 2_400);
   flushFrames();
   await flushDeferredRowPrune();
-  expect(container.textContent).not.toContain("message 0");
-  expect(Number(transcriptRows(container)[0]?.dataset.index)).toBeGreaterThan(0);
+  const activeRows = transcriptRows(container).filter(
+    (row) => !row.hasAttribute("data-prepared-row"),
+  );
+  expect(activeRows.map((row) => row.textContent).join(" ")).not.toContain("message 0");
+  expect(Number(activeRows[0]?.dataset.index)).toBeGreaterThan(0);
 });
 
 it("reads only mounted row keys when rendering an unchanged 2,000-row transcript", async () => {
@@ -337,7 +340,9 @@ it("awaits MCP teardown using the candidate row heights", async () => {
   renderRows(rows);
   const { app, teardown } = stubMcpAppLifecycle(container, () => pending.promise);
   const nextRows = rows.map((row, index) =>
-    index === edgeIndex - 3 ? Object.assign({}, row, { key: "rich", estimatedSize: 480 }) : row,
+    index === edgeIndex - 3
+      ? Object.assign({}, row, { key: "rich", estimatedSize: 480, retainDom: true })
+      : row,
   );
 
   renderRows(nextRows);
@@ -639,7 +644,7 @@ it.each(["ordinary", "fragment"])(
     const flushFrames = stubAnimationFrames();
     transcriptDomState.measuredRowHeight = 120;
     const rows = numberedContentRows(40).map((row) =>
-      kind === "fragment" ? Object.assign({}, row, { estimatedSize: 120 }) : row,
+      kind === "fragment" ? Object.assign({}, row, { estimatedSize: 120, retainDom: true }) : row,
     );
     const { container, renderRows, transcript } = await mountTestTranscript(
       "native-before-row-measurement",
