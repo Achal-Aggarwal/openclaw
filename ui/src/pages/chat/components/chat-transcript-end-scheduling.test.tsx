@@ -87,8 +87,8 @@ it.each(["row growth", "viewport resize"] as const)(
     cleanups.push(transcript.subscribe(invalidated));
     container.scrollTop = 200;
     container.dispatchEvent(new Event("scroll"));
-    // Entering the scrolling state must notify even inside one unchanged row.
-    expect(invalidated).toHaveBeenCalled();
+    // Settled reader motion updates its window without a caller render.
+    expect(invalidated).not.toHaveBeenCalled();
     expect(container.scrollTop).toBe(200);
     // Required reads in the native observer are outside this deferred-work count.
     readContentHeight.mockClear();

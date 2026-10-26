@@ -115,14 +115,14 @@ async function transcriptFixture(
     ),
   );
   let renderer = renderRow;
-  const draw = () => {
+  const draw = vi.fn(() => {
     const root = host.render(rows, renderer, null, false, null, null, presented);
     if (root.parentElement !== container) {
       container.append(root);
     }
     host.update();
     flush();
-  };
+  });
   const host = new ChatSessionVirtualizerHost(() => {
     if (!queued) {
       queued = true;
@@ -145,6 +145,7 @@ async function transcriptFixture(
   return {
     container,
     host,
+    draw,
     renderRow,
     groups,
     async updateRow(index: number, item: number) {
@@ -558,4 +559,14 @@ it("advances a relative timestamp without refreshing its message", async () => {
   } finally {
     vi.useRealTimers();
   }
+});
+
+it("updates the settled scroll window without re-entering the caller renderer", async () => {
+  const view = await transcriptFixture(0, true);
+  await view.frame(8);
+  const draws = view.draw.mock.calls.length;
+  await view.scrollTo(120);
+  expect(view.draw.mock.calls).toHaveLength(draws);
+  expect(view.container.querySelector('[data-virtual-row-key="fragment:120"]')).not.toBeNull();
+  expect(view.container.scrollTop).toBe(12_000);
 });
