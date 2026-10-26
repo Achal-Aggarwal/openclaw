@@ -846,7 +846,7 @@ describe("runWithModelFallback", () => {
           [`${provider}:default`]: {
             disabledUntil: Date.now() + 60_000,
             disabledReason: "billing",
-            failureCounts: { rate_limit: 4 },
+            failureCounts: { billing: 4 },
           },
         }),
       );
@@ -1446,7 +1446,7 @@ describe("runWithModelFallback", () => {
       usageStat: {
         disabledUntil: now + 5 * 60_000,
         disabledReason: "billing",
-        failureCounts: { rate_limit: 4 },
+        failureCounts: { billing: 4 },
       },
       expectedReason: "billing",
       credentialType: "token",
@@ -1648,8 +1648,8 @@ describe("runWithModelFallback", () => {
         dir,
         apiKeyStore([provider], {
           [`${provider}:default`]: {
-            cooldownUntil: Date.now() + 300_000,
-            failureCounts: { rate_limit: 1 },
+            cooldownUntil: Date.now() + 60_000,
+            cooldownReason: "rate_limit",
           },
         }),
       );
