@@ -254,9 +254,19 @@ export class TranscriptInitialRange {
         direction * velocity * (16 + this.prepareLatency) +
         (direction > 0 ? viewport : 0);
       const predicted = virtualizer.getVirtualItemForOffset(Math.max(0, predictedOffset));
+      // Prediction can reach an edge before the viewport. Prepare back into the
+      // transcript instead of searching past an ordinary, nonfragment edge row.
+      let searchDirection = direction;
+      if (velocity && predicted) {
+        if (predicted.index === 0) {
+          searchDirection = 1;
+        } else if (predicted.index === rows.length - 1) {
+          searchDirection = -1;
+        }
+      }
       const origin =
         velocity && predicted
-          ? predicted.index - direction
+          ? predicted.index - searchDirection
           : direction > 0
             ? range.endIndex
             : range.startIndex;
@@ -266,7 +276,7 @@ export class TranscriptInitialRange {
         : Math.max(0, PREPARED_ROW_LIMIT - this.activeIndexes().length);
       let admitted = 0;
       for (let step = 1; step <= lookahead && admitted === 0; step++) {
-        const index = origin + step * direction;
+        const index = origin + step * searchDirection;
         const row = rows?.[index];
         if (
           row?.estimatedSize !== undefined &&

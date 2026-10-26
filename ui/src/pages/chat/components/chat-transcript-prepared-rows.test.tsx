@@ -30,7 +30,11 @@ async function settle() {
   }
 }
 
-async function transcriptFixture(initialOffset: number | null = 0, idlePreparation = false) {
+async function transcriptFixture(
+  initialOffset: number | null = 0,
+  idlePreparation = false,
+  plainFirstRow = false,
+) {
   let now = 1;
   let nextFrame = 0;
   const frames = new Map<number, FrameRequestCallback>();
@@ -75,7 +79,7 @@ async function transcriptFixture(initialOffset: number | null = 0, idlePreparati
     kind: "item",
     key: `fragment:${index}`,
     item: index,
-    estimatedSize: 100,
+    estimatedSize: index === 0 && plainFirstRow ? undefined : 100,
   }));
   let presented = true;
   let queued = false;
@@ -318,6 +322,21 @@ it("waits for idle time to prepare during scrolling and uses the latest viewport
   expect(view.renderRow.mock.calls).toHaveLength(afterScroll + 1);
   const prepared = view.renderRow.mock.calls.at(-1)![0];
   expect(prepared.kind === "item" && prepared.item).toBeGreaterThan(120);
+});
+
+it("prepares inward when fast upward prediction reaches an ordinary first row", async () => {
+  const view = await transcriptFixture(24_000, true, true);
+  await view.scrollTo(240);
+  await view.frame(2);
+  await view.scrollTo(40);
+  expect(view.container.querySelector('[data-virtual-row-key="fragment:1"]')).toBeNull();
+
+  await view.idle();
+
+  const firstFragment = view.container.querySelector('[data-virtual-row-key="fragment:1"]');
+  expect(firstFragment).not.toBeNull();
+  expect(firstFragment?.getAttribute("data-prepared-row")).toBe("true");
+  expect(view.container.scrollTop).toBe(4_000);
 });
 
 it("formats the detailed timestamp only when metadata becomes available", () => {
