@@ -835,3 +835,20 @@ describe("system event presentation", () => {
     expect(chain.transcriptItems[1]).toBe(pending);
   });
 });
+
+it.each([
+  ["data:image/png;base64,cG5n", true],
+  ["blob:synthetic-inline", true],
+  ["https://images.example.test/saved.png", false],
+])("prepares only inline image rows before scrolling: %s", (url, retained) => {
+  const chain = projectHistory([
+    makeMessage("image-row", 1, {
+      role: "user",
+      content: [
+        { type: "text", text: "Image" },
+        { type: "image", url },
+      ],
+    }),
+  ]);
+  expect(indexFor(chain).rows[0]?.retainDom).toBe(retained);
+});

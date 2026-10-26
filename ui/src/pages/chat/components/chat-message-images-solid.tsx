@@ -2,6 +2,7 @@ import type { JSX } from "@solidjs/web";
 import { For, Show, createMemo, onCleanup, refresh, untrack, useContext } from "solid-js";
 import { registerChatComposerEnglish } from "../../../i18n/locales/en-chat-composer.ts";
 import { registerChatMediaEnglish } from "../../../i18n/locales/en-chat-media.ts";
+import { isInlineImageSource } from "../../../lib/chat/message-extract.ts";
 import { t, registerEnglishCatalog } from "../../../lib/reactive/i18n.ts";
 import { listen } from "../../../lib/reactive/listener.ts";
 import { ContentPresentation } from "../../../lib/solid/presentation.ts";
@@ -55,9 +56,6 @@ type RetainedInlineImage = {
   previewUrl: string;
   timeout?: ReturnType<typeof setTimeout>;
 };
-
-const isInlineImageSource = (source: string | undefined): source is string =>
-  source?.startsWith("data:image/") === true || source?.startsWith("blob:") === true;
 
 type ImagePresentation = {
   image: ImageBlock;
@@ -212,7 +210,7 @@ function createMessageImagePresentation(props: MessageImageProps) {
     admitted = true;
     // A pane owns cancellation; this image alone owns its presentation updates.
     const observed = options?.mediaOwner !== undefined || options?.onMediaChange !== undefined;
-    if (observed) {
+    if (observed && !isInlineImageSource(image.url)) {
       pendingPreview = undefined;
       observeChatMediaResourceSubscriber(options?.mediaOwner, refreshImage);
     } else {
@@ -616,9 +614,9 @@ type MessageImageProps = { image: ImageBlock; options: ImageRenderOptions };
 
 function MessageImage(props: MessageImageProps): JSX.Element {
   const presented = useContext(ContentPresentation);
-  // Parked content releases active image subscriptions.
+  // Inline bytes have no remote resource custody and can retain decoded pixels while parked.
   return (
-    <Show when={presented()}>
+    <Show when={presented() || isInlineImageSource(props.image.url)}>
       <MessageImageContent image={props.image} options={props.options} />
     </Show>
   );

@@ -1,6 +1,9 @@
 import type { GatewaySessionRow } from "../../../api/types.ts";
 import type { MessageGroup } from "../../../lib/chat/chat-types.ts";
-import { readTranscriptMediaEntries } from "../../../lib/chat/message-extract.ts";
+import {
+  isInlineImageSource,
+  readTranscriptMediaEntries,
+} from "../../../lib/chat/message-extract.ts";
 import { normalizeMessage } from "../../../lib/chat/message-normalizer.ts";
 import { extractToolCardsCached } from "../../../lib/chat/tool-cards.ts";
 import {
@@ -339,7 +342,17 @@ export function projectTranscriptIndex(
             rowItem.messages.length === 1 &&
             readTranscriptMediaEntries(rowItem.messages[0]!.message).length === 0 &&
             normalizeMessage(rowItem.messages[0]!.message).content.every(
-              (part) => part.type === "text" || part.type === "thinking",
+              (part) =>
+                part.type === "text" ||
+                part.type === "thinking" ||
+                (part.type === "image" &&
+                  part.expiresAtMs === undefined &&
+                  part.sources.length > 0 &&
+                  part.sources.every((source) =>
+                    isInlineImageSource(
+                      source.preferData ? (source.dataUrl ?? source.url) : source.url,
+                    ),
+                  )),
             ));
         const estimatedSize =
           rowItem.kind === "agent-run-frame" && rowItem.fragment
