@@ -108,7 +108,6 @@ function resolveGatewayAuthRequestContext(params: AuthorizeGatewayConnectParams)
         : (params.clientIp ?? attributed?.rateLimit.subject.key ?? fallbackIp),
     rateLimitScope: params.rateLimitScope ?? AUTH_RATE_LIMIT_SCOPE_SHARED_SECRET,
     localDirect,
-    resetOnSuccess: attributed?.rateLimit.resetOnSuccess ?? true,
     ingressAttribution: params.ingressAttribution,
   };
 }
@@ -284,61 +283,6 @@ function authorizeTrustedProxyBrowserOrigin(params: {
   });
 }
 
-async function authorizeSharedSecretAuth(params: {
-  method: "token" | "password";
-  configuredSecret?: string;
-  providedSecret?: string;
-  limiter?: AuthRateLimiter;
-  ip?: string;
-  rateLimitScope: string;
-  deferRateLimitFailure?: boolean;
-  resetOnSuccess?: boolean;
-}): Promise<GatewayAuthResult> {
-  if (params.method === "password" && isRedactedSecretValue(params.configuredSecret)) {
-    return { ok: false, reason: "password_redacted_config" };
-  }
-  if (
-    !params.configuredSecret ||
-    (params.method === "token" && isInvalidGatewaySecret(params.configuredSecret))
-  ) {
-    return { ok: false, reason: `${params.method}_missing_config` };
-  }
-  if (!params.providedSecret) {
-    // Missing credentials do not consume the wrong-credential rate limit.
-    return { ok: false, reason: `${params.method}_missing` };
-  }
-  if (!safeEqualSecret(params.providedSecret, params.configuredSecret)) {
-    if (!params.deferRateLimitFailure) {
-      await params.limiter?.recordFailureAndDelay(params.ip, params.rateLimitScope);
-    }
-    return { ok: false, reason: `${params.method}_mismatch` };
-  }
-  if (params.resetOnSuccess !== false) {
-    params.limiter?.reset(params.ip, params.rateLimitScope);
-  }
-  return { ok: true, method: params.method };
-}
-
-function rejectIfRateLimited(params: {
-  limiter?: AuthRateLimiter;
-  ip?: string;
-  rateLimitScope: string;
-}): GatewayAuthResult | undefined {
-  if (!params.limiter) {
-    return undefined;
-  }
-  const rlCheck = params.limiter.check(params.ip, params.rateLimitScope);
-  if (rlCheck.allowed) {
-    return undefined;
-  }
-  return {
-    ok: false,
-    reason: "rate_limited",
-    rateLimited: true,
-    retryAfterMs: rlCheck.retryAfterMs,
-  };
-}
-
 async function authorizeGatewayConnect(
   params: AuthorizeGatewayConnectParams,
 ): Promise<GatewayAuthResult> {
@@ -403,17 +347,58 @@ async function authorizeGatewayConnectCore(
   params: AuthorizeGatewayConnectParams,
 ): Promise<GatewayAuthResult> {
   const { auth, connectAuth, req, trustedProxies } = params;
-  const {
-    authSurface,
-    limiter,
-    subject,
-    rateLimitScope,
-    localDirect,
-    resetOnSuccess,
-    ingressAttribution,
-  } = resolveGatewayAuthRequestContext(params);
+  const { authSurface, limiter, subject, rateLimitScope, localDirect, ingressAttribution } =
+    resolveGatewayAuthRequestContext(params);
   const allowTailscaleHeaderAuth = shouldAllowTailscaleHeaderAuth(authSurface);
   const explicitSharedSecretAuth = hasExplicitSharedSecretAuth(connectAuth);
+
+  async function authorizeSharedSecretAuth(secretParams: {
+    method: "token" | "password";
+    configuredSecret?: string;
+    providedSecret?: string;
+    deferRateLimitFailure?: boolean;
+  }): Promise<GatewayAuthResult> {
+    if (
+      secretParams.method === "password" &&
+      isRedactedSecretValue(secretParams.configuredSecret)
+    ) {
+      return { ok: false, reason: "password_redacted_config" };
+    }
+    if (
+      !secretParams.configuredSecret ||
+      (secretParams.method === "token" && isInvalidGatewaySecret(secretParams.configuredSecret))
+    ) {
+      return { ok: false, reason: `${secretParams.method}_missing_config` };
+    }
+    if (!secretParams.providedSecret) {
+      // Missing credentials do not consume the wrong-credential rate limit.
+      return { ok: false, reason: `${secretParams.method}_missing` };
+    }
+    if (!safeEqualSecret(secretParams.providedSecret, secretParams.configuredSecret)) {
+      if (!secretParams.deferRateLimitFailure) {
+        await limiter?.recordFailureAndDelay(subject, rateLimitScope);
+      }
+      return { ok: false, reason: `${secretParams.method}_mismatch` };
+    }
+    limiter?.reset(subject, rateLimitScope);
+    return { ok: true, method: secretParams.method };
+  }
+
+  function rejectIfRateLimited(): GatewayAuthResult | undefined {
+    if (!limiter) {
+      return undefined;
+    }
+    const rlCheck = limiter.check(subject, rateLimitScope);
+    if (rlCheck.allowed) {
+      return undefined;
+    }
+    return {
+      ok: false,
+      reason: "rate_limited",
+      rateLimited: true,
+      retryAfterMs: rlCheck.retryAfterMs,
+    };
+  }
 
   if (
     authSurface === "http-control-ui-read" &&
@@ -460,7 +445,7 @@ async function authorizeGatewayConnectCore(
       return { ok: true, method: "trusted-proxy", user: result.user };
     }
     if (localDirect && auth.password && connectAuth?.password) {
-      const rateLimitResult = rejectIfRateLimited({ limiter, ip: subject, rateLimitScope });
+      const rateLimitResult = rejectIfRateLimited();
       if (rateLimitResult) {
         return rateLimitResult;
       }
@@ -468,11 +453,7 @@ async function authorizeGatewayConnectCore(
         method: "password",
         configuredSecret: auth.password,
         providedSecret: connectAuth.password,
-        limiter,
-        ip: subject,
-        rateLimitScope,
         deferRateLimitFailure: params.deferRateLimitFailure,
-        resetOnSuccess,
       });
     }
     return { ok: false, reason: result.reason };
@@ -517,7 +498,7 @@ async function authorizeGatewayConnectCore(
     }
   }
 
-  const rateLimitResult = rejectIfRateLimited({ limiter, ip: subject, rateLimitScope });
+  const rateLimitResult = rejectIfRateLimited();
   if (rateLimitResult) {
     return rateLimitResult;
   }
@@ -527,11 +508,7 @@ async function authorizeGatewayConnectCore(
       method: auth.mode,
       configuredSecret: auth[auth.mode],
       providedSecret: resolveConnectSecret(auth.mode, connectAuth),
-      limiter,
-      ip: subject,
-      rateLimitScope,
       deferRateLimitFailure: params.deferRateLimitFailure,
-      resetOnSuccess,
     });
   }
 

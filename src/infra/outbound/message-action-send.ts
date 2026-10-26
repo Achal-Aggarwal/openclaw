@@ -28,11 +28,13 @@ import {
   type ReplyPayloadDelivery,
 } from "../../interactive/payload.js";
 import type { AssistantDeliveryTtsFacts } from "../../llm/types.js";
+import { createSubsystemLogger } from "../../logging/subsystem.js";
 import { resolveOutboundMediaMaxBytes } from "../../media/configured-max-bytes.js";
 import { resolveLocalMediaPath } from "../../media/local-media-path.js";
 import { resolveOutboundAttachmentFromUrl } from "../../media/outbound-attachment.js";
 import { resolveAgentScopedOutboundMediaAccess } from "../../media/read-capability.js";
 import { readBooleanParam } from "../../plugin-sdk/boolean-param.js";
+import { commitConfirmedVisibleMessage } from "../../sessions/confirmed-visible-message.js";
 import { withChannelReadAuthority } from "../../shared/channel-read-authority.js";
 import { dedupeByKey } from "../../shared/dedupe-by-key.js";
 import { createLazyRuntimeModule } from "../../shared/lazy-runtime.js";
@@ -42,6 +44,7 @@ import { stripFormattedReasoningMessage } from "../../shared/text/formatted-reas
 import { shouldAttemptTtsPayload } from "../../tts/tts-config.js";
 import { prepareTtsPreferences } from "../../tts/tts-preferences.js";
 import { parseInlineDirectives } from "../../utils/directive-tags.js";
+import { formatErrorMessage } from "../errors.js";
 import { isPathInside } from "../path-guards.js";
 import { throwIfAborted } from "./abort.js";
 import {
@@ -54,7 +57,6 @@ import {
   applyMessageCrossContextMarker,
   executeGatewayAction,
 } from "./message-action-execution.js";
-import { recordGatewayActionSend } from "./message-action-gateway-transcript.js";
 import { collectAttachmentSources, normalizeSandboxMediaSource } from "./message-action-params.js";
 import { annotateSourceDelivery } from "./message-action-result-acceptance.js";
 import {
@@ -74,6 +76,9 @@ import {
   materializeMessagePresentationFallback,
 } from "./outbound-send-service.js";
 import { ensureOutboundSessionEntry, resolveOutboundSessionRoute } from "./outbound-session.js";
+import { buildOutboundSessionContext } from "./session-context.js";
+
+const log = createSubsystemLogger("outbound/message-action-send");
 
 // Keep the TTS runtime lazy so ordinary sends do not pay the provider import cost.
 const loadMessageActionTtsRuntime = createLazyRuntimeModule(
@@ -606,21 +611,43 @@ export async function executeMessageSend(ctx: ResolvedActionContext): Promise<Me
       // The Gateway owns source-reply history; other conversations get the
       // confirmed send through the destination history owner.
       if (!dryRun && outboundRoute && !deliveryFact?.partialDelivery) {
-        await recordGatewayActionSend({
-          cfg,
-          channel,
-          to,
-          accountId: ctx.accountId ?? undefined,
-          route: outboundRoute,
-          producerSessionKey: input.sourceReplySessionKey ?? input.sessionKey,
-          agentId,
-          payload: sendPayload.payload,
-          deliveryId:
-            normalizeOptionalString(params.idempotencyKey) ??
-            input.deliveryIntentId ??
-            randomUUID(),
-          signal: ctx.abortSignal,
-        });
+        /**
+         * Records a Gateway-executed plugin send in its destination conversation.
+         * The channel already accepted the send, so failures are only logged.
+         */
+        const transcriptAccountId = ctx.accountId ?? undefined;
+        const transcriptProducerSessionKey = input.sourceReplySessionKey ?? input.sessionKey;
+        const transcriptPayload = sendPayload.payload;
+        const transcriptDeliveryId =
+          normalizeOptionalString(params.idempotencyKey) ?? input.deliveryIntentId ?? randomUUID();
+        const transcriptSignal = ctx.abortSignal;
+        try {
+          const result = await commitConfirmedVisibleMessage({
+            config: cfg,
+            channel,
+            to,
+            accountId: transcriptAccountId,
+            threadId: outboundRoute.threadId,
+            route: outboundRoute,
+            producer: buildOutboundSessionContext({
+              cfg,
+              sessionKey: transcriptProducerSessionKey,
+              agentId,
+            }),
+            payload: transcriptPayload,
+            deliveryId: transcriptDeliveryId,
+            payloadIndex: 0,
+            signal: transcriptSignal,
+          });
+          const diagnostic = result.ok ? result.diagnostics : result.reason;
+          if (diagnostic) {
+            log.warn(`Confirmed gateway action transcript: ${diagnostic}`);
+          }
+        } catch (error) {
+          log.warn(
+            `Confirmed gateway action transcript commit failed: ${formatErrorMessage(error)}`,
+          );
+        }
       }
     }
     return await annotateSourceDelivery(
