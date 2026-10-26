@@ -425,7 +425,9 @@ export class ShellChromeOwner {
     }
     if (!host.commandPalette && isCommandPaletteShortcut(event)) {
       event.preventDefault();
-      this.togglePalette();
+      if (!event.repeat) {
+        this.togglePalette();
+      }
       return;
     }
     if (
