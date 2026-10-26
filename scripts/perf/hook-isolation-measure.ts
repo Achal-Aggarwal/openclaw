@@ -2,6 +2,7 @@
 // Compare the same --calls/--samples with --prompt-chars 16 and 262144 on both revisions.
 // Add --unowned-history to cover callers without transcript-owner sealing.
 // Add --no-result to measure hooks that observe inputs without returning modifications.
+// Use --messages 200 --calls 400 --samples 5 for a bounded 2,000-dispatch pass per hook count.
 // Counts, unprofiled CPU, and sampled allocations are separate passes; use built Gateway stress too.
 import assert from "node:assert/strict";
 import type { HeapProfiler } from "node:inspector";
@@ -21,6 +22,7 @@ const { values } = parseArgs({
     "unowned-history": { type: "boolean", default: false },
     "no-result": { type: "boolean", default: false },
     samples: { type: "string", default: "5" },
+    messages: { type: "string", default: "64,200,1000" },
     "start-at": { type: "string", default: "0" },
     "expect-shared-history": { type: "boolean", default: false },
     "preflight-only": { type: "boolean", default: false },
@@ -31,6 +33,8 @@ assert.ok(Number.isSafeInteger(promptChars) && promptChars >= 0);
 const expectSharedHistory = values["expect-shared-history"] && !values["unowned-history"];
 const calls = Number(values.calls);
 const samples = Number(values.samples);
+const messageCounts = values.messages.split(",").map(Number);
+assert.ok(messageCounts.every((count) => Number.isSafeInteger(count) && count > 0));
 assert.ok(Number.isSafeInteger(calls) && calls > 0, "calls must be a positive integer");
 assert.ok(Number.isSafeInteger(samples) && samples >= 5, "samples must be at least five");
 
@@ -97,7 +101,7 @@ function fixture(size: number) {
   );
 }
 
-const cells = [64, 200, 1_000].flatMap((size) => {
+const cells = messageCounts.flatMap((size) => {
   const source = fixture(size);
   const messages = values["unowned-history"] ? structuredClone(source) : source;
   for (const message of messages) {

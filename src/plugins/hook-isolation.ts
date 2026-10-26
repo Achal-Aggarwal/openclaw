@@ -179,12 +179,8 @@ export function clonePromptHookEvent<T extends { messages: unknown[] }>(
       // One graph clone preserves aliases among unowned values and native-value checks.
       const cloned = cloneHookIsolationValue(hookName, unowned);
       for (const [index, { target, key }] of positions.entries()) {
-        Object.defineProperty(target, key, {
-          value: cloned[index],
-          enumerable: true,
-          configurable: true,
-          writable: true,
-        });
+        // Projection created each destination as an own writable data property.
+        Reflect.set(target, key, cloned[index]);
       }
     }
     return snapshot;

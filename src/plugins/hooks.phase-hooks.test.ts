@@ -571,10 +571,15 @@ describe("before_prompt_build dispatch", () => {
     };
     const event = {
       prompt: "test",
-      messages: [{ date, leaf, map, __openclaw: metadata }, { leaf }],
+      messages: [{ date, leaf, map, __openclaw: metadata, ["__proto__"]: leaf }, { leaf }],
     };
+    const envelopes = new Set<object>();
+    const defineProperty = vi.spyOn(Object, "defineProperty");
     const ownKeys = vi.spyOn(Reflect, "ownKeys");
-    onTestFinished(() => ownKeys.mockRestore());
+    onTestFinished(() => {
+      defineProperty.mockRestore();
+      ownKeys.mockRestore();
+    });
     const runner = promptRunner(
       [
         {
@@ -588,6 +593,16 @@ describe("before_prompt_build dispatch", () => {
             expect(first!["__openclaw"]!.map).toBe(first!.map);
             expect(first!["__openclaw"]).not.toHaveProperty("upstreamUserText");
             expect(Object.getOwnPropertySymbols(first!["__openclaw"]!)).toEqual([]);
+            expect(Object.getPrototypeOf(first)).toBe(Object.prototype);
+            expect(Object.getOwnPropertyDescriptor(first, "__proto__")).toEqual({
+              value: first!.leaf,
+              enumerable: true,
+              configurable: true,
+              writable: true,
+            });
+            envelopes.add(first!);
+            envelopes.add(second!);
+            envelopes.add(first!["__openclaw"]!);
             first!.leaf.text = "local";
             expect(second!.leaf.text).toBe("local");
           },
@@ -598,6 +613,8 @@ describe("before_prompt_build dispatch", () => {
     await runner.runBeforePromptBuild(event, {});
     expect(leaf.text).toBe("caller");
     expect(map.get("leaf")).toBe(leaf);
+    // Replacing detached children must not recreate the envelope's property descriptors.
+    expect(defineProperty.mock.calls.filter(([target]) => envelopes.has(target))).toHaveLength(0);
     // Node preserves Error.cause, so only the detached graph needs a safety scan.
     expect(ownKeys.mock.calls.some(([value]) => value === leaf)).toBe(
       Boolean(process.versions.bun),
