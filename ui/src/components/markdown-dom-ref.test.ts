@@ -6,6 +6,32 @@ import { createMarkdownRef } from "./markdown-dom-ref.ts";
 import { toStreamingMarkdownDomParts } from "./markdown-live.ts";
 import { partitionMarkdownHtml, toSanitizedMarkdownHtml } from "./markdown.ts";
 
+it("mounts settled Markdown from one parse and preserves encoded carriage returns", () => {
+  const content =
+    '<p title="settled-parse&#13;title">settled-parse&#13;text</p><ul><li>settled-parse item</li></ul>';
+  const html = Object.getOwnPropertyDescriptor(Element.prototype, "innerHTML")!;
+  let parses = 0;
+  Object.defineProperty(Element.prototype, "innerHTML", {
+    ...html,
+    set(value: string) {
+      if (this instanceof HTMLTemplateElement && value.includes("settled-parse")) {
+        parses++;
+      }
+      html.set!.call(this, value);
+    },
+  });
+  onTestFinished(() => {
+    Object.defineProperty(Element.prototype, "innerHTML", html);
+  });
+  const view = renderSolidRef(() => createMarkdownRef(() => ({ content })), {
+    targetElement: document.createElement("div"),
+  });
+  expect(view.container.querySelector("p")?.textContent).toBe("settled-parse\rtext");
+  expect(view.container.querySelector("p")?.getAttribute("title")).toBe("settled-parse\rtitle");
+  expect(view.container.querySelector("li")?.textContent).toBe("settled-parse item");
+  expect(parses).toBe(1);
+});
+
 it("commits Markdown before onUpdate and retires a replaced island", () => {
   const container = document.body.appendChild(document.createElement("div"));
   const [html, setHtml] = createSignal('<a href="#first">First</a>');
@@ -76,9 +102,9 @@ it("retires retained media when the Solid owner unmounts", () => {
       return { dispose, setConnected };
     },
   };
-  const read = () => ({ content: "<p>MEDIA0END</p>", media });
+  const read = () => ({ content: "<p>Before MEDIA0END after</p>", media });
   const view = renderSolidRef(() => createMarkdownRef(read), { targetElement: target });
-  expect(target.textContent).toBe("Attachment");
+  expect(target.textContent).toBe("Before Attachment after");
   expect(setConnected).toHaveBeenCalledWith(true);
   view.unmount();
   expect(dispose).toHaveBeenCalledOnce();

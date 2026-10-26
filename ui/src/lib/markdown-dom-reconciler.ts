@@ -178,7 +178,7 @@ function parseCanonical(
           element.localName.includes("-")),
       );
       return {
-        prepared: prepared && opaque ? node.cloneNode(true) : undefined,
+        prepared: (prepared || !incremental) && opaque ? node.cloneNode(true) : undefined,
         key: key && counts.get(key) === 1 ? key : index,
         canonical: `${node.nodeType}:${element ? element.outerHTML : node.textContent}`,
         tag: element?.localName,
