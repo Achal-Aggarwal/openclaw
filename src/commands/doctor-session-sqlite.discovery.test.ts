@@ -501,7 +501,68 @@ it.each(["import", "recover"] as const)(
   },
 );
 
-it("keeps diagnostic, deleted, mismatched, and ambiguous inputs out of searchable history", async () => {
+it.each([false, true])("imports renamed primary history (archived: %s)", async (archived) => {
+  await withOpenClawTestState({ label: "doctor-renamed-history" }, async (state) => {
+    const sessions = state.sessionsDir();
+    fs.mkdirSync(sessions, { recursive: true });
+    const store = path.join(sessions, "sessions.json");
+    fs.writeFileSync(store, "{}");
+    const source = path.join(sessions, "renamed.jsonl");
+    const bytes = transcript("original-id", "renamedhistoryneedle");
+    fs.writeFileSync(source, bytes);
+    let retainedPath: string | undefined;
+    if (archived) {
+      const target = {
+        agentId: "main",
+        storePath: store,
+        sqlitePath: resolveTargetSqlitePath({ agentId: "main", storePath: store }, state.env),
+      };
+      const old = createSessionSqliteMigrationRun(state.env, [target]);
+      const archiveDir = path.join(path.dirname(sessions), "session-sqlite-import-archive");
+      fs.mkdirSync(archiveDir);
+      retainedPath = path.join(archiveDir, "renamed.jsonl.imported-1");
+      const move: SessionSqliteMigrationMove = {
+        kind: "unreferenced-jsonl",
+        sourcePath: source,
+        archivePath: retainedPath,
+        artifact: {
+          identity: readMigrationArtifactIdentity(source),
+          classification: "protected",
+          reason: "unreferenced-history",
+          dependencies: [],
+          disposal: { state: "retained" },
+        },
+      };
+      recordPlannedMigrationMoves(old, target, [move]);
+      await moveMigrationArtifact(source, retainedPath, move.artifact!.identity);
+      recordCompletedMigrationMoves(old, target, [move]);
+      updateMigrationManifestTarget(old, target, [], { validationBeforeArchive: "passed" });
+      old.manifest.completedAt = old.manifest.startedAt;
+      writeSessionSqliteMigrationManifest(old);
+    }
+    const report = await runDoctorSessionSqlite({ mode: "import", store, env: state.env });
+    expect(report.totals.importedEntries).toBe(1);
+    expect(report.targets.flatMap((item) => item.issues)).toEqual([]);
+    expect(
+      searchSessionTranscripts({ agentId: "main", env: state.env, query: "renamedhistoryneedle" })
+        .hits,
+    ).toEqual([expect.objectContaining({ sessionId: "original-id" })]);
+    if (retainedPath) {
+      expect(fs.readFileSync(retainedPath, "utf8")).toBe(bytes);
+    } else {
+      const manifest = JSON.parse(fs.readFileSync(report.migrationRun!.manifestPath, "utf8"));
+      const moves: SessionSqliteMigrationMove[] = manifest.targets.flatMap(
+        (item: { completedMoves: SessionSqliteMigrationMove[] }) => item.completedMoves,
+      );
+      const archive = moves.find((move) => move.sourcePath === source)!.archivePath;
+      expect(fs.readFileSync(archive, "utf8")).toBe(bytes);
+    }
+    const repeated = await runDoctorSessionSqlite({ mode: "import", store, env: state.env });
+    expect(repeated.totals.importedEntries).toBe(0);
+  });
+});
+
+it("keeps diagnostic, deleted, and ambiguous inputs out of searchable history", async () => {
   await withOpenClawTestState({ label: "doctor-discovery-negative" }, async (state) => {
     const sessions = state.sessionsDir();
     fs.mkdirSync(sessions, { recursive: true });
@@ -519,13 +580,9 @@ it("keeps diagnostic, deleted, mismatched, and ambiguous inputs out of searchabl
         }) + "\n",
       ],
       ["deleted.jsonl.deleted.2026-07-01T00-00-00.000Z", transcript("deleted", "deletedneedle")],
-      ["mismatch.jsonl", transcript("different", "mismatchneedle")],
       ["malformed.jsonl", '{"type":"session","id":"malformed","version":3}\ninvalid\n'],
       [`${duplicate}.jsonl`, transcript(duplicate, "ambiguousneedle")],
-      [
-        `2026-06-15T00-00-00-000Z_${duplicate}.jsonl`,
-        transcript(duplicate, "secondambiguousneedle"),
-      ],
+      ["renamed-copy.jsonl", transcript(duplicate, "secondambiguousneedle")],
     ]);
     for (const [name, bytes] of files) {
       fs.writeFileSync(path.join(sessions, name), bytes);
@@ -571,7 +628,6 @@ it("keeps diagnostic, deleted, mismatched, and ambiguous inputs out of searchabl
       "historical_transcript_deferred",
       "historical_transcript_deferred",
       "historical_transcript_deferred",
-      "historical_transcript_deferred",
     ]);
     expect(report.targets[0]!.issues).toContainEqual({
       code: "historical_transcript_deferred",
@@ -584,7 +640,6 @@ it("keeps diagnostic, deleted, mismatched, and ambiguous inputs out of searchabl
     for (const query of [
       "diagnosticneedle",
       "deletedneedle",
-      "mismatchneedle",
       "ambiguousneedle",
       "secondambiguousneedle",
       "distinctoriginalneedle",

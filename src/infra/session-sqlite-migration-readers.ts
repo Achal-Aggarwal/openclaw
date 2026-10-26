@@ -101,12 +101,9 @@ export function readLegacyPrimaryTranscriptIdentity(
       ) {
         return undefined;
       }
-      if (id !== filenameId) {
-        // Shared aliases retained by an earlier migration are not unregistered primaries.
-        if (retainedSharedAliasIds?.has(id)) {
-          return undefined;
-        }
-        throw new Error("Primary transcript header does not match its original filename");
+      // Shared aliases retained by an earlier migration are not unregistered primaries.
+      if (id !== filenameId && retainedSharedAliasIds?.has(id)) {
+        return undefined;
       }
       version = typeof raw.version === "number" ? raw.version : 1;
       if (!Number.isInteger(version) || version < 1 || version > 3) {
