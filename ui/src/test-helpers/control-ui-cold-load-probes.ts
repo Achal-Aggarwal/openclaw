@@ -14,19 +14,12 @@ function installColdLoadProbes(
   createEventStream: typeof createColdLoadEventStream,
 ) {
   Reflect.set(Error, "stackTraceLimit", 40);
-  const rpcs: Array<{
-    method: string;
-    requestBytes: number;
-    responseBytes: number;
-    ms: number;
-    requestMs: number;
-    responseMs: number;
-    dispatchMs?: number;
-    responseAtMs?: number;
-    abandoned?: true;
-    params: unknown;
-    stack: string | undefined;
-  }> = [];
+  const rpcs: ProbeInit.ColdLoadRpcRecord[] = [];
+  const socketCloses: ProbeInit.ColdLoadSocketClose[] = [];
+  const eventHeaders: ProbeInit.ColdLoadEventHeader[] = [];
+  let nextSocketId = 0;
+  let nextEventDeliveryOrder = 0;
+  let omittedEventHeaders = 0;
   const pending = new Map<
     string,
     {
@@ -348,23 +341,18 @@ function installColdLoadProbes(
     construct(target, args) {
       // The mock constructor returns its routed socket rather than its own instance.
       const socket: WebSocket = Reflect.construct(target, args);
-      const eventDeliveries: Array<{ ready: boolean; deliver: () => void }> = [];
-      let eventDrainScheduled = false;
-      const drainEvent = () => {
-        eventDrainScheduled = false;
-        if (!eventDeliveries[0]?.ready) {
-          return;
-        }
-        eventDeliveries.shift()!.deliver();
-        if (eventDeliveries[0]?.ready) {
-          eventDrainScheduled = true;
-          window.setTimeout(drainEvent, 0);
-        }
-      };
+      const socketId = ++nextSocketId;
       // A closed transport cannot answer; count its attempts without blocking settlement.
       socket.addEventListener(
         "close",
-        () => {
+        (event) => {
+          socketCloses.push({
+            socketId,
+            atMs: performance.now(),
+            code: event.code,
+            reason: event.reason,
+            wasClean: event.wasClean,
+          });
           for (const [id, request] of pending) {
             if (request.socket !== socket) {
               continue;
@@ -388,6 +376,23 @@ function installColdLoadProbes(
       );
       const send = socket.send.bind(socket);
       const dispatch = socket.dispatchEvent.bind(socket);
+      const eventDeliveries: Array<{ ready: boolean; deliver: () => void }> = [];
+      let eventDeliveryScheduled = false;
+      const deliverNextEvent = () => {
+        eventDeliveryScheduled = false;
+        const next = eventDeliveries[0];
+        if (!next?.ready) {
+          return;
+        }
+        eventDeliveries.shift();
+        next.deliver();
+        if (eventDeliveries[0]?.ready) {
+          // A late timer may have made later events ready first. Keep wire order
+          // without dispatching their message handlers in the same browser task.
+          eventDeliveryScheduled = true;
+          window.setTimeout(deliverNextEvent, 0);
+        }
+      };
       socket.send = (data) => {
         if (typeof data === "string") {
           const frame = JSON.parse(data);
@@ -457,9 +462,32 @@ function installColdLoadProbes(
                   0)
             : 0,
         );
+        // Retain headers only: enough to distinguish skipped and reordered wire events.
+        const eventHeader =
+          frame.type === "event" && eventHeaders.length < 512
+            ? {
+                socketId,
+                event: String(frame.event),
+                seq: typeof frame.seq === "number" ? frame.seq : null,
+                queuedAtMs: performance.now(),
+                eligibleAtMs: deliverAt,
+              }
+            : undefined;
+        if (eventHeader) {
+          eventHeaders.push(eventHeader);
+        } else if (frame.type === "event") {
+          omittedEventHeaders++;
+        }
         queued++;
         const dispatchFrame = () => {
           queued--;
+          if (eventHeader) {
+            Object.assign(eventHeader, {
+              deliveredAtMs: performance.now(),
+              deliveryOrder: ++nextEventDeliveryOrder,
+              socketStateAtDelivery: socket.readyState,
+            });
+          }
           const request = pending.get(frame.id);
           const rpcIndex = rpcs.length;
           if (request) {
@@ -495,23 +523,19 @@ function installColdLoadProbes(
           }
           lastActivity = performance.now();
         };
-        // Delayed callbacks can overtake under load; sequenced events retain
-        // their socket's wire order without batching multiple message tasks.
         const eventDelivery =
-          frame.type === "event" && typeof frame.seq === "number"
-            ? { ready: false, deliver: dispatchFrame }
-            : undefined;
+          frame.type === "event" ? { ready: false, deliver: dispatchFrame } : undefined;
         if (eventDelivery) {
           eventDeliveries.push(eventDelivery);
         }
-        const deliver = () => {
+        const deliverReady = () => {
           if (!eventDelivery) {
             dispatchFrame();
             return;
           }
           eventDelivery.ready = true;
-          if (!eventDrainScheduled) {
-            drainEvent();
+          if (eventDeliveries[0] === eventDelivery && !eventDeliveryScheduled) {
+            deliverNextEvent();
           }
         };
         window.setTimeout(
@@ -521,9 +545,9 @@ function installColdLoadProbes(
               // cannot hold unrelated replies behind it.
               nextWireAt =
                 Math.max(performance.now(), nextWireAt) + (responseBytes * 8) / input.downloadKbps;
-              window.setTimeout(deliver, Math.max(0, nextWireAt - performance.now()));
+              window.setTimeout(deliverReady, Math.max(0, nextWireAt - performance.now()));
             } else {
-              deliver();
+              deliverReady();
             }
           },
           Math.max(0, deliverAt - performance.now()),
@@ -676,6 +700,9 @@ function installColdLoadProbes(
         sentEvents: eventStream.sentEvents,
         idleMs: performance.now() - lastActivity,
         rpcs,
+        socketCloses,
+        eventHeaders,
+        omittedEventHeaders,
         longTasks,
         sidebarHandoffs,
       };

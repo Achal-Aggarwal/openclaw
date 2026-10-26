@@ -181,13 +181,6 @@ export function measureTranscriptRow(
   entry: ResizeObserverEntry | undefined,
   virtualizer: Virtualizer<HTMLDivElement, HTMLElement>,
 ): number {
-  if (element.dataset.preparedRow === "true" && element.dataset.preparingRow !== "true") {
-    const index = virtualizer.indexFromElement(element);
-    return (
-      virtualizer.itemSizeCache.get(virtualizer.options.getItemKey(index)) ??
-      virtualizer.options.estimateSize(index)
-    );
-  }
   if (entry || !virtualizer.targetWindow?.ResizeObserver) {
     // Rounded row heights accumulate when skipped overscan uses those measurements.
     const size =

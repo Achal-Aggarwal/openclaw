@@ -116,7 +116,7 @@ async function transcriptFixture(initialOffset: number | null = 0) {
         }
         await settle();
         if (measure) {
-          for (const row of container.querySelectorAll<HTMLElement>("[data-preparing-row]")) {
+          for (const row of container.querySelectorAll<HTMLElement>("[data-prepared-row]")) {
             emitTranscriptResize(row, 800, 100);
           }
         }
@@ -148,10 +148,13 @@ it("reuses a recent completed row after scrolling away and back, with a bounded 
   await view.frame(3);
   expect(view.container.querySelector('[data-virtual-row-key="fragment:2"]')).toBe(first);
   expect(first?.getAttribute("data-prepared-row")).toBe("true");
+  expect(first?.hasAttribute("inert")).toBe(true);
+  expect(first?.getAttribute("aria-hidden")).toBe("true");
   await view.scrollTo(0);
   expect(view.container.querySelector('[data-virtual-row-key="fragment:2"]')).toBe(first);
   expect(first?.hasAttribute("data-prepared-row")).toBe(false);
-  expect(first?.hasAttribute("data-preparing-row")).toBe(false);
+  expect(first?.hasAttribute("inert")).toBe(false);
+  expect(first?.hasAttribute("aria-hidden")).toBe(false);
   expect(preparations()).toBe(initialPreparations);
   await view.updateRow(2, 2002);
   expect(preparations()).toBe(initialPreparations + 1);
@@ -202,7 +205,10 @@ it("prepares ahead during fast scrolling and waits for measurement before admitt
     );
   const rendered = view.renderRow.mock.calls.length;
   await view.frame(1, false);
-  const preparing = view.container.querySelector<HTMLElement>("[data-preparing-row]");
+  const preparedKey = view.renderRow.mock.calls.at(-1)?.[0].key;
+  const preparing = view.container.querySelector<HTMLElement>(
+    `[data-virtual-row-key="${preparedKey}"]`,
+  );
   expect(preparing).not.toBeNull();
   expect(Number(preparing!.dataset.index)).toBeGreaterThan(Math.max(...activeIndexes()));
   expect(view.renderRow.mock.calls).toHaveLength(rendered + 1);

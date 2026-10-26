@@ -14,7 +14,7 @@ export class TranscriptInitialRange {
   // Completed fragments have no widget custody. Retain their keyed DOM while
   // keeping inactive rows outside the visible range's flow.
   readonly preparedRowKeys = new Set<string>();
-  preparingRowKey: string | undefined;
+  private preparingRowKey: string | undefined;
   readonly rowIndexes = new Map<string, number>();
   private cancelPreparation?: () => void;
   private preparationIsIdle = false;
@@ -61,7 +61,6 @@ export class TranscriptInitialRange {
     this.retainViewportRows();
     return {
       activeRowKeys: new Set(this.activeIndexes().map((index) => rows[index]!.key)),
-      preparingRowKey: this.preparingRowKey,
     };
   }
 
@@ -170,7 +169,7 @@ export class TranscriptInitialRange {
       queueMicrotask(() => {
         if (this.preparingRowKey === key) {
           this.preparingRowKey = undefined;
-          this.invalidate();
+          this.queuePreparation();
         }
       });
     }

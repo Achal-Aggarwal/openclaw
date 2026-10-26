@@ -652,16 +652,11 @@ openclaw-pending-session-create {
   content-visibility: auto;
 }
 
-/* Retain prepared DOM without making it participate in its neighbors' layout. */
+/* Keep bounded cached rows laid out without affecting their neighbors or painting. */
 .chat-virtual-row[data-prepared-row] {
   position: absolute;
-  content-visibility: hidden;
-}
-
-/* One incoming row gets real geometry before it becomes a cached row. */
-.chat-virtual-row[data-preparing-row] {
-  visibility: hidden;
   content-visibility: visible;
+  opacity: 0;
 }
 
 .chat-virtual-row:focus-within {

@@ -106,8 +106,7 @@ it("measures newly committed rows before observer registration using fractional 
       devicePixelContentBoxSize: [box],
       contentRect: new DOMRect(0, 0, 800, 120.375),
     };
-    expect(measureTranscriptRow(prepared, receipt, virtualizer)).toBe(87.625);
-    prepared.dataset.preparingRow = "true";
+    expect(measureTranscriptRow(prepared, undefined, virtualizer)).toBe(87.625);
     expect(measureTranscriptRow(prepared, receipt, virtualizer)).toBe(120.375);
     expect(readConnectedTranscriptRows(container, virtualizer, rowRefs.elements)?.()).toBe(false);
   } finally {
