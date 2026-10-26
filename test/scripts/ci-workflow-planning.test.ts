@@ -2641,8 +2641,10 @@ describe("ci workflow guards", () => {
       ).include.filter((row: { task: string }) => row.task === "control-ui") as Array<{
         vitest_max_workers: number;
       }>;
-      expect(controlRows).toHaveLength(release ? 12 : 6);
-      expect(controlRows.reduce((total, row) => total + row.vitest_max_workers, 0)).toBe(24);
+      expect(controlRows).toHaveLength(release ? 12 : 5);
+      expect(controlRows.reduce((total, row) => total + row.vitest_max_workers, 0)).toBe(
+        release ? 24 : 20,
+      );
       for (const family of [
         "run_build_artifacts",
         "run_ios_build",
@@ -10983,7 +10985,7 @@ describe("ci workflow guards", () => {
     const expectedUiE2eMatrices = (
       [
         [8, 3],
-        [6, 4],
+        [5, 4],
         [12, 2],
       ] as const
     ).map(([vitestShardCount, workers]) => ({
@@ -12760,6 +12762,12 @@ describe("ci workflow guards", () => {
       requiredJobs.map((job) => `${job}=\${{ needs.${job}.result }}|true`),
     );
     for (const job of selectedJobs) {
+      if (job === "control-ui-performance") {
+        expect(verifyStep.env.JOB_RESULTS).toContain(
+          "control-ui-performance=${{ needs.preflight.outputs.reuse_control_ui_performance_setup == 'true' && needs.checks-ui.result || needs.control-ui-performance.result }}|",
+        );
+        continue;
+      }
       if (job === "control-ui-i18n") {
         expect(verifyStep.env.JOB_RESULTS).toContain(
           "control-ui-i18n=${{ needs.preflight.outputs.reuse_control_ui_i18n_setup == 'true' && (needs.build-artifacts.outputs.control_ui_i18n_result || 'missing') || needs.control-ui-i18n.result }}|",
@@ -12788,6 +12796,13 @@ describe("ci workflow guards", () => {
       );
       const job = expectDefined(match[1], row);
       const selection = expectDefined(match[3], row);
+      if (job === "control-ui-performance") {
+        expect(selection).toBe("needs.preflight.outputs.run_control_ui_performance");
+        expect(workflow.jobs[job].if).toBe(
+          "needs.preflight.outputs.run_control_ui_performance == 'true' && needs.preflight.outputs.reuse_control_ui_performance_setup != 'true'",
+        );
+        continue;
+      }
       expect(match[2], row).toBe(job);
       if (job === "control-ui-i18n") {
         expect(selection).toBe("needs.preflight.outputs.run_control_ui_i18n");
