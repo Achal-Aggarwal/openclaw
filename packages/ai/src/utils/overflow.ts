@@ -96,12 +96,10 @@ const CONTEXT_OVERFLOW_PATTERN_SCOPES = {
   ],
 } as const;
 
-export type ContextOverflowMessageScope = keyof typeof CONTEXT_OVERFLOW_PATTERN_SCOPES;
-
 /** Match one canonical context-overflow wording scope without applying caller policy. */
 export function matchesContextOverflowMessage(
   errorMessage: string,
-  scope: ContextOverflowMessageScope,
+  scope: keyof typeof CONTEXT_OVERFLOW_PATTERN_SCOPES,
 ): boolean {
   return CONTEXT_OVERFLOW_PATTERN_SCOPES[scope].some((pattern: RegExp) =>
     pattern.test(errorMessage),

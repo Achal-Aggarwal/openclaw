@@ -6,8 +6,8 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { CommandOptions } from "../process/exec.js";
 import { npmCommandArgs } from "../test-utils/npm-command.js";
 import { createOpenClawTestState } from "../test-utils/openclaw-test-state.js";
-import { installPluginFromNpmSpec } from "./install-npm.js";
 import { installPluginFromArchive } from "./install-package.js";
+import { installPluginFromNpmSpec } from "./install.js";
 
 const runCommand = vi.hoisted(() => vi.fn());
 const fixtureId = "deadline-fixture";
