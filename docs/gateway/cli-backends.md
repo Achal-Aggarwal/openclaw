@@ -183,6 +183,10 @@ Follow-up tools still require the current turn's host permissions. Commands star
 in the background do not hold the turn open. If the turn fails or is cancelled while one of these
 commands still needs a follow-up, OpenClaw closes that subprocess and starts a fresh one for the next turn.
 
+Discarded, semantically attributed Claude child messages use a bounded progress charge rather than
+consuming the parent reply budget. Retained stream deltas, individual JSONL lines, and ordinary
+frame counts remain bounded. Mixed-format records with retained item content keep their full charge.
+
 While native background agents or workflows continue, a completed Claude answer can reach the
 channel through the normal reply pipeline without waiting for the continuation to finish.
 This also works with raw previews and block streaming disabled. Already delivered answer segments
