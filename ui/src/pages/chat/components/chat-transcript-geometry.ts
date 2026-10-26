@@ -129,7 +129,10 @@ export function isTranscriptRangeCommitted(
     return (
       node !== undefined &&
       inner?.contains(node) === true &&
-      Number.parseFloat(node.style.getPropertyValue("contain-intrinsic-block-size")) === row.size
+      // CSSOM rounds fractional lengths; a subpixel serialization difference is committed.
+      Math.abs(
+        Number.parseFloat(node.style.getPropertyValue("contain-intrinsic-block-size")) - row.size,
+      ) < 1
     );
   });
 }

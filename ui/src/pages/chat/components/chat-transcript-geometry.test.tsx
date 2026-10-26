@@ -19,7 +19,11 @@ import {
   setTranscriptViewport,
   transcriptContainer,
 } from "./chat-transcript-fixture.test-support.tsx";
-import { measureTranscriptRow, readConnectedTranscriptRows } from "./chat-transcript-geometry.ts";
+import {
+  isTranscriptRangeCommitted,
+  measureTranscriptRow,
+  readConnectedTranscriptRows,
+} from "./chat-transcript-geometry.ts";
 import { TranscriptRowRefs } from "./chat-transcript-row-refs.ts";
 import {
   flushDeferredRowPrune,
@@ -113,6 +117,31 @@ it("measures newly committed rows before observer registration using fractional 
     rowRefs.clear();
     dispose();
   }
+});
+
+it("settles retained rows whose fractional size is rounded by CSS serialization", () => {
+  const container = transcriptContainer();
+  const row = document.createElement("div");
+  row.style.setProperty("contain-intrinsic-block-size", "258.562px");
+  row.dataset.preparedRow = "true";
+  container.append(row);
+  const virtualizer = new Virtualizer<HTMLDivElement, HTMLElement>({
+    count: 1,
+    estimateSize: () => 258.5625,
+    getScrollElement: () => container,
+    getItemKey: () => "fractional",
+    initialRect: { width: 800, height: 600 },
+    scrollToFn: () => {},
+    observeElementRect: () => {},
+    observeElementOffset: () => {},
+  });
+  virtualizer.elementsCache.set("fractional", row);
+
+  expect(isTranscriptRangeCommitted(container, virtualizer)).toBe(true);
+  row.style.setProperty("contain-intrinsic-block-size", "256px");
+  expect(isTranscriptRangeCommitted(container, virtualizer)).toBe(false);
+  row.remove();
+  expect(isTranscriptRangeCommitted(container, virtualizer)).toBe(false);
 });
 
 it("keeps fractional observer sizes as the sole skipped-row sizing input", async () => {
