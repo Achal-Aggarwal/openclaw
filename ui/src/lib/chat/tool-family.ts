@@ -1,3 +1,4 @@
+import { ActivityGroupEntries } from "../../pages/chat/components/chat-message-group-rich-entry.ts";
 import { hasToolMessageDemand } from "./tool-message-demand.ts";
 
 type ChatToolFamily = typeof import("../../pages/chat/chat-tool-family-runtime.ts");
@@ -32,11 +33,12 @@ export function prepareChatToolFamily(
     : loadChatToolFamily().then(() => true);
 }
 
-/** Start both code families together so rendering does not add a second round trip. */
+/** Prepare facts and row renderers together so cached activity commits complete. */
 export function loadChatToolPresentation(): Promise<ChatToolPresentation> {
   presentationPending ??= Promise.all([
     loadChatToolFamily(),
     import("../../pages/chat/chat-tool-presentation.runtime.ts"),
+    ActivityGroupEntries.preload(),
   ]).then(
     ([, loaded]) => {
       presentation = loaded;

@@ -1,4 +1,4 @@
-import { createMemo, lazy, Match, Show, Switch } from "solid-js";
+import { lazy, Match, Show, Switch } from "solid-js";
 import { Icon } from "../../../components/solid/icon.tsx";
 import { MarkdownHtml } from "../../../components/solid/markdown-html.tsx";
 import type { ChatItem } from "../../../lib/chat/chat-types.ts";
@@ -6,9 +6,8 @@ import { formatTimeMs } from "../../../lib/format.ts";
 import { t } from "../../../lib/reactive/i18n.ts";
 import { detectTextDirection } from "../../../lib/text-direction.ts";
 import { ChatLazyBoundary } from "./chat-lazy-boundary.tsx";
-import { ChatRunFailureNotice } from "./chat-run-failure-notice.tsx";
+import type { ChatNoticeProps } from "./chat-notice-view.tsx";
 import { ChatSkillLearnedNotice } from "./chat-skill-learned-notice.tsx";
-import type { ChatThreadProps } from "./chat-thread-interactions.ts";
 
 const ChatPermissionCard = lazy(() => import("./chat-permission-card.tsx"), {
   export: "ChatPermissionCard",
@@ -84,47 +83,6 @@ export function ChatDivider(props: { item: Extract<ChatItem, { kind: "divider" }
           <span class="chat-divider__description">{props.item.description}</span>
         </div>
       </Show>
-    </div>
-  );
-}
-
-type ChatNoticeProps = {
-  item: Extract<ChatItem, { kind: "notice" }>;
-  onPermissionRetry?: (message: string) => void;
-  recovery?: Pick<
-    ChatThreadProps,
-    "failureActionsRunId" | "runActive" | "runWorking" | "onRetryRun" | "onDismissPendingInput"
-  >;
-};
-
-function FailureNotice(props: ChatNoticeProps) {
-  const failure = () => props.item.runError!;
-  const actions = createMemo(() => {
-    const runId = failure().runId;
-    const recovery = props.recovery;
-    if (
-      !recovery ||
-      runId !== recovery.failureActionsRunId ||
-      recovery.runActive ||
-      recovery.runWorking
-    ) {
-      return undefined;
-    }
-    return {
-      onRetry: recovery.onRetryRun ? () => recovery.onRetryRun?.(runId) : undefined,
-    };
-  });
-  return (
-    <div
-      data-chat-row-key={props.item.key}
-      data-ts={String(props.item.timestamp)}
-      data-run-failure={failure().runId}
-    >
-      <ChatRunFailureNotice
-        summary={failure().summary}
-        repeatCount={props.item.repeatCount}
-        onRetry={actions()?.onRetry}
-      />
     </div>
   );
 }
@@ -213,12 +171,9 @@ function OrdinaryNotice(props: ChatNoticeProps) {
   );
 }
 
-export function ChatNotice(props: ChatNoticeProps) {
+export function ChatNoticeDetails(props: ChatNoticeProps) {
   return (
     <Switch fallback={<OrdinaryNotice item={props.item} recovery={props.recovery} />}>
-      <Match when={props.item.runError}>
-        <FailureNotice item={props.item} recovery={props.recovery} />
-      </Match>
       <Match when={props.item.permissionMissing}>
         <div data-chat-row-key={props.item.key} data-ts={String(props.item.timestamp)}>
           <ChatLazyBoundary>

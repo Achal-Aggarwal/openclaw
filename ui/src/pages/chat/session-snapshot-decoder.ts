@@ -2,6 +2,7 @@ import { asOptionalRecord } from "@openclaw/normalization-core/record-coerce";
 import { isBoardSnapshot } from "../../lib/protocol-validators.generated/board.js";
 import {
   isChatTranscriptMetadata,
+  isMessageReactionSummary,
   isProgressCard,
 } from "../../lib/protocol-validators.generated/transcript.js";
 import * as json from "../../lib/snapshot-json.ts";
@@ -47,6 +48,9 @@ const snapshotSchema = json.object(
       ),
     ),
     transcriptMetadata: json.optional(json.checked(isChatTranscriptMetadata)),
+    messageReactions: json.optional(
+      json.record(json.array(json.checked(isMessageReactionSummary))),
+    ),
     progressCard: json.optional(json.nullable(json.checked(isProgressCard))),
     deltaCursor: json.optional(json.text),
     // Only persisted warm metadata needs its full validator; read admission loads it below.

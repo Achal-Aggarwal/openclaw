@@ -152,12 +152,18 @@ it.each([false, true])(
       expect(hints.find((hint) => hint.includes(shared!.fileName))).not.toContain(
         'fetchpriority="low"',
       );
-      expect(hints.find((hint) => hint.includes(interactionChunk!.fileName))).toContain(
-        'fetchpriority="low"',
+      const interactionHint = hints.find((hint) => hint.includes(interactionChunk!.fileName));
+      expect(interactionHint).toContain('rel="preload"');
+      expect(interactionHint).toContain('as="script"');
+      expect(interactionHint).toContain('crossorigin');
+      expect(interactionHint).toContain('fetchpriority="low"');
+      expect(hints.find((hint) => hint.includes(shared!.fileName))).toContain(
+        'rel="modulepreload"',
       );
       if (route === "chat") {
         const chatHint = hints.find((hint) => hint.includes(chatChunk!.fileName));
         expect(chatHint).toBeDefined();
+        expect(chatHint).toContain('rel="modulepreload"');
         expect(chatHint).not.toContain('fetchpriority="low"');
       }
     }

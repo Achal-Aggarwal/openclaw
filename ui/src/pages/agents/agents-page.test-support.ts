@@ -6,7 +6,6 @@ import { createAgentSelectionCapability } from "../../app/agent-selection.ts";
 import type { ApplicationContext, ApplicationGatewaySnapshot } from "../../app/context.ts";
 import { createGatewayMetadataObserver } from "../../app/gateway-observers.ts";
 import { createAgentCapability } from "../../lib/agents/index.ts";
-import { createChannelCapability } from "../../lib/channels/index.ts";
 import { invalidateChatMetadataStore } from "../../lib/chat/chat-metadata-cache.ts";
 import { createInitialConfigState } from "../../lib/config/config-state-model.ts";
 import { createApplicationGatewaySnapshot } from "../../test-helpers/application-context-fixtures.ts";
@@ -49,7 +48,6 @@ function fillMissing(target: object, defaults: object) {
 
 export function completeContext(context: ApplicationContext) {
   const subscribe = () => () => {};
-  const channels = context.getChannels?.(createChannelCapability) ?? { state: {}, subscribe };
   const defaultAgents = agentsCapability(async () => ({
     agentId: "main",
     workspace: "",
@@ -66,7 +64,7 @@ export function completeContext(context: ApplicationContext) {
     },
     sessions: context.sessions ?? { state: { result: null, modelOverrides: {} }, subscribe },
     runtimeConfig: context.runtimeConfig ?? { state: createInitialConfigState(), subscribe },
-    getChannels: () => channels,
+    channels: context.channels ?? { state: {}, subscribe },
     config: context.config ?? { current: { assistantIdentity: {} }, subscribe },
     navigation: context.navigation ?? { snapshot: { pinnedAgentIds: [] }, subscribe },
     router: context.router ?? {
@@ -80,7 +78,7 @@ export function completeContext(context: ApplicationContext) {
     context.agentIdentity,
     context.sessions,
     context.runtimeConfig,
-    channels,
+    context.channels,
     context.config,
     context.navigation,
   ]) {
@@ -108,7 +106,7 @@ export function completeContext(context: ApplicationContext) {
     state: context.runtimeConfig.state ?? createInitialConfigState(),
     ensureLoaded: context.runtimeConfig.ensureLoaded ?? (async () => {}),
   });
-  fillMissing(channels, { state: channels.state ?? {} });
+  fillMissing(context.channels, { state: context.channels.state ?? {} });
   if (!gatewayListeners.has(context.gateway)) {
     const listeners = new Set<GatewayListener>();
     const subscribeGateway = context.gateway.subscribe.bind(context.gateway);
@@ -305,6 +303,7 @@ export function pageContext(
         state: { result: null, modelOverrides: {} },
         subscribe,
       } as unknown as ApplicationContext["sessions"]),
+    channels: { subscribe },
     runtimeConfig: { subscribe },
   } as unknown as ApplicationContext;
 }

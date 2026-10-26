@@ -1,16 +1,12 @@
 import type { JSX } from "@solidjs/web";
-import { For, lazy, Show, type Accessor } from "solid-js";
+import { For, Show, type Accessor } from "solid-js";
 import { Icon } from "../../../components/solid/icon.tsx";
 import type { MessageGroup } from "../../../lib/chat/chat-types.ts";
 import { rawMessageTimestamp } from "../chat-thread-items.ts";
-import { ChatLazyBoundary } from "./chat-lazy-boundary.tsx";
+import { ForwardedAttribution } from "./chat-forwarded-attribution.tsx";
 import type { RenderMessageGroupOptions } from "./chat-message-group-options.ts";
 import { ChatTimestamp } from "./chat-message-timestamp-view.tsx";
 import "./chat-session-activity.css";
-
-const ForwardedAttribution = lazy(() => import("./chat-forwarded-attribution.tsx"), {
-  export: "ForwardedAttribution",
-});
 
 export function ChatSessionActivity(props: {
   group: MessageGroup;
@@ -68,15 +64,13 @@ export function ChatSessionActivity(props: {
             {/* One summary for both states, so only the chevron moves on toggle. The
                 source link's click is canceled by the transcript's navigation
                 handler, which also cancels the summary's toggle activation. */}
-            <ChatLazyBoundary>
-              <ForwardedAttribution
-                group={props.group}
-                options={{
-                  ...props.options,
-                  updateCount: count(),
-                }}
-              />
-            </ChatLazyBoundary>
+            <ForwardedAttribution
+              group={props.group}
+              options={{
+                ...props.options,
+                updateCount: count(),
+              }}
+            />
             <Show when={!props.options.searchResult}>
               <span class="chat-session-activity__chevron" aria-hidden="true">
                 <Icon name="chevronRight" />

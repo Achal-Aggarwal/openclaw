@@ -9,6 +9,7 @@ import { ChatAvatar, ForwardedAvatar } from "../chat-avatar.ts";
 import { hasForwardedSource, isSessionActivityGroup } from "../chat-turn-boundary.ts";
 import { ChatAuthorAvatar } from "./chat-author-avatar.ts";
 import { BrowserTabPreviews } from "./chat-browser-tab-previews.tsx";
+import { ForwardedAttribution } from "./chat-forwarded-attribution.tsx";
 import { ChatLazyBoundary } from "./chat-lazy-boundary.tsx";
 import { RewindButton } from "./chat-message-confirmation-view.tsx";
 import {
@@ -16,9 +17,11 @@ import {
   type MessageGroupFrame,
   type NativeMessageGroupOptions,
   isActivityMessageGroup,
+  prepareGroupMessage,
   prepareMessageGroupFrame,
   resolveFileLinkOwnerOptions,
 } from "./chat-message-group-frame.ts";
+import { ActivityGroupEntries } from "./chat-message-group-rich-entry.ts";
 import {
   hasMessageActionButtons,
   MessageActions,
@@ -30,23 +33,20 @@ import { messageReactionOptions } from "./chat-message-reaction-model.ts";
 import { ChatSendStatus } from "./chat-message-send-status-view.tsx";
 import { MessageMeta } from "./chat-message-timestamp-view.tsx";
 import { PreparedMessage } from "./chat-prepared-message.tsx";
-import { NO_REPLY_LINE, resolveMessageReplyLine } from "./chat-reply-attribution.ts";
+import {
+  NO_REPLY_LINE,
+  resolveGroupReplyLine,
+  resolveMessageReplyLine,
+} from "./chat-reply-attribution.ts";
 import { ReplyLineView, ReplyLineConnector } from "./chat-reply-attribution.tsx";
 import type { ReplyConnectorElements } from "./chat-reply-connector.tsx";
+import { ChatSessionActivity } from "./chat-session-activity.solid.tsx";
 import { selectBrowserTabPreviews } from "./chat-tool-cards.ts";
 import { ChatToolFamilyBoundary, useChatToolReadiness } from "./chat-tool-family-boundary.tsx";
 import { TurnRecapRow } from "./chat-turn-recap-view.tsx";
 
 const StreamGroupParts = lazy(() => import("./chat-message-stream-view.tsx"), {
   export: "StreamGroupParts",
-});
-
-const ForwardedAttribution = lazy(() => import("./chat-forwarded-attribution.tsx"), {
-  export: "ForwardedAttribution",
-});
-
-const ActivityGroupEntries = lazy(() => import("./chat-message-group-rich.tsx"), {
-  export: "ActivityGroupEntries",
 });
 
 export function ActivityGroup(props: {
@@ -112,10 +112,6 @@ function PreparedMessageGroupContent(props: {
   );
 }
 
-const SessionActivityGroup = lazy(() => import("./chat-message-group-rich.tsx"), {
-  export: "SessionActivityGroup",
-});
-
 export type { NativeMessageGroupOptions } from "./chat-message-group-frame.ts";
 
 function MessageActionsRow(props: {
@@ -151,6 +147,57 @@ function MessageActionsRow(props: {
         messageKey={props.messageKey}
       />
     </div>
+  );
+}
+
+function SessionActivityGroup(props: {
+  group: MessageGroupData;
+  options: NativeMessageGroupOptions;
+}) {
+  const toolsReady = useChatToolReadiness();
+  const options = createMemo(() => resolveFileLinkOwnerOptions(props.group, props.options));
+  return (
+    <ChatSessionActivity
+      group={props.group}
+      options={options()}
+      renderEntry={(item, index) => {
+        const prepared = createMemo(() => {
+          toolsReady();
+          return prepareGroupMessage(props.group, item(), options());
+        });
+        let actionOwner: HTMLDivElement | undefined;
+        return {
+          actionsRef: (element: HTMLDivElement) => {
+            actionOwner = element;
+          },
+          content: (
+            <PreparedMessage
+              group={props.group}
+              item={item()}
+              index={index()}
+              prepared={prepared()}
+              options={{
+                ...options(),
+                isForwarded: true,
+                onToggleUserMessageExpanded: undefined,
+                replyLine: resolveGroupReplyLine(
+                  { ...props.group, messages: [item()] },
+                  options().resolveReplyPreview,
+                ),
+              }}
+            />
+          ),
+          actions: (
+            <MessageActions
+              details={prepared().actions}
+              options={options()}
+              actionOwner={() => actionOwner}
+              messageKey={item().key}
+            />
+          ),
+        };
+      }}
+    />
   );
 }
 
@@ -398,9 +445,7 @@ function FramedMessageGroup(props: {
       </Show>
       <div ref={(element) => (replyElements.messages = element)} class="chat-group-messages">
         <Show when={frame().forwardedSource}>
-          <ChatLazyBoundary>
-            <ForwardedAttribution group={props.group} options={options()} />
-          </ChatLazyBoundary>
+          <ForwardedAttribution group={props.group} options={options()} />
         </Show>
         <ReplyLineView line={frame().replyLine} actions={options()} elements={replyElements} />
         <Show
@@ -547,11 +592,7 @@ function PreparedMessageGroup(props: {
   return (
     <Show
       when={!isSessionActivityGroup(props.group)}
-      fallback={
-        <ChatLazyBoundary>
-          <SessionActivityGroup group={props.group} options={props.options} />
-        </ChatLazyBoundary>
-      }
+      fallback={<SessionActivityGroup group={props.group} options={props.options} />}
     >
       <Show
         when={

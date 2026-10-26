@@ -222,11 +222,12 @@ export function controlUiBootPreloadsPlugin(): Plugin {
                     href: `./${file}`,
                   }
                 : {
-                    rel: "modulepreload",
+                    // Keep interaction bytes available without preparing their
+                    // module graph until the owning action needs it.
+                    ...(assets.interactionOnly[route].has(file)
+                      ? { rel: "preload", as: "script", fetchpriority: "low" }
+                      : { rel: "modulepreload" }),
                     crossorigin: "",
-                    // Every route dependency can gate its first frame. Only
-                    // interaction-only hints yield to post-connect requests.
-                    ...(assets.interactionOnly[route].has(file) ? { fetchpriority: "low" } : {}),
                     href: `./${file}`,
                   },
             }));

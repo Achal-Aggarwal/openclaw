@@ -138,8 +138,7 @@ export type ApplicationContext<TRouteId extends string = RouteId> = {
   readonly agentSelection: AgentSelectionCapability;
   /** Configured agent targeted by Settings, independent of chat/session selection. */
   readonly settingsAgentSelection: AgentSelectionCapability;
-  /** The first consuming page passes createChannelCapability from its lazy module graph. */
-  getChannels(create: (gateway: ApplicationGateway) => ChannelCapability): ChannelCapability;
+  readonly channels: ChannelCapability;
   readonly config: ApplicationConfigCapability;
   readonly scopeUpgrade: ScopeUpgradeCapability;
   readonly sidebarAttention: SidebarAttentionStore;

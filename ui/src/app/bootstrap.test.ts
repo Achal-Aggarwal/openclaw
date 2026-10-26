@@ -4,7 +4,6 @@ import { CONTROL_UI_BASE_PATH_ATTRIBUTE } from "../../../src/gateway/control-ui-
 import { createDeferred } from "../../../test/helpers/promise.js";
 import type { GatewayBrowserClient } from "../api/gateway.ts";
 import { routeIdFromPath } from "../app-routes.ts";
-import * as channelCapabilities from "../lib/channels/index.ts";
 import {
   isDefaultChatLanding,
   startModelSetupFirstRunRedirectAfterLocation,
@@ -53,34 +52,6 @@ describe("bootstrapApplication", () => {
     window.history.replaceState({}, "", pathname);
     return bootstrapApplication();
   }
-
-  it("constructs one channel owner on first use and retires it with the application", () => {
-    const create = vi.spyOn(channelCapabilities, "createChannelCapability");
-    const runtime = openAt("/chat/main/main", "agent:main:main");
-    expect(create).not.toHaveBeenCalled();
-
-    const channels = runtime.context.getChannels(create);
-    const dispose = vi.spyOn(channels, "dispose");
-    expect(runtime.context.getChannels(create)).toBe(channels);
-    expect(create).toHaveBeenCalledOnce();
-    expect(create).toHaveBeenCalledWith(runtime.context.gateway);
-
-    runtime.stop();
-    expect(dispose).toHaveBeenCalledOnce();
-    expect(runtime.context.getChannels(create)).toBe(channels);
-    expect(create).toHaveBeenCalledOnce();
-  });
-
-  it("does not construct a channel owner when disposal precedes first use", () => {
-    const create = vi.spyOn(channelCapabilities, "createChannelCapability");
-    const runtime = openAt("/chat/main/main", "agent:main:main");
-    runtime.stop();
-
-    expect(() => runtime.context.getChannels(create)).toThrowError(
-      expect.objectContaining({ name: "AbortError" }),
-    );
-    expect(create).not.toHaveBeenCalled();
-  });
 
   it.each(["chat", "dashboard"])(
     "gives the initial %s transcript priority over bulk reads",

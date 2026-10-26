@@ -111,11 +111,6 @@ export function createContext(
   let selectionState = { selectedId, scopeId };
   let intentRevision = 0;
   const selectionListeners = new Set<(state: typeof selectionState) => void>();
-  const channels = {
-    state: { channelsSnapshot: null },
-    refresh: vi.fn(async () => undefined),
-    subscribe,
-  };
   return {
     basePath: "",
     router: createRouter({
@@ -132,7 +127,13 @@ export function createContext(
       ensureList: vi.fn(async () => undefined),
       subscribe,
     },
-    getChannels: () => channels,
+    channels: {
+      state: {
+        channelsSnapshot: null,
+      },
+      refresh: vi.fn(async () => undefined),
+      subscribe,
+    },
     runtimeConfig: {
       state: { configSnapshot: null },
       subscribe,

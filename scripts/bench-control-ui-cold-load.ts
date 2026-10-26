@@ -259,6 +259,7 @@ const { values } = parseArgs({
     "thread-cpu-time": { type: "boolean", default: false },
     allocations: { type: "boolean", default: false },
     "warm-reload": { type: "boolean", default: false },
+    "row-facts": { type: "boolean", default: false },
     "large-snapshot": { type: "boolean", default: false },
     "dashboard-widget": { type: "boolean", default: false },
     "connect-not-before-ms": { type: "string" },
@@ -770,6 +771,7 @@ const fixture = createControlUiTeamScaleFixture({
     : undefined,
   closedMenuMembers: values["closed-menu-members"],
   largeSnapshot: values["large-snapshot"],
+  rowFacts: values["row-facts"],
   offRosterSession: values["off-roster-route"],
   transcriptMessages,
   dashboardWidgetFontUrl: dashboardFont
@@ -1312,7 +1314,7 @@ try {
     },
   );
   const warmProbes = values["warm-reload"]
-    ? `\n(${warmReloadProbe.toString()})(${values["transcript-avatars"]});`
+    ? `\n(${warmReloadProbe.toString()})(${JSON.stringify({ rowFacts: values["row-facts"], avatars: values["transcript-avatars"] })});`
     : "";
   const boardTickets = values["dashboard-widget"]
     ? `\n(${installRotatingBoardTickets.toString()})(${JSON.stringify(fixture.board)}, window.openclawControlUiE2eGateway);`
@@ -1577,6 +1579,7 @@ try {
   > = [];
   const warmInput: Parameters<typeof persistColdLoadWarmState>[0] = {
     sessionKey: fixture.selectedSessionKey,
+    rowFacts: values["row-facts"],
     offRosterSession: values["off-roster-route"],
     sidebarView: sidebarView === "online" ? "online" : "sessions",
   };
@@ -3216,6 +3219,7 @@ try {
         sidebarQueryLatencyMs,
         connectNotBeforeMs,
         dashboardWidget: values["dashboard-widget"],
+        rowFacts: values["row-facts"],
         face,
         shortRoute: values["short-route"],
         fullUuidRoute: values["full-uuid-route"],

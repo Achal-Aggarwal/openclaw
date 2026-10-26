@@ -22,7 +22,7 @@ import { sessionRefFromPath } from "../app-session-route-paths.ts";
 import { i18n, isSupportedLocale } from "../i18n/index.ts";
 import { createAgentIdentityCapability } from "../lib/agents/identity.ts";
 import { createAgentCapability } from "../lib/agents/index.ts";
-import type { ChannelCapability } from "../lib/channels/index.ts";
+import { createChannelCapability } from "../lib/channels/index.ts";
 import { createRuntimeConfigCapability } from "../lib/config/runtime-config-capability.ts";
 import { loadCurrentDeviceAuthToken } from "../lib/nodes/index.ts";
 import { createSessionCapability } from "../lib/sessions/index.ts";
@@ -337,7 +337,7 @@ export function bootstrapApplication(): ApplicationRuntime {
     undefined,
     { requireConfiguredAgent: true },
   );
-  let channels: ChannelCapability | undefined;
+  const channels = createChannelCapability(gateway);
   const stopForegroundBootstrap = subscribeForegroundChatBootstrap({
     router,
     chatSubmissions,
@@ -562,13 +562,7 @@ export function bootstrapApplication(): ApplicationRuntime {
     agentIdentity,
     agentSelection,
     settingsAgentSelection,
-    getChannels(create) {
-      if (channels) {
-        return channels;
-      }
-      startupLifecycle.signal.throwIfAborted();
-      return (channels = create(gateway));
-    },
+    channels,
     config,
     scopeUpgrade,
     sidebarAttention,
@@ -736,7 +730,7 @@ export function bootstrapApplication(): ApplicationRuntime {
       agents.dispose();
       agentSelection.dispose();
       settingsAgentSelection.dispose();
-      channels?.dispose();
+      channels.dispose();
       scopeUpgrade.dispose();
       sidebarAttention.dispose();
       placementStartup.dispose();

@@ -83,11 +83,10 @@ export function controlUiStableChunkName(id: string): string | undefined {
     case "ui/src/pages/chat/components/chat-ci-details.tsx":
     case "ui/src/pages/chat/components/chat-ci-disclosure.ts":
     case "ui/src/pages/chat/components/chat-ci-gateway-updates.ts":
-    case "ui/src/pages/chat/components/chat-pull-request-copy.ts":
     case "ui/src/i18n/locales/en-chat-ci.ts":
     case "ui/src/lib/session-pr-automation.ts":
     case "ui/src/lib/session-pr-automation-spec.ts":
-      // Keep the status readers' shared closure together; the optional writer stays lazy.
+      // Shared readers load with the first CI panel; row copy controls remain independent.
       return "chat-ci-automation-control";
     case "ui/src/pages/chat/components/chat-context-breakdown.tsx":
     case "ui/src/pages/chat/components/chat-context-breakdown-model.ts":
@@ -110,7 +109,6 @@ export function controlUiStableChunkName(id: string): string | undefined {
       // The open Chat menu owns these; New Session shares only the catalog.
       return "chat-interaction-runtime";
     case "ui/src/pages/chat/components/chat-message-group-rich.tsx":
-    case "ui/src/pages/chat/components/chat-session-activity.solid.tsx":
       return "chat-interaction-runtime";
     case "ui/src/pages/chat/components/chat-message-bubble-tools.tsx":
       return "chat-interaction-runtime";
@@ -538,6 +536,7 @@ export function createControlUiCodeSplitting(options: { includeBootGroups?: bool
                   "ui/src/pages/chat/components/chat-message-attachment-status-solid.tsx",
                   "ui/src/pages/chat/components/chat-async-question-summary.tsx",
                   "ui/src/pages/chat/components/chat-message-context-view.tsx",
+                  "ui/src/pages/chat/components/chat-session-activity.solid.tsx",
                   "ui/src/pages/chat/components/chat-workspace-conflict.tsx",
                   "ui/src/pages/chat/session-snapshot-decoder.ts",
                   "ui/src/lib/protocol-validators.generated/board.js",
