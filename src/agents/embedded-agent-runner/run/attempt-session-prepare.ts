@@ -5,6 +5,7 @@ import { getOwnedSessionTranscriptReader } from "../../../config/sessions/transc
 import { OPENCLAW_EMBEDDED_CONTEXT_ENGINE_HOST } from "../../../context-engine/host-compat.js";
 import type { ContextEngine } from "../../../context-engine/types.js";
 import {
+  applyRunHydrationSuppression,
   attachRuntimePromptMediaFacts,
   readPersistedMediaFacts,
 } from "../../../media/media-facts.js";
@@ -641,7 +642,11 @@ export async function prepareEmbeddedAttemptSessionManager(
       if (runtimeMessage) {
         const media = readPersistedMediaFacts(message);
         if (media?.length) {
-          attachRuntimePromptMediaFacts(runtimeMessage, media);
+          // The transcript keeps failed pre-reads retryable; only this run skips them.
+          attachRuntimePromptMediaFacts(
+            runtimeMessage,
+            applyRunHydrationSuppression(media, attempt.media),
+          );
         }
         userTranscriptContextRegistry.record(runtimeMessage, message);
       }
@@ -651,7 +656,10 @@ export async function prepareEmbeddedAttemptSessionManager(
       latestRuntimeUserMessage = runtimeMessage;
       const media = runtimeMessage ? readPersistedMediaFacts(message) : undefined;
       if (runtimeMessage && media?.length) {
-        attachRuntimePromptMediaFacts(runtimeMessage, media);
+        attachRuntimePromptMediaFacts(
+          runtimeMessage,
+          applyRunHydrationSuppression(media, attempt.media),
+        );
       }
       // Replay suppresses the append of a user that is already durable. Report it
       // like an adopted append so retries and fallbacks do not append it again;
