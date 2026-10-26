@@ -155,10 +155,13 @@ export function mutateLocalWorkspaceProjection(
   );
 }
 
-export function readLocalWorkspaceProjectionByPathInDatabase(
+export function readLocalWorkspaceProjectionOwnerByPathInDatabase(
   db: EngineConnection,
   projectionPath: string,
-): LocalWorkspaceProjection | null {
+): Pick<
+  LocalWorkspaceProjection,
+  "worktree_id" | "agent_id" | "session_key" | "session_id" | "lifecycle_revision"
+> | null {
   if (!getAdmittedSqlSchemaFacts(db)) {
     throw new Error("Local workspace lookup requires admitted schema facts.");
   }
@@ -168,7 +171,10 @@ export function readLocalWorkspaceProjectionByPathInDatabase(
   return (
     executeSqliteQueryTakeFirstSync(
       db,
-      query(db).selectFrom(table).selectAll().where("projection_path", "=", projectionPath),
+      query(db)
+        .selectFrom(table)
+        .select(["worktree_id", "agent_id", "session_key", "session_id", "lifecycle_revision"])
+        .where("projection_path", "=", projectionPath),
     ) ?? null
   );
 }
@@ -184,7 +190,7 @@ export function assertLocalWorkspacePersistentExecutionCurrentInDatabase(
     lifecycleRevision?: string;
   },
 ): void {
-  const row = readLocalWorkspaceProjectionByPathInDatabase(db, expected.workspaceDir);
+  const row = readLocalWorkspaceProjectionOwnerByPathInDatabase(db, expected.workspaceDir);
   if (
     !row ||
     row.agent_id !== expected.agentId ||
@@ -214,7 +220,7 @@ export const localWorkspaceReadOperations = {
   }),
   "localWorkspace.byProjectionPath": (input: { projectionPath: string }, db: EngineConnection) => ({
     type: "localWorkspace.byProjectionPath" as const,
-    projection: readLocalWorkspaceProjectionByPathInDatabase(db, input.projectionPath),
+    projection: readLocalWorkspaceProjectionOwnerByPathInDatabase(db, input.projectionPath),
   }),
   "localWorkspace.exists": (input: { id: string }, db: EngineConnection) => ({
     type: "localWorkspace.exists" as const,

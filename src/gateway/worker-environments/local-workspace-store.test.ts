@@ -16,6 +16,8 @@ import {
   WORKTREE_MUTATION_LEASE_SCOPE,
 } from "../../agents/worktrees/capacity-contract.js";
 import { requireGit } from "../../agents/worktrees/git.js";
+import { openNodeSqliteDatabase } from "../../infra/node-sqlite.js";
+import { admitSqliteSchema } from "../../infra/sqlite-schema-facts.js";
 import {
   type SqliteWorkerReply,
   SQLITE_WORKER_MAX_MESSAGE_BYTES,
@@ -25,6 +27,7 @@ import {
   closeOpenClawStateDatabaseAsync,
   openOpenClawStateDatabase,
 } from "../../state/openclaw-state-db.js";
+import { getOpenClawStateFeatureSchemaSql } from "../../state/openclaw-state-feature-schema.js";
 import { withOpenClawStateLeaseAsync } from "../../state/openclaw-state-lease.js";
 import type { OpenClawStateLeaseIdentity } from "../../state/openclaw-state-lease.types.js";
 import * as stateRead from "../../state/openclaw-state-read-operation.js";
@@ -42,6 +45,8 @@ import {
 import { readLocalWorkspaceCommit } from "./local-workspace-publication.js";
 import { withLocalWorkspaceStore } from "./local-workspace-store.js";
 import {
+  assertLocalWorkspacePersistentExecutionCurrentInDatabase as assertPersistentExecutionCurrent,
+  localWorkspaceReadOperations,
   mutateLocalWorkspaceProjection as mutateProjection,
   readLocalWorkspaceProjectionInDatabase as readProjectionInDatabase,
 } from "./local-workspace-store.kernel.js";
@@ -146,6 +151,94 @@ it("keeps mutation preconditions and receipts small without trimming stored payl
   });
   mutateProjection(database, worktreeId, { kind: "delete", revision: 2 });
   expect(readProjectionInDatabase(database, worktreeId)).toBeUndefined();
+});
+
+it("reads only projection ownership while preserving persistent execution fences and recovery bytes", () => {
+  using cleanup = new DisposableStack();
+  const database = openNodeSqliteDatabase(":memory:");
+  cleanup.defer(() => database.close());
+  const worktreeId = "metadata-owner";
+  const baseline = "x".repeat(3 * 1024 * 1024);
+  const journalPack = new Uint8Array(1024 * 1024).fill(7);
+  const initial = {
+    ...localWorkspaceProjectionFixture(worktreeId, root),
+    baseline_json: baseline,
+    baseline_ref: "sha256:synthetic",
+    journal_json: "{}",
+    journal_pack: journalPack,
+  };
+  mutateProjection(database, worktreeId, { kind: "create", row: initial });
+  database.exec(getOpenClawStateFeatureSchemaSql("worktrees"));
+  database.exec(getOpenClawStateFeatureSchemaSql("state_leases"));
+  database
+    .prepare(
+      `INSERT INTO worktrees
+      (id, repo_fingerprint, repo_root, path, branch, base_ref, owner_kind, created_at, last_active_at)
+      VALUES (?, 'fixture', '/fixture', '/fixture/worktree', 'fixture', 'main', 'manual', 1, 1)`,
+    )
+    .run(worktreeId);
+  const expected = {
+    workspaceDir: initial.projection_path,
+    agentId: "main",
+    sessionKey: `agent:main:workspace:${worktreeId}`,
+    sessionId: `session-${worktreeId}`,
+  };
+  const lookup = (projectionPath = expected.workspaceDir) =>
+    localWorkspaceReadOperations["localWorkspace.byProjectionPath"]({ projectionPath }, database)
+      .projection;
+  expect(() => lookup()).toThrow("requires admitted schema facts");
+  admitSqliteSchema(database);
+  const reads = trackSqliteStatementExecutions(database, ["ownership"], (sql) =>
+    /^select\b/i.test(sql) && sql.includes("local_workspace_projections") ? "ownership" : null,
+  );
+  cleanup.defer(reads.restore);
+  expect(() => assertPersistentExecutionCurrent(database, expected)).not.toThrow();
+  expect(reads.blobBytes.ownership).toBe(0);
+  expect(lookup()?.worktree_id).toBe(worktreeId);
+  for (const field of ["agentId", "sessionKey", "sessionId", "lifecycleRevision"] as const) {
+    expect(() =>
+      assertPersistentExecutionCurrent(database, { ...expected, [field]: "changed" }),
+    ).toThrow("projection ownership changed");
+  }
+  database.prepare("UPDATE local_workspace_projections SET lifecycle_revision = 'current'").run();
+  expect(() => assertPersistentExecutionCurrent(database, expected)).toThrow(
+    "projection ownership changed",
+  );
+  const current = { ...expected, lifecycleRevision: "current" };
+  expect(() => assertPersistentExecutionCurrent(database, current)).not.toThrow();
+  database.prepare("UPDATE worktrees SET removed_at = 1").run();
+  expect(() => assertPersistentExecutionCurrent(database, current)).toThrow("worktree was removed");
+  database.prepare("UPDATE worktrees SET removed_at = NULL").run();
+  for (const [key, payload, error] of [
+    ["__removing__", { pid: process.pid }, "worktree was removed"],
+    ["publication", { pid: process.pid, exclusive: true }, "exclusive publication owner"],
+  ] as const) {
+    database
+      .prepare(
+        `INSERT INTO state_leases(scope, lease_key, owner, payload_json, created_at, updated_at)
+      VALUES (?, ?, 'fixture-owner', ?, 1, 1)`,
+      )
+      .run(`worktree-run:${worktreeId}`, key, JSON.stringify(payload));
+    expect(() => assertPersistentExecutionCurrent(database, current)).toThrow(error);
+    database.prepare("DELETE FROM state_leases").run();
+  }
+  expect(lookup("/missing")).toBeNull();
+  expect(() =>
+    assertPersistentExecutionCurrent(database, { ...current, workspaceDir: "/missing" }),
+  ).toThrow("projection ownership changed");
+  expect(reads.rowCounts.ownership).toBeGreaterThan(0);
+  expect(reads.textBytes.ownership).toBeLessThan(2048);
+  expect(reads.blobBytes.ownership).toBe(0);
+  reads.restore();
+  const persisted = readProjectionInDatabase(database, worktreeId);
+  expect(persisted?.baseline_json).toBe(baseline);
+  assert(persisted?.journal_pack);
+  expect(Buffer.from(persisted.journal_pack).equals(journalPack)).toBe(true);
+  database.exec("DROP TABLE local_workspace_projections");
+  expect(lookup()).toBeNull();
+  expect(() => assertPersistentExecutionCurrent(database, current)).toThrow(
+    "projection ownership changed",
+  );
 });
 
 it("preserves the acknowledged row when a stale revision conflicts", async () => {
