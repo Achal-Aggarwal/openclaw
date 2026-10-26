@@ -1,5 +1,7 @@
 import path from "node:path";
 import { root, type Root } from "@openclaw/fs-safe";
+import { isRecord } from "@openclaw/normalization-core/record-coerce";
+import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
 import { runOpenClawStateWriteTransaction } from "../state/openclaw-state-db.js";
 import {
   executeSqliteQuerySync,
@@ -7,6 +9,10 @@ import {
   getNodeSqliteKysely,
 } from "./kysely-sync.js";
 import {
+  hashWebPushEndpoint,
+  isValidWebPushEndpoint,
+  isValidWebPushKey,
+  DEFAULT_WEB_PUSH_VAPID_SUBJECT,
   webPushSubscriptionFromRow,
   webPushSubscriptionToRow,
   webPushSubscriptionsEqual,
@@ -16,6 +22,7 @@ import {
   type WebPushSubscription,
 } from "./push-web-store.records.js";
 import { ensureWebPushSubscriptionBindingColumns } from "./push-web-store.schema.js";
+import { assertAllowedJsonFields } from "./state-migrations.json-fields.js";
 import { withLegacyMigrationStateLock } from "./state-migrations.lock.js";
 import {
   claimLegacyMigrationSourceClaims,
@@ -26,10 +33,93 @@ import {
   type LegacyMigrationSourceSnapshot as LegacySourceSnapshot,
 } from "./state-migrations.source-snapshot.js";
 import type { LegacyStateDetection, MigrationMessages } from "./state-migrations.types.js";
-import {
-  parseLegacySubscriptions,
-  parseLegacyVapidKeys,
-} from "./state-migrations.web-push-parse.js";
+
+const SUBSCRIPTION_STORE_KEYS = new Set(["subscriptionsByEndpointHash"]);
+const SUBSCRIPTION_KEYS = new Set([
+  "subscriptionId",
+  "endpoint",
+  "keys",
+  "createdAtMs",
+  "updatedAtMs",
+]);
+const PUSH_KEYS = new Set(["p256dh", "auth"]);
+const VAPID_KEYS = new Set(["publicKey", "privateKey", "subject"]);
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function parseLegacySubscriptions(raw: string): Map<string, WebPushSubscription> {
+  const parsed = JSON.parse(raw) as unknown;
+  if (!isRecord(parsed) || !isRecord(parsed.subscriptionsByEndpointHash)) {
+    throw new Error("legacy Web Push subscriptions must be an object");
+  }
+  assertAllowedJsonFields(parsed, SUBSCRIPTION_STORE_KEYS, "legacy Web Push subscriptions store");
+
+  const subscriptions = new Map<string, WebPushSubscription>();
+  const subscriptionIds = new Set<string>();
+  for (const [endpointHash, rawSubscription] of Object.entries(
+    parsed.subscriptionsByEndpointHash,
+  )) {
+    if (!isRecord(rawSubscription) || !isRecord(rawSubscription.keys)) {
+      throw new Error("legacy Web Push subscription is not an object");
+    }
+    assertAllowedJsonFields(rawSubscription, SUBSCRIPTION_KEYS, "legacy Web Push subscription");
+    assertAllowedJsonFields(rawSubscription.keys, PUSH_KEYS, "legacy Web Push subscription keys");
+    const { subscriptionId, endpoint, createdAtMs, updatedAtMs } = rawSubscription;
+    const p256dh = rawSubscription.keys.p256dh;
+    const auth = rawSubscription.keys.auth;
+    if (
+      typeof subscriptionId !== "string" ||
+      !UUID_RE.test(subscriptionId) ||
+      typeof endpoint !== "string" ||
+      !isValidWebPushEndpoint(endpoint) ||
+      hashWebPushEndpoint(endpoint) !== endpointHash ||
+      !isValidWebPushKey(p256dh) ||
+      !isValidWebPushKey(auth) ||
+      typeof createdAtMs !== "number" ||
+      !Number.isSafeInteger(createdAtMs) ||
+      createdAtMs < 0 ||
+      typeof updatedAtMs !== "number" ||
+      !Number.isSafeInteger(updatedAtMs) ||
+      updatedAtMs < createdAtMs
+    ) {
+      throw new Error("legacy Web Push subscription is invalid");
+    }
+    if (subscriptionIds.has(subscriptionId)) {
+      throw new Error("legacy Web Push subscriptions contain a duplicate subscription id");
+    }
+    subscriptionIds.add(subscriptionId);
+    subscriptions.set(endpointHash, {
+      subscriptionId,
+      endpoint,
+      keys: { p256dh, auth },
+      createdAtMs,
+      updatedAtMs,
+    });
+  }
+  return subscriptions;
+}
+
+function parseLegacyVapidKeys(raw: string, env: NodeJS.ProcessEnv): VapidKeyPair {
+  const parsed = JSON.parse(raw) as unknown;
+  if (!isRecord(parsed)) {
+    throw new Error("legacy Web Push VAPID keys must be an object");
+  }
+  assertAllowedJsonFields(parsed, VAPID_KEYS, "legacy Web Push VAPID keys");
+  if (parsed.subject !== undefined && typeof parsed.subject !== "string") {
+    throw new Error("legacy Web Push VAPID keys are invalid");
+  }
+  const subject =
+    normalizeOptionalString(parsed.subject) ??
+    normalizeOptionalString(env.OPENCLAW_VAPID_SUBJECT) ??
+    DEFAULT_WEB_PUSH_VAPID_SUBJECT;
+  if (
+    !isValidWebPushKey(parsed.publicKey) ||
+    !isValidWebPushKey(parsed.privateKey) ||
+    subject.length > 512
+  ) {
+    throw new Error("legacy Web Push VAPID keys are invalid");
+  }
+  return { publicKey: parsed.publicKey, privateKey: parsed.privateKey, subject };
+}
 
 const LEGACY_SUBSCRIPTIONS_MAX_BYTES = 4 * 1024 * 1024;
 const LEGACY_VAPID_KEYS_MAX_BYTES = 64 * 1024;
