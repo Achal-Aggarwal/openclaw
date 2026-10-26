@@ -120,6 +120,8 @@ const repositoryScriptEntries = [
   "scripts/perf/ui-streaming-render-measure.ts!",
   "scripts/perf/update-manager-measure.ts!",
   "scripts/perf/worker-spawn-measure.mjs!",
+  "scripts/perf/worktree-prompt-native-measure.ts!",
+  "scripts/perf/worktree-prompt-overlap-measure.ts!",
   "scripts/perf/worktree-size-measure.ts!",
   // #183131 invokes this fresh-process cron flake workload by path.
   "scripts/perf/repeat-cron-test.mjs!",
