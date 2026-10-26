@@ -870,6 +870,11 @@ suite.define(() => {
       await composer.press("Enter");
       expect(await gateway.getRequests("chat.send")).toHaveLength(0);
 
+      await page.waitForFunction(
+        () =>
+          typeof (globalThis as unknown as { attachmentReadProof: DeferredAttachmentProof })
+            .attachmentReadProof.finish === "function",
+      );
       await page.evaluate(() => {
         const proof = (globalThis as unknown as { attachmentReadProof: DeferredAttachmentProof })
           .attachmentReadProof;
