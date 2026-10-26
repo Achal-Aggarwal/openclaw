@@ -53,7 +53,6 @@ import {
 } from "./gateway-connect-plan.ts";
 import { resolveMaxInboundSilenceMs } from "./gateway-heartbeat-policy.ts";
 export type { EventFrame as GatewayEventFrame } from "@openclaw/gateway-client/browser";
-
 export { GatewayRequestError, resolveGatewayErrorDetailCode };
 
 export type GatewayControlUiPluginTab = NonNullable<HelloOk["controlUiTabs"]>[number];
