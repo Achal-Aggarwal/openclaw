@@ -106,12 +106,14 @@ it("keeps sharing busy through refresh and retires it for a same-key successor",
     syncSelectedSessionSharing: (row: GatewaySessionRow) => void;
   };
   const response = createDeferred<unknown>();
+  const writeStarted = createDeferred();
   const refresh = createDeferred<SessionMembersListEvidenceResult>();
   const refreshStarted = createDeferred();
   let holdRefresh = false;
   const originalRequest = pane.state.client!.request.bind(pane.state.client!);
   vi.spyOn(pane.state.client!, "request").mockImplementation((method, params, options) => {
     if (method === "session.visibility.set") {
+      writeStarted.resolve();
       return response.promise;
     }
     if (method === "session.members.listEvidence") {
@@ -140,6 +142,7 @@ it("keeps sharing busy through refresh and retires it for a same-key successor",
     },
   } as typeof snapshot.hello;
   await refreshPane(pane);
+  await pane.awaitDomCommit();
   pane.syncSelectedSessionSharing(previous);
   await waitForSolid(() =>
     expect(pane.prepareSessionSharing(previous)?.state?.loading).toBe(false),
@@ -148,6 +151,8 @@ it("keeps sharing busy through refresh and retires it for a same-key successor",
   const operation = vi.spyOn(source, "onVisibilityChange");
   const view = accessFixture(source);
   view.button(/Shared/).click();
+  // Busy can reflect hydration before the lazy mutation reaches the transport.
+  await writeStarted.promise;
   await view.expectDisabled(/Shared/, true);
   // A delayed header render may check hydration while the write is pending.
   pane.syncSelectedSessionSharing(previous);
@@ -156,7 +161,9 @@ it("keeps sharing busy through refresh and retires it for a same-key successor",
   response.resolve({});
   await refreshStarted.promise;
   flush();
-  expect(view.button(/Shared/).hasAttribute("disabled")).toBe(true);
+  expect(view.button(/Shared/).hasAttribute("disabled"), "sharing stays busy through refresh").toBe(
+    true,
+  );
   expect(view.applied).not.toHaveBeenCalled();
   holdRefresh = false;
   rows[0] = replacement;
@@ -167,7 +174,11 @@ it("keeps sharing busy through refresh and retires it for a same-key successor",
     reason: "update",
     session: replacement,
   });
-  await waitForSolid(() => expect(source.operationSignal?.aborted).toBe(true));
+  await waitForSolid(() =>
+    expect(source.operationSignal?.aborted, "successor retires the previous sharing scope").toBe(
+      true,
+    ),
+  );
   pane.syncSelectedSessionSharing(replacement);
   await waitForSolid(() =>
     expect(pane.prepareSessionSharing(replacement)?.state?.loading).toBe(false),
