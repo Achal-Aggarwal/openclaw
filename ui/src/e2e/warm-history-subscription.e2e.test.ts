@@ -139,6 +139,9 @@ suite.define(() => {
       await page.waitForFunction(() =>
         Object.keys(localStorage).some((key) => key.startsWith("openclaw.control.bootRecord.v1:")),
       );
+      await page
+        .locator('aside.sidebar[data-snapshot-saved="true"]')
+        .waitFor({ state: "attached" });
       const warmInput: Parameters<typeof persistColdLoadWarmState>[0] = {
         sessionKey,
         sidebarView: "sessions",

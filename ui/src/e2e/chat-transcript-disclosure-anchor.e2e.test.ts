@@ -110,13 +110,10 @@ function expectStableDisclosureFrames(frames: DisclosureFrame[], label = "disclo
     ),
     `${label} resize`,
   ).toBe(true);
+  // Virtual row measurements can change scrollTop while preserving the visible anchor.
   expect(
     Math.max(...frames.map((frame) => Math.abs(frame.rowTop - initial!.rowTop))),
     `${label} geometry: ${JSON.stringify(frames)}`,
-  ).toBeLessThanOrEqual(2);
-  expect(
-    Math.max(...frames.map((frame) => Math.abs(frame.scrollTop - initial!.scrollTop))),
-    `${label} scroll offset`,
   ).toBeLessThanOrEqual(2);
 }
 

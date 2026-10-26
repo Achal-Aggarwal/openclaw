@@ -748,6 +748,8 @@ suite.define(() => {
           }));
           await snapshot("both");
           await toggle.press("Space");
+          // Enabling restores the agent's remembered choice, so select Blue explicitly.
+          await select.locator('[data-chat-access-option="daybreak_blue"]').click();
           await expect.poll(async () => (await row()).cyberAccessProgram).toBe("daybreak_blue");
           const red = select.locator('[data-chat-access-option="daybreak_red"]');
           await red.press("Enter");

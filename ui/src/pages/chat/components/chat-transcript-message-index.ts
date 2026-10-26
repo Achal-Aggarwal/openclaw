@@ -13,6 +13,7 @@ import {
   type AgentRunFrameRenderItem,
 } from "../chat-agent-run-grouping.ts";
 import { assistantGroupCanOwnActiveRunStatus } from "../chat-assistant-reply.ts";
+import { resolveCappedMessageId } from "../chat-message-recovery.ts";
 import type { SystemEventRenderItem } from "../chat-system-event-grouping.ts";
 import { coalesceSystemEvents } from "../chat-system-event-grouping.ts";
 import { persistedMessageEntryId } from "../chat-thread-items.ts";
@@ -340,6 +341,8 @@ export function projectTranscriptIndex(
             !rowItem.isStreaming &&
             (rowItem.role === "user" || rowItem.role === "assistant") &&
             rowItem.messages.length === 1 &&
+            // Recovery changes height after the row leaves the viewport.
+            !resolveCappedMessageId(rowItem.messages[0]!.message, rowItem.role) &&
             readTranscriptMediaEntries(rowItem.messages[0]!.message).length === 0 &&
             normalizeMessage(rowItem.messages[0]!.message).content.every(
               (part) =>
