@@ -35,7 +35,6 @@ import type {
   PluginRuntime,
 } from "./runtime/types.js";
 import {
-  type PluginRuntimeModuleResolution,
   type PluginSdkResolutionPreference,
   preparePluginLoaderAliases,
   resolvePluginRuntimeModulePathWithDiagnostics,
@@ -287,22 +286,6 @@ export function createPluginModuleLoader(options: {
   });
 }
 
-function formatPluginRuntimeModuleResolutionError(params: {
-  resolution: PluginRuntimeModuleResolution;
-  pluginSdkResolution?: PluginSdkResolutionPreference;
-}): string {
-  const { resolution } = params;
-  const candidates = resolution.candidates.length > 0 ? resolution.candidates.join(", ") : "<none>";
-  return [
-    "Unable to resolve plugin runtime module",
-    `loader=${resolution.modulePath ?? "<unresolved>"}`,
-    `packageRoot=${resolution.packageRoot ?? "<none>"}`,
-    `pluginSdkResolution=${params.pluginSdkResolution ?? "auto"}`,
-    `candidates=${candidates}`,
-    ...(resolution.error ? [`resolverError=${resolution.error}`] : []),
-  ].join("; ");
-}
-
 /** Lazily materializes the broad plugin runtime only when registration reads it. */
 export function createLazyPluginRuntime(params: {
   devSourceRoot?: string | null;
@@ -321,11 +304,18 @@ export function createLazyPluginRuntime(params: {
       pluginSdkResolution: params.pluginSdkResolution,
     });
     if (!resolution.resolvedPath) {
+      const pluginSdkResolution = params.pluginSdkResolution;
+      const candidates =
+        resolution.candidates.length > 0 ? resolution.candidates.join(", ") : "<none>";
       throw new Error(
-        formatPluginRuntimeModuleResolutionError({
-          resolution,
-          pluginSdkResolution: params.pluginSdkResolution,
-        }),
+        [
+          "Unable to resolve plugin runtime module",
+          `loader=${resolution.modulePath ?? "<unresolved>"}`,
+          `packageRoot=${resolution.packageRoot ?? "<none>"}`,
+          `pluginSdkResolution=${pluginSdkResolution ?? "auto"}`,
+          `candidates=${candidates}`,
+          ...(resolution.error ? [`resolverError=${resolution.error}`] : []),
+        ].join("; "),
       );
     }
     const resolvedPath = resolution.resolvedPath;

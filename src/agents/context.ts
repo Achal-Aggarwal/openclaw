@@ -292,23 +292,6 @@ export async function refreshContextWindowCache(cfg: OpenClawConfig): Promise<vo
   await ensureContextWindowCacheLoaded();
 }
 
-function prepareContextWindowCache(options?: {
-  allowAsyncLoad?: boolean;
-  skipRuntimeConfigLoad?: boolean;
-}) {
-  if (options?.skipRuntimeConfigLoad) {
-    return;
-  }
-  if (options?.allowAsyncLoad === false) {
-    // Read-only callers still need synchronous config-backed overrides, but they
-    // should not start background model discovery.
-    primeConfiguredContextWindows();
-  } else {
-    // Best-effort: kick off loading on demand, but don't block lookups.
-    void ensureContextWindowCacheLoaded();
-  }
-}
-
 export function resolveContextTokensForModel(
   params: ContextTokenResolutionParams,
 ): number | undefined {
@@ -318,9 +301,17 @@ export function resolveContextTokensForModel(
 export function resolveModelContextTokenProjection(
   params: ContextTokenResolutionParams,
 ): ModelContextTokenProjection {
-  prepareContextWindowCache({
-    allowAsyncLoad: params.allowAsyncLoad,
-    skipRuntimeConfigLoad: Boolean(params.cfg) || params.allowCacheLookup === false,
-  });
+  const allowAsyncLoad = params.allowAsyncLoad;
+  const skipRuntimeConfigLoad = Boolean(params.cfg) || params.allowCacheLookup === false;
+  if (!skipRuntimeConfigLoad) {
+    if (allowAsyncLoad === false) {
+      // Read-only callers still need synchronous config-backed overrides, but they
+      // should not start background model discovery.
+      primeConfiguredContextWindows();
+    } else {
+      // Best-effort: kick off loading on demand, but don't block lookups.
+      void ensureContextWindowCacheLoaded();
+    }
+  }
   return resolveModelContextTokenProjectionFromCache(params);
 }

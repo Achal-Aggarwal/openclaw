@@ -36,11 +36,7 @@ import {
   toCanonicalOpenAIModelRef,
 } from "./codex-route-model-ref.js";
 import { maybeRepairCodexSessionRoutes } from "./codex-route-session-repair.js";
-import type {
-  CodexRuntimeRouteHit,
-  LegacyLosslessCompactionConfig,
-  UnsupportedCodexCompactionOverride,
-} from "./codex-route-types.js";
+import type { UnsupportedCodexCompactionOverride } from "./codex-route-types.js";
 import {
   collectBlockedLegacyOpenAICodexProviderPlan,
   type BlockedLegacyOpenAICodexProviderPlan,
@@ -74,51 +70,6 @@ function formatUnsupportedCompactionWarning(params: {
       (hit) => `- ${hit.path}: ${hit.value} is ignored while this agent uses Codex runtime.`,
     ),
     params.fixHint,
-  ].join("\n");
-}
-
-function formatLegacyLosslessCompactionWarning(params: {
-  hits: LegacyLosslessCompactionConfig[];
-  canAutoFix: boolean;
-}): string {
-  const configLines: string[] = [];
-  const providerPaths = new Set<string>();
-  for (const hit of params.hits) {
-    if (!providerPaths.has(hit.providerPath)) {
-      providerPaths.add(hit.providerPath);
-      configLines.push(
-        `- ${hit.providerPath}: ${hit.providerValue} should become plugins.slots.contextEngine: ${LOSSLESS_CONTEXT_ENGINE_ID}.`,
-      );
-    }
-    if (hit.modelPath && hit.modelValue) {
-      configLines.push(
-        `- ${hit.modelPath}: ${hit.modelValue} should become plugins.entries.${LOSSLESS_CONTEXT_ENGINE_ID}.config.summaryModel.`,
-      );
-    }
-  }
-  return [
-    "- Legacy Lossless compaction config should use the Lossless context-engine slot for Codex.",
-    ...configLines,
-    params.canAutoFix
-      ? "- Run `openclaw doctor --fix`: it migrates legacy Lossless compaction config to the Lossless context-engine slot."
-      : "- Move the Lossless config manually; doctor will not overwrite an existing non-Lossless context-engine slot or collapse conflicting per-agent summary models.",
-  ].join("\n");
-}
-
-function formatDisabledCodexPluginWarning(params: {
-  hits: CodexRuntimeRouteHit[];
-  repairBlocked: boolean;
-}): string {
-  const fixHint = params.repairBlocked
-    ? "- Enable plugins.entries.codex and plugin loading, and remove `codex` from plugins.deny; or set the affected OpenAI models to an OpenClaw runtime policy."
-    : "- Run `openclaw doctor --fix`: it enables plugins.entries.codex, or set the affected OpenAI models to an OpenClaw runtime policy.";
-  return [
-    "- Codex runtime is selected, but the Codex plugin is disabled.",
-    ...params.hits.map(
-      (hit) =>
-        `- ${hit.path}: ${hit.modelRef} resolves to ${hit.canonicalModel} with Codex runtime while the Codex plugin is disabled by config.`,
-    ),
-    fixHint,
   ].join("\n");
 }
 
@@ -387,25 +338,52 @@ export function collectCodexRouteWarnings(params: {
   if (legacyLosslessCompactionConfigs.length > 0) {
     const plugins = asMutableRecord(params.cfg.plugins);
     const contextEngine = normalizeString(asMutableRecord(plugins?.slots)?.contextEngine);
-    warnings.push(
-      formatLegacyLosslessCompactionWarning({
+    const canAutoFix =
+      !sharedLosslessDefaultHasNonCodexConsumer &&
+      canAutoMigrateLegacyLosslessCompaction({
         hits: legacyLosslessCompactionConfigs,
-        canAutoFix:
-          !sharedLosslessDefaultHasNonCodexConsumer &&
-          canAutoMigrateLegacyLosslessCompaction({
-            hits: legacyLosslessCompactionConfigs,
-            contextEngine,
-            summaryModel: readLosslessSummaryModel(plugins),
-          }),
-      }),
+        contextEngine,
+        summaryModel: readLosslessSummaryModel(plugins),
+      });
+    const configLines: string[] = [];
+    const providerPaths = new Set<string>();
+    for (const hit of legacyLosslessCompactionConfigs) {
+      if (!providerPaths.has(hit.providerPath)) {
+        providerPaths.add(hit.providerPath);
+        configLines.push(
+          `- ${hit.providerPath}: ${hit.providerValue} should become plugins.slots.contextEngine: ${LOSSLESS_CONTEXT_ENGINE_ID}.`,
+        );
+      }
+      if (hit.modelPath && hit.modelValue) {
+        configLines.push(
+          `- ${hit.modelPath}: ${hit.modelValue} should become plugins.entries.${LOSSLESS_CONTEXT_ENGINE_ID}.config.summaryModel.`,
+        );
+      }
+    }
+    warnings.push(
+      [
+        "- Legacy Lossless compaction config should use the Lossless context-engine slot for Codex.",
+        ...configLines,
+        canAutoFix
+          ? "- Run `openclaw doctor --fix`: it migrates legacy Lossless compaction config to the Lossless context-engine slot."
+          : "- Move the Lossless config manually; doctor will not overwrite an existing non-Lossless context-engine slot or collapse conflicting per-agent summary models.",
+      ].join("\n"),
     );
   }
   if (disabledCodexPluginHits.length > 0) {
+    const repairBlocked = codexPluginRepairIsBlocked(params.cfg);
+    const fixHint = repairBlocked
+      ? "- Enable plugins.entries.codex and plugin loading, and remove `codex` from plugins.deny; or set the affected OpenAI models to an OpenClaw runtime policy."
+      : "- Run `openclaw doctor --fix`: it enables plugins.entries.codex, or set the affected OpenAI models to an OpenClaw runtime policy.";
     warnings.push(
-      formatDisabledCodexPluginWarning({
-        hits: disabledCodexPluginHits,
-        repairBlocked: codexPluginRepairIsBlocked(params.cfg),
-      }),
+      [
+        "- Codex runtime is selected, but the Codex plugin is disabled.",
+        ...disabledCodexPluginHits.map(
+          (hit) =>
+            `- ${hit.path}: ${hit.modelRef} resolves to ${hit.canonicalModel} with Codex runtime while the Codex plugin is disabled by config.`,
+        ),
+        fixHint,
+      ].join("\n"),
     );
   }
   const preservedSharedDefaultHits = unsupportedCompactionOverrides.filter(
