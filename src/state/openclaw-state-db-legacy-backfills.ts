@@ -43,7 +43,7 @@ function compactLegacyDeliveryQueueFailures(db: DatabaseSync): void {
        FROM delivery_queue_entries WHERE status IN ('pending', 'failed')`,
   );
   select.setReadBigInts(true);
-  const rows = select.all() as Array<Record<string, unknown>>;
+  const rows = select.all();
   const remove = db.prepare(
     `DELETE FROM delivery_queue_entries WHERE queue_name = ? AND id = ? AND status = 'failed'`,
   );

@@ -165,7 +165,7 @@ export function resolveToolSearchCatalogTool(
   }
   const matches = visibleCatalogEntries(catalog, options).filter((entry) => entry.name === needle);
   return matches.length === 1 && !matches[0]?.requiresExactId
-    ? (matches[0]?.tool as AnyAgentTool | undefined)
+    ? (matches[0]?.tool as AnyAgentTool | undefined) // SAFETY: directory clients stay direct.
     : undefined;
 }
 

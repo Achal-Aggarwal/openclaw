@@ -40,6 +40,7 @@ export function createGoogleGenerateContentStreams<
         );
         const nextParams = await options?.onPayload?.(requestParams, model);
         if (nextParams !== undefined) {
+          // SAFETY: The provider payload hook supplies this SDK's request shape; the SDK rejects invalid overrides.
           requestParams = nextParams as GenerateContentParameters;
         }
         const googleStream = await client.models.generateContentStream(requestParams);

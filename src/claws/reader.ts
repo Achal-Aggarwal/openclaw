@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { realpath, stat } from "node:fs/promises";
 import { basename, dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import { assertNoSymlinkParents, readFileHandleBounded } from "@openclaw/fs-safe/advanced";
+import { toStringifiedError } from "@openclaw/normalization-core/error-coercion";
 import { asOptionalRecord, isRecord } from "@openclaw/normalization-core/record-coerce";
 import type { ToolProfileId } from "../agents/tool-policy-shared.js";
 import { MAX_WORKSPACE_BOOTSTRAP_FILE_BYTES } from "../agents/workspace-bootstrap-read.js";
@@ -209,7 +210,7 @@ async function readClawOpenClawProfile(params: {
             ? "The OpenClaw profile must be a regular, non-symlinked, non-hardlinked file."
             : tooLarge
               ? `The OpenClaw profile exceeds ${MAX_PROFILE_BYTES} bytes.`
-              : `Could not read ${declaredPath}: ${(error as Error).message}`,
+              : `Could not read ${declaredPath}: ${toStringifiedError(error).message}`,
           diagnosticPath,
         ),
       ],
