@@ -1,4 +1,3 @@
-import fs from "node:fs/promises";
 import path from "node:path";
 import { text } from "node:stream/consumers";
 import { withServer } from "openclaw/plugin-sdk/test-env";
@@ -7,6 +6,7 @@ import { useAutoCleanupTempDirTracker } from "../../test/helpers/temp-dir.js";
 import "../test-utils/prepare-compiled-subprocesses.js";
 // Prepare the real lazy command graph before the turn's assertion deadline.
 import "../agents/agent-command.js";
+import { writeFixtureJson } from "../cli/cli-fixtures.test-support.js";
 import { closeOpenClawAgentDatabasesAsync } from "../state/openclaw-agent-db-lifecycle.js";
 import { closeOpenClawStateDatabaseAsync } from "../state/openclaw-state-db.js";
 import { agentExecCommand } from "./agent-exec.js";
@@ -71,15 +71,12 @@ it("preserves template defaults and selected thinking through agent exec", async
             },
           },
         };
-        await fs.writeFile(
-          configPath,
-          JSON.stringify({
-            plugins: { enabled: false },
-            env: { shellEnv: { enabled: false } },
-            agents: { defaults },
-            models: { providers: { "template-fixture": provider } },
-          }),
-        );
+        await writeFixtureJson(configPath, {
+          plugins: { enabled: false },
+          env: { shellEnv: { enabled: false } },
+          agents: { defaults },
+          models: { providers: { "template-fixture": provider } },
+        });
         const result = await agentExecCommand(
           "Reply briefly without tools.",
           {
