@@ -269,14 +269,19 @@ it("retains rejected Git canary findings in the terminal result", async () => {
   expect(mocks.serviceStopped).toBe(false);
 });
 
-it.each([
+it.each<{
+  kind: "git" | "package";
+  space: number | null;
+  missingDestination?: true;
+}>([
   { kind: "git", space: 110 },
   { kind: "package", space: 110 },
   { kind: "package", space: 200 },
   { kind: "package", space: null },
-] as const)(
-  "checks the $kind activation destination after staging ($space MiB free)",
-  async ({ kind, space }) =>
+  { kind: "git", space: 200, missingDestination: true },
+])(
+  "checks the $kind activation destination after staging ($space MiB free, missing=$missingDestination)",
+  async ({ kind, space, missingDestination }) =>
     withTestDir({ prefix: "activation-backup-capacity-" }, async (root) => {
       const stateDir = path.join(root, "state");
       const database = path.join(stateDir, "agents/main/agent/openclaw-agent.sqlite");
@@ -358,7 +363,10 @@ it.each([
         const target = { sha: "a".repeat(40), version: "2026.10.6" };
         await options.inspectGitTarget(target);
         await options.validateCandidate(root);
-        await options.beforeGitMutation(target, path.join(root, ".artifacts"));
+        await options.beforeGitMutation(
+          target,
+          missingDestination ? undefined : path.join(root, ".artifacts"),
+        );
         publish();
         return { ...successfulUpdate, mode: "git", root };
       });
@@ -384,7 +392,7 @@ it.each([
               opts: { json: true, run },
             }),
           );
-          const refused = space === 110;
+          const refused = space === 110 || missingDestination === true;
           expect(execution?.result, execution?.failure?.detail).toMatchObject({
             status: refused ? "error" : "ok",
           });
@@ -397,7 +405,12 @@ it.each([
           const measured = execution?.result.steps.find(
             (step) => step.name === "activation-backup-space-preflight",
           );
-          if (refused) {
+          if (missingDestination) {
+            expect(execution?.failure?.detail).toContain(
+              "Activation database backup destination is unavailable",
+            );
+            expect(measured).toBeUndefined();
+          } else if (refused) {
             expect(execution?.failure?.detail).toContain("Update database backup");
             expect(execution?.failure?.detail).toContain(destination);
             expect(measured).toMatchObject({

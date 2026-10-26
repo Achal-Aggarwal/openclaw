@@ -529,6 +529,7 @@ describe("update-cli", () => {
           steps: [
             expect.objectContaining({ name: "updater-runtime-retention", exitCode: 0 }),
             expect.objectContaining({ exitCode: 1, stderrTail: formatErrorMessage(failure) }),
+            expect.objectContaining({ name: "activation-backup-space-preflight", exitCode: 0 }),
             expect.objectContaining({ name: "post-stop-checks", exitCode: 0 }),
             recoveryVerificationStep([
               {

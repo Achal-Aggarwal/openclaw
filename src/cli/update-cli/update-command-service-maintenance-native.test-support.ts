@@ -69,7 +69,8 @@ vi.mock("./update-command-original-service.js", () => ({
 vi.mock("./update-command-verification.js", () => ({
   verifyPreviousManagedGatewayForUpdate: async () => {},
 }));
-vi.mock("./update-command-package.js", () => ({
+vi.mock("./update-command-package.js", async (original) => ({
+  ...(await original<typeof import("./update-command-package.js")>()),
   runPackageInstallUpdate: async (
     params: Parameters<typeof import("./update-command-package.js").runPackageInstallUpdate>[0],
   ) => {

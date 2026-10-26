@@ -371,7 +371,7 @@ export async function updateGitInstall(params: {
   devTarget?: DevUpdateTarget;
   beforeGitMutation: (
     target: Parameters<UpdateRunnerOptions["beforeGitMutation"]>[0],
-    databaseBackupRoot: string,
+    databaseBackupRoot: string | undefined,
   ) => Promise<void>;
   validateCandidate: UpdateRunnerOptions["validateCandidate"];
   assertCurrent?: () => void;
@@ -512,9 +512,6 @@ export async function updateGitInstall(params: {
           const databaseBackupRoot = params.switchToGit
             ? exposure?.databaseBackupRoot
             : path.join(params.root, ".artifacts");
-          if (!databaseBackupRoot) {
-            throw new Error("Source exposure has not prepared its database backup destination");
-          }
           await params.beforeGitMutation(target, databaseBackupRoot);
           await createSystemPackageOwnershipInspection(effectiveTimeout).assertUnowned(updateRoot);
           params.assertCurrent?.();

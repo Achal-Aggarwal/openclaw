@@ -406,6 +406,7 @@ describe("update-cli", () => {
             steps: [
               expect.objectContaining({ name: "updater-runtime-retention", exitCode: 0 }),
               expect.objectContaining({ stderrTail: expect.stringContaining("enable denied") }),
+              expect.objectContaining({ name: "activation-backup-space-preflight", exitCode: 0 }),
               {
                 name: "gateway recovery observation",
                 command: "gateway verification",

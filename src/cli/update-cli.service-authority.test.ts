@@ -363,6 +363,7 @@ describe("update-cli", () => {
         expect.objectContaining({
           stderrTail: expect.stringContaining("would kill this command"),
         }),
+        expect.objectContaining({ name: "activation-backup-space-preflight", exitCode: 0 }),
         expect.objectContaining({
           name: "gateway recovery observation",
           exitCode: 0,
