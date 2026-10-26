@@ -2,6 +2,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { root, type Root } from "@openclaw/fs-safe";
+import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import { mcpOAuthStoreKeyFromLegacyFileName } from "../agents/mcp-oauth-identity.js";
 import { captureOpenClawStateWorkerContext } from "../state/openclaw-state-worker-context.js";
 import type { OpenClawStateWorkerContext } from "../state/openclaw-state-worker-context.types.js";
@@ -10,13 +11,17 @@ import {
   runOpenClawStateWorkerOperation,
 } from "../state/openclaw-state-worker-store.js";
 import { pathMayExistSync } from "./path-existence.js";
+import type { SqliteWorkerOperationAdmission } from "./sqlite-worker-operation-admission.js";
+import type { RetainedWorkerTransactionAdmission } from "./sqlite-worker-operation-settlement.js";
 import { createSqliteWorkerWriteAdmission } from "./sqlite-worker-store.js";
 import { withLegacyMigrationStateLock } from "./state-migrations.lock.js";
 import { parseLegacyMcpOAuthStore } from "./state-migrations.mcp-oauth-format.js";
 import { withRootBoundedLegacyFileLock } from "./state-migrations.mcp-oauth-lock.js";
-import { importLegacyMcpOAuthStore } from "./state-migrations.mcp-oauth-store.js";
 import type { LegacyMcpOAuthDetection } from "./state-migrations.mcp-oauth.types.js";
-import type { LegacyMcpOAuthImportResult } from "./state-migrations.mcp-oauth.worker-contract.js";
+import type {
+  LegacyMcpOAuthImportResult,
+  PreparedLegacyMcpOAuthImport,
+} from "./state-migrations.mcp-oauth.worker-contract.js";
 import { resolveLegacyMigrationSourceKey } from "./state-migrations.receipts.js";
 import {
   LegacyMigrationSourceClaim,
@@ -25,6 +30,69 @@ import {
   type LegacyMigrationSourceSnapshot,
 } from "./state-migrations.source-snapshot.js";
 import type { MigrationMessages } from "./state-migrations.types.js";
+
+type ImportOutcome =
+  | { ok: true; value: LegacyMcpOAuthImportResult; deliveryFailure?: { error: unknown } }
+  | { ok: false; error: unknown; restoreSource: boolean };
+
+/** Keep the filesystem claim until the original native writer's outcome is known. */
+async function importLegacyMcpOAuthStore(
+  context: OpenClawStateWorkerContext,
+  input: PreparedLegacyMcpOAuthImport,
+): Promise<ImportOutcome> {
+  let retained:
+    | { operation: RetainedWorkerTransactionAdmission; admission: SqliteWorkerOperationAdmission }
+    | undefined;
+  let commitRequested = false;
+  const createAdmission = createSqliteWorkerWriteAdmission(
+    (request) => {
+      context.admission.assertCurrent();
+      if (request.stage === "commit") {
+        // A failed grant may be definite, but it never justifies restoring an uncertain claim.
+        commitRequested = true;
+      }
+    },
+    [context.admission.databasePath],
+  );
+  try {
+    const value = await runOpenClawStateWorkerOperation(
+      context,
+      (scope) => scope.execute({ type: "legacyMcpOAuth.import", input }),
+      {
+        createAdmission(operation) {
+          const created = createAdmission(operation);
+          retained = { operation, admission: created.admission };
+          return created;
+        },
+      },
+    );
+    return { ok: true, value };
+  } catch (error) {
+    if (!retained) {
+      return { ok: false, error, restoreSource: true };
+    }
+    const settlement = await retained.operation.settled;
+    const facts = retained.admission.committed?.facts;
+    if (
+      settlement.kind === "completed" &&
+      isRecord(facts) &&
+      facts.sourceKey === input.sourceKey &&
+      typeof facts.imported === "boolean"
+    ) {
+      return {
+        ok: true,
+        value: { sourceKey: input.sourceKey, imported: facts.imported },
+        deliveryFailure: { error },
+      };
+    }
+    return {
+      ok: false,
+      error,
+      restoreSource:
+        settlement.kind === "not-entered" || (settlement.kind === "completed" && !commitRequested),
+    };
+  }
+}
 
 const LEGACY_MCP_OAUTH_DIR = "mcp-oauth";
 const DOCTOR_CLAIM_SUFFIX = ".doctor-importing";

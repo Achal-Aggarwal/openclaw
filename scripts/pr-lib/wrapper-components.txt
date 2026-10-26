@@ -1241,7 +1241,6 @@ src/infra/sqlite-snapshot.ts
 src/infra/sqlite-source-fence-contract.ts
 src/infra/sqlite-source-fence.ts
 src/infra/sqlite-source-handle.ts
-src/infra/sqlite-source-revision.ts
 src/infra/sqlite-source-revision.worker.ts
 src/infra/sqlite-staging-token.ts
 src/infra/sqlite-store.worker.ts
@@ -1321,7 +1320,6 @@ src/infra/update-managed-service-handoff-retained-custody.ts
 src/infra/update-managed-service-handoff-rows.ts
 src/infra/update-managed-service-handoff-schema.ts
 src/infra/update-managed-service-handoff-scope.ts
-src/infra/update-managed-service-handoff-source-inspection.ts
 src/infra/update-managed-service-handoff-store-repair.ts
 src/infra/update-preflight-details.ts
 src/infra/update-recovery-receipt-schema.ts
