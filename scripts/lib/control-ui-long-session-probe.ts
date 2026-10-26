@@ -22,11 +22,11 @@ async function sampleTranscriptScrollFrames(
     intervalMs: number;
     coverage: number;
     rows: number;
-    rowKeys: Array<string | null>;
     scrollTop: number;
     scrollHeight: number;
     clientHeight: number;
   }> = [];
+  const startedAtMs = performance.now();
   const startTop = element.scrollTop;
   let lastTarget = startTop;
   let previous = performance.now();
@@ -56,7 +56,6 @@ async function sampleTranscriptScrollFrames(
       intervalMs: now - previous,
       coverage: covered / viewport.height,
       rows: rows.length,
-      rowKeys: rows.map((row) => row.getAttribute("data-virtual-row-key")),
       scrollTop: element.scrollTop,
       scrollHeight: element.scrollHeight,
       clientHeight: element.clientHeight,
@@ -68,6 +67,7 @@ async function sampleTranscriptScrollFrames(
     }
   }
   return {
+    startedAtMs,
     frames,
     lastTarget,
     scrollTop: element.scrollTop,
@@ -77,6 +77,7 @@ async function sampleTranscriptScrollFrames(
       options.direction === "top"
         ? element.scrollTop
         : element.scrollHeight - element.clientHeight - element.scrollTop,
+    completedAtMs: performance.now(),
   };
 }
 
@@ -410,8 +411,10 @@ export async function probeLongSession(options: {
           endpointProtocol: "native-wheel-v3",
           direction,
           frames: trajectory.frames,
+          trajectoryStartMs: trajectory.startedAtMs,
           settleFrames,
           trajectoryEnd: {
+            completedAtMs: trajectory.completedAtMs,
             distancePx: trajectory.distancePx,
             scrollHeight: trajectory.scrollHeight,
             scrollTop: trajectory.scrollTop,

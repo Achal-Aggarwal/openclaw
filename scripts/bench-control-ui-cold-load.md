@@ -51,8 +51,11 @@ two pixels in either direction. This proves reader-directed completion, not
 automatic anchor recovery. One long-task observer and the CPU/wall interval cover
 hover, wheel admission, the full sweep, settling, and native completion. Reports
 keep the sweep and completion frames separate; neither phase is discarded.
-Each scroll frame retains ordered virtual-row keys alongside row counts, so
-membership changes and reentries can be distinguished from viewport geometry.
+Each scroll frame retains row counts and geometric coverage. Repeated row-key
+strings are omitted to keep browser-side measurement and result serialization
+bounded. The sweep also records actual sampling start/completion times: the
+rAF-supplied timestamp precedes callback work and is not its completion boundary.
+Geometric coverage measures active row boxes, not compositor paint.
 Collapse starts
 after an unmeasured return to the disclosure, which may be unmounted while reading
 the bottom of a virtualized run. Long-task
