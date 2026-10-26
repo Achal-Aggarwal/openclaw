@@ -164,6 +164,7 @@ const defaultResolvedCompat = {
   supportsLongCacheRetention: true,
   visibleReasoningDetailTypes: [],
   requiresNonEmptyUserOrAssistantMessage: false,
+  thinkingOffControlUndeclared: false,
 } satisfies ResolvedOpenAICompletionsCompat;
 
 const proxyResolvedCompat = {
@@ -603,6 +604,8 @@ describe("OpenAI-compatible completions compatibility", () => {
         ...proxyResolvedCompat,
         maxTokensField: "max_tokens",
         thinkingFormat: "zai",
+        // Bare rows infer zai; the Z.AI plugin wrapper owns its own thinking-off payload.
+        thinkingOffControlUndeclared: true,
       },
     },
     {
