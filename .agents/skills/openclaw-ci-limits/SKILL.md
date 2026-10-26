@@ -695,6 +695,13 @@ These are intentionally guarded by the `ci-workflow-guards`,
   ownership. Test-only files and unrelated runtime changes omit this lane;
   manual runs, unknown paths and older planners retain coverage. Preserve the
   target's existing performance-script capability checks.
+- Ordinary canonical hybrid first attempts use two Control UI unit rows only
+  with Bun-only execution and no selected WebKit tail. All selected files,
+  three workers per row, runner classes, matrix ceiling, deadlines, and cleanup
+  remain unchanged. WebKit, retries, hosted/other profiles, manual/frozen targets,
+  and dual-runtime execution retain the existing envelope. Qualification needs
+  complete exact-head CI cost, path, and memory evidence; a packing estimate is
+  not a measured saving.
 - Eligible Control UI E2E rows request the 16-vCPU class with unchanged live
   backend/event routing. Compact plans use six mocked Control UI shards with four
   workers each, matching four observed CPUs per runner and retaining 24 aggregate

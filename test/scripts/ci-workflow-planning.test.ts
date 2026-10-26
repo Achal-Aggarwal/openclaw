@@ -13726,3 +13726,91 @@ describe("extension lint PR admission", () => {
     },
   );
 });
+
+describe("compact ordinary UI unit rows", () => {
+  it.each([
+    {
+      label: "full UI PR",
+      eventName: "pull_request",
+      backend: "hybrid",
+      attempt: "1",
+      path: "scripts/ci-build-manifest.mjs",
+      full: true,
+      count: 2,
+    },
+    {
+      label: "scheduled main",
+      eventName: "schedule",
+      backend: "hybrid",
+      attempt: "1",
+      path: "scripts/ci-build-manifest.mjs",
+      full: false,
+      count: 2,
+    },
+    {
+      label: "WebKit owner PR",
+      eventName: "pull_request",
+      backend: "hybrid",
+      attempt: "1",
+      path: "ui/vitest.config.ts",
+      full: true,
+      count: 3,
+    },
+    {
+      label: "hosted PR",
+      eventName: "pull_request",
+      backend: "github",
+      attempt: "1",
+      path: "scripts/ci-build-manifest.mjs",
+      full: true,
+      count: 3,
+    },
+    {
+      label: "hosted retry",
+      eventName: "pull_request",
+      backend: "hybrid",
+      attempt: "2",
+      path: "scripts/ci-build-manifest.mjs",
+      full: true,
+      count: 3,
+    },
+    {
+      label: "full manual",
+      eventName: "workflow_dispatch",
+      backend: "hybrid",
+      attempt: "1",
+      path: "scripts/ci-build-manifest.mjs",
+      full: false,
+      count: 3,
+    },
+  ] as const)("preserves the complete inventory for $label", (scenario) => {
+    const manifest = runCiManifestFixture({
+      bundledPlanner: true,
+      bunTestRuntime: true,
+      bunUiTestRuntime: true,
+      historicalCompatibility: false,
+      eventName: scenario.eventName,
+      runnerBackend: scenario.backend,
+      runNode: false,
+      changedPaths: [scenario.path],
+      scopeEnv: {
+        GITHUB_RUN_ATTEMPT: scenario.attempt,
+        OPENCLAW_CI_CHECKOUT_REVISION: "b".repeat(40),
+        OPENCLAW_CI_RUN_UI_TESTS: "true",
+        OPENCLAW_CI_FULL: String(scenario.full),
+        OPENCLAW_CI_VALIDATION_TIER: scenario.eventName === "schedule" ? "main" : "full",
+      },
+    });
+    expect(manifest.status, manifest.output).toBe(0);
+    expect(manifest.outputs.ui_test_shard_count).toBe(String(scenario.count));
+    expect(JSON.parse(expectDefined(manifest.outputs.ui_test_matrix, "UI matrix")).include).toEqual(
+      Array.from({ length: scenario.count }, (_, index) => ({ shard: index + 1 })),
+    );
+    expect(
+      resolveSelectedUiIncludes(
+        expectDefined(manifest.outputs.ui_test_groups_gzip_base64, "UI selection"),
+      ).flat(),
+    ).toEqual(CI_MANIFEST_FIXTURE_TARGETS.ui);
+    expect(manifest.outputs.run_ui_webkit).toBe(String(scenario.label === "WebKit owner PR"));
+  });
+});

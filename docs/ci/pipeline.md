@@ -292,8 +292,9 @@ allowlist entry. The owner preserves config exclusions, selected files, pools,
 and worker budgets. The shared Vitest config resolves `ws` to the installed
 package so imports and mocks use the same module identity on both runtimes.
 
-Control UI uses three native shards and three workers per row, including
-exact-target Full Release Validation dispatches. The runtime partition applies
+Control UI uses two native shards for the [compact ordinary hybrid envelope](/ci/scope-and-routing/job-budgets)
+and three elsewhere, with three workers per row. Exact-target Full Release
+Validation dispatches retain three shards. The runtime partition applies
 after Vitest selects a shard, preserving original file ownership. Files with
 Node-only heap or WeakRef contracts keep Node coverage; the remaining selection
 uses Bun. `dual-all` runs the original shard on Node before its Bun portion.

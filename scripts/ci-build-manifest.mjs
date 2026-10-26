@@ -1264,6 +1264,22 @@ const uiTestRuntimePolicy =
   )
     ? testRuntimeMode
     : "node";
+// Retain the wider envelope for WebKit, dual-runtime, and unmeasured runner paths.
+if (
+  runnerProfile === "hybrid" &&
+  isCanonicalRepository &&
+  (ordinaryPullRequest ||
+    workflowEventName === "push" ||
+    (workflowEventName === "schedule" && mainValidation)) &&
+  process.env.GITHUB_RUN_ATTEMPT === "1" &&
+  !frozenTarget &&
+  !compatibilityTarget &&
+  !ciQualification &&
+  !runUiWebkit &&
+  uiTestRuntimePolicy === "bun-all"
+) {
+  uiTestShardCount = Math.min(2, uiTestShardCount);
+}
 const goToolingConfig = "test/vitest/vitest.tooling.config.ts";
 const knownToolingConfigs = new Set([
   goToolingConfig,

@@ -9,8 +9,11 @@ sidebarTitle: "Job budgets"
 
 Shard counts, concurrency and matrix budgets, lint memory policy, Android rows, and cache-key bounds. Part of the [CI scope and routing](/ci/scope-and-routing) index.
 
-The standalone UI suite runs three native Vitest shards through the same group
-executor and cache leaf as its bounded four-file seed in the trusted warmer.
+The standalone UI suite uses two native Vitest shards on ordinary upstream hybrid
+first attempts with Bun-only UI execution and no selected WebKit tail. Its group
+executor, cache leaf, and bounded four-file warmer seed are unchanged. Other
+runner profiles, retries, manual/frozen validation, and WebKit-selected PRs retain
+three shards; historical compatibility targets keep their unsharded command.
 Each row retains the root Node worker limit of three; Chromium uses its project
 default. The shards preserve the complete four-project inventory and each
 project's isolation and cleanup policy. Exact-target dispatches using the current
@@ -19,8 +22,10 @@ Node and Bun passes. Only compatibility targets using the historical package tes
 command keep their singleton, unsharded envelope. The window.open lint runs once
 in row one. Each row retains its 20-minute deadline and the matrix admits at most
 three rows concurrently.
-The extra two jobs add two Blacksmith registrations per selected automatic run
-on Blacksmith routes, and none on hosted routes. Exact-target dispatches add two
+The compact envelope removes one Blacksmith registration and one repeated setup
+per selected run without changing coverage or per-row workers. The wider envelope
+adds two registrations relative to one job on Blacksmith routes, and none on
+hosted routes. Exact-target dispatches add two
 hosted rows without changing automatic-run budgets. They do not guarantee an
 eight-minute workflow: preflight, setup, queue time and other jobs still apply.
 Its native reporter records runtime CPU and memory facts, configured project
