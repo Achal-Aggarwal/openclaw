@@ -21,15 +21,19 @@ const offlineTail = "The second section arrived while the browser was offline.";
 const followUpPrompt = "Confirm the next turn is clean.";
 const followUpReply = "The follow-up completed exactly once.";
 
+type HistoryPayload = {
+  inFlightRun?: { runId?: string; text?: string } | null;
+  messages?: Array<{ role?: string }>;
+};
 type Frame = {
   connection: number;
   type?: string;
   id?: string;
   method?: string;
+  ok?: boolean;
   params?: Record<string, unknown>;
-  payload?: {
-    inFlightRun?: { runId?: string; text?: string } | null;
-    messages?: Array<{ role?: string }>;
+  payload?: HistoryPayload & {
+    initialHistory?: { ok?: boolean; payload?: HistoryPayload };
   };
 };
 
@@ -165,12 +169,21 @@ suite.define(() => {
         (frame) =>
           frame.connection === 2 &&
           frame.type === "req" &&
-          ["chat.startup", "chat.history"].includes(frame.method ?? "") &&
-          frame.params?.sessionKey === sessionKey,
+          ((["chat.startup", "chat.history"].includes(frame.method ?? "") &&
+            frame.params?.sessionKey === sessionKey) ||
+            (frame.method === "sessions.messages.subscribe" &&
+              frame.params?.key === sessionKey &&
+              frame.params.initialHistory !== undefined)),
       );
       expect(historyRequest?.id).toEqual(expect.any(String));
-      expect(response(historyRequest?.id, 2)).toMatchObject({
-        type: "res",
+      const historyResponse = response(historyRequest?.id, 2);
+      expect(historyResponse).toMatchObject({ type: "res", ok: true });
+      const history =
+        historyRequest?.method === "sessions.messages.subscribe"
+          ? historyResponse?.payload?.initialHistory
+          : { ok: historyResponse?.ok, payload: historyResponse?.payload };
+      expect(history).toMatchObject({
+        ok: true,
         payload: { inFlightRun: { runId, text: opening + offlineTail } },
       });
 
@@ -229,17 +242,13 @@ suite.define(() => {
           text: group.textContent ?? "",
         })),
       );
-      const index = (role: "user" | "assistant", text: string) =>
-        groups.findIndex((group) => group[role] && group.text.includes(text));
-      const firstUserIndex = index("user", firstPrompt);
-      const firstAssistantIndex = index("assistant", opening.trim());
-      const followUpUserIndex = index("user", followUpPrompt);
-      const followUpAssistantIndex = index("assistant", followUpReply);
-      expect(firstUserIndex).toBeGreaterThanOrEqual(0);
-      expect(firstAssistantIndex).toBeGreaterThan(firstUserIndex);
-      expect(followUpUserIndex).toBeGreaterThan(firstAssistantIndex);
-      expect(followUpAssistantIndex).toBeGreaterThan(followUpUserIndex);
-      expect(groups[followUpAssistantIndex]?.text).not.toContain(offlineTail);
+      expect(groups).toEqual([
+        { assistant: false, user: true, text: expect.stringContaining(firstPrompt) },
+        { assistant: true, user: false, text: expect.stringContaining(opening.trim()) },
+        { assistant: false, user: true, text: expect.stringContaining(followUpPrompt) },
+        { assistant: true, user: false, text: expect.stringContaining(followUpReply) },
+      ]);
+      expect(groups.at(-1)?.text).not.toContain(offlineTail);
       const transcript = groups.flatMap((row) => (row.assistant ? [row.text] : [])).join("\n");
       expect(occurrences(transcript, followUpReply)).toBe(1);
       expect([aborts().length, provider.requests()]).toEqual([1, 2]);
