@@ -574,7 +574,7 @@ describe("runEmbeddedAgent provider fault sequences", () => {
 
       const usageStats = await readUsageStats(agentDir);
       expect(usageStats["openai:p1"]?.cooldownReason).toBe("rate_limit");
-      expect(usageStats["openai:p1"]?.failureCounts?.rate_limit).toBe(1);
+      expect(usageStats["openai:p1"]?.lastRateLimitAt).toEqual(expect.any(Number));
       expect(usageStats["openai:p2"]?.cooldownReason).toMatch(/^auth/);
       expect(usageStats["openai:p2"]?.failureCounts?.auth).toBe(1);
       expect(usageStats["groq:p1"]?.cooldownUntil).toBeUndefined();

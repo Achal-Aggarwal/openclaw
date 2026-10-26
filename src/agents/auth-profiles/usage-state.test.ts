@@ -191,7 +191,7 @@ describe("auth profile usage state", () => {
     ["active disable", { primary: disabled }, "billing"],
     [
       "explicit cooldown beats stale counts",
-      { primary: cooldown("auth", undefined, { failureCounts: { rate_limit: 99 } }) },
+      { primary: cooldown("auth", undefined, { failureCounts: { overloaded: 99 } }) },
       "auth",
     ],
     [
@@ -206,7 +206,7 @@ describe("auth profile usage state", () => {
       "most frequent reason",
       {
         primary: cooldown(undefined, undefined, {
-          failureCounts: { overloaded: 2, rate_limit: 1 },
+          failureCounts: { overloaded: 2, timeout: 1 },
         }),
       },
       "overloaded",
@@ -288,14 +288,14 @@ describe("auth profile usage state", () => {
         disabledUntil: now + 3_600_000,
         disabledReason: "billing",
         errorCount: 5,
-        failureCounts: { rate_limit: 3, billing: 2 },
+        failureCounts: { overloaded: 3, billing: 2 },
       },
       {
         ...clearedCooldown,
         disabledUntil: now + 3_600_000,
         disabledReason: "billing",
         errorCount: 5,
-        failureCounts: { rate_limit: 3, billing: 2 },
+        failureCounts: { overloaded: 3, billing: 2 },
       },
     ],
     [

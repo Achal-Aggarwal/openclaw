@@ -678,7 +678,7 @@ export function loadRuntimePluginCandidate(params: {
       beforeRegister === undefined ? undefined : performance.now() - beforeRegister;
     detailPluginStartupTrace(params.options.startupTrace, record.id, [
       ["loadMs", moduleLoadMs || elapsed],
-      ["loadFailedCount", failed && failurePhase === "load" ? 1 : 0],
+      ["loadFailedCount", failed && beforeRegister === undefined ? 1 : 0],
       ...(registerMs === undefined
         ? []
         : ([

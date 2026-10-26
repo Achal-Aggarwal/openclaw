@@ -1129,7 +1129,7 @@ describe("runEmbeddedAgent auth profile rotation", () => {
             },
             "openai:backup": {
               cooldownUntil: now + 60 * 60 * 1000,
-              failureCounts: { rate_limit: 1 },
+              lastRateLimitAt: now,
             },
           },
         },
