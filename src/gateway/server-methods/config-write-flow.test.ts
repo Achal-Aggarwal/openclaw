@@ -60,9 +60,12 @@ it("awaits transcript additions and title edits only when the reload owner can a
   ).toBe(false);
 });
 
-it.each(["hybrid", "off"] as const)(
-  "hot-applies cold-storage settings with reload mode %s",
-  (mode) => {
+it.each([
+  ["hybrid", true],
+  ["off", false],
+] as const)(
+  "awaits cold-storage settings only when reload mode %s can apply them",
+  (mode, awaited) => {
     expect(
       shouldAwaitGatewayConfigApplication({
         previousConfig: {},
@@ -75,7 +78,7 @@ it.each(["hybrid", "off"] as const)(
           "session.maintenance.coldStorage.afterDays",
         ],
       }),
-    ).toBe(true);
+    ).toBe(awaited);
   },
 );
 

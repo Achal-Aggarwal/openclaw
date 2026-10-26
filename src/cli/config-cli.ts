@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from "node:util";
 import type { Command } from "commander";
 import { AUTO_MANAGED_CONFIG_META_PATHS } from "../config/io.meta.js";
 import { formatConfigIssueLines, normalizeConfigIssues } from "../config/issue-format.js";
@@ -55,21 +56,75 @@ type ConfigOperationParams = Parameters<
   typeof import("./config-cli-runner.js").runConfigOperations
 >[0];
 
+type ConfigCommit = NonNullable<ConfigOperationParams["commit"]>;
+
 async function runConfigMutation(
-  opts: { cliOptions: ConfigMutationOptions; runtime?: RuntimeEnv; throwOnError?: boolean },
+  opts: {
+    cliOptions: ConfigMutationOptions;
+    runtime?: RuntimeEnv;
+    throwOnError?: boolean;
+    commit?: ConfigCommit;
+  },
   prepare: () => Promise<Omit<ConfigOperationParams, "runtime" | "options">>,
   jsonOutput = Boolean(opts.cliOptions.json),
 ) {
   const runtime = opts.runtime ?? defaultRuntime;
   const { handleConfigMutationError, runConfigOperations } = await import("./config-cli-runner.js");
   try {
-    await runConfigOperations({ runtime, options: opts.cliOptions, ...(await prepare()) });
+    await runConfigOperations({
+      runtime,
+      options: opts.cliOptions,
+      ...(await prepare()),
+      ...(opts.commit ? { commit: opts.commit } : {}),
+    });
   } catch (err) {
     if (opts.throwOnError) {
       throw err;
     }
     handleConfigMutationError({ err, runtime, options: opts.cliOptions, jsonOutput });
   }
+}
+
+/**
+ * The Gateway stays the single config writer: this process prepares the same change it
+ * would write offline, and the owner commits it as one config.patch against baseHash.
+ * Every refusal is raised inside the commit so the command's own error output reports it.
+ */
+export function routeConfigMutationToOwner(
+  run: (commit: ConfigCommit) => Promise<void>,
+  method: string,
+) {
+  return async ({
+    env,
+    requestOwner,
+  }: {
+    env: NodeJS.ProcessEnv;
+    requestOwner: <R>(method: string, params: Record<string, unknown>) => Promise<R>;
+  }) => {
+    await run(async (change) => {
+      if (!isDeepStrictEqual(change.previous.database, change.next.database)) {
+        throw new Error(
+          `Cannot admit ${method} while a Gateway owns this state directory: This command is offline-only. Database settings select the state database the running Gateway holds open, so they change only offline. No settings were saved. To run offline, stop the Gateway through its service owner, wait for ownership to release, then rerun this exact command.`,
+        );
+      }
+      const current = await requestOwner<{ hash?: unknown; path?: unknown }>("config.get", {});
+      // The diff is prepared from this command's file; bind it to the file the owner writes.
+      const { resolveIdentityPathViaExistingAncestorSync: identity } =
+        await import("../infra/boundary-path.js");
+      const selected = resolveConfigPath(env);
+      if (typeof current.path !== "string" || identity(current.path) !== identity(selected)) {
+        throw new Error(
+          `The running Gateway owns this state directory but uses config file ${typeof current.path === "string" ? shortenHomePath(current.path) : "<unknown>"}, not ${shortenHomePath(selected)}. Nothing was sent and no settings were saved. Rerun with the Gateway's config path, or stop the Gateway through its service owner and rerun this exact command.`,
+        );
+      }
+      const { buildConfigOwnerPatch } = await import("./config-cli-owner-patch.js");
+      const result = await requestOwner<{ restart?: unknown }>(
+        "config.patch",
+        buildConfigOwnerPatch(change, current.hash),
+      );
+      return result.restart ? "The Gateway is restarting to apply it." : undefined;
+    });
+  };
 }
 
 export async function runConfigSet(opts: {
@@ -80,6 +135,7 @@ export async function runConfigSet(opts: {
   beforePersistentApply?: () => void;
   /** Embedded recovery needs the writer's typed postcommit/rollback outcome. */
   throwOnError?: boolean;
+  commit?: ConfigCommit;
 }) {
   return runConfigMutation(
     opts,
@@ -108,6 +164,7 @@ export async function runConfigSet(opts: {
 export async function runConfigPatch(opts: {
   cliOptions: ConfigPatchOptions;
   runtime?: RuntimeEnv;
+  commit?: ConfigCommit;
 }) {
   return runConfigMutation(opts, async () => {
     const { configPatchModeError, readConfigPatchOperations } =
@@ -203,6 +260,7 @@ export async function runConfigUnset(opts: {
   cliOptions?: ConfigUnsetOptions;
   runtime?: RuntimeEnv;
   beforePersistentApply?: () => void;
+  commit?: ConfigCommit;
 }) {
   const cliOptions = opts.cliOptions ?? {};
   return runConfigMutation({ ...opts, cliOptions }, async () => {
@@ -446,7 +504,11 @@ export function registerConfigCli(program: Command) {
         method: "config set",
         params: {},
         target: path ?? "config",
-        onForeignOwner: "refuse",
+        ...(path ? { recoveryCommand: `openclaw config get ${quoteCliArg(path)}` } : {}),
+        onForeignOwner: routeConfigMutationToOwner(
+          (commit) => runConfigSet({ path, value, cliOptions: opts, commit }),
+          "config set",
+        ),
         runLocal,
       });
     });
@@ -483,7 +545,10 @@ export function registerConfigCli(program: Command) {
         method: "config patch",
         params: {},
         target: "config",
-        onForeignOwner: "refuse",
+        onForeignOwner: routeConfigMutationToOwner(
+          (commit) => runConfigPatch({ cliOptions: opts, commit }),
+          "config patch",
+        ),
         runLocal,
       });
     });
@@ -505,7 +570,11 @@ export function registerConfigCli(program: Command) {
         method: "config unset",
         params: {},
         target: path,
-        onForeignOwner: "refuse",
+        recoveryCommand: `openclaw config get ${quoteCliArg(path)}`,
+        onForeignOwner: routeConfigMutationToOwner(
+          (commit) => runConfigUnset({ path, cliOptions: options, commit }),
+          "config unset",
+        ),
         runLocal,
       });
     });
