@@ -63,6 +63,7 @@ import { captureOpenClawAgentDatabaseExecution } from "../state/openclaw-agent-e
 import { assertOpenClawDatabasesReady } from "../state/openclaw-database-preflight.js";
 import { closeStateDatabaseForTest } from "../test-utils/database-cleanup.js";
 import { acquireTestPortBlock, type TestPortClaim } from "../test-utils/port-claims.js";
+import type { GatewayRequestContext } from "./server-methods/types.js";
 // Keep cold module evaluation outside the lifecycle and RPC behavior deadlines.
 import * as early from "./server-startup-early.js";
 import * as postAttach from "./server-startup-post-attach.js";
@@ -204,10 +205,12 @@ it.for([
     let recoverySource: OpenClawConfig | undefined;
     let bootstrapSecrets: ReturnType<typeof getActiveSecretsRuntimeSnapshot> | undefined;
     let subagentRecoverySettled: Promise<void> | undefined;
+    let inputRecovery: GatewayRequestContext["inputRecovery"];
     if (holdSubagentRestoration) {
       vi.stubEnv("OPENCLAW_TEST_MINIMAL_GATEWAY", undefined);
       const startPostAttach = postAttach.startGatewayPostAttachRuntime;
       vi.spyOn(postAttach, "startGatewayPostAttachRuntime").mockImplementation(async (params) => {
+        inputRecovery = params.resolveGatewayContext()?.inputRecovery;
         const unlockStartupMethods = params.unlockStartupMethods;
         const runtime = await startPostAttach({
           ...params,
@@ -531,16 +534,30 @@ it.for([
       await waitForHealthyAgent();
       expect(readAgentDatabaseAdmissionRefusal(healthyAgentId, { env })).toBeUndefined();
       if (holdSubagentRestoration) {
-        // startupSettled does not join the independent initial-recovery admission signal.
+        // Initial recovery can still leave the healthy agent's database-recovery tail pending.
         await withinTest(initialRecoveryReady.promise, signal);
+        if (!inputRecovery) {
+          throw new Error("Gateway input recovery is unavailable in the startup fixture");
+        }
+        await inputRecovery.waitForAgentInputRecovery(healthyAgentId, { signal });
       }
       const readiness = await probeGateway(port, "/readyz");
-      expect(readiness.status).toBe(agentId === "main" && paused ? 503 : 200);
+      expect(readiness.status, await readiness.clone().text()).toBe(
+        agentId === "main" && paused ? 503 : 200,
+      );
       if (agentId === "main" && paused) {
         await expect(readiness.json()).resolves.toMatchObject({
           ready: false,
           failing: ["agent-database:main"],
           agentDatabases: [refusal()],
+        });
+      }
+      if (holdSubagentRestoration) {
+        await expect(readiness.json()).resolves.toMatchObject({
+          ready: true,
+          coreReady: true,
+          failing: [],
+          agentRecovery: ["worker"],
         });
       }
       const chatParams = {

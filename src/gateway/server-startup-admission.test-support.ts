@@ -57,9 +57,9 @@ export function registerGatewayStartupAdmissionTests(params: {
     const methodsAtRecoveryRegistration: string[][] = [];
     const currentConfig = { agents: { entries: { main: {}, work: {} } } };
     hoisted.scheduleRestartAbortedMainSessionRecovery.mockImplementationOnce(
-      (params: { getConfig: () => unknown }) => {
+      (recovery: { getConfig: () => unknown }) => {
         methodsAtRecoveryRegistration.push([...unavailableGatewayMethods]);
-        expect(params.getConfig()).toBe(currentConfig);
+        expect(recovery.getConfig()).toBe(currentConfig);
       },
     );
     const onSidecarsReady = vi.fn(() => startupOrder.push("ready"));
