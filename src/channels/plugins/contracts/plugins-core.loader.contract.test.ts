@@ -6,10 +6,8 @@ import {
   createTestRegistry,
 } from "../../../test-utils/channel-plugins.js";
 import { loadChannelOutboundAdapter } from "../outbound/load.js";
-import { createChannelRegistryLoader } from "../registry-loader.js";
+import { resolveRegisteredChannelPlugin } from "../registry-loader.js";
 import type { ChannelOutboundAdapter, ChannelPlugin } from "../types.public.js";
-
-const loadChannelPlugin = createChannelRegistryLoader((entry) => entry.plugin);
 
 const emptyRegistry = createTestRegistry([]);
 
@@ -73,7 +71,7 @@ describe("channel plugin loader", () => {
   });
 
   it.each([
-    ["plugin", loadChannelPlugin, demoLoaderPlugin, demoLoaderPluginV2],
+    ["plugin", resolveRegisteredChannelPlugin, demoLoaderPlugin, demoLoaderPluginV2],
     ["outbound", loadChannelOutboundAdapter, demoOutbound, demoOutboundV2],
   ] as const)(
     "reads updated %s values when the registry changes",

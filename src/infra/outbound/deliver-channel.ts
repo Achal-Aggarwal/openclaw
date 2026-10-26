@@ -6,7 +6,7 @@ import type {
   ChannelMessageSendResult,
 } from "../../channels/message/types.js";
 import { unknownSendReconciliationKinds } from "../../channels/message/types.js";
-import { createChannelRegistryLoader } from "../../channels/plugins/registry-loader.js";
+import { resolveRegisteredChannelPlugin } from "../../channels/plugins/registry-loader.js";
 import type {
   ChannelOutboundAdapter,
   ChannelOutboundPayloadContext,
@@ -43,7 +43,6 @@ const log = createSubsystemLogger("outbound/deliver");
 const loadChannelBootstrapRuntime = createLazyRuntimeModule(
   () => import("./channel-bootstrap.runtime.js"),
 );
-const loadChannelPluginFromRegistry = createChannelRegistryLoader((entry) => entry.plugin);
 
 export async function createChannelHandler(params: ChannelHandlerParams): Promise<ChannelHandler> {
   const { plugin, pluginRegistry } = await loadBootstrappedChannelPlugin(params);
@@ -63,7 +62,7 @@ async function loadBootstrappedChannelPlugin(params: {
   channel: string;
 }): Promise<{ plugin?: ChannelPlugin; pluginRegistry?: PluginRegistry }> {
   const scopedRegistry = getPluginRuntimeGatewayRequestScope()?.pluginRegistry;
-  const plugin = await loadChannelPluginFromRegistry(params.channel);
+  const plugin = await Promise.resolve(resolveRegisteredChannelPlugin(params.channel));
   if (plugin?.outbound || plugin?.message?.send?.text) {
     // Both adapter surfaces belong to this registration, including an omitted
     // surface. A second lookup could attach another plugin's send lifecycle.

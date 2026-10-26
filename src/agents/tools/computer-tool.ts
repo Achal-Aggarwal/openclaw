@@ -36,7 +36,6 @@ import type {
   ComputerObservationState,
   ComputerToolAction,
   ComputerToolTransport,
-  ResolvedComputerTarget,
 } from "./computer-tool-shared.js";
 import {
   AFTER_ACTION_SCREENSHOT_DELAY_MS,
@@ -399,69 +398,6 @@ export function createComputerTool(options?: {
     });
   }
 
-  const captureAndDeliverScreenshot = async (params: {
-    noteLines: string[];
-    resolved: ResolvedComputerTarget;
-    action: ComputerToolAction;
-    toolCallId: string;
-    signal?: AbortSignal;
-  }) => {
-    const capture = await session.captureScreenshot(params.resolved, referenceWidth, params.signal);
-    const target = params.resolved.target;
-    const { noteLines, action } = params;
-    const frameId = crypto.randomUUID();
-    const { content, dimensions } = await projectComputerImage({
-      image: capture,
-      action,
-      referenceWidth,
-    });
-    const dims = dimensions ? `${dimensions.width}x${dimensions.height}` : "unknown size";
-    const screenshotText = [
-      ...noteLines,
-      `screenshot ${dims} (screen ${target.screenIndex}, frameId ${frameId})`,
-    ].join("\n");
-    const result: AgentToolResult<unknown> = {
-      content: [{ type: "text", text: screenshotText }, ...content],
-      details: {
-        ...computerTargetDetails(target),
-        action,
-        width: dimensions?.width,
-        height: dimensions?.height,
-        screenIndex: target.screenIndex,
-        frameId,
-        refWidth: referenceWidth,
-        media: { outbound: false },
-      },
-    };
-    const imageIdentity = computerFrameImageIdentity(result.content);
-    const previousFrame = session.refreshUnchangedFrame({
-      target: params.resolved.target,
-      capture,
-      imageIdentity,
-    });
-    if (previousFrame) {
-      const text = [
-        ...params.noteLines,
-        `screen unchanged since previous frame (frameId ${previousFrame.id}); screenshot omitted — keep using this frameId for coordinates`,
-      ].join("\n");
-      return textResult(text, {
-        ...computerTargetDetails(params.resolved.target),
-        action: params.action,
-        screenIndex: params.resolved.target.screenIndex,
-        frameId: previousFrame.id,
-        refWidth: referenceWidth,
-      });
-    }
-    session.bindDeliveredFrame({
-      resolved: params.resolved,
-      capture,
-      frameId,
-      toolCallId: params.toolCallId,
-      imageIdentity,
-    });
-    return result;
-  };
-
   const tool: AnyAgentTool = {
     label: "Computer",
     name: "computer",
@@ -486,6 +422,61 @@ export function createComputerTool(options?: {
           gatewayOpts,
           signal,
         });
+        const captureAndDeliverScreenshot = async (noteLines: string[]) => {
+          const capture = await session.captureScreenshot(resolved, referenceWidth, signal);
+          const target = resolved.target;
+          const frameId = crypto.randomUUID();
+          const { content, dimensions } = await projectComputerImage({
+            image: capture,
+            action,
+            referenceWidth,
+          });
+          const dims = dimensions ? `${dimensions.width}x${dimensions.height}` : "unknown size";
+          const screenshotText = [
+            ...noteLines,
+            `screenshot ${dims} (screen ${target.screenIndex}, frameId ${frameId})`,
+          ].join("\n");
+          const result: AgentToolResult<unknown> = {
+            content: [{ type: "text", text: screenshotText }, ...content],
+            details: {
+              ...computerTargetDetails(target),
+              action,
+              width: dimensions?.width,
+              height: dimensions?.height,
+              screenIndex: target.screenIndex,
+              frameId,
+              refWidth: referenceWidth,
+              media: { outbound: false },
+            },
+          };
+          const imageIdentity = computerFrameImageIdentity(result.content);
+          const previousFrame = session.refreshUnchangedFrame({
+            target: resolved.target,
+            capture,
+            imageIdentity,
+          });
+          if (previousFrame) {
+            const text = [
+              ...noteLines,
+              `screen unchanged since previous frame (frameId ${previousFrame.id}); screenshot omitted — keep using this frameId for coordinates`,
+            ].join("\n");
+            return textResult(text, {
+              ...computerTargetDetails(resolved.target),
+              action,
+              screenIndex: resolved.target.screenIndex,
+              frameId: previousFrame.id,
+              refWidth: referenceWidth,
+            });
+          }
+          session.bindDeliveredFrame({
+            resolved,
+            capture,
+            frameId,
+            toolCallId,
+            imageIdentity,
+          });
+          return result;
+        };
         const deliverObservation = async (
           result: ComputerActResult,
           observationAction = action,
@@ -573,13 +564,7 @@ export function createComputerTool(options?: {
             await sleep(Math.round(seconds * 1000), signal);
             noteLines.push(`waited ${seconds}s`);
           }
-          return await captureAndDeliverScreenshot({
-            noteLines,
-            resolved,
-            action,
-            toolCallId,
-            signal,
-          });
+          return await captureAndDeliverScreenshot(noteLines);
         }
 
         if (!isComputerActAction(action)) {
@@ -626,13 +611,7 @@ export function createComputerTool(options?: {
               result: actResult,
             });
           }
-          return await captureAndDeliverScreenshot({
-            noteLines: [computerActResultText(action, actResult)],
-            resolved,
-            action,
-            toolCallId,
-            signal,
-          });
+          return await captureAndDeliverScreenshot([computerActResultText(action, actResult)]);
         } catch (err) {
           session.setTarget(resolved.target);
           signal?.throwIfAborted();

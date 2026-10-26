@@ -1,6 +1,9 @@
+import type { ChannelId } from "../channel-id.types.js";
 import type { ChannelOutboundAdapter } from "../outbound.types.js";
-import { createChannelRegistryLoader } from "../registry-loader.js";
+import { resolveRegisteredChannelPlugin } from "../registry-loader.js";
 
-export const loadChannelOutboundAdapter = createChannelRegistryLoader<ChannelOutboundAdapter>(
-  (entry) => entry.plugin.outbound,
-);
+export async function loadChannelOutboundAdapter(
+  id: ChannelId,
+): Promise<ChannelOutboundAdapter | undefined> {
+  return resolveRegisteredChannelPlugin(id)?.outbound;
+}
