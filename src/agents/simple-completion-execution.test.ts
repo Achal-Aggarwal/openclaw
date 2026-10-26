@@ -310,7 +310,11 @@ describe("completeWithPreparedSimpleCompletionModel", () => {
         {
           model,
           context,
-          options: { ...(expected ? { reasoning: expected } : {}), apiKey: "sk-test" },
+          options: {
+            ...(expected ? { reasoning: expected } : {}),
+            ...(reasoning === "off" ? { onPayload: expect.any(Function) } : {}),
+            apiKey: "sk-test",
+          },
         },
       ]);
     },
@@ -372,7 +376,11 @@ describe("completeWithPreparedSimpleCompletionModel", () => {
     });
 
     expect(completionRequests()).toEqual([
-      { model: preparedModel, context, options: { reasoning: "off", apiKey: "sk-test" } },
+      {
+        model: preparedModel,
+        context,
+        options: { reasoning: "off", onPayload: expect.any(Function), apiKey: "sk-test" },
+      },
     ]);
   });
 });
