@@ -1,11 +1,11 @@
 import { execFileSync, spawn } from "node:child_process";
-import { withTempDir } from "openclaw/plugin-sdk/test-env";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 // Voice Call tests cover cli plugin behavior.
 import { Command } from "commander";
 import { MAX_TIMER_TIMEOUT_MS } from "openclaw/plugin-sdk/number-runtime";
+import { withTempDir } from "openclaw/plugin-sdk/test-env";
 import { afterEach, describe, expect, it, vi } from "vitest";
 const callGatewayFromCliMock = vi.hoisted(() => vi.fn());
 const findCallInStoreMock = vi.hoisted(() => vi.fn());
@@ -103,8 +103,18 @@ describe("voice-call CLI status fallback", () => {
     vi.restoreAllMocks();
   });
 
-  async function runCli(program: Command, args: string[]) { return program.parseAsync(["voicecall", ...args], { from: "user" }); }
-  async function captureCli(program: Command, args: string[]) { const output = captureStdout(); try { await runCli(program, args); return output.output(); } finally { output.restore(); } }
+  async function runCli(program: Command, args: string[]) {
+    return program.parseAsync(["voicecall", ...args], { from: "user" });
+  }
+  async function captureCli(program: Command, args: string[]) {
+    const output = captureStdout();
+    try {
+      await runCli(program, args);
+      return output.output();
+    } finally {
+      output.restore();
+    }
+  }
 
   function withBriefPath<T>(run: (file: string) => Promise<T>) {
     return withTempDir("openclaw-voice-call-brief-", async (dir) =>
