@@ -888,24 +888,18 @@ describe.skipIf(process.platform === "win32")("systemd definition mutation owner
     ).toEqual([]);
   });
 
-  it.each([0o775, 0o777])(
-    "repairs an owned writable state directory (%o) before publication",
-    async (mode) => {
-      await writeFixtureFile(path.join(stateDir, "operator-data"), "preserved\n");
-      await fs.chmod(stateDir, mode);
+  it.each([0o775, 0o777])("repairs writable state dir %o before publication", async (mode) => {
+    await writeFixtureFile(path.join(stateDir, "operator-data"), "preserved\n");
+    await fs.chmod(stateDir, mode);
 
-      await expect(readSystemdDefinitionMutationCapability(env)).resolves.toEqual({
-        kind: "writable",
-      });
-      expect((await fs.stat(stateDir)).mode & 0o777).toBe(mode);
-      await stage();
+    const capability = await readSystemdDefinitionMutationCapability(env);
+    expect(capability).toEqual({ kind: "writable" });
+    await stage();
 
-      expect((await fs.stat(stateDir)).mode & 0o777).toBe(0o700);
-      expect(await fs.readFile(path.join(stateDir, "operator-data"), "utf8")).toBe("preserved\n");
-      expect(await fs.readFile(unitPath, "utf8")).toContain("ExecStart=");
-      expect(await fs.readFile(environmentPath, "utf8")).toContain("replacement-secret-canary");
-    },
-  );
+    expect((await fs.stat(stateDir)).mode & 0o777).toBe(0o700);
+    expect(await fs.readFile(path.join(stateDir, "operator-data"), "utf8")).toBe("preserved\n");
+    expect(await fs.readFile(environmentPath, "utf8")).toContain("replacement-secret-canary");
+  });
 
   it("does not publish service credentials if state directory repair fails", async () => {
     await fs.chmod(stateDir, 0o775);

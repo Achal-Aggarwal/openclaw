@@ -203,7 +203,7 @@ it.each([false, true])(
       slots: { memory: "none" },
     };
     await fixture.state.writeConfig(fixture.config);
-    await loadAndActivateRootPluginRegistry({
+    loadAndActivateRootPluginRegistry({
       config: fixture.config,
       workspaceDir: fixture.state.workspaceDir,
       onlyPluginIds: [plugin.id],
