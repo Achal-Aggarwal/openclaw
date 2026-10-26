@@ -106,7 +106,7 @@ async function transcriptFixture(initialOffset: number | null = 0) {
       draw();
       await settle();
     },
-    async frame(count = 1) {
+    async frame(count = 1, measure = true) {
       for (let index = 0; index < count; index++) {
         now += 16;
         const pending = [...frames.values()];
@@ -115,8 +115,10 @@ async function transcriptFixture(initialOffset: number | null = 0) {
           callback(now);
         }
         await settle();
-        for (const row of container.querySelectorAll<HTMLElement>("[data-preparing-row]")) {
-          emitTranscriptResize(row, 800, 100);
+        if (measure) {
+          for (const row of container.querySelectorAll<HTMLElement>("[data-preparing-row]")) {
+            emitTranscriptResize(row, 800, 100);
+          }
         }
         await settle();
       }
@@ -188,17 +190,28 @@ it("pauses queued preparation while hidden and retires it on disconnect", async 
   expect(transcriptRows(view.container)).toHaveLength(0);
 });
 
-it("lets viewport-sized jumps settle before preparing rows the reader would skip", async () => {
+it("prepares ahead during fast scrolling and waits for measurement before admitting another row", async () => {
   const view = await transcriptFixture();
   await view.frame(8);
   await view.scrollTo(1);
   await view.frame();
-  await view.scrollTo(100);
+  await view.scrollTo(60);
+  const activeIndexes = () =>
+    [...view.container.querySelectorAll<HTMLElement>("[data-index]:not([data-prepared-row])")].map(
+      (row) => Number(row.dataset.index),
+    );
   const rendered = view.renderRow.mock.calls.length;
-  await view.frame();
-  expect(view.renderRow.mock.calls).toHaveLength(rendered);
-  await view.frame(8);
-  expect(view.renderRow.mock.calls.length).toBeGreaterThan(rendered);
+  await view.frame(1, false);
+  const preparing = view.container.querySelector<HTMLElement>("[data-preparing-row]");
+  expect(preparing).not.toBeNull();
+  expect(Number(preparing!.dataset.index)).toBeGreaterThan(Math.max(...activeIndexes()));
+  expect(view.renderRow.mock.calls).toHaveLength(rendered + 1);
+  await view.frame(2, false);
+  expect(view.renderRow.mock.calls).toHaveLength(rendered + 1);
+  emitTranscriptResize(preparing!, 800, 100);
+  await settle();
+  await view.frame(1, false);
+  expect(view.renderRow.mock.calls).toHaveLength(rendered + 2);
 });
 
 it("places a fresh long transcript at its measured tail before preparing distant rows", async () => {

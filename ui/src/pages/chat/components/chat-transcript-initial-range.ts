@@ -242,12 +242,6 @@ export class TranscriptInitialRange {
       const viewport = virtualizer.scrollRect?.height ?? 600;
       const velocity =
         performance.now() - this.scrollSample.time < 100 ? this.scrollSample.velocity : 0;
-      // A jump past a viewport outruns speculative rows. Spend that frame on
-      // the visible range; resume preparation when the reader slows or stops.
-      if (velocity * 16 >= viewport) {
-        this.queuePreparation();
-        return;
-      }
       // At speed, prepare the next viewport rather than rows the reader skips.
       // Virtual-core resolves this from cached sizes; no neighbor layout reads.
       const predictedOffset =
