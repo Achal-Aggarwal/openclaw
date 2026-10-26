@@ -55,14 +55,19 @@ for await (const line of createInterface({ input: process.stdin })) {
     if (mode !== "foreground" && mode !== "old-input") {
       system("background_tasks_changed", { tasks: [parent] }); result("waiting");
     }
-    system("background_tasks_changed", { tasks: mode === "reverse-list" ? [child, parent] : [parent, child] });
-    system("task_started", { ...child, is_backgrounded: true });
+    system("background_tasks_changed", { tasks: mode === "foreground" ? [child] : mode === "reverse-list" ? [child, parent] : [parent, child] });
+    system("task_started", { ...child, is_backgrounded: true,
+      ...(mode === "owned-list-first" ? { owned_by_subagent: true } : {}) });
     if (mode === "old-input") {
-      notification("child"); notification("parent"); result("first reply"); continue;
+      notification("child"); notification("parent"); replay("parent"); result("first reply"); continue;
     }
-    if (mode === "parent-first") {
-      notification("parent"); replay("parent"); result("parent reply");
-      notification("child"); replay("child"); result("forwarded child reply");
+    if (mode.startsWith("parent-first")) {
+      notification("parent");
+      if (mode === "parent-first") replay("parent");
+      result("parent reply", { origin: { kind: "task-notification" } });
+      notification("child");
+      if (mode === "parent-first") replay("child");
+      result("forwarded child reply", { origin: { kind: "task-notification" } });
     } else if (mode === "foreground") {
       result("foreground reply");
     } else {
@@ -89,7 +94,9 @@ async function context(mode: string, childType = "local_agent") {
       handles.add(handle);
     },
     remove: (handle) => {
-      if (current === handle) current = undefined;
+      if (current === handle) {
+        current = undefined;
+      }
     },
     activate: () => {},
     restart: async () => {
@@ -121,7 +128,9 @@ async function context(mode: string, childType = "local_agent") {
 }
 async function collect(ctx: CliBackendExecuteContext) {
   const records: Record<string, unknown>[] = [];
-  for await (const record of executeClaudeCli(ctx)) records.push(record);
+  for await (const record of executeClaudeCli(ctx)) {
+    records.push(record);
+  }
   return records.filter((record) => record.type === "result");
 }
 it.each(["local_agent", "local_workflow"])(
@@ -136,5 +145,62 @@ it.each(["local_agent", "local_workflow"])(
     expect((await collect({ ...ctx, useResume: true, prompt: "next" }))[0]?.result).toBe(
       "warm reply",
     );
+  },
+);
+
+it.each(["local_agent", "local_workflow"])(
+  "waits for a forwarded nested %s result after its background parent ends",
+  async (childType) => {
+    const ctx = await context("parent-first", childType);
+    const results = await collect(ctx);
+    expect(results.map((record) => record.result)).toEqual([
+      "waiting",
+      "parent reply",
+      "forwarded child reply",
+    ]);
+    expect(results[1]).toHaveProperty("openclaw_interim_result", true);
+    expect(results[2]).not.toHaveProperty("openclaw_interim_result");
+    expect(ctx.liveSession.current()?.isIdle()).toBe(true);
+  },
+);
+it.each([
+  "foreground",
+  "before-input",
+  "old-input",
+  "duplicate",
+  "reverse-list",
+  "owned-list-first",
+])("preserves ownership across %s ordering", async (mode) => {
+  const ctx = await context(mode);
+  const results = await collect(ctx);
+  const expected =
+    mode === "foreground"
+      ? "foreground reply"
+      : mode === "before-input"
+        ? "unrelated reply"
+        : mode === "old-input"
+          ? "first reply"
+          : "parent reply";
+  expect(results.at(-1)?.result).toBe(expected);
+  expect(results.at(-1)).not.toHaveProperty("openclaw_interim_result");
+  expect(ctx.liveSession.current()?.isIdle()).toBe(true);
+  expect((await collect({ ...ctx, useResume: true, prompt: "next" }))[0]?.result).toBe(
+    "warm reply",
+  );
+});
+
+it.each(["local_agent", "local_workflow"])(
+  "consumes queued forwarded %s results without inline replay receipts",
+  async (childType) => {
+    const ctx = await context("parent-first-native", childType);
+    const results = await collect(ctx);
+    expect(results.map((record) => record.result)).toEqual([
+      "waiting",
+      "parent reply",
+      "forwarded child reply",
+    ]);
+    expect(results[1]).toHaveProperty("openclaw_interim_result", true);
+    expect(results[2]).not.toHaveProperty("openclaw_interim_result");
+    expect(ctx.liveSession.current()?.isIdle()).toBe(true);
   },
 );
