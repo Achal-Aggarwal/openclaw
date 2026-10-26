@@ -105,11 +105,6 @@ export class PreparedModelRuntimeOwnerRetention {
   }
 }
 
-export type AgentRuntimeCleanupRegistries = {
-  registries: readonly PluginRegistry[];
-  [Symbol.asyncDispose](): Promise<void>;
-};
-
 export async function acquireRetainedAgentRuntimeCleanupRegistries(
   agentDir: string | undefined,
   context: {
@@ -117,7 +112,10 @@ export async function acquireRetainedAgentRuntimeCleanupRegistries(
     retainedGatewayRunOwners: PreparedModelRuntimeOwnerRetention;
     retainedDirectRunOwners: PreparedModelRuntimeOwnerRetention;
   },
-): Promise<AgentRuntimeCleanupRegistries> {
+): Promise<{
+  registries: readonly PluginRegistry[];
+  [Symbol.asyncDispose](): Promise<void>;
+}> {
   const registries = new Set<PluginRegistry>();
   const releases: Array<() => Promise<void>> = [];
   try {

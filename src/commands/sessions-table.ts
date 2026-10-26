@@ -58,8 +58,6 @@ export function toSessionDisplayRow(key: string, entry: SessionEntry) {
   };
 }
 
-export type SessionDisplayRow = ReturnType<typeof toSessionDisplayRow>;
-
 export function toSessionDisplayRows(store: Record<string, SessionEntry>) {
   return Object.entries(store)
     .map(([key, entry]) => toSessionDisplayRow(key, entry))
@@ -89,7 +87,7 @@ export function formatSessionModelCell(model: string | null | undefined, rich: b
 
 export function formatSessionFlagsCell(
   row: Pick<
-    SessionDisplayRow,
+    ReturnType<typeof toSessionDisplayRow>,
     | "thinkingLevel"
     | "verboseLevel"
     | "traceLevel"

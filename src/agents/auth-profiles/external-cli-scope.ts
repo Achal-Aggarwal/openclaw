@@ -7,11 +7,6 @@ import type { AgentModelConfig } from "../../config/types.agents-shared.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { listAgentEntries } from "../agent-scope-config.js";
 
-export type ExternalCliAuthScope = {
-  providerIds: string[];
-  profileIds: string[];
-};
-
 // Include both raw and normalized provider ids so config aliases and canonical
 // provider ids can both match external CLI auth providers.
 function addProviderScopeId(out: Set<string>, value: string | undefined): void {
@@ -75,9 +70,12 @@ function addExternalCliRuntimeScopeFromModelMap(
   }
 }
 
-export function resolveExternalCliAuthScopeFromConfig(
-  cfg: OpenClawConfig,
-): ExternalCliAuthScope | undefined {
+export function resolveExternalCliAuthScopeFromConfig(cfg: OpenClawConfig):
+  | {
+      providerIds: string[];
+      profileIds: string[];
+    }
+  | undefined {
   const providerIds = new Set<string>();
   const profileIds = new Set<string>();
 

@@ -38,3 +38,45 @@ export function listen<T extends EventTarget, K extends string>(
   target.addEventListener(type, listener, options);
   return () => target.removeEventListener(type, listener, options);
 }
+
+export function createPooledObserver<T extends EventTarget>(
+  connect: (target: T, notify: () => void) => () => void,
+) {
+  type Subscription = { callback: () => void };
+  type Pool = { subscribers: Set<Subscription>; stop: () => void };
+  const pools = new WeakMap<T, Pool>();
+  return (target: T, callback: () => void): (() => void) => {
+    let pool = pools.get(target);
+    if (!pool) {
+      const subscribers = new Set<Subscription>();
+      pool = {
+        subscribers,
+        stop: connect(target, () => {
+          const delivery = [...subscribers];
+          for (const subscriber of delivery) {
+            if (!subscribers.has(subscriber)) {
+              continue;
+            }
+            try {
+              subscriber.callback();
+            } catch (error) {
+              reportError(error);
+            }
+          }
+        }),
+      };
+      pools.set(target, pool);
+    }
+    const subscription = { callback };
+    pool.subscribers.add(subscription);
+    return () => {
+      if (!pool.subscribers.delete(subscription)) {
+        return;
+      }
+      if (pool.subscribers.size === 0) {
+        pool.stop();
+        pools.delete(target);
+      }
+    };
+  };
+}
