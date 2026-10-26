@@ -109,6 +109,8 @@ export function controlUiStableChunkName(id: string): string | undefined {
       // The open Chat menu owns these; New Session shares only the catalog.
       return "chat-interaction-runtime";
     case "ui/src/pages/chat/components/chat-message-group-rich.tsx":
+    case "ui/src/pages/chat/components/chat-message-activity-view.tsx":
+    case "ui/src/pages/chat/components/chat-activity-headline.solid.tsx":
       return "chat-interaction-runtime";
     case "ui/src/pages/chat/components/chat-message-bubble-tools.tsx":
       return "chat-interaction-runtime";
@@ -160,6 +162,12 @@ export function controlUiStableChunkName(id: string): string | undefined {
     case "ui/src/components/session-git-diff.tsx":
     case "ui/src/lib/sessions/usage.ts":
     case "src/shared/weak-owner-map.ts":
+    case "ui/src/pages/chat/components/chat-activity-headline-selection.ts":
+    case "ui/src/pages/chat/components/chat-working-indicator.tsx":
+    case "ui/src/pages/chat/components/chat-working-indicator-branding.tsx":
+    case "ui/src/components/working-phrase-solid.tsx":
+    case "ui/src/pages/chat/components/chat-retry-status.tsx":
+    case "ui/src/pages/chat/components/chat-working-indicator-surprise.ts":
     case "src/shared/assistant-display-content.ts":
     case "src/shared/agent-run-status.ts":
     case "ui/src/app/assistant-media.ts":
@@ -259,8 +267,6 @@ export function controlUiStableChunkName(id: string): string | undefined {
     case "ui/src/pages/chat/components/chat-comment-pins.tsx":
     case "ui/src/pages/chat/components/chat-selection-annotation-rows.tsx":
       return "chat-saved-annotations-runtime";
-    case "ui/src/pages/chat/components/chat-forwarded-attribution.tsx":
-      return "chat-forwarded-attribution-runtime";
     case "ui/src/pages/chat/chat-provider-review-controller.tsx":
       return "chat-provider-review";
     // Keep optional compression groups separate from code evaluated by text-only Chat.
@@ -537,6 +543,7 @@ export function createControlUiCodeSplitting(options: { includeBootGroups?: bool
                   "ui/src/pages/chat/components/chat-async-question-summary.tsx",
                   "ui/src/pages/chat/components/chat-message-context-view.tsx",
                   "ui/src/pages/chat/components/chat-session-activity.solid.tsx",
+                  "ui/src/pages/chat/components/chat-forwarded-attribution.tsx",
                   "ui/src/pages/chat/components/chat-workspace-conflict.tsx",
                   "ui/src/pages/chat/session-snapshot-decoder.ts",
                   "ui/src/lib/protocol-validators.generated/board.js",
@@ -557,12 +564,6 @@ export function createControlUiCodeSplitting(options: { includeBootGroups?: bool
                 modules.add("ui/src/lib/platform-label.ts");
                 // Placement and delivery share retries without importing either route's bundle.
                 modules.add("ui/src/pages/chat/chat-outbox-retry.ts");
-                // Initial presentation shares this existing group, not the optional menu runtime.
-                modules.add("ui/src/pages/chat/components/chat-working-indicator.tsx");
-                modules.add("ui/src/pages/chat/components/chat-working-indicator-branding.tsx");
-                modules.add("ui/src/components/working-phrase-solid.tsx");
-                modules.add("ui/src/pages/chat/components/chat-retry-status.tsx");
-                modules.add("ui/src/pages/chat/components/chat-working-indicator-surprise.ts");
                 modules.add("ui/src/pages/chat/composer-capability-catalog.ts");
                 modules.add("ui/src/lib/config/mcp-servers.ts");
                 modules.add("src/config/patch-replace-paths.ts");

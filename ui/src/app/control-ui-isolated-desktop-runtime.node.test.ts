@@ -128,7 +128,8 @@ it.each([false, true])(
     const shared = isolated.chunks.find(
       (chunk) => sidebar in chunk.modules && outbox in chunk.modules,
     );
-    expect(indicator in shared!.modules).toBe(true);
+    const indicatorChunk = isolated.chunks.find((chunk) => indicator in chunk.modules);
+    expect(indicator in shared!.modules).toBe(false);
     const chatChunk = isolated.chunks.find((chunk) => chat in chunk.modules);
     const interactionChunk = isolated.chunks.find((chunk) => composerInteraction in chunk.modules);
     expect(payload in interactionChunk!.modules).toBe(true);
@@ -138,11 +139,19 @@ it.each([false, true])(
       expect(after).toEqual(
         expect.arrayContaining(
           route === "chat"
-            ? [shared!.fileName, chatChunk!.fileName, interactionChunk!.fileName]
+            ? [
+                shared!.fileName,
+                chatChunk!.fileName,
+                interactionChunk!.fileName,
+                indicatorChunk!.fileName,
+              ]
             : [shared!.fileName, interactionChunk!.fileName],
         ),
       );
-      expect(after).toHaveLength(route === "chat" ? 3 : 2);
+      expect(after).toHaveLength(route === "chat" ? 4 : 2);
+      if (route === "new") {
+        expect(after).not.toContain(indicatorChunk!.fileName);
+      }
       expect(before.length).toBeGreaterThan(after.length);
       const routeHints = new RegExp(
         `<template data-openclaw-route-preloads="${route}">([\\s\\S]*?)</template>`,
@@ -155,7 +164,7 @@ it.each([false, true])(
       const interactionHint = hints.find((hint) => hint.includes(interactionChunk!.fileName));
       expect(interactionHint).toContain('rel="preload"');
       expect(interactionHint).toContain('as="script"');
-      expect(interactionHint).toContain('crossorigin');
+      expect(interactionHint).toContain("crossorigin");
       expect(interactionHint).toContain('fetchpriority="low"');
       expect(hints.find((hint) => hint.includes(shared!.fileName))).toContain(
         'rel="modulepreload"',
@@ -200,6 +209,7 @@ it.each([false, true])(
     visitImports(entry!.fileName);
     expect(startup.has(shared!.fileName)).toBe(false);
     expect(startup.has(interactionChunk!.fileName)).toBe(false);
+    expect(startup.has(indicatorChunk!.fileName)).toBe(false);
     await import(
       /* @vite-ignore */ pathToFileURL(path.join(isolated.outDir, entry!.fileName)).href
     );

@@ -3,3 +3,4 @@ export { ExpandedToolCardContent, ToolOutcome } from "./components/chat-tool-con
 export { ChatPermissionCard } from "./components/chat-permission-card.tsx";
 export { ActivityOperation } from "./components/chat-message-activity-operation.tsx";
 export { WorkGroupSummary } from "./components/chat-work-group-summary.tsx";
+export { ActivityGroupEntries } from "./components/chat-message-group-rich.tsx";
