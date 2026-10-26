@@ -219,25 +219,25 @@ describe("Canvas widget view", () => {
     vi.useRealTimers();
   });
 
-  it("keeps a sized loading notice until a new script frame has idle time", async () => {
+  it("waits for scrolling to settle but admits frames even with a short idle deadline", async () => {
+    vi.useFakeTimers();
     const callbacks: IdleRequestCallback[] = [];
-    vi.stubGlobal("requestIdleCallback", (callback: IdleRequestCallback) =>
-      callbacks.push(callback),
-    );
+    vi.stubGlobal("requestIdleCallback", (cb: IdleRequestCallback) => callbacks.push(cb));
     vi.stubGlobal("cancelIdleCallback", () => callbacks.splice(0));
-    const runIdle = async (time: number, view: OpenClawCanvasWidgetView) => {
-      callbacks.shift()!({ didTimeout: false, timeRemaining: () => time });
-      await settle(view);
-    };
-    const view = mount();
+    const host = document.createElement("div");
+    document.body.append(host);
+    const root = host.attachShadow({ mode: "open" });
+    const view = mount(client, "cv_inline", root);
     await settle(view);
-    expect(view.documentHtml).toBe(documentView.html);
-    expect(view.querySelector("iframe")).toBeNull();
-    expect(notice(view)).toContain("Loading");
     expect(view.querySelector<HTMLElement>('[role="status"]')?.style.minHeight).toBe("420px");
-    await runIdle(8, view);
-    expect(view.querySelector("iframe")).toBeNull();
-    await runIdle(50, view);
+    await vi.advanceTimersByTimeAsync(100);
+    root.dispatchEvent(new Event("scroll"));
+    await vi.advanceTimersByTimeAsync(100);
+    expect(callbacks).toHaveLength(0);
+    vi.spyOn(HTMLIFrameElement.prototype, "contentWindow", "get").mockReturnValue(window);
+    await vi.advanceTimersByTimeAsync(20);
+    callbacks.shift()!({ didTimeout: true, timeRemaining: () => 0 });
+    await settle(view);
     const frame = await frameFor(view);
     const post = vi.spyOn(frame.contentWindow!, "postMessage");
     message(frame, {

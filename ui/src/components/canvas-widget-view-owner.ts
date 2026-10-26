@@ -557,27 +557,37 @@ export function createCanvasWidget(
       return;
     }
     const binding = validatedBinding;
-    const view = state.view;
-    const handle = requestIdleCallback((idle) => {
+    let idleHandle = 0;
+    let quietTimer: number;
+    const admit = () => {
+      cancelFrameAdmission?.();
       cancelFrameAdmission = undefined;
-      if (
-        !isCurrent(binding) ||
-        state.view !== view ||
-        !props.allowScripts ||
-        !props.presentationActive
-      ) {
-        return;
-      }
-      // Creating the browsing context costs about 30 ms. Keep its first mount
-      // and ready-message listener together, after scrolling leaves room for it.
-      if (idle.timeRemaining() < 32) {
-        scheduleFrameAdmission();
+      if (!isCurrent(binding) || !props.allowScripts || !props.presentationActive) {
         return;
       }
       state.scriptFrameAdmitted = true;
       notify();
-    });
-    cancelFrameAdmission = () => cancelIdleCallback(handle);
+    };
+    // Browsing-context creation takes ~30 ms. Wait for the transcript to stop
+    // scrolling, then mount with its ready listener in one task. Idle deadlines
+    // can stay short indefinitely, so bound the wait after scrolling settles.
+    const cancelScheduled = () => {
+      window.clearTimeout(quietTimer);
+      cancelIdleCallback(idleHandle);
+    };
+    const waitForQuiet = () => {
+      cancelScheduled();
+      quietTimer = window.setTimeout(() => {
+        idleHandle = requestIdleCallback(admit, { timeout: 250 });
+      }, 120);
+    };
+    const roots = new Set([element.ownerDocument, element.getRootNode()]);
+    const releaseScroll = [...roots].map((root) => listen(root, "scroll", waitForQuiet, true));
+    cancelFrameAdmission = () => {
+      releaseScroll.forEach((release) => release());
+      cancelScheduled();
+    };
+    waitForQuiet();
   }
 
   function syncFrameError(): void {
