@@ -81,6 +81,7 @@ const prepared = {
   agentId: "main",
   agentDir: "/tmp/unused",
   outputTextPolicy: "strict-visible" as const,
+  thinkLevel: "off" as const,
 };
 const result = (text: string) => ({
   text,
