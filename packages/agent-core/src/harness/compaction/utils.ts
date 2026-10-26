@@ -426,14 +426,6 @@ function elideMiddleWithinWeight(text: string, maxChars: number): string | undef
   return `${head}\n\n[... ${text.length - head.length - tail.length} characters omitted ...]\n\n${tail}`;
 }
 
-export interface BoundedConversation {
-  text: string;
-  /** Entries left out entirely; the text names each gap where it occurs. */
-  omittedEntries: number;
-  /** Entries kept with their middle elided. */
-  trimmedEntries: number;
-}
-
 /**
  * Serialize messages for one summary request within `maxChars` CJK-weighted
  * characters. Small inputs are unchanged. Larger inputs keep, in this order:
@@ -447,7 +439,13 @@ export interface BoundedConversation {
 export function serializeConversationWithinBudget(
   messages: Message[],
   maxChars: number,
-): BoundedConversation {
+): {
+  text: string;
+  /** Entries left out entirely; the text names each gap where it occurs. */
+  omittedEntries: number;
+  /** Entries kept with their middle elided. */
+  trimmedEntries: number;
+} {
   const serialized = serializeConversationEntries(messages);
   const separatorChars = ENTRY_SEPARATOR.length;
   const totalChars =
