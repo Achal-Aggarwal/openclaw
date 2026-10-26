@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from "node:util";
 import type { ResolvedSessionEntryRow } from "./session-entry-storage.types.js";
 import type { SessionEntryWindowFacts } from "./session-entry-window.types.js";
 import { SqliteSessionMutationConflictError } from "./session-mutation-conflict-error.js";
@@ -21,31 +22,17 @@ export function sqliteSessionEntriesEqual(
   const {
     participants: _leftParticipants,
     participantCount: _leftParticipantCount,
-    owner: leftOwner,
-    sessionDiffBaseline: leftBaseline,
-    skillsSnapshot: leftSkills,
-    systemPromptReport: leftReport,
     ...leftEntry
   } = left;
   const {
     participants: _rightParticipants,
     participantCount: _rightParticipantCount,
-    owner: rightOwner,
-    sessionDiffBaseline: rightBaseline,
-    skillsSnapshot: rightSkills,
-    systemPromptReport: rightReport,
     ...rightEntry
   } = right;
   // Participant history is a separately mutable SQLite projection. It must not
   // invalidate logical-session compare-and-swap or leak into entry_json writes.
-  // Hydration appends owner and cold fields to hot facts; their top-level order is not identity.
-  return (
-    JSON.stringify(leftEntry) === JSON.stringify(rightEntry) &&
-    JSON.stringify(leftOwner) === JSON.stringify(rightOwner) &&
-    JSON.stringify(leftBaseline) === JSON.stringify(rightBaseline) &&
-    JSON.stringify(leftSkills) === JSON.stringify(rightSkills) &&
-    JSON.stringify(leftReport) === JSON.stringify(rightReport)
-  );
+  // Hydration and worker deltas can reorder keys without changing persisted values.
+  return isDeepStrictEqual(leftEntry, rightEntry);
 }
 
 export function sqliteLifecycleTargetSnapshotsEqual(
