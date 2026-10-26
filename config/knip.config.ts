@@ -400,6 +400,7 @@ const repositoryScriptEntries = [
   "scripts/perf/session-tool-pin-measure.ts!",
   "scripts/perf/sidebar-presentation-measure.ts!",
   "scripts/perf/sidebar-fact-sharing-measure.ts!",
+  "scripts/perf/session-partition-metrics-measure.ts!",
   "scripts/perf/source-kind-progress-equality-measure.ts!",
   "scripts/perf/sqlite-reclamation-retention.ts!",
   "scripts/perf/state-db-cache-admission-measure.ts!",
@@ -470,6 +471,7 @@ const repositoryScriptEntries = [
   "scripts/perf/plugin-cache-stat-facts.ts!",
   "scripts/perf/plugin-preparation-boot.mjs!",
   "scripts/perf/plugin-preparation-boot-preload.mjs!",
+  "scripts/perf/plugin-relative-path-measure.ts!",
   "scripts/perf/plugin-source-preparation.ts!",
   "scripts/perf/plugin-transform-preload.mjs!",
   "scripts/perf/prepared-gateway-startup-measure.mjs!",
@@ -549,6 +551,7 @@ const repositoryScriptEntries = [
   "scripts/perf/state-read-session-list-bench.ts!",
   "scripts/perf/state-read-worker-bench.ts!",
   "scripts/perf/stream-idle-watchdog.ts!",
+  "scripts/perf/typing-timer-churn.ts!",
   "scripts/perf/tool-call-stream-buffer-measure.ts!",
   "scripts/perf/tool-source-reply-completion-measure.mjs!",
   "scripts/perf/transcript-model-context-measure.ts!",
@@ -573,6 +576,7 @@ const repositoryScriptEntries = [
   "scripts/perf/session-cost-ready-observer.cjs!",
   "scripts/perf/session-polling-fixture.ts!",
   "scripts/perf/sqlite-reply-census-preload.mjs!",
+  "scripts/perf/timer-census-preload.mjs!",
   "scripts/perf/worker-retained-heap-preload.ts!",
   // These retained proof commands are invoked by
   // their source headers, scripts/perf/README.md, and native-allocation-profile.md.

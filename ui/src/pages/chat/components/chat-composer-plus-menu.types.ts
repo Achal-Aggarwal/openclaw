@@ -1,6 +1,11 @@
 import type { JSX } from "@solidjs/web";
 import type { IconName } from "../../../components/solid/icon.tsx";
-import type { MenuEntry, MenuHandle, MenuItem } from "../../../components/solid/menu.tsx";
+import type {
+  MenuControls,
+  MenuEntry,
+  MenuHandle,
+  MenuItem,
+} from "../../../components/solid/menu.tsx";
 import type { SessionToolOverrides } from "../../../lib/sessions/patch.ts";
 import type { ChatComposerCapabilityHost } from "../chat-composer-capability-host.tsx";
 import type { ChatAttachmentControlsProps } from "./chat-attachment-controls.types.ts";
@@ -50,5 +55,6 @@ export type ChatComposerPlusMenuBodyProps = {
   view: ChatComposerPlusMenuView;
   readMenu: () => MenuHandle;
   onReady: (handlers: ChatComposerPlusMenuHandlers | undefined) => void;
+  controls: MenuControls;
   renderItems: (items: () => readonly MenuEntry[]) => JSX.Element;
 };

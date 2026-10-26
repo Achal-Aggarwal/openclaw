@@ -4,22 +4,72 @@ import {
   type BootRecord,
 } from "../../app/boot-record.ts";
 import type { SidebarSnapshotModel } from "../../components/sidebar-snapshot-data.ts";
+import type { ChatSessionSnapshot } from "./session-message-cache.ts";
 import {
   sidebarSnapshotInvalidationMatches,
   snapshotStoreGeneration,
   subscribeSnapshotInvalidation,
 } from "./session-snapshot-invalidation-events.ts";
 
+type PreparedSnapshotRead = ReturnType<
+  typeof import("./session-snapshot-store.ts").readPrewarmedChatSnapshot
+>;
+
 type PrewarmedSnapshot = {
   cacheKey: string;
   cancelled: boolean;
   promise: Promise<unknown>;
+  prepared?: {
+    promise: PreparedSnapshotRead;
+    snapshot?: Awaited<PreparedSnapshotRead>;
+    board?: { value: ChatSessionSnapshot["board"] };
+    onBoard?: (board: ChatSessionSnapshot["board"]) => void;
+    consumerIsCurrent?: () => boolean;
+  };
 };
 
 let pending: PrewarmedSnapshot | undefined;
+export let prewarmedHistoryStateValidator:
+  | typeof import("../../lib/protocol-validators.generated/history-state.js").isChatHistoryState
+  | undefined;
+
+export async function loadChatHistoryStateValidator() {
+  const { isChatHistoryState } =
+    await import("../../lib/protocol-validators.generated/history-state.js");
+  prewarmedHistoryStateValidator = isChatHistoryState;
+  return isChatHistoryState;
+}
 
 export function peekPrewarmedChatSnapshot(): PrewarmedSnapshot | undefined {
   return pending;
+}
+
+export function readSharedPrewarm(
+  entry: PrewarmedSnapshot,
+  read: (onBoard: (board: ChatSessionSnapshot["board"]) => void) => PreparedSnapshotRead,
+  onBoard?: (board: ChatSessionSnapshot["board"]) => void,
+  consumerIsCurrent?: () => boolean,
+) {
+  const prepared: NonNullable<PrewarmedSnapshot["prepared"]> = (entry.prepared ??= {
+    promise: read((board) => {
+      // Keep the early Board receipt with the same parse that supplies dispatch facts.
+      prepared.board = { value: board };
+      prepared.onBoard?.(board);
+    }).then((snapshot) => {
+      prepared.snapshot = snapshot;
+      return snapshot;
+    }),
+  });
+  if (consumerIsCurrent) {
+    prepared.consumerIsCurrent = consumerIsCurrent;
+  }
+  if (onBoard) {
+    prepared.onBoard = onBoard;
+    if (prepared.board) {
+      onBoard(prepared.board.value);
+    }
+  }
+  return prepared;
 }
 
 export function discardPrewarmedChatSnapshot(cacheKey?: string): void {
@@ -43,15 +93,17 @@ export async function prewarmChatSnapshot(cacheKey: string): Promise<void> {
       .catch(() => undefined),
   };
   pending = entry;
-  // Parse alongside route loading, not after the pane's first empty projection.
-  // The store shares the parsed result and early board receipt with its consumer.
+  // Parse alongside the validator so the Board can restore before history is ready.
+  // Both paths share the prepared snapshot consumed by request dispatch.
   try {
     await Promise.all([
       (async () => {
         const { readPrewarmedChatSnapshot } = await import("./session-snapshot-store.ts");
-        await readPrewarmedChatSnapshot(cacheKey);
+        if (pending === entry) {
+          await readPrewarmedChatSnapshot(cacheKey);
+        }
       })(),
-      import("../../lib/protocol-validators.generated/history-state.js"),
+      loadChatHistoryStateValidator(),
     ]);
   } catch {}
 }

@@ -7,6 +7,10 @@ import {
 } from "../../lib/protocol-validators.generated/transcript.js";
 import * as json from "../../lib/snapshot-json.ts";
 import type { ChatSessionSnapshot } from "./session-message-cache.ts";
+import {
+  loadChatHistoryStateValidator,
+  prewarmedHistoryStateValidator,
+} from "./session-snapshot-prewarm.ts";
 
 const nonnegative = json.refine(json.number, (value) => value >= 0);
 const sessionKeySchema = json.refine(json.text, (value) => value.length > 0);
@@ -129,8 +133,9 @@ export async function parseSnapshotRecord(
   if (historyState !== undefined) {
     // Do not hold board restoration behind the lazy transcript validator.
     onBoard?.(board);
-    const { isChatHistoryState } =
-      await import("../../lib/protocol-validators.generated/history-state.js");
+    // Reuse the validated warm-start path without another async import turn.
+    const isChatHistoryState =
+      prewarmedHistoryStateValidator ?? (await loadChatHistoryStateValidator());
     if (!isChatHistoryState(historyState)) {
       return null;
     }

@@ -121,6 +121,7 @@ function PlusMenuSurface(props: { menu: ChatComposerPlusMenuProps }) {
           <Loading fallback={renderItems(loadingItems)}>
             <Content
               menu={props.menu}
+              controls={controls}
               view={view()}
               readMenu={() => handle}
               onReady={(next) => {
@@ -146,6 +147,7 @@ function PlusMenuSurface(props: { menu: ChatComposerPlusMenuProps }) {
     >
       <Menu
         lazy
+        class="agent-chat__attach-control"
         id={`chat-composer-plus-${id}`}
         panelClass="agent-chat__capability-menu-panel"
         placement="top-start"

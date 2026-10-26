@@ -6,11 +6,23 @@ import { formatTimeMs } from "../../../lib/format.ts";
 import { t } from "../../../lib/reactive/i18n.ts";
 import { detectTextDirection } from "../../../lib/text-direction.ts";
 import { ChatLazyBoundary } from "./chat-lazy-boundary.tsx";
-import type { ChatNoticeProps } from "./chat-notice-view.tsx";
-import { ChatSkillLearnedNotice } from "./chat-skill-learned-notice.tsx";
+import type { ChatThreadProps } from "./chat-thread-interactions.ts";
 
+export type ChatNoticeProps = {
+  item: Extract<ChatItem, { kind: "notice" }>;
+  onPermissionRetry?: (message: string) => void;
+  recovery?: Pick<
+    ChatThreadProps,
+    "failureActionsRunId" | "runActive" | "runWorking" | "onRetryRun" | "onDismissPendingInput"
+  >;
+};
+
+// Text-only notices paint with their transcript row; only interactive cards load later.
 const ChatPermissionCard = lazy(() => import("./chat-permission-card.tsx"), {
   export: "ChatPermissionCard",
+});
+const ChatSkillLearnedNotice = lazy(() => import("./chat-skill-learned-notice.tsx"), {
+  export: "ChatSkillLearnedNotice",
 });
 
 function SystemLine(props: {
@@ -189,7 +201,9 @@ export function ChatNoticeDetails(props: ChatNoticeProps) {
       </Match>
       <Match when={props.item.skillChanges}>
         <div data-chat-row-key={props.item.key} data-ts={String(props.item.timestamp)}>
-          <ChatSkillLearnedNotice notice={props.item.skillChanges} />
+          <ChatLazyBoundary>
+            <ChatSkillLearnedNotice notice={props.item.skillChanges} />
+          </ChatLazyBoundary>
         </div>
       </Match>
     </Switch>

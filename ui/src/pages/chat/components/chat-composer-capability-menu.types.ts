@@ -8,12 +8,13 @@ export type ChatComposerPlusMenuView =
   | "root"
   | "skills"
   | "connectors"
-  | `tools:${string}`
+  | "libraries"
   | `library:${string}`;
 
 export type ChatComposerMenuSkill = {
   key: string;
   name: string;
+  emoji?: string;
   enabled: boolean;
   baseEnabled: boolean;
   missingDeps?: boolean;
