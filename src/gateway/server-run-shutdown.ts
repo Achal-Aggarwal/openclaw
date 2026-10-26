@@ -36,10 +36,7 @@ const RESTART_REPLY_DRAIN_POLL_MS = 100;
 const RESTART_TERMINAL_PERSISTENCE_WAIT_TIMEOUT_MS = 1_000;
 const RESTART_MARKER_SLOW_WARNING_MS = 1_000;
 
-function inspectRestartReplyDrain(params: {
-  getPendingReplyCount: () => number;
-  resolveGatewayContext: GatewayContextResolver;
-}) {
+function inspectRestartReplyDrain(params: Parameters<typeof prepareGatewayRunShutdown>[0]) {
   const pendingReplyCount = params.getPendingReplyCount();
   const entries = listGatewayRpcSourceEntries(params.resolveGatewayContext);
   const chatRuns = listRestartDrainRuns(entries).length;

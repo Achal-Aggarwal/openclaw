@@ -213,10 +213,7 @@ export async function prepareChatSendSessionEntry(params: {
   };
 }
 
-async function loadChatSendSessionContext(params: {
-  request: NormalizedChatSendRequest;
-  context: GatewayRequestHandlerOptions["context"];
-}) {
+async function loadChatSendSessionContext(params: Parameters<typeof prepareChatSendSession>[0]) {
   const { request, context } = params;
   const { p, explicitOrigin, normalizedAttachments } = request;
   const rawSessionKey = p.sessionKey;

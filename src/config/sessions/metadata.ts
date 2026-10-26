@@ -45,10 +45,7 @@ export function deriveSessionOrigin(
   });
 }
 
-function prepareGroupSessionPatch(params: {
-  ctx: MsgContext;
-  groupResolution?: GroupKeyResolution | null;
-}) {
+function prepareGroupSessionPatch(params: Parameters<typeof prepareSessionMetaPatch>[0]) {
   const resolution = params.groupResolution ?? resolveGroupSessionKey(params.ctx);
   if (!resolution?.channel) {
     return null;

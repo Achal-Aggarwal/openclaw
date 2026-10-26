@@ -5,16 +5,8 @@ import {
 } from "@openclaw/normalization-core/string-coerce";
 import type { GatewayClient } from "./server-methods/types.js";
 
-/** Stable actor fields included in control-plane audit and rate-limit logs. */
-export type ControlPlaneActor = {
-  actor: string;
-  deviceId: string;
-  clientIp: string;
-  connId: string;
-};
-
 /** Extracts audit identity from a possibly missing or partially connected client. */
-export function resolveControlPlaneActor(client: GatewayClient | null): ControlPlaneActor {
+export function resolveControlPlaneActor(client: GatewayClient | null) {
   return {
     actor: normalizeOptionalString(client?.connect?.client?.id) ?? "unknown-actor",
     deviceId: normalizeOptionalString(client?.connect?.device?.id) ?? "unknown-device",
@@ -24,7 +16,9 @@ export function resolveControlPlaneActor(client: GatewayClient | null): ControlP
 }
 
 /** Formats actor identity as compact key/value text for structured gateway logs. */
-export function formatControlPlaneActor(actor: ControlPlaneActor): string {
+export function formatControlPlaneActor(
+  actor: ReturnType<typeof resolveControlPlaneActor>,
+): string {
   return `actor=${actor.actor} device=${actor.deviceId} ip=${actor.clientIp} conn=${actor.connId}`;
 }
 

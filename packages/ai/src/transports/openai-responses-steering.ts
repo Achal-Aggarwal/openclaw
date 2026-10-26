@@ -5,12 +5,6 @@ import type { ResponseInput } from "openai/resources/responses/responses.js";
 import type { StreamOptions, UserMessage } from "../types.js";
 import type { ResponsesContinuationRequest } from "./openai-responses-continuation.js";
 
-type Submission = {
-  input: ResponseInput;
-  resolve: (accepted: boolean) => void;
-  reject: (error: Error) => void;
-};
-
 function cloneWireRequest<T>(request: T): T {
   const serialized = JSON.stringify(request);
   // SAFETY: Requests are JSON wire bodies; normalization intentionally runs toJSON.
@@ -55,7 +49,11 @@ export function createResponsesSteering(params: {
   let responseId: string | undefined;
   let active: typeof params | undefined = params;
   let unsubscribe: (() => void) | void;
-  const pending: Submission[] = [];
+  const pending: {
+    input: ResponseInput;
+    resolve: (accepted: boolean) => void;
+    reject: (error: Error) => void;
+  }[] = [];
   const accepted = new Map<string, ResponseInput>();
   const acknowledged = new Set<string>();
   const seal = () => {

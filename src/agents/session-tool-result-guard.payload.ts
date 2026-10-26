@@ -6,7 +6,6 @@ import {
   boundedJsonUtf8Bytes,
   firstEnumerableOwnKeys,
   jsonUtf8BytesOrInfinity,
-  type BoundedJsonUtf8Bytes,
 } from "../infra/json-utf8-bytes.js";
 import {
   DEFAULT_MAX_LIVE_TOOL_RESULT_CHARS,
@@ -28,7 +27,9 @@ const MAX_PERSISTED_TOOL_RESULT_DETAILS_BYTES = 8_192;
 const MAX_PERSISTED_DETAIL_STRING_CHARS = 2_000;
 const MAX_PERSISTED_DETAIL_SESSION_COUNT = 10;
 const MAX_PERSISTED_DETAIL_FALLBACK_STRING_CHARS = 200;
-function originalDetailsSizeFields(size: BoundedJsonUtf8Bytes): Record<string, number> {
+function originalDetailsSizeFields(
+  size: ReturnType<typeof boundedJsonUtf8Bytes>,
+): Record<string, number> {
   return size.complete
     ? { originalDetailsBytes: size.bytes }
     : { originalDetailsBytesAtLeast: size.bytes };
@@ -108,7 +109,7 @@ function copyPersistedResultStateFields(
 
 function buildPersistedDetailsFallback(
   src: Record<string, unknown> | undefined,
-  originalSize: BoundedJsonUtf8Bytes,
+  originalSize: ReturnType<typeof boundedJsonUtf8Bytes>,
   sanitizedBytes?: number,
 ): Record<string, unknown> {
   // If even the structured summary is too large, keep only shape and stable
@@ -149,7 +150,7 @@ function buildPersistedDetailsFallback(
 function enforcePersistedDetailsByteCap(
   value: unknown,
   originalDetails: unknown,
-  originalSize: BoundedJsonUtf8Bytes,
+  originalSize: ReturnType<typeof boundedJsonUtf8Bytes>,
 ): unknown {
   const sanitizedBytes = jsonUtf8BytesOrInfinity(value);
   if (sanitizedBytes <= MAX_PERSISTED_TOOL_RESULT_DETAILS_BYTES) {

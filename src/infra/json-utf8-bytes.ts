@@ -7,14 +7,6 @@ export function jsonUtf8Bytes(value: unknown): number {
   }
 }
 
-/** Best-effort byte count result for bounded JSON traversal. */
-export type BoundedJsonUtf8Bytes = {
-  /** Bytes counted, or a value greater than the requested max when incomplete. */
-  bytes: number;
-  /** True when traversal completed without unsupported/circular/over-limit input. */
-  complete: boolean;
-};
-
 /** Returns JSON UTF-8 byte length, or Infinity when the value cannot serialize safely. */
 export function jsonUtf8BytesOrInfinity(value: unknown): number {
   try {
@@ -53,8 +45,12 @@ export function firstEnumerableOwnKeys(value: object, maxKeys: number): string[]
   return keys;
 }
 
-/** Counts JSON UTF-8 bytes up to a hard limit without fully serializing large objects. */
-export function boundedJsonUtf8Bytes(value: unknown, maxBytes: number): BoundedJsonUtf8Bytes {
+/**
+ * Counts JSON UTF-8 bytes up to a hard limit without fully serializing large objects.
+ * Incomplete traversal returns a byte count greater than maxBytes.
+ * complete is true only without unsupported, circular, or over-limit input.
+ */
+export function boundedJsonUtf8Bytes(value: unknown, maxBytes: number) {
   let bytes = 0;
   let seen: WeakSet<object> | undefined;
 
