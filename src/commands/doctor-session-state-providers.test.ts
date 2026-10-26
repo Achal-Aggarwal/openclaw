@@ -146,6 +146,15 @@ function entry(patch: Record<string, unknown>): SessionEntry {
   } as SessionEntry;
 }
 
+function heldModelConfig(model: string): OpenClawConfig {
+  return { agents: { defaults: { model } } };
+}
+async function heldRunEntry(selected: SessionEntry, cfg: OpenClawConfig) {
+  const key = "agent:main:subagent:held-selection";
+  const result = await runDoctor({ cfg, store: { [key]: selected } });
+  return { ...result, row: result.store[key] };
+}
+
 describe("doctor session state provider routes", () => {
   beforeEach(() => {
     ownerState.owners = [codexOwner, openAIOwner];
@@ -153,6 +162,86 @@ describe("doctor session state provider routes", () => {
     runtimeState.supported = true;
     runtimeState.cliBackends = [];
   });
+
+  it.each([
+    "legacy map",
+    "exact policy",
+    "provider wildcard",
+    "unrestricted policy",
+    "without origin",
+  ])("preserves an automatic child selection allowed by %s", async (policy) => {
+    const cfg = heldModelConfig("openai/example-primary");
+    cfg.agents!.defaults!.models = {
+      "openai/example-primary": {},
+      "openai/example-secondary": {},
+    };
+    if (policy === "exact policy") {
+      cfg.agents!.defaults!.modelPolicy = { allow: ["openai/example-secondary"] };
+    } else if (policy === "provider wildcard") {
+      cfg.agents!.defaults!.modelPolicy = { allow: ["openai/*"] };
+    } else if (policy === "unrestricted policy") {
+      cfg.agents!.defaults!.modelPolicy = { allow: [] };
+    }
+    const selected = entry({
+      providerOverride: "openai",
+      modelOverride: "example-secondary",
+      modelOverrideSource: "auto",
+      ...(policy === "without origin"
+        ? {}
+        : {
+            modelOverrideFallbackOriginProvider: "openai",
+            modelOverrideFallbackOriginModel: "example-secondary",
+          }),
+    });
+
+    const result = await heldRunEntry(selected, cfg);
+
+    expect(result.row).toEqual(selected);
+    expect(result.warnings).toEqual([]);
+    expect(result.confirmRuntimeRepair).not.toHaveBeenCalled();
+  });
+
+  it.each(["no policy", "default restriction", "agent restriction", "active fallback"])(
+    "still repairs automatic routing with %s",
+    async (policy) => {
+      const cfg = heldModelConfig("openai/example-primary");
+      if (policy !== "no policy") {
+        cfg.agents!.defaults!.models = {
+          "openai/example-primary": {},
+          "openai/example-secondary": {},
+        };
+      }
+      if (policy === "default restriction") {
+        cfg.agents!.defaults!.modelPolicy = { allow: ["openai/example-primary"] };
+      } else if (policy === "agent restriction") {
+        cfg.agents!.entries = { main: { modelPolicy: { allow: ["openai/example-primary"] } } };
+      }
+
+      const result = await heldRunEntry(
+        entry({
+          providerOverride: "openai",
+          modelOverride: "example-secondary",
+          modelOverrideSource: "auto",
+          modelOverrideFallbackOriginProvider: "openai",
+          modelOverrideFallbackOriginModel:
+            policy === "active fallback" ? "example-primary" : "example-secondary",
+        }),
+        cfg,
+      );
+
+      expect(result.confirmRuntimeRepair).toHaveBeenCalledOnce();
+      expect(result.warnings.join("\n")).toContain("stale OpenAI session routing state");
+      for (const key of [
+        "providerOverride",
+        "modelOverride",
+        "modelOverrideSource",
+        "modelOverrideFallbackOriginProvider",
+        "modelOverrideFallbackOriginModel",
+      ]) {
+        expect(result.row).not.toHaveProperty(key);
+      }
+    },
+  );
 
   it("skips unrelated recovery metadata and valid locked harness rows", async () => {
     const store = {
