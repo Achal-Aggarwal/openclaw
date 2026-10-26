@@ -20,7 +20,7 @@ export class TranscriptInitialRange {
   private preparationIsIdle = false;
   private prepareStarted = 0;
   private prepareLatency = 16;
-  private scrollSample = { offset: 0, time: 0, velocity: 0, direction: -1 };
+  private scrollSample = { offset: 0, time: 0, distance: 0, velocity: 0, direction: -1 };
   get measuring(): boolean {
     return this.pending || this.preparingOverscan;
   }
@@ -197,6 +197,7 @@ export class TranscriptInitialRange {
       this.scrollSample = {
         offset,
         time: now,
+        distance: Math.abs(delta),
         velocity: previous.time ? Math.abs(delta) / Math.max(16, now - previous.time) : 0,
         direction: Math.sign(delta),
       };
@@ -246,21 +247,25 @@ export class TranscriptInitialRange {
         (sampledDirection < 0 && range.startIndex === 0);
       const direction = inward ? -sampledDirection : sampledDirection;
       const viewport = virtualizer.scrollRect?.height ?? 600;
-      const velocity =
-        !inward && performance.now() - this.scrollSample.time < 100
-          ? this.scrollSample.velocity
-          : 0;
+      const moving = !inward && performance.now() - this.scrollSample.time < 100;
+      const velocity = moving ? this.scrollSample.velocity : 0;
+      // HTML warming is synchronous: predict one observed scroll step and walk
+      // into that viewport, rather than beyond its leading edge.
+      const distance = moving
+        ? warmOnly
+          ? this.scrollSample.distance
+          : velocity * (16 + this.prepareLatency)
+        : 0;
       // At speed, prepare the next viewport rather than rows the reader skips.
       // Virtual-core resolves this from cached sizes; no neighbor layout reads.
       const predictedOffset =
-        (virtualizer.scrollOffset ?? 0) +
-        direction * velocity * (16 + this.prepareLatency) +
-        (direction > 0 ? viewport : 0);
+        Math.max(0, (virtualizer.scrollOffset ?? 0) + direction * distance) +
+        ((warmOnly ? direction < 0 : direction > 0) ? viewport : 0);
       const predicted = virtualizer.getVirtualItemForOffset(Math.max(0, predictedOffset));
       // Prediction can reach an edge before the viewport. Prepare back into the
       // transcript instead of searching past an ordinary, nonfragment edge row.
       let searchDirection = direction;
-      if (velocity && predicted) {
+      if (distance && predicted) {
         if (predicted.index === 0) {
           searchDirection = 1;
         } else if (predicted.index === rows.length - 1) {
@@ -268,7 +273,7 @@ export class TranscriptInitialRange {
         }
       }
       const origin =
-        velocity && predicted
+        distance && predicted
           ? predicted.index - searchDirection
           : direction > 0
             ? range.endIndex

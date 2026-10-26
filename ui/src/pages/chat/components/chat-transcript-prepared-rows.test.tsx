@@ -215,22 +215,30 @@ it("warms ordinary rows only in idle time without mounting their DOM", async () 
   expect(view.container.querySelectorAll(".chat-virtual-row")).toHaveLength(elements);
 });
 
-it("warms the predicted ordinary rows during scrolling without waiting for idle delivery", async () => {
-  const view = await transcriptFixture(0, true, false, true);
-  await view.scrollTo(60);
-  const rendered = view.renderRow.mock.calls.length;
-  const elements = view.container.querySelectorAll(".chat-virtual-row").length;
-  expect(cancelIdleCallback).toHaveBeenCalledTimes(1);
-  await view.frame();
-  const prepared = view.renderRow.mock.calls.slice(rendered);
-  expect(prepared.length).toBeGreaterThan(0);
-  expect(prepared.length).toBeLessThanOrEqual(8);
-  const last = prepared.at(-1)![0];
-  const index = last.kind === "item" ? last.item : -1;
-  expect(index).toBeGreaterThan(60);
-  expect(prewarmGroupedMessage(view.groups[index]!.messages[0]!.message, {})).toBe(false);
-  expect(view.container.querySelectorAll(".chat-virtual-row")).toHaveLength(elements);
-});
+it.each([1, -1])(
+  "warms the next ordinary viewport in direction %s without idle delivery",
+  async (direction) => {
+    const view = await transcriptFixture(direction > 0 ? 0 : 24_000, true, false, true);
+    await view.scrollTo(direction > 0 ? 60 : 180);
+    const rendered = view.renderRow.mock.calls.length;
+    const elements = view.container.querySelectorAll(".chat-virtual-row").length;
+    await view.frame();
+    const prepared = view.renderRow.mock.calls.slice(rendered);
+    expect(prepared.length).toBeGreaterThan(0);
+    expect(prepared.length).toBeLessThanOrEqual(8);
+    const last = prepared.at(-1)![0];
+    const index = last.kind === "item" ? last.item : -1;
+    expect(prewarmGroupedMessage(view.groups[index]!.messages[0]!.message, {})).toBe(false);
+    expect(view.container.querySelectorAll(".chat-virtual-row")).toHaveLength(elements);
+
+    const warmedKeys = new Set(prepared.map(([row]) => row.key));
+    await view.scrollTo(120);
+    const nextRows = transcriptRows(view.container);
+    expect(
+      nextRows.filter((row) => warmedKeys.has(row.dataset.virtualRowKey!)).length,
+    ).toBeGreaterThan(nextRows.length / 2);
+  },
+);
 
 it("reuses a recent completed row after scrolling away and back, with a bounded DOM cache", async () => {
   const view = await transcriptFixture();
