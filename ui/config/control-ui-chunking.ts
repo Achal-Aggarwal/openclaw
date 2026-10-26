@@ -22,9 +22,7 @@ const chatVisibleModules = new Set([
   "ui/src/pages/chat/components/chat-tool-card-chrome.tsx",
   "ui/src/pages/chat/components/chat-message-bubble-tools.tsx",
   "ui/src/pages/chat/components/chat-diff-stat.solid.tsx",
-  "ui/src/lib/chat/tool-display-identity.ts",
   "ui/src/lib/chat/tool-call-input.ts",
-  "src/agents/tool-display-name.ts",
   "ui/src/i18n/locales/en-chat-details.ts",
   "ui/src/pages/chat/components/chat-environment-content.tsx",
 ]);
@@ -168,6 +166,8 @@ export function controlUiStableChunkName(id: string): string | undefined {
     case "src/shared/weak-owner-map.ts":
     case "ui/src/pages/chat/components/chat-activity-headline-selection.ts":
     case "ui/src/pages/chat/chat-spawned-subagent.ts":
+    case "ui/src/lib/chat/tool-display-identity.ts":
+    case "src/agents/tool-display-name.ts":
     case "ui/src/pages/chat/components/chat-working-indicator.tsx":
     case "ui/src/pages/chat/components/chat-working-indicator-branding.tsx":
     case "ui/src/components/working-phrase-solid.tsx":

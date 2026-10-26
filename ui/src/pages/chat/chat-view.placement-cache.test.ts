@@ -5,6 +5,7 @@ import type { ChatQueueItem } from "../../lib/chat/chat-types.ts";
 import { prepareChatToolPresentation } from "../../lib/chat/tool-family.ts";
 import { waitForSolid } from "../../test-helpers/solid-settle.ts";
 import { createComposerContainer } from "./chat-composer.test-support.ts";
+import { nativeMessage } from "./chat-thread-fixtures.test-support.ts";
 import * as chatThread from "./chat-thread.ts";
 import { resetChatViewState } from "./chat-view-state.test-support.ts";
 import { createChatProps, renderChatInto, renderChatPropsInto } from "./chat-view.test-helpers.ts";
@@ -25,12 +26,7 @@ describe("chat transcript cache", () => {
     let messageReads = 0;
     let historyBuildReads = 0;
     const loaded = new Proxy(
-      {
-        role: "assistant",
-        content: "Loaded history",
-        timestamp: 1,
-        __openclaw: { id: "loaded", seq: 1 },
-      },
+      nativeMessage("assistant", "Loaded history", 1, { id: "loaded", seq: 1 }),
       {
         get(target, key, receiver) {
           messageReads += 1;

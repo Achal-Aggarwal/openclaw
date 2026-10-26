@@ -520,6 +520,14 @@ describe("Control UI build chunking", () => {
         new URL("../pages/chat/chat-spawned-subagent.ts", import.meta.url).pathname,
         "deferred-ui-support",
       ],
+      [
+        new URL("../lib/chat/tool-display-identity.ts", import.meta.url).pathname,
+        "deferred-ui-support",
+      ],
+      [
+        new URL("../../../src/agents/tool-display-name.ts", import.meta.url).pathname,
+        "deferred-ui-support",
+      ],
       ["/repo/ui/src/components/config-form.shared.ts", undefined],
       ["/repo/ui/src/lib/clipboard.ts", undefined],
       ["/repo/ui/src/build-info.ts", undefined],

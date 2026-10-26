@@ -1416,6 +1416,7 @@
   "ui/src/pages/chat/chat-outbox-owner.ts",
   "ui/src/pages/chat/chat-outbox-queue.ts",
   "ui/src/pages/chat/chat-outbox-recovery.tsx",
+  "ui/src/pages/chat/chat-outbox-reload-recovery.ts",
   "ui/src/pages/chat/chat-outbox-resume.ts",
   "ui/src/pages/chat/chat-outbox-scopes.ts",
   "ui/src/pages/chat/chat-page-close-focus.ts",
