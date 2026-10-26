@@ -103,6 +103,21 @@ describe("Control UI build chunking", () => {
     const newSessionEntry = modulePath("../pages/new-session/new-session-page-entry.ts");
     const optional = modulePath("../components/assistant-panel-content-solid.tsx");
     const devices = modulePath("../pages/devices/devices-page.tsx");
+    const cron = modulePath("../pages/cron/cron-page.tsx");
+    const cronView = modulePath("../pages/cron/view.tsx");
+    const cronDetail = modulePath("../pages/cron/view-detail.tsx");
+    const cronRunLink = modulePath("../../../src/cron/run-link.ts");
+    const sessions = modulePath("../pages/sessions/sessions-page.tsx");
+    const hubHeader = modulePath("../components/solid/hub-page-header.tsx");
+    const hubTabs = modulePath("../components/solid/hub-tabs.tsx");
+    const tabs = modulePath("../components/solid/tabs.tsx");
+    const tabState = modulePath("../lib/tabs.ts");
+    const pendingFocus = modulePath("../lib/reactive/pending-focus.ts");
+    const shadowStyles = modulePath("../lib/reactive/shadow-styles.ts");
+    const settingsWorkspace = modulePath("../components/solid/settings-workspace.tsx");
+    const settingsUi = modulePath("../components/solid/settings-ui.tsx");
+    const settingsSelect = modulePath("../components/solid/settings-select.tsx");
+    const routeSubtitles = modulePath("../i18n/locales/en-route-subtitles.ts");
     const talk = modulePath("../pages/talk/talk-page.tsx");
     const skeleton = modulePath("../components/solid/panel-loading-skeleton.tsx");
     const skeletonStyle = `${modulePath("../styles/panel-loading-skeleton.css")}?inline`;
@@ -148,7 +163,7 @@ describe("Control UI build chunking", () => {
     const sources = new Map([
       [
         entry,
-        `export const chat = () => import(${JSON.stringify(chat)}); export const newSession = () => import(${JSON.stringify(newSessionEntry)}); export const devices = () => import(${JSON.stringify(devices)}); export const talk = () => import(${JSON.stringify(talk)}); export const plugins = () => import(${JSON.stringify(pluginLoader)}); export const mutate = () => import(${JSON.stringify(mutations)}); export const copy = () => import(${JSON.stringify(copy)}); export const online = () => import(${JSON.stringify(online)}); export const deliver = () => import(${JSON.stringify(delivery)}); export const payloads = () => import(${JSON.stringify(payloads)}); export const live = () => import(${JSON.stringify(live)}); export const tools = () => import(${JSON.stringify(tools)}); export const automation = () => import(${JSON.stringify(automation)});`,
+        `export const chat = () => import(${JSON.stringify(chat)}); export const newSession = () => import(${JSON.stringify(newSessionEntry)}); export const devices = () => import(${JSON.stringify(devices)}); export const sessions = () => import(${JSON.stringify(sessions)}); export const cron = () => import(${JSON.stringify(cron)}); export const talk = () => import(${JSON.stringify(talk)}); export const plugins = () => import(${JSON.stringify(pluginLoader)}); export const mutate = () => import(${JSON.stringify(mutations)}); export const copy = () => import(${JSON.stringify(copy)}); export const online = () => import(${JSON.stringify(online)}); export const deliver = () => import(${JSON.stringify(delivery)}); export const payloads = () => import(${JSON.stringify(payloads)}); export const live = () => import(${JSON.stringify(live)}); export const tools = () => import(${JSON.stringify(tools)}); export const automation = () => import(${JSON.stringify(automation)});`,
       ],
       [newSessionEntry, `export { NewSession, modal } from ${JSON.stringify(newSession)};`],
       [
@@ -167,8 +182,44 @@ describe("Control UI build chunking", () => {
       ],
       [modalStyle, ".modal-fixture { color: purple; }"],
       [modalScrollStyle, ".modal-scroll-fixture { overflow: hidden; }"],
-      [optional, `import ${JSON.stringify(optionalStyle)}; export const panel = "optional-panel";`],
+      [
+        optional,
+        `import ${JSON.stringify(optionalStyle)}; import { hubTabs } from ${JSON.stringify(hubTabs)}; import { link } from ${JSON.stringify(settingsUi)}; import { subtitle } from ${JSON.stringify(routeSubtitles)}; export const panel = hubTabs() + link + subtitle;`,
+      ],
       [devices, 'export const page = "devices-page";'],
+      [
+        sessions,
+        `import { header } from ${JSON.stringify(hubHeader)}; import { workspace } from ${JSON.stringify(settingsWorkspace)}; import { select } from ${JSON.stringify(settingsSelect)}; export function render() { return header() + workspace + select; }`,
+      ],
+      [
+        hubHeader,
+        `import { hubTabs } from ${JSON.stringify(hubTabs)}; import { link } from ${JSON.stringify(settingsUi)}; import { subtitle } from ${JSON.stringify(routeSubtitles)}; export function header() { return hubTabs() + link + subtitle; }`,
+      ],
+      [
+        hubTabs,
+        `import { tabs } from ${JSON.stringify(tabs)}; export function hubTabs() { return tabs; }`,
+      ],
+      [
+        tabs,
+        `import { tabState } from ${JSON.stringify(tabState)}; import { pendingFocus } from ${JSON.stringify(pendingFocus)}; import { shadowStyles } from ${JSON.stringify(shadowStyles)}; export const tabs = tabState + pendingFocus + shadowStyles;`,
+      ],
+      [tabState, 'export const tabState = "state";'],
+      [pendingFocus, 'export const pendingFocus = "focus";'],
+      [shadowStyles, 'export const shadowStyles = "styles";'],
+      [settingsUi, 'export const link = "learn-more";'],
+      [settingsWorkspace, 'export const workspace = "workspace";'],
+      [settingsSelect, 'export const select = "select";'],
+      [routeSubtitles, 'export const subtitle = "route";'],
+      [cronRunLink, 'export const runLink = "run-link";'],
+      [
+        cron,
+        `import { header } from ${JSON.stringify(hubHeader)}; import { workspace } from ${JSON.stringify(settingsWorkspace)}; import { view } from ${JSON.stringify(cronView)}; export { detail } from ${JSON.stringify(cronView)}; export function render() { return header() + workspace + view(); }`,
+      ],
+      [
+        cronView,
+        `import { runLink } from ${JSON.stringify(cronRunLink)}; export function view() { return "overview" + runLink; } export const detail = () => import(${JSON.stringify(cronDetail)});`,
+      ],
+      [cronDetail, 'export const detail = "lazy-editor";'],
       [talk, `export { skeleton } from ${JSON.stringify(skeleton)};`],
       [skeleton, `import css from ${JSON.stringify(skeletonStyle)}; export const skeleton = css;`],
       [skeletonStyle, ".skeleton-fixture { color: purple; }"],
@@ -337,6 +388,26 @@ describe("Control UI build chunking", () => {
       automationOperationChunk.fileName,
     );
     expect(staticImports(entryChunk.fileName)).not.toContain(automationChunk.fileName);
+    const cronChunk = chunks.find((chunk) => cron in chunk.modules)!;
+    const cronDetailChunk = chunks.find((chunk) => cronDetail in chunk.modules)!;
+    expect(cronView in cronChunk.modules).toBe(true);
+    expect(cronRunLink in cronChunk.modules).toBe(true);
+    expect(cronDetailChunk.fileName).not.toBe(cronChunk.fileName);
+    expect(staticImports(cronChunk.fileName)).not.toContain(cronDetailChunk.fileName);
+    expect(cronChunk.dynamicImports).toContain(cronDetailChunk.fileName);
+    expect(staticImports(entryChunk.fileName)).not.toContain(cronChunk.fileName);
+    expect(staticImports(chatChunk.fileName)).not.toContain(cronChunk.fileName);
+    const chromeChunk = chunks.find((chunk) => hubHeader in chunk.modules)!;
+    expect([settingsWorkspace, settingsSelect].every((id) => id in chromeChunk.modules)).toBe(true);
+    for (const route of [sessions, cron]) {
+      const routeChunk = chunks.find((chunk) => route in chunk.modules)!;
+      expect(staticImports(routeChunk.fileName)).toContain(chromeChunk.fileName);
+      expect(staticImports(entryChunk.fileName)).not.toContain(routeChunk.fileName);
+      expect(routeChunk.fileName).not.toBe(chromeChunk.fileName);
+    }
+    expect(staticImports(entryChunk.fileName)).not.toContain(chromeChunk.fileName);
+    expect(staticImports(chatChunk.fileName)).not.toContain(chromeChunk.fileName);
+    expect(staticImports(newSessionChunk.fileName)).not.toContain(chromeChunk.fileName);
     expect(staticImports(entryChunk.fileName)).not.toContain(actionChunk.fileName);
     const copyChunk = chunks.find((chunk) => copy in chunk.modules)!;
     const onlineChunk = chunks.find((chunk) => online in chunk.modules)!;
@@ -390,6 +461,7 @@ describe("Control UI build chunking", () => {
     expect(staticImports(newSessionChunk.fileName)).not.toContain(devicesChunk.fileName);
     const deferred = chunks.find((chunk) => optional in chunk.modules)!;
     expect(deferred).toBeDefined();
+    expect(staticImports(deferred.fileName)).not.toContain(chromeChunk.fileName);
     expect(chunks.filter((chunk) => chunk.imports.includes(deferred.fileName))).toHaveLength(0);
   });
 

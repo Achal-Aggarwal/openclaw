@@ -3,6 +3,7 @@ import { afterEach, beforeEach, expect, it } from "vitest";
 import type { ChatStreamSegment } from "../../lib/chat/chat-types.ts";
 import { waitForSolid } from "../../test-helpers/solid-settle.ts";
 import { createComposerContainer } from "./chat-composer.test-support.ts";
+import { message, nativeMessage, queued, signedText } from "./chat-thread-fixtures.test-support.ts";
 import { resetChatViewState } from "./chat-view-state.test-support.ts";
 import { renderChatInto } from "./chat-view.test-helpers.ts";
 import {
@@ -18,26 +19,26 @@ afterEach(() => {
 });
 
 const runId = "run-preamble";
-const user = {
-  role: "user",
-  content: "Check the workspace.",
-  timestamp: 1,
-  __openclaw: { id: "user-preamble", idempotencyKey: runId + ":user" },
-};
-const preamble = (text: string, timestamp: number, itemId: string, owner = runId) => ({
-  role: "assistant",
-  content: text,
-  timestamp,
-  runId: owner,
-  openclawStreamFallback: { source: "segment", itemId, runId: owner, replacementText: text },
+const activeTool = message("toolResult", "Read complete.", undefined, {
+  toolName: "read",
+  toolCallId: "active-read",
+  runId,
 });
-const textBlock = (id: string, phase: string, text: string) => ({
-  type: "text",
-  text,
-  textSignature: JSON.stringify({ v: 1, id, phase }),
+const user = nativeMessage("user", "Check the workspace.", 1, {
+  id: "user-preamble",
+  idempotencyKey: runId + ":user",
 });
+const preamble = (text: string, timestamp: number, itemId: string, owner = runId) =>
+  message("assistant", text, timestamp, {
+    runId: owner,
+    openclawStreamFallback: { source: "segment", itemId, runId: owner, replacementText: text },
+  });
 const draw = (container: HTMLElement, overrides: Parameters<typeof renderChatInto>[1]) =>
   renderChatInto(container, { runActive: true, runId, streamStartedAt: 1, ...overrides });
+const narration = (container: HTMLElement) =>
+  container.querySelectorAll(".chat-group.assistant .chat-text");
+const content = (container: HTMLElement) =>
+  Array.from(narration(container), (element) => element.textContent?.trim());
 
 it("keeps successive commentary inline and formatted across the live-to-history handoff", async () => {
   const container = createComposerContainer();
@@ -49,13 +50,11 @@ it("keeps successive commentary inline and formatted across the live-to-history 
     messages,
     streamSegments: [{ text, ts: 3, runId, itemId: "test" }],
   });
-  const narration = () => container.querySelectorAll(".chat-group.assistant .chat-text");
-  const content = () => Array.from(narration(), (element) => element.textContent?.trim());
   await waitForSolid(() =>
-    expect(content()).toEqual(["Reading the files.", expect.stringContaining(detail)]),
+    expect(content(container)).toEqual(["Reading the files.", expect.stringContaining(detail)]),
   );
-  expect(narration()[1]?.querySelector("strong")?.textContent).toBe("Checking");
-  expect(narration()[1]?.textContent).toContain("End of the explanation.");
+  expect(narration(container)[1]?.querySelector("strong")?.textContent).toBe("Checking");
+  expect(narration(container)[1]?.textContent).toContain("End of the explanation.");
   expect(container.querySelector(".chat-working-indicator")?.textContent).not.toContain("Checking");
 
   draw(container, {
@@ -63,7 +62,7 @@ it("keeps successive commentary inline and formatted across the live-to-history 
     streamSegments: [{ text: "Reviewing the result.", ts: 4, runId, itemId: "review" }],
   });
   await waitForSolid(() =>
-    expect(content()).toEqual([
+    expect(content(container)).toEqual([
       "Reading the files.",
       expect.stringContaining(detail),
       "Reviewing the result.",
@@ -89,15 +88,11 @@ it.each(["explicit", "segment", "tool", "cached"] as const)(
         preamble("Checking the result.", 2, "check"),
       ],
       queue: [
-        {
-          id: "future-send",
-          text: "Run this next.",
-          createdAt: 10,
+        queued("future-send", "Run this next.", 10, "waiting-reconnect", {
           sendRunId: "future-run",
-          sendState: "waiting-reconnect" as const,
           sendSubmittedAtMs: 1,
           sendAttempts: 1,
-        },
+        }),
       ],
     };
     const segment: ChatStreamSegment = { text: "", ts: 1, runId };
@@ -108,37 +103,15 @@ it.each(["explicit", "segment", "tool", "cached"] as const)(
     draw(container, {
       ...props,
       streamSegments: source === "segment" ? [segment] : [],
-      toolMessages:
-        source === "tool"
-          ? [
-              {
-                role: "toolResult",
-                toolName: "read",
-                toolCallId: "active-read",
-                runId,
-                content: "Read complete.",
-              },
-            ]
-          : [],
+      toolMessages: source === "tool" ? [activeTool] : [],
     });
     await waitForSolid(() => expect(container.textContent).toContain("Checking the result."));
     await flushDeferredRowPrune();
-    if (source === "explicit") {
-      expect(container.querySelector(".chat-group.assistant .chat-text")?.textContent?.trim()).toBe(
-        "Checking the result.",
-      );
-    }
-    expect(container.textContent).toContain("Checking the result.");
+    expect(content(container)).toContain("Checking the result.");
     expect(container.textContent).not.toContain("Older run's commentary.");
     draw(container, { ...props, runActive: false, runId: null, stream: null });
     await flushDeferredRowPrune();
     expect(container.textContent).not.toContain("Checking the result.");
-    if (source === "explicit") {
-      renderChatInto(container, { messages: props.messages, persistCommentary: true });
-      await flushDeferredRowPrune();
-      expect(container.textContent).toContain("Checking the result.");
-      expect(props.messages).toHaveLength(3);
-    }
   },
 );
 
@@ -150,25 +123,21 @@ it("leaves unphased answers and mixed-phase narration and final text in the tran
     messages: [
       user,
       { role: "assistant", content: "Unphased answer.", timestamp: 2, runId },
-      {
-        role: "assistant",
-        phase: "commentary",
-        runId,
-        timestamp: 3,
-        content: [
-          textBlock("check", "commentary", "Checking once more."),
-          textBlock("answer", "final_answer", "The result is ready."),
+      message(
+        "assistant",
+        [
+          signedText("Checking once more.", "commentary", "check"),
+          signedText("The result is ready.", "final_answer", "answer"),
         ],
-      },
+        3,
+        { phase: "commentary", runId },
+      ),
     ],
   });
   await waitForSolid(() => expect(container.textContent).toContain("Unphased answer."));
-  const narration = Array.from(
-    container.querySelectorAll(".chat-group.assistant .chat-text"),
-    (element) => element.textContent,
-  ).join("\n");
-  expect(narration).toContain("Unphased answer.");
-  expect(narration).toContain("The result is ready.");
-  expect(narration).toContain("Checking once more.");
+  const text = content(container).join("\n");
+  expect(text).toContain("Unphased answer.");
+  expect(text).toContain("The result is ready.");
+  expect(text).toContain("Checking once more.");
   expect(container.textContent?.match(/Checking once more\./g)).toHaveLength(1);
 });

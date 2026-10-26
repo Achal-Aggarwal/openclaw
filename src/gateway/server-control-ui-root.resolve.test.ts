@@ -247,6 +247,9 @@ describe("createGatewayControlUiRootLifecycle", () => {
         expect(starts() - before).toBe(workers);
         await vi.advanceTimersByTimeAsync(10 * 60_000);
         expect(await readPair()).toEqual(changed);
+        expect(starts() - before).toBe(script === "identity-avatar-file" ? workers : workers * 2);
+        const afterIdle = writePair("third image");
+        expect(await readPair()).toEqual(afterIdle);
         expect(starts() - before).toBe(workers * 2);
       } finally {
         await drainGlobalSingletonLifecycleState();
