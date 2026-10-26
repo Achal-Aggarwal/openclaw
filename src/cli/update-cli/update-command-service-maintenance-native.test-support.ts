@@ -73,7 +73,7 @@ vi.mock("./update-command-package.js", () => ({
   runPackageInstallUpdate: async (
     params: Parameters<typeof import("./update-command-package.js").runPackageInstallUpdate>[0],
   ) => {
-    await params.beforeActivate?.();
+    await params.beforeActivate?.(params.root);
     return { status: "ok", mode: "npm", root: params.root, steps: [], durationMs: 0 };
   },
 }));

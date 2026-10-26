@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { useAutoCleanupTempDirTracker } from "../../../test/helpers/temp-dir.js";
+import * as diskSpace from "../../infra/disk-space.js";
 import * as openClawRoot from "../../infra/openclaw-root.js";
 import * as temporaryRoot from "../../infra/tmp-openclaw-dir.js";
 import * as candidateState from "../../infra/update-candidate-state.js";
@@ -341,12 +342,14 @@ it.each<{
   capable: boolean;
   migrating: boolean;
   omittedTimeout: boolean;
+  space?: number;
   local?: { family: "client" | "daemon"; version: number };
 }>([
   { capable: true, migrating: true, omittedTimeout: false },
   { capable: false, migrating: false, omittedTimeout: false },
   { capable: false, migrating: true, omittedTimeout: false },
   { capable: true, migrating: true, omittedTimeout: true },
+  { capable: true, migrating: true, omittedTimeout: false, space: 0 },
   ...(["client", "daemon"] as const).flatMap((family) =>
     [1, 2].map((version) => ({
       capable: false,
@@ -356,13 +359,22 @@ it.each<{
     })),
   ),
 ])(
-  "parks foreground activation after candidate admission (capable=$capable, migrating=$migrating, omittedTimeout=$omittedTimeout, local=$local)",
-  async ({ capable, migrating, omittedTimeout, local }) => {
+  "parks foreground activation after candidate admission (capable=$capable, migrating=$migrating, omittedTimeout=$omittedTimeout, local=$local, space=$space)",
+  async ({ capable, migrating, omittedTimeout, local, space }) => {
     const root = dirs.make("foreground-candidate-");
     vi.stubEnv("OPENCLAW_STATE_DIR", root);
     vi.stubEnv("OPENCLAW_CONFIG_PATH", path.join(root, "openclaw.json"));
     const env = { ...process.env };
     const params = executionParams("package");
+    const databaseBackupRoot = path.join(root, "backup");
+    if (space !== undefined) {
+      vi.spyOn(diskSpace, "tryReadDiskSpace").mockImplementation((targetPath) => ({
+        targetPath,
+        checkedPath: root,
+        availableBytes: targetPath === databaseBackupRoot ? space : 200 * 1024 ** 2,
+        totalBytes: 1024 ** 3,
+      }));
+    }
     params.root = root;
     params.opts.run = foregroundRun(env);
     params.timeoutMs = omittedTimeout ? undefined : 30_000;
@@ -420,7 +432,7 @@ it.each<{
     });
     mocks.runPackageUpdate.mockImplementation(async ({ validateCandidate, beforeActivate }) => {
       await validateCandidate(root);
-      await beforeActivate();
+      await beforeActivate(databaseBackupRoot);
       events.push("publish");
       return { ...successfulUpdate, root };
     });
@@ -431,7 +443,15 @@ it.each<{
       });
       return executeMutableUpdate(await bindExecutionGuards(params));
     });
-    if (!capable && (migrating || (local !== undefined && local.version !== 1))) {
+    if (space === 0) {
+      expect(result?.result).toMatchObject({
+        status: "error",
+        reason: "snapshot-capacity-insufficient",
+      });
+      expect(events).toEqual(["prepare"]);
+      expect(handoff.park).not.toHaveBeenCalled();
+      expect(params.opts.run.gatewayRestartRequired).toBeUndefined();
+    } else if (!capable && (migrating || (local !== undefined && local.version !== 1))) {
       expect(result?.result).toMatchObject({
         status: "error",
         reason: "target-native-unsupported",

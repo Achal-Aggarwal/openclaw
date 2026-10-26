@@ -324,7 +324,7 @@ export function registerNativeAdmissionTests() {
           if (scenario.late) {
             running = true;
           }
-          await beforeActivate();
+          await beforeActivate(root);
           await fs.writeFile(artifact, "replacement runtime");
           return successfulUpdate;
         });
@@ -332,7 +332,7 @@ export function registerNativeAdmissionTests() {
           async (options: Parameters<typeof updateGitInstall>[0]) => {
             const target = { schemaVersions: { state: 15, agent: 19 } };
             await options.inspectGitTarget?.(target);
-            await options.beforeGitMutation?.(target);
+            await options.beforeGitMutation?.(target, root);
             await fs.writeFile(artifact, "replacement runtime");
             return { ...successfulUpdate, mode: "git" };
           },

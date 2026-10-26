@@ -162,6 +162,7 @@ describe.runIf(process.platform !== "win32")("native package transactions", () =
           pnpmIsolated: { layoutVersion: 11 },
         };
         let retained: PackageUpdateTransaction | undefined;
+        let databaseBackupRoot: string | undefined;
         let stagedLauncher: string;
         const preparationStarted = createDeferred();
         const finishPreparation = createDeferred();
@@ -264,7 +265,11 @@ describe.runIf(process.platform !== "win32")("native package transactions", () =
             await expectText(metadata, "original metadata\n");
             return [];
           },
-          beforeActivate: async () => {
+          beforeActivate: async (directory) => {
+            databaseBackupRoot = directory;
+            // Native pnpm backs up the physical project, outside its nested global package root.
+            expect(path.dirname(directory)).toBe(path.dirname(project));
+            await expectVersion(packageRoot, "1.0.0");
             phases.push("stop");
             preparationStarted.resolve();
             if (siblingChange === "before") {
@@ -272,6 +277,7 @@ describe.runIf(process.platform !== "win32")("native package transactions", () =
             }
           },
           onTransaction: (transaction) => {
+            expect(transaction.databaseBackupRoot).toBe(databaseBackupRoot);
             retained = transaction;
             if (shimFailure) {
               // Lose a prepared launcher after backup, so publication fails only

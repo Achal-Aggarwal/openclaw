@@ -93,7 +93,7 @@ export async function runGlobalPackageUpdateSteps(params: {
   beforeVerifyCandidate?: (packageRoot: string) => Promise<void>;
   resolveLifecycleNodeRunner?: () => string | undefined;
   validateCandidate?: (packageRoot: string) => Promise<UpdateStepResult[]>;
-  beforeActivate?: () => Promise<void>;
+  beforeActivate?: (databaseBackupRoot: string) => Promise<void>;
   assertCurrent?: () => void;
   reserveInstallSlot?: (root: string) => void;
   onTransaction?: (transaction: PackageUpdateTransaction) => void | Promise<void>;

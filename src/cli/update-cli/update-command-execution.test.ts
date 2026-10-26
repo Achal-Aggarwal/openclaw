@@ -154,7 +154,7 @@ describe("mutable update execution", () => {
         mocks.runGitUpdate.mockImplementation(
           async (options: Parameters<typeof updateGitInstall>[0]) => {
             await options.inspectGitTarget?.(target);
-            await options.beforeGitMutation?.(target);
+            await options.beforeGitMutation?.(target, path.join(targetRoot, ".artifacts"));
             await fs.writeFile(
               path.join(targetRoot, "dist", "prepare.runtime.js"),
               "candidate runtime",
@@ -413,7 +413,7 @@ describe("mutable update execution", () => {
             await params.inspectGitTarget(target);
             events.push("git");
             expect(mocks.serviceStopped).toBe(false);
-            await params.beforeGitMutation(target);
+            await params.beforeGitMutation(target, path.join(root, ".artifacts"));
             return { ...successfulUpdate, mode: "git" };
           },
         );

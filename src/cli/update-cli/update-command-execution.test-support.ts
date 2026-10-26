@@ -47,7 +47,7 @@ export function packageCandidate(root: string) {
     params: Parameters<typeof import("./update-command-package.js").runPackageInstallUpdate>[0],
   ) => {
     await params.validateCandidate(root);
-    await params.beforeActivate();
+    await params.beforeActivate("/package-backup");
     return successfulUpdate;
   };
 }

@@ -386,7 +386,7 @@ export async function swapStagedPackageInstall(
       await assertSwapTargetUnowned(targetSwapRoot, shims, params.timeoutMs);
     }
     try {
-      await params.beforeActivate?.();
+      await params.beforeActivate?.(databaseBackupRoot);
     } catch (error) {
       throw new PackageUpdateActivationError(error);
     }

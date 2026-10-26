@@ -3,15 +3,25 @@ import "./update-command-execution.test-support.js";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { expect, it, vi } from "vitest";
+import { createTestConfigSnapshot } from "../../commands/test-runtime-config-helpers.js";
+import * as diskSpace from "../../infra/disk-space.js";
+import { openNodeSqliteDatabase } from "../../infra/node-sqlite.js";
+import * as tempRoot from "../../infra/tmp-openclaw-dir.js";
+import { assessInitialUpdateSnapshotCapacity } from "../../infra/update-candidate-snapshot.js";
 import { createUpdateRun } from "../../infra/update-run-ledger.js";
 import {
   updateRunStepsFromResultStep,
   updateRunWarningMessages,
 } from "../../infra/update-run-step.js";
+import { recordUpdateRunStepAsync } from "../../infra/update-run-write.async.js";
 import type { UpdateStepProgress } from "../../infra/update-runner-types.js";
 import { withTestDir } from "../../test-helpers/temp-dir.js";
+import { closeStateDatabaseForTest } from "../../test-utils/database-cleanup.js";
+import type { UpdateCommandOptions } from "./shared.js";
+import { preflightBackup } from "./update-command-database-backup.js";
 import { registerExecutionPhaseReceiptTests } from "./update-command-execution-phase.test-support.js";
 import { executeMutableUpdate } from "./update-command-execution.js";
+import { withUpdateCommandExecutor } from "./update-command-executor.js";
 import { admitSourceUpdateArtifacts } from "./update-command-git-admission.js";
 import { updateStep } from "./update-command-maintenance-fixtures.test-support.js";
 import * as readiness from "./update-command-readiness.js";
@@ -151,6 +161,32 @@ export function prepareBundledPluginRuntime({ repoRoot }) {
     }),
 );
 
+it.each(["measurement", "reporting"] as const)(
+  "does not turn authority loss during capacity %s into a warning",
+  (boundary) =>
+    withTestDir({ prefix: "activation-capacity-authority-" }, async (root) => {
+      const stale = new Error("fixture executor was replaced during measurement");
+      const execution = await bindExecutionGuards(executionParams("git"));
+      let current = boundary !== "measurement";
+      execution.executionGuards.assertCurrent = () => {
+        if (!current) {
+          throw stale;
+        }
+      };
+      execution.progress = {
+        onStepComplete: async () => {
+          current = false;
+        },
+      };
+      await expect(
+        preflightBackup(execution, path.join(root, "backup"), {
+          config: {},
+          env: { OPENCLAW_STATE_DIR: root },
+        }),
+      ).rejects.toBe(stale);
+    }),
+);
+
 it("continues the update with its recorded readiness warning", async () => {
   const message =
     "Readiness probe http://127.0.0.1:18789/readyz failed: HTTP 502. Check the configured proxy.";
@@ -232,3 +268,154 @@ it("retains rejected Git canary findings in the terminal result", async () => {
   });
   expect(mocks.serviceStopped).toBe(false);
 });
+
+it.each([
+  { kind: "git", space: 110 },
+  { kind: "package", space: 110 },
+  { kind: "package", space: 200 },
+  { kind: "package", space: null },
+] as const)(
+  "checks the $kind activation destination after staging ($space MiB free)",
+  async ({ kind, space }) =>
+    withTestDir({ prefix: "activation-backup-capacity-" }, async (root) => {
+      const stateDir = path.join(root, "state");
+      const database = path.join(stateDir, "agents/main/agent/openclaw-agent.sqlite");
+      const configPath = path.join(stateDir, "openclaw.json");
+      await fs.mkdir(path.dirname(database), { recursive: true });
+      await fs.writeFile(configPath, "{}");
+      await fs.writeFile(
+        path.join(root, "package.json"),
+        JSON.stringify({ name: "openclaw", version: "2026.10.6" }),
+      );
+      {
+        using db = openNodeSqliteDatabase(database);
+        db.exec("CREATE TABLE evidence(value TEXT)");
+      }
+      // The capacity owner reads family lengths; no payload allocation is needed.
+      await fs.truncate(database, 16 * 1024 ** 2);
+      const env = { OPENCLAW_STATE_DIR: stateDir };
+      const control = path.join(root, "coordinator");
+      await fs.mkdir(control);
+      vi.spyOn(tempRoot, "resolvePreferredOpenClawTmpDir").mockReturnValue(control);
+      const context = {
+        env,
+        readEnv: env,
+        config: {},
+        configSnapshot: createTestConfigSnapshot({}, {}, configPath),
+      };
+      mocks.captureManagedPreflight.mockResolvedValue(context);
+      mocks.captureSchemaContext.mockResolvedValue(context);
+      mocks.nativeSupport.mockResolvedValue(true);
+      mocks.maybeStopService.mockImplementation(async ({ phase }) => ({
+        inspected: true,
+        runtimeInspected: true,
+        running: true,
+        stopped: phase === "prepare",
+        serviceEnv: env,
+        serviceUpdateVerdict: {
+          kind: "owned",
+          root,
+          fingerprint: "fixture-service",
+          refreshDefinition: false,
+        },
+      }));
+      vi.spyOn(readiness, "verifyPreviousGatewayForUpdate").mockResolvedValue(true);
+      const backupRoot = path.join(root, "package-backup");
+      const destination = kind === "git" ? path.join(root, ".artifacts") : backupRoot;
+      let availableMiB: number | null = 200;
+      vi.spyOn(diskSpace, "tryReadDiskSpace").mockImplementation((targetPath) => {
+        const free = targetPath === destination ? availableMiB : 200;
+        return free === null
+          ? null
+          : {
+              targetPath,
+              checkedPath: root,
+              availableBytes: free * 1024 ** 2,
+              totalBytes: 1024 ** 3,
+            };
+      });
+      expect(
+        await assessInitialUpdateSnapshotCapacity({
+          config: {},
+          env,
+          stateDir,
+          backupDirectory: destination,
+        }),
+      ).toMatchObject({ exitCode: 0 });
+      mocks.validateCanary.mockImplementation(async () => {
+        // Only the exact activation destination changes; other volumes still have room.
+        availableMiB = space;
+        return readyCanary([]);
+      });
+      const publish = vi.fn();
+      mocks.runPackageUpdate.mockImplementation(async (options) => {
+        await options.validateCandidate(root);
+        await options.beforeActivate(backupRoot);
+        publish();
+        return { ...successfulUpdate, root };
+      });
+      mocks.runGitUpdate.mockImplementation(async (options) => {
+        const target = { sha: "a".repeat(40), version: "2026.10.6" };
+        await options.inspectGitTarget(target);
+        await options.validateCandidate(root);
+        await options.beforeGitMutation(target, path.join(root, ".artifacts"));
+        publish();
+        return { ...successfulUpdate, mode: "git", root };
+      });
+      const run: NonNullable<UpdateCommandOptions["run"]> = {
+        runId: createUpdateRun({ trigger: "cli" }, { env }).runId,
+        env,
+      };
+      const before = await fs.readFile(database);
+      try {
+        await recordUpdateRunStepAsync(
+          run.runId,
+          { step: "fixture-warm", status: "completed" },
+          { env },
+        );
+        await withUpdateCommandExecutor(run.runId, async (executor) => {
+          mocks.prepareMutableUpdate.mockImplementation(async (_env, _timeout, admitExecutor) => {
+            admitExecutor(await executor.enter(root));
+          });
+          const execution = await executeMutableUpdate(
+            await bindExecutionGuards({
+              ...executionParams(kind),
+              root,
+              opts: { json: true, run },
+            }),
+          );
+          const refused = space === 110;
+          expect(execution?.result, execution?.failure?.detail).toMatchObject({
+            status: refused ? "error" : "ok",
+          });
+          expect(execution?.mutationStarted).toBe(!refused);
+          expect(publish).toHaveBeenCalledTimes(refused ? 0 : 1);
+          const preparation = mocks.maybeStopService.mock.calls.filter(
+            ([options]) => options.phase === "prepare",
+          );
+          expect(preparation).toHaveLength(refused ? 0 : 1);
+          const measured = execution?.result.steps.find(
+            (step) => step.name === "activation-backup-space-preflight",
+          );
+          if (refused) {
+            expect(execution?.failure?.detail).toContain("Update database backup");
+            expect(execution?.failure?.detail).toContain(destination);
+            expect(measured).toMatchObject({
+              exitCode: 1,
+              stderrTail: expect.stringContaining(destination),
+            });
+          } else if (space === null) {
+            expect(measured?.warnings).toContain(
+              `Available disk space could not be measured near ${destination}; database backup will be attempted.`,
+            );
+          } else {
+            expect(measured?.diagnostics?.join("\n")).toContain(destination);
+          }
+        });
+      } finally {
+        await run.sourceArtifactLock?.release();
+        await closeStateDatabaseForTest();
+      }
+      expect((await fs.readFile(database)).equals(before)).toBe(true);
+    }),
+);

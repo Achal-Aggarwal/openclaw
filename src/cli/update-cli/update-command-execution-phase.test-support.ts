@@ -119,7 +119,7 @@ export function registerExecutionPhaseReceiptTests(inputs: FixtureInputs) {
           } else {
             await options.validateCandidate(root);
             beforeCall.run?.();
-            await options.beforeActivate();
+            await options.beforeActivate(root);
           }
           return { ...successfulUpdate, root };
         });

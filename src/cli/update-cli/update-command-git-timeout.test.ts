@@ -62,6 +62,7 @@ it.each(
       .mockImplementation(async ({ postVerifyStep }) => {
         assert(postVerifyStep);
         return {
+          databaseBackupRoot: path.join(base, "backup"),
           activate: async () => ({
             steps: [await runPackagePostInstallVerification(gitRoot, postVerifyStep)],
             activePackageRoot: gitRoot,

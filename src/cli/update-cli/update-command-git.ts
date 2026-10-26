@@ -369,7 +369,10 @@ export async function updateGitInstall(params: {
   progress: UpdateStepProgress;
   channel: UpdateChannel;
   devTarget?: DevUpdateTarget;
-  beforeGitMutation: UpdateRunnerOptions["beforeGitMutation"];
+  beforeGitMutation: (
+    target: Parameters<UpdateRunnerOptions["beforeGitMutation"]>[0],
+    databaseBackupRoot: string,
+  ) => Promise<void>;
   validateCandidate: UpdateRunnerOptions["validateCandidate"];
   assertCurrent?: () => void;
   onTransaction?: (transaction: PackageUpdateTransaction) => void | Promise<void>;
@@ -506,7 +509,13 @@ export async function updateGitInstall(params: {
         channel: params.channel,
         devTarget: params.devTarget,
         beforeGitMutation: async (target) => {
-          await params.beforeGitMutation(target);
+          const databaseBackupRoot = params.switchToGit
+            ? exposure?.databaseBackupRoot
+            : path.join(params.root, ".artifacts");
+          if (!databaseBackupRoot) {
+            throw new Error("Source exposure has not prepared its database backup destination");
+          }
+          await params.beforeGitMutation(target, databaseBackupRoot);
           await createSystemPackageOwnershipInspection(effectiveTimeout).assertUnowned(updateRoot);
           params.assertCurrent?.();
         },

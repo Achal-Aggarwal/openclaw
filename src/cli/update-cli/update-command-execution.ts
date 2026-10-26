@@ -24,7 +24,7 @@ import {
   preflightUpdateCandidatePlugins,
   validateUpdateCandidateWithProgress,
 } from "./update-command-candidate-validation.js";
-import { captureUpdateDatabases } from "./update-command-database-backup.js";
+import { captureUpdateDatabases, preflightBackup } from "./update-command-database-backup.js";
 import {
   inspectUpdateDatabaseContexts,
   revalidateUpdateDatabaseContexts,
@@ -432,7 +432,7 @@ export async function executeMutableUpdate(
   let servicePrepared = false;
   // Activation-window timing the install runners cannot observe.
   const activationSteps: UpdateStepResult[] = [];
-  const beforeActivate = async (roots: readonly string[] = [params.root]) => {
+  const beforeActivate = async (roots: readonly string[], databaseBackupRoot?: string) => {
     await waitForCurrent();
     familyAdmission.assertAdmitted();
     if (params.switchToGit && !opts.run?.sourceArtifactLock) {
@@ -486,6 +486,10 @@ export async function executeMutableUpdate(
       );
     }
     assertExecutionCurrent();
+    if (!servicePrepared && originalRun) {
+      // Foreground parking also closes a serving Gateway; admit capacity before either stop path.
+      activationSteps.push(await preflightBackup(params, databaseBackupRoot, { config, env }));
+    }
     const activationTimeoutMs = params.opts.run?.deadline?.remainingMs() ?? params.timeoutMs;
     await parkForegroundUpdateForActivation(params, assertExecutionCurrent);
     await prepareMutableUpdate(env, activationTimeoutMs);
@@ -582,7 +586,7 @@ export async function executeMutableUpdate(
         installEnv: params.packageInstallEnv,
         installTarget: params.packageInstallTarget,
         validateCandidate,
-        beforeActivate,
+        beforeActivate: (databaseBackupRoot) => beforeActivate([params.root], databaseBackupRoot),
         ...createPackageUpdateActivationOptions({
           run: opts.run,
           runtime: params.packageActivationRuntime,
@@ -648,7 +652,7 @@ export async function executeMutableUpdate(
           assertUpdateCandidateSteps(steps);
           return steps;
         },
-        beforeGitMutation: async (target) => {
+        beforeGitMutation: async (target, databaseBackupRoot) => {
           await waitForCurrent();
           assertReadableGitMetadata(target.metadataUnreadable);
           await assertUpdateDatabaseEngineContexts(
@@ -657,7 +661,7 @@ export async function executeMutableUpdate(
             target.postgresFamilies,
           );
           admittedTargetSchemaVersions = target.schemaVersions;
-          await beforeActivate(gitMutationRoots ?? [params.root]);
+          await beforeActivate(gitMutationRoots ?? [params.root], databaseBackupRoot);
         },
       };
       result = await withMutableUpdateForwardScope(opts, () => updateGitInstall(gitUpdate));

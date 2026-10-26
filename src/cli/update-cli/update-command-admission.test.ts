@@ -71,7 +71,7 @@ it("admits compatible Git targets without copying stores", async () => {
     const target = { databaseEngines: ["sqlite", "postgres"] };
     await options.inspectGitTarget(target);
     events.push("inspected");
-    await options.beforeGitMutation(target);
+    await options.beforeGitMutation(target, path.join(dir, ".artifacts"));
     events.push("activated");
     return { ...successfulUpdate, mode: "git" };
   });

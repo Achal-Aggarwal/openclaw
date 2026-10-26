@@ -194,6 +194,30 @@ async function packageFixture(
   return { params, root, launcher, installedPrefixes, expectOriginal };
 }
 
+it("retains the real swap's backup destination while source exposure awaits activation", async () => {
+  const { params, root, expectOriginal } = await packageFixture(base, "2.0.0");
+  const exposure = await packageUpdate.prepareGitPackageExposure({
+    installTarget: params.installTarget,
+    installSpec: "openclaw@2.0.0",
+    packageName: "openclaw",
+    packageRoot: root,
+    runCommand: processRunner.runCommandWithTimeout,
+    runStep: (step) =>
+      shared.runUpdateStep({ ...step, runCommand: processRunner.runCommandWithTimeout }),
+    timeoutMs: 1000,
+    workTimeoutMs: null,
+    env: {},
+  });
+  try {
+    expect(path.dirname(exposure.databaseBackupRoot)).toBe(path.dirname(root));
+    expect(path.basename(exposure.databaseBackupRoot)).toMatch(/^\.openclaw\.package-backup-/u);
+    await expectOriginal();
+  } finally {
+    await exposure.cancel();
+  }
+  await expectOriginal();
+});
+
 it.each(["guidance", "staging"])(
   "carries the owner's permission retry outcome through %s",
   async (consumer) => {
@@ -411,6 +435,7 @@ it.skipIf(process.platform === "win32" || process.platform === "freebsd").each([
         await withUpdateCommandExecutor(runId, async (executor) => {
           const fence = await executor.enter(root);
           let transaction: PackageUpdateTransaction | undefined;
+          let databaseBackupRoot: string | undefined;
           try {
             const result = await withEnvAsync(
               { PATH: `${runtimeDir}${path.delimiter}${process.env.PATH ?? ""}` },
@@ -429,7 +454,13 @@ it.skipIf(process.platform === "win32" || process.platform === "freebsd").each([
                     assertCurrent: fence.assertCurrent,
                   }),
                   assertCurrent: fence.assertCurrent,
+                  beforeActivate: async (directory) => {
+                    databaseBackupRoot = directory;
+                    expect(path.dirname(directory)).toBe(path.dirname(root));
+                    await expectOriginal();
+                  },
                   onTransaction: (retained) => {
+                    expect(retained.databaseBackupRoot).toBe(databaseBackupRoot);
                     transaction = retained;
                   },
                 });
@@ -803,6 +834,7 @@ it.each([
         });
         const verify = params.postVerifyStep;
         return {
+          databaseBackupRoot: path.join(base, "backup"),
           activate: async () => {
             const failedStep = await runPackagePostInstallVerification(gitRoot, verify);
             return {

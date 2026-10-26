@@ -1,17 +1,23 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { resolveStateDir } from "../../config/paths.js";
+import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { formatErrorMessage } from "../../infra/errors.js";
 import { acquireGatewayLock } from "../../infra/gateway-lock.js";
 import { hasActiveGatewayStateOwner } from "../../infra/gateway-state-owner.js";
 import type { PackageUpdateTransaction } from "../../infra/package-update-swap-contract.js";
 import { isSqliteLockError } from "../../infra/sqlite-error-diagnostics.js";
 import { createSqliteLifecycleAggregateError } from "../../infra/sqlite-lifecycle-errors.js";
+import { measureUpdateStateFiles } from "../../infra/update-candidate-io.js";
+import { collectStateDatabasePaths } from "../../infra/update-candidate-state.js";
+import { UpdateCaptureSpaceError } from "../../infra/update-capture-space.js";
+import { checkUpdateDatabaseBackupSpace } from "../../infra/update-database-backup-space.js";
 import {
   createUpdateDatabaseBackup,
   type UpdateDatabaseBackup,
 } from "../../infra/update-database-backup.js";
 import { restoreUpdateDatabaseBackup } from "../../infra/update-database-restore.js";
+import { UpdatePreMutationError } from "../../infra/update-pre-mutation-error.js";
 import { reportUpdateStepCompletion } from "../../infra/update-runner-command.js";
 import type { UpdateRunResult } from "../../infra/update-runner-types.js";
 import type { UpdateStepResult } from "../../infra/update-step-result.js";
@@ -29,6 +35,58 @@ import {
 import { UpdateCommandRecoveryPendingError } from "./update-command-recovery-error.js";
 
 type Progress = MutableUpdateExecutionParams["progress"];
+
+/** Recheck after staging, before stopping the serving Gateway; capture rechecks under custody. */
+export async function preflightBackup(
+  execution: MutableUpdateExecutionParams,
+  directory: string | undefined,
+  source: { config: OpenClawConfig; env: NodeJS.ProcessEnv },
+): Promise<UpdateStepResult> {
+  if (!directory) {
+    throw new Error("Activation database backup destination is unavailable");
+  }
+  const assertCurrent = execution.executionGuards.assertCurrent;
+  const startedAt = Date.now();
+  const stateDir = resolveStateDir(source.env);
+  const step: UpdateStepResult = {
+    name: "activation-backup-space-preflight",
+    command: "check database backup and rollback space before stopping the Gateway",
+    cwd: stateDir,
+    durationMs: 0,
+    exitCode: 0,
+  };
+  try {
+    const files = await collectStateDatabasePaths({ ...source, stateDir });
+    assertCurrent();
+    const size = await measureUpdateStateFiles(
+      [...files.values()].map(({ spellings }) => spellings[0]),
+    );
+    assertCurrent();
+    Object.assign(step, await checkUpdateDatabaseBackupSpace(directory, size));
+    assertCurrent();
+  } catch (error) {
+    assertCurrent();
+    if (error instanceof UpdateCaptureSpaceError) {
+      step.exitCode = 1;
+      step.stderrTail = error.message;
+    } else {
+      step.warnings = [
+        "Activation backup capacity could not be measured; continuing to the database backup check.",
+      ];
+    }
+  }
+  step.durationMs = Date.now() - startedAt;
+  await reportUpdateStepCompletion(execution.progress, { ...step, index: 0, total: 0 });
+  assertCurrent();
+  if (step.exitCode !== 0) {
+    throw new UpdatePreMutationError(
+      "snapshot-capacity-insufficient",
+      step.stderrTail ?? "snapshot-capacity-insufficient",
+      { stepResult: { steps: [step], failedStep: step } },
+    );
+  }
+  return step;
+}
 
 export async function captureUpdateDatabases(params: {
   transaction: PackageUpdateTransaction;

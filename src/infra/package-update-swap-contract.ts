@@ -54,7 +54,7 @@ export type StagedPackageSwapParams = {
   installTarget: ResolvedGlobalInstallTarget;
   packageName: string;
   postVerifyStep?: PackagePostInstallVerifier;
-  beforeActivate?: () => Promise<void>;
+  beforeActivate?: (databaseBackupRoot: string) => Promise<void>;
   assertCurrent?: () => void;
   reserveInstallSlot?: (root: string) => void;
   onLiveMutation?: () => void;

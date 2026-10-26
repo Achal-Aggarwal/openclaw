@@ -307,13 +307,13 @@ export async function runPackageUpdateDoctor(params: PackageDoctorOptions) {
 export async function prepareGitPackageExposure(
   params: Omit<Parameters<typeof runGlobalPackageUpdateSteps>[0], "beforeActivate">,
 ) {
-  const prepared = createDeferredCore();
+  const prepared = createDeferredCore<string>();
   const activation = createDeferredCore<boolean>();
   const cancellation = new Error("Source activation cancelled before global exposure");
   const completed = runGlobalPackageUpdateSteps({
     ...params,
-    beforeActivate: async () => {
-      prepared.resolve();
+    beforeActivate: async (databaseBackupRoot) => {
+      prepared.resolve(databaseBackupRoot);
       if (!(await activation.promise)) {
         throw cancellation;
       }
@@ -335,6 +335,7 @@ export async function prepareGitPackageExposure(
     );
   }
   return {
+    databaseBackupRoot: await prepared.promise,
     activate: () => {
       activation.resolve(true);
       return completed;
@@ -372,7 +373,7 @@ export type PackageInstallUpdateParams = Omit<PackageDoctorOptions, "results"> &
   installTarget?: ResolvedGlobalInstallTarget;
   beforeVerifyCandidate?: (root: string) => Promise<void>;
   validateCandidate: (root: string) => Promise<UpdateStepResult[]>;
-  beforeActivate: () => Promise<void>;
+  beforeActivate: (databaseBackupRoot: string) => Promise<void>;
   reserveInstallSlot?: (root: string) => void;
   onTransaction: (transaction: PackageUpdateTransaction) => void | Promise<void>;
   getActivation?: () => PackageActivationOptions | undefined;
@@ -438,7 +439,7 @@ export async function stagePackageInstallUpdate(
         }
         return await requireActive().validateCandidate(root);
       },
-      beforeActivate: () => requireActive().beforeActivate(),
+      beforeActivate: (databaseBackupRoot) => requireActive().beforeActivate(databaseBackupRoot),
       assertCurrent: () => requireActive().assertCurrent?.(),
       reserveInstallSlot: (root) => requireActive().reserveInstallSlot?.(root),
       getActivation: () => requireActive().getActivation?.(),

@@ -97,7 +97,7 @@ it.each(["package", "artifact", "git"] as const)(
           >[0],
         ) => {
           await options.validateCandidate(root);
-          await options.beforeActivate();
+          await options.beforeActivate(path.join(root, "backup"));
           activated = true;
           doctor(options.getDoctorContext?.());
           return successfulUpdate;
@@ -109,7 +109,10 @@ it.each(["package", "artifact", "git"] as const)(
         ) => {
           await options.inspectGitTarget?.({ schemaVersions: { state: 15, agent: 19 } });
           await options.validateCandidate?.(root);
-          await options.beforeGitMutation?.({ schemaVersions: { state: 15, agent: 19 } });
+          await options.beforeGitMutation?.(
+            { schemaVersions: { state: 15, agent: 19 } },
+            path.join(root, ".artifacts"),
+          );
           activated = true;
           doctor(options.getDoctorContext?.());
           return { ...successfulUpdate, mode: "git" };

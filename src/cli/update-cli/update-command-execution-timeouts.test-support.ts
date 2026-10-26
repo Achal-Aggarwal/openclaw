@@ -24,7 +24,7 @@ export function registerExecutionTimeoutTests() {
         running: false,
       });
       mocks.runPackageUpdate.mockImplementation(async ({ beforeActivate }) => {
-        await beforeActivate();
+        await beforeActivate("/package-backup");
         return successfulUpdate;
       });
       mocks.runGitUpdate.mockImplementation(
@@ -36,7 +36,7 @@ export function registerExecutionTimeoutTests() {
           }
           const target = { schemaVersions: { state: 15, agent: 19 } };
           await params.inspectGitTarget(target);
-          await params.beforeGitMutation(target);
+          await params.beforeGitMutation(target, "/git-backup");
           return { ...successfulUpdate, mode: "git" };
         },
       );

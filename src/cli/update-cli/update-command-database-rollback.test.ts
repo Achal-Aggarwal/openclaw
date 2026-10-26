@@ -442,7 +442,8 @@ it.each([
             },
             opts: {
               inspectGitTarget: params.inspectGitTarget,
-              beforeGitMutation: params.beforeGitMutation,
+              beforeGitMutation: (target) =>
+                params.beforeGitMutation(target, path.join(packageRoot, ".artifacts")),
               validateCandidate: params.validateCandidate,
               onTransaction: params.onTransaction,
               runGitDoctor: async (root, results) => {
