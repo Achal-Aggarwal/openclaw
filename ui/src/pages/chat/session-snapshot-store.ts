@@ -42,6 +42,7 @@ import { deleteStoredChatSnapshot } from "./session-snapshot-invalidation.ts";
 import {
   consumePrewarmedChatSnapshot,
   discardPrewarmedChatSnapshot,
+  loadSnapshotRecordParser,
   peekPrewarmedChatSnapshot,
   readSharedPrewarm,
 } from "./session-snapshot-prewarm.ts";
@@ -88,8 +89,7 @@ async function readSnapshotRecord(
   ) {
     return null;
   }
-  const parseSnapshotRecord =
-    parseRecord ?? (await import("./session-snapshot-decoder.ts")).parseSnapshotRecord;
+  const parseSnapshotRecord = parseRecord ?? (await loadSnapshotRecordParser());
   if (!isCurrent()) {
     return null;
   }

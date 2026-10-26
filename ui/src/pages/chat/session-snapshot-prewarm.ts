@@ -41,6 +41,11 @@ export async function loadChatHistoryStateValidator() {
   return isChatHistoryState;
 }
 
+export async function loadSnapshotRecordParser() {
+  const { parseSnapshotRecord } = await import("./session-snapshot-decoder.ts");
+  return parseSnapshotRecord;
+}
+
 export function peekPrewarmedChatSnapshot(): PrewarmedSnapshot | undefined {
   return pending;
 }
@@ -90,9 +95,9 @@ export async function prewarmChatSnapshot(cacheKey: string): Promise<void> {
       import("./session-snapshot-database.ts").then(({ readStoredChatSnapshotRecord }) =>
         readStoredChatSnapshotRecord(cacheKey),
       ),
-      import("./session-snapshot-decoder.ts"),
+      loadSnapshotRecordParser(),
     ])
-      .then(([record, { parseSnapshotRecord }]) => {
+      .then(([record, parseSnapshotRecord]) => {
         if (entry.cancelled || generation !== snapshotStoreGeneration) {
           return undefined;
         }
