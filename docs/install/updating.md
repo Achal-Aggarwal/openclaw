@@ -807,6 +807,17 @@ openclaw doctor
 
 Migrates config, audits DM policies, and checks gateway health. Doctor also compares active official plugins with the OpenClaw package the managed service will load after restart. Resolve any plugin restart-readiness warning before continuing. Details: [Doctor](/gateway/doctor)
 
+Update snapshots and database backups accept a database whose only integrity
+findings are `malformed inverted index` reports on canonical, schema-validated
+agent FTS tables. A Node upgrade that changes SQLite tokenization (for example,
+SQLite 3.54) produces exactly these findings on an intact database. The copies
+keep the original index bytes, so rollback to the previous runtime restores its
+own index; `openclaw doctor --fix` under the new runtime rebuilds them. Unknown
+FTS definitions and findings mixed with any other damage still refuse the
+update. The candidate performs the rehearsal snapshot, so this applies from the
+first update to a candidate with the fix; activation-time backups need the
+installed updater to contain it.
+
 If you use the unpacked Chrome extension, also run `openclaw browser doctor --browser-profile chrome`.
 For a version-mismatch warning, reload the extension from `chrome://extensions`;
 fully restart Chrome if the warning remains.

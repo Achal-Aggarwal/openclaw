@@ -24,7 +24,7 @@ import {
 } from "./file-descriptor.js";
 import { openNodeSqliteDatabase } from "./node-sqlite.js";
 import { backupNodeSqliteDatabase } from "./sqlite-backup.js";
-import { assertSqliteIntegrity } from "./sqlite-integrity.js";
+import { assertSqliteIntegrityAllowingOwnedFts } from "./sqlite-integrity.js";
 import { createPrivateSqliteTempDirectory } from "./sqlite-private-directory.js";
 import { withPreparedSqliteSnapshot } from "./sqlite-readonly-location-cleanup.js";
 import { prepareSqliteReadOnlyLocationInProcess } from "./sqlite-readonly-location.js";
@@ -47,6 +47,11 @@ type CreateVerifiedSqliteSnapshotOptions = {
   preserveRowIds?: boolean;
   transform?: (database: DatabaseSync) => void | Promise<void>;
   validate?: SqliteSnapshotValidator;
+  /**
+   * Owned FTS5 definitions whose inverted indexes are derived data. When these are
+   * the only findings, integrity passes and the copy keeps the original index bytes.
+   */
+  ftsSchemas?: readonly string[];
 };
 
 type SqliteFileContent = {
@@ -657,7 +662,7 @@ async function verifyAndPublishSqliteSnapshot(
           try {
             // Pin validation and backup together; Node restarts stepped backups on concurrent writes.
             source.prepare("PRAGMA schema_version;").get();
-            assertSqliteIntegrity(source, options.sourcePath);
+            assertSqliteIntegrityAllowingOwnedFts(source, options.sourcePath, options.ftsSchemas);
             options.validate?.(source, options.sourcePath);
             if (!privateSourcePath) {
               await backupNodeSqliteDatabase(source, stagedPath, options.onProgress);
@@ -689,7 +694,7 @@ async function verifyAndPublishSqliteSnapshot(
       if (!options.preserveRowIds) {
         snapshot.exec("VACUUM;");
       }
-      assertSqliteIntegrity(snapshot, options.targetPath);
+      assertSqliteIntegrityAllowingOwnedFts(snapshot, options.targetPath, options.ftsSchemas);
       options.validate?.(snapshot, options.targetPath);
       const userVersion = readSqliteUserVersion(snapshot);
       snapshot.close();
@@ -710,7 +715,11 @@ async function verifyAndPublishSqliteSnapshot(
             });
             try {
               published.exec("PRAGMA busy_timeout = 30000; PRAGMA trusted_schema = OFF;");
-              assertSqliteIntegrity(published, options.targetPath);
+              assertSqliteIntegrityAllowingOwnedFts(
+                published,
+                options.targetPath,
+                options.ftsSchemas,
+              );
               options.validate?.(published, options.targetPath);
               const publishedUserVersion = readSqliteUserVersion(published);
               if (publishedUserVersion !== userVersion) {

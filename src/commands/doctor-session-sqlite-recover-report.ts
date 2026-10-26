@@ -16,10 +16,10 @@ import {
   resolveTargetSqlitePath,
 } from "../infra/session-sqlite-migration-readers.js";
 import {
+  assertSqliteIntegrity,
   classifySqliteFtsIntegrityFindings,
   readSqliteIntegrityFindings,
-} from "../infra/sqlite-index-schema.js";
-import { assertSqliteIntegrity } from "../infra/sqlite-integrity.js";
+} from "../infra/sqlite-integrity.js";
 import {
   inspectSqliteRecoveryFiles,
   moveSqliteFilesAside,

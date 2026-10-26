@@ -7,10 +7,9 @@ import { useAutoCleanupTempDirTracker } from "../../test/helpers/temp-dir.js";
 import { OPENCLAW_AGENT_FTS_SCHEMAS } from "../state/openclaw-agent-fts-schema.js";
 import { installSqliteFtsTokenizerMismatch } from "./sqlite-index-corruption.test-support.js";
 import { repairDoctorSqliteIndexCorruption } from "./sqlite-index-recovery.js";
-import {
-  classifySqliteFtsIntegrityFindings,
-  repairSqliteIndexCorruption,
-} from "./sqlite-index-schema.js";
+import { repairSqliteIndexCorruption } from "./sqlite-index-schema.js";
+import { classifySqliteFtsIntegrityFindings } from "./sqlite-integrity.js";
+import { createVerifiedSqliteSnapshot } from "./sqlite-snapshot.js";
 
 const roots = useAutoCleanupTempDirTracker(afterEach);
 
@@ -118,3 +117,42 @@ it("rolls an FTS rebuild back when commit authority is lost", () => {
   expect(backup).toHaveBeenCalledOnce();
   expect(db.prepare("PRAGMA integrity_check").all()).toEqual(findings);
 });
+
+it.each(["owned", "unowned", "unopted"] as const)(
+  "update snapshots copy %s stale FTS indexes only when they are owned and opted in",
+  async (kind) => {
+    const pathname = fixture();
+    if (kind === "unowned") {
+      {
+        using db = new DatabaseSync(pathname);
+        db.exec(`CREATE VIRTUAL TABLE unowned_fts USING fts5(text);
+          INSERT INTO unowned_fts(text) VALUES ('ab'||char(65534)||'cd');`);
+      }
+      installSqliteFtsTokenizerMismatch(pathname, "unowned_fts");
+    }
+    const original = fs.readFileSync(pathname);
+    const targetPath = path.join(roots.make("fts-snapshot-"), "copy.sqlite");
+    const snapshot = createVerifiedSqliteSnapshot({
+      sourcePath: pathname,
+      targetPath,
+      preserveRowIds: true,
+      ...(kind === "unopted" ? {} : { ftsSchemas: OPENCLAW_AGENT_FTS_SCHEMAS }),
+    });
+    if (kind !== "owned") {
+      await expect(snapshot).rejects.toThrow(/malformed inverted index/u);
+      expect(fs.existsSync(targetPath)).toBe(false);
+      return;
+    }
+    await snapshot;
+    using copy = new DatabaseSync(targetPath, { readOnly: true });
+    // The runtime that admits the copy owns the rebuild; the copy keeps the old index bytes.
+    expect(copy.prepare("PRAGMA integrity_check").all()).toEqual([
+      { integrity_check: "malformed inverted index for FTS5 table main.memory_index_chunks_fts" },
+      { integrity_check: "malformed inverted index for FTS5 table main.session_transcript_fts" },
+    ]);
+    expect(copy.prepare("SELECT text FROM session_transcript_fts").all()).toEqual([
+      { text: "ab\ufffecd" },
+    ]);
+    expect(fs.readFileSync(pathname)).toEqual(original);
+  },
+);
