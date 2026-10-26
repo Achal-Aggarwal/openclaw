@@ -110,6 +110,7 @@ export function controlUiStableChunkName(id: string): string | undefined {
       return "chat-interaction-runtime";
     case "ui/src/pages/chat/components/chat-message-group-rich.tsx":
     case "ui/src/pages/chat/components/chat-message-activity-view.tsx":
+    case "src/chat/tool-call-grouping.ts":
     case "ui/src/pages/chat/components/chat-activity-headline.solid.tsx":
       return "chat-interaction-runtime";
     case "ui/src/pages/chat/components/chat-message-bubble-tools.tsx":

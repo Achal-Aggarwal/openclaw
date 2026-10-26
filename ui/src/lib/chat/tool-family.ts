@@ -37,7 +37,27 @@ export function prepareChatToolFamily(
 export function loadChatToolPresentation(): Promise<ChatToolPresentation> {
   presentationPending ??= Promise.all([
     loadChatToolFamily(),
-    import("../../pages/chat/chat-tool-presentation.runtime.ts"),
+    import("../../pages/chat/chat-tool-presentation.runtime.ts").then(
+      ({
+        ChatToolCard,
+        ToolApprovalReviews,
+        ExpandedToolCardContent,
+        ToolOutcome,
+        ChatPermissionCard,
+        ActivityOperation,
+        WorkGroupSummary,
+        ActivityGroupEntries,
+      }) => ({
+        ChatToolCard,
+        ToolApprovalReviews,
+        ExpandedToolCardContent,
+        ToolOutcome,
+        ChatPermissionCard,
+        ActivityOperation,
+        WorkGroupSummary,
+        ActivityGroupEntries,
+      }),
+    ),
     ActivityGroupEntries.preload(),
   ]).then(
     ([, loaded]) => {
