@@ -20,7 +20,7 @@ export class TranscriptInitialRange {
   private preparationIsIdle = false;
   private prepareStarted = 0;
   private prepareLatency = 16;
-  private scrollSample = { offset: 0, time: 0, distance: 0, velocity: 0, direction: -1 };
+  private scrollSample = { time: 0, distance: 0, velocity: 0, direction: -1 };
   get measuring(): boolean {
     return this.pending || this.preparingOverscan;
   }
@@ -159,6 +159,18 @@ export class TranscriptInitialRange {
     this.queuePreparation();
   }
 
+  recordReaderMovement(delta: number): void {
+    const now = performance.now();
+    const previous = this.scrollSample;
+    this.scrollSample = {
+      time: now,
+      distance: Math.abs(delta),
+      velocity: previous.time ? Math.abs(delta) / Math.max(16, now - previous.time) : 0,
+      direction: Math.sign(delta),
+    };
+    this.finish();
+  }
+
   readonly measureElement = (
     element: HTMLElement,
     entry: ResizeObserverEntry | undefined,
@@ -188,19 +200,6 @@ export class TranscriptInitialRange {
     const range = virtualizer.range;
     if (!range || this.pending) {
       return;
-    }
-    const now = performance.now();
-    const offset = virtualizer.scrollOffset ?? 0;
-    const previous = this.scrollSample;
-    if (offset !== previous.offset) {
-      const delta = offset - previous.offset;
-      this.scrollSample = {
-        offset,
-        time: now,
-        distance: Math.abs(delta),
-        velocity: previous.time ? Math.abs(delta) / Math.max(16, now - previous.time) : 0,
-        direction: Math.sign(delta),
-      };
     }
     for (let index = range.startIndex; index <= range.endIndex; index++) {
       const row = this.rows[index];
@@ -355,9 +354,12 @@ export class TranscriptInitialRange {
       this.prewarmRow &&
       typeof requestIdleCallback === "function"
     ) {
-      // Idle delivery can starve during scrolling. Warm only the predicted
-      // ordinary rows here; fragment mounting stays on the idle path.
-      const frame = requestAnimationFrame(() => prepare(performance.now() + 3, true, true));
+      // Idle delivery can starve during scrolling. Keep warming in a separate
+      // task so it does not share the rendering task's layout and mount budget.
+      const frame = requestAnimationFrame(() => {
+        const task = setTimeout(() => prepare(performance.now() + 6, true, true), 0);
+        this.cancelPreparation = () => clearTimeout(task);
+      });
       this.cancelPreparation = () => cancelAnimationFrame(frame);
     } else if (typeof requestIdleCallback === "function") {
       this.preparationIsIdle = true;

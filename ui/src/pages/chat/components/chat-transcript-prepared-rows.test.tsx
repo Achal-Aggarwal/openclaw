@@ -187,6 +187,12 @@ async function transcriptFixture(
       }
       await settle();
     },
+    async task() {
+      await new Promise((resolve) => {
+        setTimeout(resolve, 0);
+      });
+      await settle();
+    },
     async scrollTo(index: number) {
       container.scrollTop = index * 100;
       container.dispatchEvent(new Event("scroll"));
@@ -229,6 +235,8 @@ it.each([1, -1])(
     const rendered = view.renderRow.mock.calls.length;
     const elements = view.container.querySelectorAll(".chat-virtual-row").length;
     await view.frame();
+    expect(view.renderRow.mock.calls).toHaveLength(rendered);
+    await view.task();
     const prepared = view.renderRow.mock.calls.slice(rendered);
     expect(prepared.length).toBeGreaterThan(0);
     expect(prepared.length).toBeGreaterThan(8);
@@ -245,6 +253,45 @@ it.each([1, -1])(
     ).toBeGreaterThan(nextRows.length / 2);
   },
 );
+
+it("cancels queued scroll warming when the transcript is hidden", async () => {
+  const view = await transcriptFixture(0, true, false, true);
+  await view.scrollTo(60);
+  await view.frame();
+  await view.present(false);
+  const rendered = view.renderRow.mock.calls.length;
+  await view.task();
+  expect(view.renderRow.mock.calls).toHaveLength(rendered);
+});
+
+it("keeps warming in the reader's direction through opposite size compensation", async () => {
+  const view = await transcriptFixture(24_000, true, false, true);
+  await view.scrollTo(180);
+  await view.frame();
+  await view.scrollTo(120.5);
+  const first = transcriptRows(view.container)[0]!;
+  const beforeResize = view.container.scrollTop;
+  emitTranscriptResize(first, 800, 500);
+  await settle();
+  expect(view.container.scrollTop).toBeGreaterThan(beforeResize);
+  const rendered = view.renderRow.mock.calls.length;
+  await view.task();
+  const warmed = view.renderRow.mock.calls
+    .slice(rendered)
+    .map(([row]) => (row.kind === "item" ? row.item : -1));
+  expect(warmed.length).toBeGreaterThan(0);
+  expect(Math.max(...warmed)).toBeLessThan(Number(first.dataset.index));
+
+  await view.scrollTo(180);
+  const afterDown = view.renderRow.mock.calls.length;
+  await view.frame();
+  await view.task();
+  const downward = view.renderRow.mock.calls
+    .slice(afterDown)
+    .map(([row]) => (row.kind === "item" ? row.item : -1));
+  expect(downward.length).toBeGreaterThan(0);
+  expect(Math.min(...downward)).toBeGreaterThan(180);
+});
 
 it("reuses a recent completed row after scrolling away and back, with a bounded DOM cache", async () => {
   const view = await transcriptFixture();
@@ -378,6 +425,7 @@ it("waits for idle time to prepare during scrolling and uses the latest viewport
   expect(cancelIdleCallback).toHaveBeenCalledTimes(1);
   const rendered = view.renderRow.mock.calls.length;
   await view.frame(2);
+  await view.task();
   expect(view.renderRow.mock.calls).toHaveLength(rendered);
   await view.idle(2);
   expect(view.renderRow.mock.calls).toHaveLength(rendered);
@@ -389,6 +437,7 @@ it("waits for idle time to prepare during scrolling and uses the latest viewport
   expect(vi.mocked(requestIdleCallback).mock.calls).toHaveLength(nextScheduled);
   const afterScroll = view.renderRow.mock.calls.length;
   await view.frame(2);
+  await view.task();
   expect(view.renderRow.mock.calls).toHaveLength(afterScroll);
   await view.idle();
   expect(view.renderRow.mock.calls).toHaveLength(afterScroll + 1);
@@ -398,18 +447,48 @@ it("waits for idle time to prepare during scrolling and uses the latest viewport
 
 it("prepares inward when fast upward prediction reaches an ordinary first row", async () => {
   const view = await transcriptFixture(24_000, true, true);
-  await view.scrollTo(240);
+  await view.scrollTo(239);
   await view.frame(2);
   await view.scrollTo(40);
   expect(view.container.querySelector('[data-virtual-row-key="fragment:1"]')).toBeNull();
 
   await view.frame(1, false);
+  await view.task();
   await view.idle();
 
   const firstFragment = view.container.querySelector('[data-virtual-row-key="fragment:1"]');
   expect(firstFragment).not.toBeNull();
   expect(firstFragment?.getAttribute("data-prepared-row")).toBe("true");
   expect(view.container.scrollTop).toBe(4_000);
+});
+
+it("shares calendar formatting within one row mounting batch", async () => {
+  await Promise.resolve();
+  const timestamp = Date.UTC(2026, 9, 25, 12, 34, 56);
+  const label = new Date(timestamp).toLocaleString([], {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    timeZoneName: "short",
+  });
+  const format = vi.spyOn(Intl, "DateTimeFormat");
+  const legacyFormat = vi.spyOn(Date.prototype, "toLocaleString");
+  const formattingSetups = () => format.mock.calls.length + legacyFormat.mock.calls.length;
+  const mount = () => {
+    const view = mountSolid<Parameters<typeof ChatTimestamp>[0]>(ChatTimestamp, {
+      timestamp,
+    });
+    disposers.push(view.dispose);
+    expect(view.container.querySelector("openclaw-tooltip")).toHaveProperty("content", label);
+  };
+  mount();
+  mount();
+  expect(formattingSetups()).toBe(1);
+  await Promise.resolve();
+  mount();
+  expect(formattingSetups()).toBe(2);
 });
 
 it("formats the detailed timestamp only when metadata becomes available", () => {

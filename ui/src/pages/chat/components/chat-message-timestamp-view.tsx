@@ -12,6 +12,7 @@ registerEnglishCatalog(registerChatMessageMetadataEnglish);
 
 const CHAT_RELATIVE_TIMESTAMP_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 const CHAT_RELATIVE_TIMESTAMP_FUTURE_SKEW_MS = 2 * 60 * 1000;
+let timestampFormatter: Intl.DateTimeFormat | undefined;
 
 // Shared relative-time copy is lowercase for mid-sentence use ("Updated just now");
 // the chat footer shows it alone, so it starts with a capital ("Just now").
@@ -22,16 +23,26 @@ function capitalizeStandaloneLabel(value: string): string {
 function prepareTimestamp(timestamp: number) {
   const date = new Date(timestamp);
   const valid = Number.isFinite(date.getTime());
-  const label = valid
-    ? date.toLocaleString([], {
+  let label: string;
+  if (valid) {
+    if (!timestampFormatter) {
+      timestampFormatter = new Intl.DateTimeFormat([], {
         month: "short",
         day: "numeric",
         year: "numeric",
         hour: "numeric",
         minute: "2-digit",
         timeZoneName: "short",
-      })
-    : t("chat.messages.unknownDate");
+      });
+      // Rows mounted together share Intl setup; the next batch observes system changes.
+      queueMicrotask(() => {
+        timestampFormatter = undefined;
+      });
+    }
+    label = timestampFormatter.format(date);
+  } else {
+    label = t("chat.messages.unknownDate");
+  }
   return { dateTime: valid ? date.toISOString() : "", label };
 }
 

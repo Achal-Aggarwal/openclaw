@@ -137,7 +137,7 @@ type OffsetOwner = {
   cancelScroll(): void;
   onLayoutCorrection(before: number, after: number): void;
   invalidate(): void;
-  onOffset(readerMoved: boolean): void;
+  onOffset(readerDelta: number): void;
   onReaderScroll(towardEnd?: boolean): void;
   onComposerLayout(changed: boolean): void;
 };
@@ -247,7 +247,7 @@ export function observeTranscriptOffset(
       programmatic,
     });
     callback(offset, scrolling);
-    owner.onOffset(delta !== 0 && !programmatic);
+    owner.onOffset(programmatic ? 0 : delta);
     // Range/isScrolling and pane follow policy already invalidate themselves.
     // The rail observes offsets directly; only touch-held history needs a geometry commit.
     if (owner.state.touchActive !== owner.state.renderedTouchActive) {

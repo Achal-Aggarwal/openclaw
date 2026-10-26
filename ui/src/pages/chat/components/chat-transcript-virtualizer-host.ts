@@ -230,10 +230,10 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
             cancelScroll: () => this.cancelScroll(),
             onLayoutCorrection: this.recordEndLayoutCorrection,
             invalidate,
-            onOffset: (readerMoved) => {
+            onOffset: (readerDelta) => {
               // Nested or canceled input must not admit offscreen measurements.
               this.endAnchor.recordViewport(this.scrollElement);
-              return readerMoved ? this.initialRange.finish() : undefined;
+              return readerDelta ? this.initialRange.recordReaderMovement(readerDelta) : undefined;
             },
             onComposerLayout: (changed) => this.commitComposerResize(changed),
             onReaderScroll: (towardEnd) => this.callbacks.onReaderScroll?.(towardEnd),
