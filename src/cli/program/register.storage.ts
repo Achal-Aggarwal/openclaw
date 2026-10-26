@@ -1,9 +1,16 @@
 import type { Command } from "commander";
+import { sanitizeTerminalText } from "../../../packages/terminal-core/src/safe-text.js";
+import { formatCliOperatorError } from "../failure-output.js";
 import { formatDocsLink } from "../../../packages/terminal-core/src/links.js";
 import { defaultRuntime } from "../../runtime.js";
 import { runCommandWithRuntime } from "../cli-utils.js";
 import { inheritOptionFromParent } from "../command-options.js";
 import { applyParentDefaultHelpAction } from "./parent-default-help.js";
+
+function reportStorageError(error: unknown): void {
+  defaultRuntime.error(sanitizeTerminalText(formatCliOperatorError(error)));
+  defaultRuntime.exit(1);
+}
 
 export function registerStorageCommand(program: Command): void {
   const storage = program
@@ -26,7 +33,7 @@ export function registerStorageCommand(program: Command): void {
         await storageListCommand(defaultRuntime, {
           json: (inheritOptionFromParent<boolean>(command, "json") ?? opts.json) === true,
         });
-      });
+      }, reportStorageError);
     });
 
   for (const [operation, description, handler] of [
@@ -47,7 +54,7 @@ export function registerStorageCommand(program: Command): void {
           await commands[handler](defaultRuntime, name, {
             json: (inheritOptionFromParent<boolean>(command, "json") ?? opts.json) === true,
           });
-        }),
+        }, reportStorageError),
       );
   }
 }
