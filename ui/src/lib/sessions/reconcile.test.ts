@@ -133,6 +133,26 @@ test("reconciling the same sessions.changed twice keeps result identity on the s
   expect(second.result).toBe(first.result);
 });
 
+test("ancestor updates select the same alias after an earlier row changes list order", () => {
+  const child = sessionRow({ key: "agent:main:subagent:child", sessionId: "child" });
+  const bare = sessionRow({ key: "main", sessionId: "root", updatedAt: 3, label: "Bare" });
+  const canonical = sessionRow({ sessionId: "root", updatedAt: 20, label: "Canonical" });
+  const initial = buildResult(child, bare, canonical);
+
+  const changed = reconcileSessionChanged(initial, {
+    agentId: "main",
+    session: { ...child, updatedAt: 2 },
+    ancestorSessions: [{ ...bare, agentId: "main", updatedAt: 30, label: "Settled" }],
+  });
+
+  expect(changed.result?.sessions.map(({ key, label }) => ({ key, label }))).toEqual([
+    { key, label: "Settled" },
+    { key: "main", label: "Bare" },
+    { key: child.key, label: undefined },
+  ]);
+  expect(initial.sessions).toEqual([child, bare, canonical]);
+});
+
 test("sessions.changed deletes every nested null tombstone, not a hand-kept list", () => {
   const fields = {
     toolOverrides: { profile: "coding" },

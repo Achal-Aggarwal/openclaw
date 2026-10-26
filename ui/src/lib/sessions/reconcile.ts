@@ -59,11 +59,14 @@ function replaceSessionResultRow(
   result: SessionsListResult,
   key: string,
   row: GatewaySessionRow | undefined,
+  sort = true,
 ): SessionsListResult {
   const sessions = result.sessions.filter((candidate) => candidate.key !== key);
   if (row) {
     sessions.push(row);
-    sessions.sort(compareSessionRowsByUpdatedAt);
+    if (sort) {
+      sessions.sort(compareSessionRowsByUpdatedAt);
+    }
   }
   return { ...result, count: sessions.length, sessions };
 }
@@ -140,6 +143,7 @@ export function preserveCurrentSessionRow(
 function reconcileSessionChangedSnapshot(
   result: SessionsListResult | null,
   parsed: ParsedSessionChangedEvent | null,
+  sortPending: boolean,
   options: SessionReconcileOptions = {},
   project?: SessionChangedRowProjection,
 ): SessionChangedResult {
@@ -148,11 +152,22 @@ function reconcileSessionChangedSnapshot(
   }
   const [info] = parsed;
   const selectedGlobalAgentId = info?.agentId ?? options.selectedGlobalAgentId ?? null;
-  const existing = info
+  let existing = info
     ? result?.sessions.find((candidate) =>
         matchesExistingSession(candidate, info.key, selectedGlobalAgentId),
       )
     : undefined;
+  if (sortPending && existing && result && info) {
+    // Prior replacements logically sort the list before the next alias lookup.
+    for (const candidate of result.sessions) {
+      if (
+        compareSessionRowsByUpdatedAt(candidate, existing) < 0 &&
+        matchesExistingSession(candidate, info.key, selectedGlobalAgentId)
+      ) {
+        existing = candidate;
+      }
+    }
+  }
   const { row, admittedRow, reconciled, eventTs, ownershipChanged, disposition, ...eventResult } =
     reconcileParsedSessionChangedRow(existing, parsed, options, project);
   if (disposition === "outside-scope") {
@@ -173,7 +188,8 @@ function reconcileSessionChangedSnapshot(
   if (!result || !existing) {
     return { applied: false, result };
   }
-  const next = row === existing ? result : replaceSessionResultRow(result, existing.key, row);
+  const next =
+    row === existing ? result : replaceSessionResultRow(result, existing.key, row, false);
   const timestamped = eventTs !== undefined && eventTs > next.ts ? { ...next, ts: eventTs } : next;
   // Facets describe the whole query, so the list adapter owns their invalidation.
   const published = ownershipChanged ? { ...timestamped, owners: undefined } : timestamped;
@@ -188,6 +204,7 @@ export function reconcileSessionChanged(
   accepts: (info: SessionChangedEventInfo) => boolean = () => true,
 ): SessionChangedResult {
   let nextResult = result;
+  let sortPending = false;
   let primary: SessionChangedResult | undefined;
   const admittedRows: GatewaySessionRow[] = [];
   for (const snapshot of sessionChangedSnapshots(payload)) {
@@ -205,12 +222,25 @@ export function reconcileSessionChanged(
     ) {
       continue;
     }
-    const changed = reconcileSessionChangedSnapshot(nextResult, parsed, options, project);
+    const changed = reconcileSessionChangedSnapshot(
+      nextResult,
+      parsed,
+      sortPending,
+      options,
+      project,
+    );
+    if (changed.row && changed.result?.sessions !== nextResult?.sessions) {
+      sortPending = true;
+    }
     primary ??= changed;
     nextResult = changed.result;
     if (changed.admittedRow) {
       admittedRows.push(changed.admittedRow);
     }
+  }
+  if (sortPending && nextResult) {
+    // Only replacement-owned arrays reach this point; the input remains immutable.
+    nextResult.sessions.sort(compareSessionRowsByUpdatedAt);
   }
   return {
     ...(primary ?? { applied: false }),
