@@ -7,6 +7,7 @@ import { createBoardWidget } from "../lib/board/widget.test-support.ts";
 import { createTeamScaleDuplicateReadFixture } from "./control-ui-duplicate-read-fixture.ts";
 import { defaultControlUiFeatureMethods } from "./control-ui-e2e-defaults.ts";
 import {
+  createTeamScaleSessionChanged,
   createTeamScaleSessionEvents,
   prepareTeamScaleSidebarListChurn,
   type TeamScaleLiveEvent,
@@ -91,12 +92,11 @@ export function createControlUiTeamScaleFixture(options: FixtureOptions = {}) {
   };
   const now = options.now ?? Date.now();
   const baseUrl = options.baseUrl ?? "http://127.0.0.1:19626/";
-  const agentNames = ["Harbor", "Forge", "Scout", "Atlas", "Cedar", "Beacon"];
   const agents: AgentsListResult = {
     defaultId: "main",
     mainKey: "main",
     scope: "per-sender",
-    agents: agentNames.map((name, index) => ({
+    agents: ["Harbor", "Forge", "Scout", "Atlas", "Cedar", "Beacon"].map((name, index) => ({
       id: index === 0 ? "main" : name.toLowerCase(),
       name,
       identity: { name, emoji: ["⚓", "🔧", "🔭", "🗺️", "🌲", "💡"][index] },
@@ -382,23 +382,21 @@ export function createControlUiTeamScaleFixture(options: FixtureOptions = {}) {
     models,
     historyMessages,
     ...(pagination ? { deferredRequests: pagination.deferredRequests } : {}),
-    ...(options.richTranscript
+    sessionTranscripts: options.richTranscript
       ? {
-          sessionTranscripts: {
-            [pinnedKeys[1]!]: {
-              messages: createTeamScaleHistoryFixture({
-                messageCount: 400,
-                inlineWidgets: 0,
-                now,
-                richTranscript: true,
-                sessionInfo: pinnedRows[1]!,
-                models,
-                sender: options.transcriptAvatars ? transcriptSender : undefined,
-              }).historyMessages,
-            },
+          [pinnedKeys[1]!]: {
+            messages: createTeamScaleHistoryFixture({
+              messageCount: 400,
+              inlineWidgets: 0,
+              now,
+              richTranscript: true,
+              sessionInfo: pinnedRows[1]!,
+              models,
+              sender: options.transcriptAvatars ? transcriptSender : undefined,
+            }).historyMessages,
           },
         }
-      : {}),
+      : undefined,
     sessionReactions: {
       [selectedSessionKey]: Object.fromEntries(
         messageIds.map((id) => [
@@ -534,24 +532,6 @@ export function createControlUiTeamScaleFixture(options: FixtureOptions = {}) {
     ...Array<string>(2).fill("run-state.unrelated"),
   ];
   const livePresence = presenceEntries.map((entry) => Object.assign({}, entry));
-  const sessionChanged = (
-    row: (typeof sessions)[number],
-    ts: number,
-    reason: string,
-    patch: Partial<(typeof sessions)[number]>,
-  ) => ({
-    sessionKey: row.key,
-    agentId: "main",
-    reason,
-    ts,
-    updatedAt: row.updatedAt,
-    sessionId: row.sessionId,
-    ...(patch.lastMessagePreview === undefined
-      ? {}
-      : { lastMessagePreview: patch.lastMessagePreview }),
-    session: { ...row, snapshotAt: ts, ...patch },
-    ancestorSessions: [],
-  });
   const liveEvents: TeamScaleLiveEvent[] = Array.from({ length: 125 }, (_, index) => {
     const kind = liveKinds[index % liveKinds.length]!;
     const ts = now + (index + 1) * 160;
@@ -582,7 +562,7 @@ export function createControlUiTeamScaleFixture(options: FixtureOptions = {}) {
               ? 160
               : 240
         ]!;
-      payload = sessionChanged(
+      payload = createTeamScaleSessionChanged(
         row,
         ts,
         kind === "run-state.unrelated" ? "agent.run.started" : "patch",
@@ -683,7 +663,7 @@ export function createControlUiTeamScaleFixture(options: FixtureOptions = {}) {
           atMs,
           kind: genuineChange ? "run-state.visible-change" : "run-state.equivalent",
           event: "sessions.changed",
-          payload: sessionChanged(row, ts, "agent.run.started", {
+          payload: createTeamScaleSessionChanged(row, ts, "agent.run.started", {
             hasActiveRun: !genuineChange || index % 2 === 0,
             status: genuineChange && index % 2 ? "done" : "running",
           }),
