@@ -876,6 +876,66 @@ describe("claudeCliSessionTranscriptHasOrphanedToolUse", () => {
     ).toBe(true);
   });
 
+  it("ignores request echoes that repeat answered calls before the final reply", async () => {
+    await writeJsonlSession("request-echo-answered", [
+      {
+        type: "assistant",
+        message: {
+          role: "assistant",
+          content: [{ type: "tool_use", id: "toolu_spawn", name: "Agent", input: {} }],
+        },
+      },
+      {
+        type: "user",
+        message: {
+          role: "user",
+          content: [{ type: "tool_result", tool_use_id: "toolu_spawn", content: "ok" }],
+        },
+      },
+      {
+        type: "api-request-blob",
+        message: {
+          role: "assistant",
+          content: [{ type: "tool_use", id: "toolu_spawn", name: "Agent", input: {} }],
+        },
+      },
+      { type: "api-request" },
+    ]);
+    expect(
+      await claudeCliSessionTranscriptHasOrphanedToolUse({
+        sessionId: "request-echo-answered",
+        workspaceDir,
+        homeDir: tmpDir,
+      }),
+    ).toBe(false);
+  });
+
+  it("still flags an orphan followed only by a request echo", async () => {
+    await writeJsonlSession("request-echo-orphan", [
+      {
+        type: "assistant",
+        message: {
+          role: "assistant",
+          content: [{ type: "tool_use", id: "toolu_echo_orphan", name: "Bash", input: {} }],
+        },
+      },
+      {
+        type: "api-request-blob",
+        message: {
+          role: "user",
+          content: [{ type: "tool_result", tool_use_id: "toolu_echo_orphan", content: "echo" }],
+        },
+      },
+    ]);
+    expect(
+      await claudeCliSessionTranscriptHasOrphanedToolUse({
+        sessionId: "request-echo-orphan",
+        workspaceDir,
+        homeDir: tmpDir,
+      }),
+    ).toBe(true);
+  });
+
   it("inspects the transcript tail past 500 records (does not inherit the content-probe cap)", async () => {
     const lines: object[] = [];
     for (let i = 0; i < 600; i++) {

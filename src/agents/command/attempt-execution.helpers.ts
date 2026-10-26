@@ -248,7 +248,9 @@ async function jsonlFileHasOrphanedTrailingToolUse(filePath: string): Promise<bo
         continue;
       }
       const rec = obj as Record<string, unknown> | null;
-      if (rec?.isSidechain === true) {
+      // Only conversation records count. Claude also logs request echoes
+      // (`api-request-blob`) that repeat answered tool calls under role=assistant.
+      if (rec?.isSidechain === true || (rec?.type !== "user" && rec?.type !== "assistant")) {
         continue;
       }
       const message = rec?.message as Record<string, unknown> | undefined;
