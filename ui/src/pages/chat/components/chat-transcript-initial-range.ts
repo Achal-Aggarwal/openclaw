@@ -279,12 +279,14 @@ export class TranscriptInitialRange {
         warmOnly && distance
           ? virtualizer.getVirtualItemForOffset(predictedTop + (direction > 0 ? viewport : 0))
           : undefined;
+      const domLookahead =
+        velocity || warmOnly ? 8 : Math.max(0, PREPARED_ROW_LIMIT - this.activeIndexes().length);
       const lookahead =
         opposite && predicted
           ? Math.abs(opposite.index - predicted.index) + 1
-          : velocity || warmOnly
-            ? 8
-            : Math.max(0, PREPARED_ROW_LIMIT - this.activeIndexes().length);
+          : prewarm
+            ? Math.max(8, domLookahead)
+            : domLookahead;
       let admitted = 0;
       let warmed = false;
       for (let step = 1; step <= lookahead && admitted === 0; step++) {
@@ -305,6 +307,7 @@ export class TranscriptInitialRange {
         }
         if (
           !warmOnly &&
+          step <= domLookahead &&
           row?.retainDom &&
           !rendered.has(row.key) &&
           !this.preparedRowKeys.has(row.key)

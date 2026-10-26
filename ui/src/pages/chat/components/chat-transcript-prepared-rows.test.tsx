@@ -214,26 +214,38 @@ async function transcriptFixture(
   };
 }
 
-it("warms ordinary rows only in idle time without mounting their DOM", async () => {
-  const view = await transcriptFixture(0, true, false, true);
-  const rendered = view.renderRow.mock.calls.length;
-  const elements = view.container.querySelectorAll(".chat-virtual-row").length;
-  await view.idle(0);
-  expect(view.renderRow.mock.calls).toHaveLength(rendered);
-  await view.idle();
-  const warmed = view.renderRow.mock.calls.slice(rendered).at(-1)![0];
-  const index = warmed.kind === "item" ? warmed.item : -1;
-  expect(index).toBeGreaterThan(0);
-  expect(view.container.querySelector(`[data-virtual-row-key="${warmed.key}"]`)).toBeNull();
-  expect(view.container.querySelectorAll(".chat-virtual-row")).toHaveLength(elements);
-  expect(prewarmGroupedMessage(view.groups[index]!.messages[0]!.message, {})).toBe(false);
-  for (let turn = 0; turn < 16; turn++) {
+it.each([600, 1400])(
+  "warms ordinary rows only in idle time without mounting their DOM (%i px)",
+  async (height) => {
+    const view = await transcriptFixture(0, true, false, true, height);
+    if (height === 1400) {
+      expect(
+        view.container.querySelectorAll(".chat-virtual-row:not([data-prepared-row])").length,
+      ).toBeGreaterThan(12);
+    }
+    const rendered = view.renderRow.mock.calls.length;
+    const elements = view.container.querySelectorAll(".chat-virtual-row").length;
+    await view.idle(0);
+    expect(view.renderRow.mock.calls).toHaveLength(rendered);
     await view.idle();
-  }
-  const last = view.renderRow.mock.calls.at(-1)![0];
-  expect(last.kind === "item" ? last.item : -1).toBeGreaterThan(index);
-  expect(view.container.querySelectorAll(".chat-virtual-row")).toHaveLength(elements);
-});
+    expect(view.renderRow.mock.calls.length).toBeGreaterThan(rendered);
+    const warmed = view.renderRow.mock.calls.slice(rendered).at(-1)![0];
+    const index = warmed.kind === "item" ? warmed.item : -1;
+    expect(index).toBeGreaterThan(0);
+    expect(view.container.querySelector(`[data-virtual-row-key="${warmed.key}"]`)).toBeNull();
+    expect(view.container.querySelectorAll(".chat-virtual-row")).toHaveLength(elements);
+    expect(prewarmGroupedMessage(view.groups[index]!.messages[0]!.message, {})).toBe(false);
+    for (let turn = 0; turn < 16; turn++) {
+      await view.idle();
+    }
+    const last = view.renderRow.mock.calls.at(-1)![0];
+    expect(last.kind === "item" ? last.item : -1).toBeGreaterThan(index);
+    expect(view.container.querySelectorAll(".chat-virtual-row")).toHaveLength(elements);
+    const completed = view.renderRow.mock.calls.length;
+    await view.idle();
+    expect(view.renderRow.mock.calls).toHaveLength(completed);
+  },
+);
 
 it.each([1, -1])(
   "warms the next ordinary viewport in direction %s without idle delivery",
