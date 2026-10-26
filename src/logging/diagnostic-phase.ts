@@ -21,13 +21,6 @@ type ActiveDiagnosticPhase = {
 let activePhaseStack: ActiveDiagnosticPhase[] = [];
 let recentPhases: DiagnosticPhaseSnapshot[] = [];
 
-function pushRecentPhase(snapshot: DiagnosticPhaseSnapshot): void {
-  recentPhases.push(snapshot);
-  if (recentPhases.length > RECENT_PHASE_CAPACITY) {
-    recentPhases = recentPhases.slice(-RECENT_PHASE_CAPACITY);
-  }
-}
-
 export function getCurrentDiagnosticPhase(): string | undefined {
   return activePhaseStack.at(-1)?.name;
 }
@@ -36,17 +29,6 @@ export function getRecentDiagnosticPhases(completedAfter: number): DiagnosticPha
   return recentPhases
     .filter((phase) => phase.endedAt !== undefined && phase.endedAt >= completedAfter)
     .slice(-6);
-}
-
-function recordDiagnosticPhase(snapshot: DiagnosticPhaseSnapshot): void {
-  pushRecentPhase(snapshot);
-  if (!areDiagnosticsEnabledForProcess()) {
-    return;
-  }
-  emitDiagnosticEvent({
-    type: "diagnostic.phase.completed",
-    ...snapshot,
-  });
 }
 
 /** Runs work inside a measured diagnostic phase with wall-clock and CPU metrics. */
@@ -74,7 +56,7 @@ export async function withDiagnosticPhase<T>(
     const cpuSystemMs = roundMetric(cpu.system / 1_000, 1);
     const cpuTotalMs = roundMetric(cpuUserMs + cpuSystemMs, 1);
     activePhaseStack = activePhaseStack.filter((entry) => entry !== active);
-    recordDiagnosticPhase({
+    const snapshot: DiagnosticPhaseSnapshot = {
       name,
       startedAt: active.startedAt,
       endedAt,
@@ -84,7 +66,17 @@ export async function withDiagnosticPhase<T>(
       cpuTotalMs,
       cpuCoreRatio: roundMetric(cpuTotalMs / Math.max(1, durationMs), 3),
       details: active.details,
-    });
+    };
+    recentPhases.push(snapshot);
+    if (recentPhases.length > RECENT_PHASE_CAPACITY) {
+      recentPhases = recentPhases.slice(-RECENT_PHASE_CAPACITY);
+    }
+    if (areDiagnosticsEnabledForProcess()) {
+      emitDiagnosticEvent({
+        type: "diagnostic.phase.completed",
+        ...snapshot,
+      });
+    }
   }
 }
 

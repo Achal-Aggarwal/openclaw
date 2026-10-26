@@ -29,20 +29,6 @@ export class CodexApiError extends Error {
   }
 }
 
-function extractCodexEventError(event: Record<string, unknown>): {
-  code?: string;
-  message?: string;
-} {
-  const nested = isRecord(event.error) ? event.error : undefined;
-  const read = (field: "code" | "message") =>
-    typeof event[field] === "string"
-      ? event[field]
-      : typeof nested?.[field] === "string"
-        ? nested[field]
-        : undefined;
-  return { code: read("code"), message: read("message") };
-}
-
 export async function* mapCodexEvents(
   events: AsyncIterable<Record<string, unknown>>,
   initialResponseHeaders?: Headers,
@@ -62,7 +48,15 @@ export async function* mapCodexEvents(
     }
 
     if (type === "error") {
-      const { code, message } = extractCodexEventError(event);
+      const nested = isRecord(event.error) ? event.error : undefined;
+      const read = (field: "code" | "message") =>
+        typeof event[field] === "string"
+          ? event[field]
+          : typeof nested?.[field] === "string"
+            ? nested[field]
+            : undefined;
+      const code = read("code");
+      const message = read("message");
       throw new CodexApiError(`Codex error: ${message || code || JSON.stringify(event)}`, {
         code,
         payload: event,

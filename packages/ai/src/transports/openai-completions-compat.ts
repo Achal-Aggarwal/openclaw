@@ -298,23 +298,6 @@ export function detectOpenAICompletionsCompat(
   return { capabilities, defaults };
 }
 
-function resolveSessionAffinity(
-  model: Pick<Model<"openai-completions">, "compat">,
-  detectedFormat: OpenAICompletionsCompatDefaults["sessionAffinityFormat"],
-): OpenAICompletionsSessionAffinity {
-  if (model.compat?.sendSessionAffinityHeaders !== true) {
-    return "none";
-  }
-  if (
-    detectedFormat === "openrouter" ||
-    model.compat.thinkingFormat === "openrouter" ||
-    model.compat.openRouterRouting !== undefined
-  ) {
-    return "openrouter";
-  }
-  return "openai";
-}
-
 /** Applies explicit model overrides once on top of the canonical transport defaults. */
 export function resolveOpenAICompletionsCompat(
   model: Pick<
@@ -363,7 +346,14 @@ export function resolveOpenAICompletionsCompat(
       configured?.supportsJsonSchemaResponseFormat ?? defaults.supportsJsonSchemaResponseFormat,
     cacheControlFormat: configured?.cacheControlFormat ?? defaults.cacheControlFormat,
     cacheControlSystemOnly: defaults.cacheControlSystemOnly,
-    sessionAffinity: resolveSessionAffinity(model, defaults.sessionAffinityFormat),
+    sessionAffinity:
+      model.compat?.sendSessionAffinityHeaders !== true
+        ? "none"
+        : defaults.sessionAffinityFormat === "openrouter" ||
+            model.compat.thinkingFormat === "openrouter" ||
+            model.compat.openRouterRouting !== undefined
+          ? "openrouter"
+          : "openai",
     supportsPromptCacheKey: resolveOpenAIPromptCacheKeySupport(model),
     supportsLongCacheRetention:
       configured?.supportsLongCacheRetention ??
