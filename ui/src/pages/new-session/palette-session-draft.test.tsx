@@ -282,6 +282,7 @@ describe("PaletteSessionDraft", () => {
       const submission = host.draft.submit();
       await vi.waitFor(() => expect(host.draft.submitting).toBe(true));
       try {
+        await vi.waitFor(() => expect(create).toHaveBeenCalledOnce());
         if (change === "unchanged") {
           await host.draft.submit();
           host.paletteOpen = false;

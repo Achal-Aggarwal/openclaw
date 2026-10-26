@@ -168,6 +168,7 @@ describe("creation-owned follow-up input", () => {
     vi.mocked(context.sessions.createResult).mockReturnValue(create.promise);
     flow.setMessage("original prompt");
     const first = flow.submit();
+    await vi.waitFor(() => expect(flow.creationComposer).toBeDefined());
     const composer = flow.creationComposer!;
     composer.setMessage("queued follower");
     composer.enqueue();

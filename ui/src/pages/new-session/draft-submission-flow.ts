@@ -441,6 +441,8 @@ export class DraftSubmissionFlow {
     if (!input) {
       return;
     }
+    const helloRecoveryScope = context.gateway.snapshot.hello?.auth?.recoveryScope;
+    const draftRecoveryScope = this.gateway.recoveryScope;
     const preparedTitle = this.callbacks.takePreparedTitle?.();
     const requestSignal = this.captureSubmitRequest();
     const submittedDraft = this.draftPersistence.captureSubmission();
@@ -486,11 +488,11 @@ export class DraftSubmissionFlow {
         this.read().context !== context ||
         context.gateway.snapshot.client !== input.client ||
         context.gateway.connection.gatewayUrl !== input.gatewayUrl ||
-        context.gateway.snapshot.hello?.auth?.recoveryScope !== input.recoveryScope ||
+        context.gateway.snapshot.hello?.auth?.recoveryScope !== helloRecoveryScope ||
         input.client.recoveryScope !== input.recoveryScope ||
         this.gateway.client !== input.client ||
         this.gateway.gatewayUrl !== input.gatewayUrl ||
-        this.gateway.recoveryScope !== input.recoveryScope
+        this.gateway.recoveryScope !== draftRecoveryScope
       ) {
         return;
       }

@@ -192,6 +192,7 @@ describe("command palette people mentions", () => {
       { profileId: "alex-two", start: 24, end: 29 },
     ];
     await f.send();
+    await waitForSolid(() => expect(f.palette.isOpen).toBe(false));
     f.expectCreate({ message: "🙂 @Alex @Jordan Rivera @Alex", mentions: expected });
     const retained = f.context.chatSubmissions.readInitial(
       "agent:main:dashboard:mentioned",
@@ -199,7 +200,6 @@ describe("command palette people mentions", () => {
     );
     expect(retained?.message?.["__openclaw"].humanMentions).toEqual(expected);
     expect(f.context.navigateAndWait).not.toHaveBeenCalled();
-    expect(f.palette.isOpen).toBe(false);
     f.palette.openPalette();
     await f.palette.updateComplete;
     expect(f.palette.querySelector("textarea")?.value).toBe("");
