@@ -204,3 +204,34 @@ describe("plugin api lifecycle", () => {
     expect(result).toBeUndefined();
   });
 });
+
+it("keeps path resolution available to registered callbacks", () => {
+  const api = captureRegisteredPluginApi({});
+
+  expect(api.resolvePath("models/model.onnx")).toBe("models/model.onnx");
+});
+
+it("lets registered callbacks construct inline view results", () => {
+  const api = captureRegisteredPluginApi({});
+  const result = api.inlineView(
+    "incident",
+    { id: "incident-42" },
+    {
+      version: 1,
+      summary: "Showing incident 42.",
+    },
+  );
+
+  expect(result).toEqual({
+    content: [{ type: "text", text: "Showing incident 42." }],
+    details: {
+      pluginInlineView: {
+        pluginId: "late-call-fixture",
+        viewId: "incident",
+        version: 1,
+        payload: { id: "incident-42" },
+        summary: "Showing incident 42.",
+      },
+    },
+  });
+});
