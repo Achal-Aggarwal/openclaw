@@ -357,8 +357,12 @@ final class WebChatManager {
                     reusingWindow: window)
             }
             self.install(
-                controller, target: target, route: controller.currentRoute,
-                connection: connection, windowID: windowID, cascade: false)
+                controller,
+                target: target,
+                route: controller.currentRoute,
+                connection: connection,
+                windowID: windowID,
+                cascade: false)
             self.gatewaySwitchTasks[windowID] = nil
             return
         }
@@ -436,7 +440,9 @@ final class WebChatManager {
             guard self.gatewayWindows[windowID]?.controller === controller else { return }
             self.gatewaySwitchTasks.removeValue(forKey: windowID)?.cancel()
             let retained = self.retainedGatewayChats.removeValue(forKey: windowID) ?? [:]
-            for content in retained.values { content.controller.close() }
+            for content in retained.values {
+                content.controller.close()
+            }
             if target == .primary { self.cancelPrimaryOpen() }
             self.gatewayWindows.removeValue(forKey: windowID)
             self.gatewayWindowOrder.removeAll { $0 == windowID }
@@ -482,7 +488,9 @@ final class WebChatManager {
 
     func hideWindows() {
         self.windowGeneration &+= 1
-        for task in self.gatewaySwitchTasks.values { task.cancel() }
+        for task in self.gatewaySwitchTasks.values {
+            task.cancel()
+        }
         self.gatewaySwitchTasks.removeAll()
         self.cancelPrimaryOpen()
         let order = self.gatewayWindowOrder
