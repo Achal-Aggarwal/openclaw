@@ -320,41 +320,6 @@ function resolveEffectiveMinKeepChars(
   return Math.max(0, Math.min(minKeepChars, maxChars - suffixFloor));
 }
 
-function appendBoundedTruncationSuffix(params: {
-  keptText: string;
-  originalTextLength: number;
-  maxChars: number;
-  suffixFactory: (truncatedChars: number) => string;
-  minimumRawWeight?: number;
-}): string {
-  let keptText = params.keptText;
-  const budgetOptions = { minimumRawWeight: params.minimumRawWeight };
-  while (true) {
-    const suffix = params.suffixFactory(Math.max(1, params.originalTextLength - keptText.length));
-    const suffixChars = estimateToolResultTextChars(suffix, budgetOptions);
-    if (suffixChars >= params.maxChars) {
-      const fullOmissionSuffix = params.suffixFactory(Math.max(1, params.originalTextLength));
-      return sliceToolResultTextToBudget(fullOmissionSuffix, params.maxChars, budgetOptions);
-    }
-    const nextKeptText = sliceToolResultTextToBudget(
-      keptText,
-      params.maxChars - suffixChars,
-      budgetOptions,
-    );
-    const finalText = nextKeptText + suffix;
-    if (
-      nextKeptText.length === keptText.length &&
-      estimateToolResultTextChars(finalText, budgetOptions) <= params.maxChars
-    ) {
-      return finalText;
-    }
-    if (nextKeptText.length === 0 && keptText.length === 0) {
-      return sliceToolResultTextToBudget(finalText, params.maxChars, budgetOptions);
-    }
-    keptText = nextKeptText;
-  }
-}
-
 const MIDDLE_OMISSION_MARKER =
   "\n\n⚠️ [... middle content omitted — showing head and tail ...]\n\n";
 
@@ -391,14 +356,34 @@ export function truncateToolResultText(
     maxChars - estimateToolResultTextChars(defaultSuffix, budgetOptions),
   );
 
-  const appendSuffix = (keptText: string) =>
-    appendBoundedTruncationSuffix({
-      keptText,
-      originalTextLength: text.length,
-      maxChars,
-      suffixFactory,
-      minimumRawWeight: options.minimumRawWeight,
-    });
+  const appendSuffix = (initialText: string): string => {
+    let suffixText = initialText;
+    const suffixBudgetOptions = { minimumRawWeight: options.minimumRawWeight };
+    while (true) {
+      const suffix = suffixFactory(Math.max(1, text.length - suffixText.length));
+      const suffixChars = estimateToolResultTextChars(suffix, suffixBudgetOptions);
+      if (suffixChars >= maxChars) {
+        const fullOmissionSuffix = suffixFactory(Math.max(1, text.length));
+        return sliceToolResultTextToBudget(fullOmissionSuffix, maxChars, suffixBudgetOptions);
+      }
+      const nextKeptText = sliceToolResultTextToBudget(
+        suffixText,
+        maxChars - suffixChars,
+        suffixBudgetOptions,
+      );
+      const finalText = nextKeptText + suffix;
+      if (
+        nextKeptText.length === suffixText.length &&
+        estimateToolResultTextChars(finalText, suffixBudgetOptions) <= maxChars
+      ) {
+        return finalText;
+      }
+      if (nextKeptText.length === 0 && suffixText.length === 0) {
+        return sliceToolResultTextToBudget(finalText, maxChars, suffixBudgetOptions);
+      }
+      suffixText = nextKeptText;
+    }
+  };
   if (hasImportantTail(text) && budget > minKeepChars * 2) {
     const tailBudget = Math.min(Math.floor(budget * 0.3), 4_000);
     const headBudget =
