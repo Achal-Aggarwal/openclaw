@@ -2101,8 +2101,6 @@ jobs:
           CANDIDATE_REQUEST_JSON: ${{ needs.resolve_target.outputs.candidate_request_json }}
           NPM_PREPARATION_RESULT: ${{ needs.prepare_npm_package.result }}
           NPM_QUALIFICATION_RESULT: ${{ needs.qualify_npm_package.result }}
-          PLUGIN_NPM_REQUIRED: ${{ needs.resolve_target.outputs.plugin_npm_preflight_required }}
-          PLUGIN_NPM_PREPARATION_RESULT: ${{ needs.prepare_plugin_npm.result }}
           DOCKER_PREPARATION_RESULT: ${{ needs.prepare_docker_release.result }}
           FULL_RELEASE_RESTORE_PLAN: ${{ github.run_attempt != 1 }}
           FULL_RELEASE_EXECUTION_PLAN_PATH: ${{ github.workspace }}/full-release-execution-plan/full-release-execution-plan.json
@@ -2142,8 +2140,6 @@ jobs:
               --argjson candidateRequestInput "$CANDIDATE_REQUEST_JSON" \
               --arg npmPreparationResult "$NPM_PREPARATION_RESULT" \
               --arg npmQualificationResult "$NPM_QUALIFICATION_RESULT" \
-              --arg pluginNpmPreflightRequired "$PLUGIN_NPM_REQUIRED" \
-              --arg pluginNpmPreparationResult "$PLUGIN_NPM_PREPARATION_RESULT" \
               --arg dockerPreparationResult "$DOCKER_PREPARATION_RESULT" \
               --arg normalCiResult "$NORMAL_CI_RESULT" \
               --arg normalCiRunId "$NORMAL_CI_RUN_ID" \
@@ -2210,8 +2206,6 @@ jobs:
                 candidateRequestInput: $candidateRequestInput,
                 npmPreparationResult: $npmPreparationResult,
                 npmQualificationResult: $npmQualificationResult,
-                pluginNpmPreflightRequired: $pluginNpmPreflightRequired,
-                pluginNpmPreparationResult: $pluginNpmPreparationResult,
                 dockerPreparationResult: $dockerPreparationResult,
                 children: {
                   normalCi: {result: $normalCiResult, runId: $normalCiRunId, runAttempt: $normalCiRunAttempt, url: $normalCiUrl},
@@ -2265,7 +2259,6 @@ jobs:
         resolve_target,
         prepare_npm_package,
         qualify_npm_package,
-        prepare_plugin_npm,
         prepare_docker_release,
         release_execution_plan,
       ]
@@ -2306,7 +2299,6 @@ jobs:
           TARGET_SHA: ${{ needs.resolve_target.outputs.sha }}
           NPM_PREPARATION_RESULT: ${{ needs.prepare_npm_package.result }}
           NPM_QUALIFICATION_RESULT: ${{ needs.qualify_npm_package.result }}
-          PLUGIN_NPM_PREPARATION_RESULT: ${{ needs.prepare_plugin_npm.result }}
           DOCKER_PREPARATION_RESULT: ${{ needs.prepare_docker_release.result }}
           FULL_RELEASE_STATE_MODE: decision
           FULL_RELEASE_EXECUTION_PLAN_PATH: ${{ runner.temp }}/full-release-execution-plan/full-release-execution-plan.json
@@ -2342,7 +2334,6 @@ jobs:
         resolve_target,
         prepare_npm_package,
         qualify_npm_package,
-        prepare_plugin_npm,
         prepare_docker_release,
         release_execution_plan,
       ]
@@ -2390,7 +2381,6 @@ jobs:
           TARGET_SHA: ${{ needs.resolve_target.outputs.sha }}
           NPM_PREPARATION_RESULT: ${{ needs.prepare_npm_package.result }}
           NPM_QUALIFICATION_RESULT: ${{ needs.qualify_npm_package.result }}
-          PLUGIN_NPM_PREPARATION_RESULT: ${{ needs.prepare_plugin_npm.result }}
           DOCKER_PREPARATION_RESULT: ${{ needs.prepare_docker_release.result }}
           FULL_RELEASE_STATE_MODE: drain
           FULL_RELEASE_EXECUTION_PLAN_PATH: ${{ runner.temp }}/full-release-execution-plan/full-release-execution-plan.json

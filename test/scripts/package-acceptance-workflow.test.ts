@@ -9230,7 +9230,6 @@ test "$package_manager" = "pnpm@12.1.0"
       "resolve_target",
       "prepare_npm_package",
       "qualify_npm_package",
-      "prepare_plugin_npm",
       "prepare_docker_release",
       "release_execution_plan",
     ];
