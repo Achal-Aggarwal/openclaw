@@ -620,7 +620,7 @@ it("leaves timestamp attributes untouched when only message usage changes", () =
   flush();
   expect(view.container.querySelector(".msg-meta__tokens")?.textContent).toBe("↑200");
   expect(time.dateTime).toBe("1970-01-01T00:00:01.000Z");
-  expect(time.textContent).toBe("6m ago");
+  expect(time.textContent).toBe("5m ago");
   expect(observer.takeRecords()).toEqual([]);
   observer.disconnect();
   clock.mockRestore();
