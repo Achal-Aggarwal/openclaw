@@ -231,7 +231,7 @@ const workspaces = Object.fromEntries(
               ...(workspace === "extensions/qa-lab"
                 ? [
                     "test-fixtures/*/index.js!",
-                    // The lifecycle test launches this isolated process fixture by path.
+                    // The lifecycle test spawns this suite fixture as a separate Node process.
                     "src/suite-process-lifecycle.test-support.ts!",
                   ]
                 : []),
