@@ -135,9 +135,6 @@ function TranscriptRows(props: {
                     ]}
                     style={{
                       "contain-intrinsic-block-size": `${virtualRow().size}px`,
-                      top: active()
-                        ? undefined
-                        : `${virtualRow().start - props.snapshot.virtualizer.options.scrollMargin}px`,
                     }}
                     data-index={String(virtualRow().index)}
                     data-virtual-row-key={row()?.key}

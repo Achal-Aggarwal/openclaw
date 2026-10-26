@@ -635,7 +635,7 @@ openclaw-pending-session-create {
 
 .chat-virtual-block {
   /* The outer extent owns scroll height; the leading spacer positions the
-     in-flow window. Cached rows keep coordinates relative to the sizer. */
+     in-flow window. Cached rows stay outside that flow. */
   contain: size;
   isolation: isolate;
   width: 100%;
@@ -650,9 +650,11 @@ openclaw-pending-session-create {
   content-visibility: auto;
 }
 
-/* Cached rows retain their measured geometry without laying out distant content. */
+/* Virtual-core retains the geometry; parked DOM need not follow every size correction. */
 .chat-virtual-row[data-prepared-row] {
   position: absolute;
+  top: 0;
+  content-visibility: hidden;
   opacity: 0;
 }
 

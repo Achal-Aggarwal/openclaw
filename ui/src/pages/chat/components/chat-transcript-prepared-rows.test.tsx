@@ -226,6 +226,28 @@ it("pauses queued preparation while hidden and retires it on disconnect", async 
   expect(transcriptRows(view.container)).toHaveLength(0);
 });
 
+it("keeps parked row styles stable when an earlier row changes height", async () => {
+  const view = await transcriptFixture();
+  await view.frame(8);
+  const parked = view.container.querySelector<HTMLElement>("[data-prepared-row]")!;
+  const active = view.container.querySelector<HTMLElement>(
+    ".chat-virtual-row:not([data-prepared-row])",
+  )!;
+  expect(Number(parked.dataset.index)).toBeGreaterThan(Number(active.dataset.index));
+  const mutations: MutationRecord[] = [];
+  const observer = new MutationObserver((records) => mutations.push(...records));
+  observer.observe(parked, { attributes: true, attributeFilter: ["style"] });
+  try {
+    emitTranscriptResize(active, 800, 200);
+    await settle();
+    mutations.push(...observer.takeRecords());
+    expect(mutations).toHaveLength(0);
+    expect(parked.isConnected).toBe(true);
+  } finally {
+    observer.disconnect();
+  }
+});
+
 it("prepares ahead during fast scrolling and waits for measurement before admitting another row", async () => {
   const view = await transcriptFixture();
   await view.frame(8);
