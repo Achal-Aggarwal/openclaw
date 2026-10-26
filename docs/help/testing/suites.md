@@ -413,7 +413,7 @@ Its explicit inventory, selection, and capacity policy are documented in
 - Files: `ui/src/**/*.e2e.test.ts` and the QA Lab media-transcript real-Gateway suite
 - Scope:
   - Uses four resource groups in two execution phases: `ui-e2e-bundled` and `ui-e2e-standalone` share the parallel phase (at most two workers total); `ui-e2e-serial` and `ui-e2e-serial-standalone` share the later single-worker phase
-  - The two bundle-consuming projects lazily acquire one temporary UI bundle/preview per invocation; standalone projects own their fixture, source, or custom-build servers
+  - The two bundle-consuming projects lazily acquire one temporary UI bundle/preview per invocation. Default source-module consumers share one invocation-owned Vite server while retaining fresh browser contexts and documents; standalone fixture and custom-build servers keep their own lifetimes
   - Selecting only standalone suites skips the shared bundle build; new E2E files default to bundled ownership
   - Every selected project discovers Chromium and drives real pages through Playwright; the root config retains the complete discovery inventory
   - Most suites replace the Gateway WebSocket with fixed-response in-browser mocks; some start isolated real Gateways

@@ -30,6 +30,15 @@ let sharedPreview: {
   buildInfo: ControlUiE2eBuildIdentity | null;
   nativePluginBuilds: readonly PreparedNativeControlUiPluginBuild[];
 } | null = null;
+let sharedSourceBaseUrl: string | null = null;
+
+export function getSharedControlUiE2eSourceBaseUrl() {
+  return sharedSourceBaseUrl;
+}
+
+export function setSharedControlUiE2eSourceBaseUrl(baseUrl: string | null): void {
+  sharedSourceBaseUrl = baseUrl;
+}
 
 export function getSharedControlUiE2ePreview() {
   return sharedPreview;

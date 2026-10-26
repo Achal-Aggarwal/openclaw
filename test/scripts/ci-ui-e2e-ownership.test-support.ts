@@ -129,11 +129,12 @@ export function assertControlUiE2eOwnership(
   expect(config.test?.globalSetup).toEqual([]);
   const chromiumSetup = "test/vitest/vitest.ui-e2e.global-setup.ts";
   const bundledSetup = "test/vitest/vitest.ui-e2e.bundled.global-setup.ts";
+  const sourceSetup = "test/vitest/vitest.ui-e2e.source.global-setup.ts";
   expect(projects.map(({ test }) => [test.name, test.globalSetup])).toEqual([
     ["ui-e2e-bundled", [chromiumSetup, bundledSetup]],
     ["ui-e2e-standalone", [chromiumSetup]],
     ["ui-e2e-serial", [chromiumSetup, bundledSetup]],
-    ["ui-e2e-serial-standalone", [chromiumSetup]],
+    ["ui-e2e-serial-standalone", [chromiumSetup, sourceSetup]],
   ]);
   expect(new Set(projects.map((project) => project.cacheDir)).size).toBe(projects.length);
   expect(config.test?.maxWorkers).toBe(Math.min(2, sharedVitestConfig.test.maxWorkers));

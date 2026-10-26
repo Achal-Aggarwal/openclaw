@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 import type { MessageReactionSummary } from "@openclaw/gateway-protocol";
 import { normalizeAgentId } from "@openclaw/normalization-core/agent-id";
 import type { Locator, Page } from "playwright";
-import type { InlineConfig, Plugin, PreviewServer, ViteDevServer } from "vite";
+import type { InlineConfig, Plugin } from "vite";
 import type { MigrationsMemoryPlanResult } from "../../../packages/gateway-protocol/src/schema/migrations.ts";
 import type { SessionsProcessesListResult } from "../../../packages/gateway-protocol/src/schema/session-processes.ts";
 import type {
@@ -25,7 +25,6 @@ import type {
   UpdateAvailable,
   UpdateScheduleState,
 } from "../api/types.ts";
-import { normalizeControlUiBuildInfo } from "../build-info-normalizers.ts";
 import type { ControlUiBuildInfo } from "../build-info.ts";
 import { createControlUiAttachmentFacts } from "./control-ui-attachment-fixtures.ts";
 import { buildControlUiMockBootstrapConfig } from "./control-ui-bootstrap-fixture.ts";
@@ -56,8 +55,13 @@ import { resolveAvailableLoopbackPort } from "./control-ui-e2e-port.ts";
 import {
   installControlUiRosterNavigationWait,
   controlUiE2eWaitTimeoutMs,
-  extendControlUiE2eWaitTimeoutForSourceServer,
 } from "./control-ui-e2e-readiness.ts";
+import {
+  DEFAULT_CONTROL_UI_E2E_BUILD_INFO,
+  resolveRepoRoot,
+  resolveServerBaseUrl,
+  type ControlUiE2eServer,
+} from "./control-ui-e2e-server.ts";
 import { getSharedControlUiE2ePreview } from "./control-ui-e2e-shared-preview.ts";
 import { normalizeControlUiMockAuth, type ControlUiMockAuth } from "./control-ui-mock-auth.ts";
 import { createControlUiMockDeferredRequests } from "./control-ui-mock-deferred-requests.ts";
@@ -85,6 +89,7 @@ export {
   installControlUiRpcDiagnostics,
 } from "./control-ui-e2e-diagnostics.ts";
 export { controlUiE2eWaitTimeoutMs, waitForConfirmModal } from "./control-ui-e2e-readiness.ts";
+export { startControlUiE2eServer, type ControlUiE2eServer } from "./control-ui-e2e-server.ts";
 export {
   controlUiBundledGatewayUrl,
   controlUiBundledSettingsStorageKey,
@@ -188,7 +193,6 @@ export async function waitForControlUiSettingsTakeover(
 }
 
 const require = createRequire(import.meta.url);
-const json5EsmPath = require.resolve("json5/dist/index.mjs");
 const json5BrowserSource = readFileSync(require.resolve("json5/dist/index.min.js"), "utf8");
 
 export { installControlUiMockBootstrapDocument } from "./control-ui-bootstrap-fixture.ts";
@@ -326,28 +330,8 @@ const DEFAULT_MOCK_ATTACHMENT_MAX_BYTES = Math.floor(
   ((DEFAULT_MOCK_MAX_PAYLOAD_BYTES - 256 * 1024) * 3) / 4,
 );
 
-export type ControlUiE2eServer = {
-  baseUrl: string;
-  close: () => Promise<void>;
-};
-
 export type ControlUiE2eProductionServer = ControlUiE2eServer & {
   replaceBuild: (nextDir: string, previousDir: string) => Promise<void>;
-};
-
-type ControlUiE2eServerOptions = {
-  source?: boolean;
-};
-
-const DEFAULT_CONTROL_UI_E2E_BUILD_INFO: ControlUiBuildInfo = {
-  version: "2026.7.10",
-  commit: "0123456789abcdef0123456789abcdef01234567",
-  commitAt: "2026-07-10T11:22:33.000Z",
-  builtAt: "2026-07-10T12:34:56.000Z",
-  branch: null,
-  dirty: false,
-  release: false,
-  buildId: "e2e",
 };
 
 export async function reconnectMockGateway(
@@ -385,11 +369,6 @@ export async function reconnectMockGateway(
   );
 }
 
-function resolveRepoRoot(): string {
-  const here = path.dirname(fileURLToPath(import.meta.url));
-  return path.resolve(here, "../../..");
-}
-
 // Many UI tests and proof scripts import Chromium selection through this helper.
 export {
   canRunPlaywrightChromium,
@@ -405,85 +384,6 @@ export {
 // the Date.now() read and the pause; jumping to it fires nothing relevant.
 export async function pauseVirtualClock(page: Page): Promise<void> {
   await page.clock.pauseAt((await page.evaluate(() => Date.now())) + 5_000);
-}
-
-export async function startControlUiE2eServer(
-  buildInfo?: ControlUiBuildInfo,
-  options: ControlUiE2eServerOptions = {},
-): Promise<ControlUiE2eServer> {
-  // Ordinary E2E files exercise the shipped bundle. Source-module and custom
-  // build-info tests retain a private Vite server through the same lease API.
-  const sharedPreview = getSharedControlUiE2ePreview();
-  if (sharedPreview && buildInfo === undefined && options.source !== true) {
-    return {
-      baseUrl: sharedPreview.baseUrl,
-      close: async () => {},
-    };
-  }
-  extendControlUiE2eWaitTimeoutForSourceServer();
-  const resolvedBuildInfo = normalizeControlUiBuildInfo(
-    buildInfo ?? DEFAULT_CONTROL_UI_E2E_BUILD_INFO,
-  );
-  // Shared browser fixtures import this helper; load filesystem-bound Vite
-  // configuration only when its Node-owned development server actually starts.
-  const [
-    { createServer },
-    { controlUiLocaleModulesPlugin },
-    { controlUiSolidPlugin },
-    { controlUiPluginDistributionsPlugin },
-    {
-      commonJsOptimizeDeps,
-      controlUiRuntimeDefines,
-      resolveExternalPackageAliasesForVite,
-      resolveSourcePackageAliasesForVite,
-      resolveTsconfigPathAliasesForVite,
-    },
-  ] = await Promise.all([
-    import("vite"),
-    import("../../config/control-ui-locales.ts"),
-    import("../../config/control-ui-solid.ts"),
-    import("../../config/control-ui-plugin-distributions.ts"),
-    import("../../vite.config.ts"),
-  ]);
-  const repoRoot = resolveRepoRoot();
-  const uiRoot = path.join(repoRoot, "ui");
-  const port = await resolveAvailableLoopbackPort();
-  const server = await createServer({
-    base: "/",
-    cacheDir: path.join(repoRoot, ".artifacts", "control-ui-e2e-vite"),
-    clearScreen: false,
-    configFile: false,
-    define: controlUiRuntimeDefines("serve", resolvedBuildInfo),
-    logLevel: "error",
-    optimizeDeps: {
-      include: ["ipaddr.js", "@solidjs/testing-library", ...commonJsOptimizeDeps],
-    },
-    publicDir: path.join(uiRoot, "public"),
-    plugins: [
-      controlUiSolidPlugin(),
-      controlUiLocaleModulesPlugin(),
-      controlUiPluginDistributionsPlugin(repoRoot, new Set()),
-    ],
-    resolve: {
-      alias: [
-        { find: "json5", replacement: json5EsmPath },
-        ...resolveExternalPackageAliasesForVite(),
-        ...resolveSourcePackageAliasesForVite(),
-        ...resolveTsconfigPathAliasesForVite(),
-      ],
-    },
-    root: uiRoot,
-    server: {
-      host: "127.0.0.1",
-      port,
-      strictPort: true,
-    },
-  });
-  await server.listen(port);
-  return {
-    baseUrl: resolveServerBaseUrl(server),
-    close: () => server.close(),
-  };
 }
 
 // Mirror the Gateway's depth-insensitive asset resolution
@@ -754,14 +654,6 @@ export async function startCopiedProductionControlUiE2eServer(
   await cp(sourceRoot, outDir, { recursive: true, dereference: true });
   await refreshProductionControlUiE2e(outDir, buildId);
   return startBuiltControlUiE2eServer(outDir, bootstrapConfig);
-}
-
-function resolveServerBaseUrl(server: ViteDevServer | PreviewServer): string {
-  const address = server.httpServer?.address();
-  if (!address || typeof address === "string") {
-    throw new Error("Control UI E2E server did not expose a TCP port");
-  }
-  return `http://127.0.0.1:${address.port}/`;
 }
 
 function normalizeScenario(

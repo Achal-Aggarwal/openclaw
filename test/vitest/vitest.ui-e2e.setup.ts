@@ -1,7 +1,8 @@
-// Per-file setup leases the shard-scoped production bundle through the test helper.
+// Per-file setup borrows invocation-owned UI servers through the test helper.
 import { inject } from "vitest";
 import {
   setSharedControlUiE2eServerBaseUrl,
+  setSharedControlUiE2eSourceBaseUrl,
   type ControlUiE2eBuildIdentity,
 } from "../../ui/src/test-helpers/control-ui-e2e-shared-preview.ts";
 
@@ -11,6 +12,8 @@ declare module "vitest" {
     controlUiE2eServerBuildInfo: ControlUiE2eBuildIdentity | null;
   }
 }
+
+setSharedControlUiE2eSourceBaseUrl(inject("controlUiE2eSourceBaseUrl") ?? null);
 
 const serverBaseUrl = inject("controlUiE2eServerBaseUrl");
 if (serverBaseUrl) {

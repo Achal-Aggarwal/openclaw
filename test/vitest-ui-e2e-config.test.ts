@@ -78,6 +78,7 @@ type OwnershipProbe = {
   contexts: Array<{
     name: string;
     url?: string | null;
+    sourceUrl?: string | null;
     buildInfo?: typeof prebuiltBuildInfo | null;
     nativePluginBuilds?: PreparedNativeControlUiPluginBuild[];
     bridge: boolean;
@@ -86,6 +87,7 @@ type OwnershipProbe = {
   leases: Array<{ outDir: string; closed: boolean; removed: boolean }>;
   shards: string[][];
   steps: Array<{ builds: number; previews: number; closes: number }>;
+  sourceServers: { starts: number; closes: number };
   admissions: string[];
   canonicalAssetsIntact: boolean;
   rootWorkers: number;
@@ -118,6 +120,7 @@ function probeOwnership(
   const directory = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "oc-ui-ownership-")));
   tempDirs.push(directory);
   const eventsFile = path.join(directory, "leases.jsonl");
+  const sourceEventsFile = path.join(directory, "source-servers.jsonl");
   const admissionsFile = path.join(directory, "admissions.jsonl");
   const canonicalRoot = path.join(directory, "canonical-ui");
   fs.mkdirSync(canonicalRoot);
@@ -172,6 +175,11 @@ function probeOwnership(
         throw new Error("preview did not borrow admitted artifacts");
       }
       return lease(outDir, false);
+    }
+    export async function startControlUiE2eServer() {
+      const record = closed => fs.appendFileSync(${JSON.stringify(sourceEventsFile)}, JSON.stringify({ closed }) + "\\n");
+      record(false);
+      return { baseUrl: "http://127.0.0.1:12346/", close: async () => record(true) };
     }
   `,
   );
@@ -258,6 +266,7 @@ function probeOwnership(
           .toSorted((a, b) => a.file.localeCompare(b.file)),
         contexts: [...new Set(specs.map(spec => spec.project))].map(project => ({ name: project.name,
           url: project.getProvidedContext().controlUiE2eServerBaseUrl,
+          sourceUrl: project.getProvidedContext().controlUiE2eSourceBaseUrl,
           buildInfo: project.getProvidedContext().controlUiE2eServerBuildInfo,
           nativePluginBuilds: project.getProvidedContext().controlUiE2eNativePluginBuilds,
           productionRoot: project.getProvidedContext().controlUiE2ePrebuiltAssets?.root,
@@ -268,6 +277,12 @@ function probeOwnership(
           ? fs.readFileSync(${JSON.stringify(admissionsFile)}, "utf8").trim().split("\\n").map(JSON.parse) : [],
       };
     } finally { await ctx.close(); }
+    const sourceEvents = fs.existsSync(${JSON.stringify(sourceEventsFile)})
+      ? fs.readFileSync(${JSON.stringify(sourceEventsFile)}, "utf8").trim().split("\\n").map(JSON.parse) : [];
+    report.sourceServers = {
+      starts: sourceEvents.filter(event => !event.closed).length,
+      closes: sourceEvents.filter(event => event.closed).length,
+    };
     const events = readEvents();
     report.leases = events.filter(event => !event.closed).map(event => ({
       outDir: event.outDir, closed: events.filter(other => other.outDir === event.outDir && other.closed).length === 1,
@@ -300,6 +315,25 @@ function probeOwnership(
 }
 
 describe("Control UI E2E resource ownership", () => {
+  it("shares the source compiler across files without acquiring it for custom-only selection", () => {
+    const files = [
+      "ui/src/e2e/mount-recovery.e2e.test.ts",
+      "ui/src/e2e/sidebar-boot-imports.e2e.test.ts",
+    ];
+    const shared = probeOwnership({ filters: files, initialize: files.map((file) => [file]) });
+    expect(shared.setupError).toBeUndefined();
+    expect(shared.sourceServers).toEqual({ starts: 1, closes: 1 });
+    expect(shared.contexts.map((context) => context.sourceUrl)).toEqual([
+      "http://127.0.0.1:12346/",
+    ]);
+    expect(shared.leases).toEqual([]);
+
+    const custom = probeOwnership({ filters: ["ui/src/e2e/build-info-unicode.e2e.test.ts"] });
+    expect(custom.setupError).toBeUndefined();
+    expect(custom.sourceServers).toEqual({ starts: 0, closes: 0 });
+    expect(custom.contexts.map((context) => context.sourceUrl)).toEqual([undefined]);
+  });
+
   it("refuses a selected project before acquiring fixtures when environment preflight fails", () => {
     const result = probeOwnership({ filters: [bundledFile], failure: "preflight" });
     expect(result.setupError).toBe("fixture preflight failed");
