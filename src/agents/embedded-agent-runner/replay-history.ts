@@ -57,7 +57,6 @@ import type { SessionManager } from "../sessions/index.js";
 import { stripStaleThinkingSignaturesForCompactionReplay } from "../thinking-signatures.js";
 import {
   extractToolCallsFromAssistant,
-  extractToolResultId,
   sanitizeToolCallIdsForCloudCodeAssist,
 } from "../tool-call-id.js";
 import { createCompletedToolCallPredicate } from "../tool-call-shared.js";
@@ -501,71 +500,6 @@ function ensureAssistantUsageSnapshots(messages: AgentMessage[]): AgentMessage[]
   return touched ? out : messages;
 }
 
-function formatOpenAIResponsesReplayInvariantError(params: {
-  reason: "dangling_tool_call" | "orphan_tool_result";
-  toolCallId?: string;
-  messageIndex: number;
-}): Error {
-  const toolCallId = params.toolCallId ? ` toolCallId=${params.toolCallId}` : "";
-  return new Error(
-    `invalid_replay_transcript: OpenAI Responses replay contains ${params.reason}${toolCallId} at message index ${params.messageIndex}`,
-  );
-}
-
-function assertOpenAIResponsesToolUseResultInvariant(messages: AgentMessage[]): AgentMessage[] {
-  const pending = new Map<string, number>();
-  const assertNoPendingCalls = () => {
-    const dangling = pending.entries().next().value;
-    if (dangling) {
-      throw formatOpenAIResponsesReplayInvariantError({
-        reason: "dangling_tool_call",
-        toolCallId: dangling[0],
-        messageIndex: dangling[1],
-      });
-    }
-  };
-
-  for (let i = 0; i < messages.length; i += 1) {
-    const message = messages[i];
-    const role = (message as { role?: unknown } | undefined)?.role;
-
-    if (role !== "toolResult") {
-      assertNoPendingCalls();
-    }
-
-    if (!message || typeof message !== "object") {
-      continue;
-    }
-
-    if (role === "toolResult") {
-      const toolCallId = extractToolResultId(
-        message as Extract<AgentMessage, { role: "toolResult" }>,
-      );
-      if (!toolCallId || !pending.delete(toolCallId)) {
-        throw formatOpenAIResponsesReplayInvariantError({
-          reason: "orphan_tool_result",
-          ...(toolCallId ? { toolCallId } : {}),
-          messageIndex: i,
-        });
-      }
-      continue;
-    }
-
-    if (role !== "assistant") {
-      continue;
-    }
-
-    for (const toolCall of extractToolCallsFromAssistant(
-      message as Extract<AgentMessage, { role: "assistant" }>,
-    )) {
-      pending.set(toolCall.id, i);
-    }
-  }
-
-  assertNoPendingCalls();
-  return messages;
-}
-
 /**
  * Applies the generic replay-history cleanup pipeline before provider-owned
  * replay hooks run.
@@ -698,12 +632,11 @@ export async function sanitizeSessionHistory(
       replaySession.close();
     }
   }
-  // Provider replay hooks may rewrite history, so reassert the same pairing policy afterward.
+  // Provider replay hooks may rewrite history, so reapply the same pairing policy afterward.
   if (isOpenAIResponsesApi) {
     if (policy.repairToolUseResultPairing) {
       messages = sanitizeToolUseResultPairingForModel(messages, true);
     }
-    assertOpenAIResponsesToolUseResultInvariant(messages);
   }
 
   if (currentSnapshot && (!priorSnapshot || modelChanged)) {

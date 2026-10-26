@@ -52,7 +52,6 @@ function isProviderConversationStateError(lower: string): boolean {
     (lower.includes("tool_use") && lower.includes("tool_result") && lower.includes("without")) ||
     lower.includes("function call turn comes immediately after") ||
     lower.includes("incorrect role information") ||
-    lower.includes("roles must alternate") ||
-    lower.includes("invalid_replay_transcript")
+    lower.includes("roles must alternate")
   );
 }
