@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { deserialize, serialize } from "node:v8";
-import { Worker } from "node:worker_threads";
+import { threadId, Worker } from "node:worker_threads";
 import { expect, it, onTestFinished, vi } from "vitest";
 import { createDeferredCore } from "../shared/deferred.js";
 import { drainGlobalSingletonLifecycleState } from "../shared/global-singleton.js";
@@ -273,3 +273,135 @@ it.each(["client", "global"] as const)(
     }
   },
 );
+
+const timingKeys = [
+  "enqueued",
+  "dispatched",
+  "posted",
+  "postFinished",
+  "received",
+  "inputReady",
+  "executeStarted",
+  "executeFinished",
+  "serialized",
+  "replied",
+  "replyReceived",
+] as const;
+
+function distribution(values: number[]) {
+  const sorted = [...values].sort((a, b) => a - b);
+  const middle = Math.floor(sorted.length / 2);
+  return {
+    count: sorted.length,
+    min: sorted[0],
+    median: sorted.length % 2 === 0 ? (sorted[middle - 1]! + sorted[middle]!) / 2 : sorted[middle],
+    p95: sorted[Math.ceil(sorted.length * 0.95) - 1],
+    max: sorted.at(-1),
+  };
+}
+
+it("reports native SQLite handoff phases for synthetic inline and framed requests", async () => {
+  const started = performance.now();
+  const store = await open(databasePath());
+  await waitForDiagnosticEventsDrained();
+  const completed: DiagnosticWorkerRequestFields[] = [];
+  onTestFinished(
+    onInternalDiagnosticEvent(
+      (event) => {
+        if (
+          event.type === "worker.request" &&
+          event.kind === "sqlite_writer" &&
+          event.phase === "completed" &&
+          event.requestClass === "session.actor.appendTranscriptEvent"
+        ) {
+          completed.push(event);
+        }
+      },
+      { include: ["worker.request"] },
+    ),
+  );
+  const payloads = [
+    { name: "small", value: "s".repeat(64 * 1024) },
+    { name: "inline", value: "i".repeat(8 * 1024 * 1024) },
+    { name: "framed", value: "f".repeat(36 * 1024 * 1024) },
+  ];
+  const samples = [];
+  let actor: string | undefined;
+  for (let round = 0; round < 8; round++) {
+    for (const payload of round % 2 === 0 ? payloads : [...payloads].reverse()) {
+      const before = performance.now();
+      const pending = store.execute({
+        type: "database.domain.execute",
+        input: {
+          command: { type: "session.actor.appendTranscriptEvent", input: { value: payload.value } },
+        },
+      });
+      const submitted = performance.now();
+      const receipt = await pending;
+      const after = performance.now();
+      await waitForDiagnosticEventsDrained();
+      expect(completed).toHaveLength(samples.length + 1);
+      expect(receipt.writes).toBe(samples.length + 1);
+      expect(receipt.threadId).not.toBe(threadId);
+      actor ??= receipt.actor;
+      expect(receipt.actor).toBe(actor);
+      const raw = completed.at(-1)!.timing;
+      const timing = {} as Record<(typeof timingKeys)[number], number>;
+      for (const key of timingKeys) {
+        expect(raw?.[key], key).toEqual(expect.any(Number));
+        expect(Number.isFinite(raw?.[key]), key).toBe(true);
+        timing[key] = raw![key]!;
+      }
+      const phases = {
+        wall: after - before,
+        submitSync: submitted - before,
+        queue: timing.dispatched - timing.enqueued,
+        hostPrepare: timing.posted - timing.dispatched,
+        nativePost: timing.postFinished - timing.posted,
+        delivery: timing.received - timing.posted,
+        // Receive can precede the return of the host's native postMessage call.
+        receiveAfterPost: timing.received - timing.postFinished,
+        input: timing.inputReady - timing.received,
+        workerPrepare: timing.executeStarted - timing.inputReady,
+        execute: timing.executeFinished - timing.executeStarted,
+        serialize: timing.serialized - timing.executeFinished,
+        reply: timing.replyReceived - timing.replied,
+      };
+      for (const [phase, duration] of Object.entries(phases)) {
+        if (phase !== "receiveAfterPost") {
+          expect(duration, phase).toBeGreaterThanOrEqual(0);
+        }
+      }
+      samples.push({ payload: payload.name, bytes: payload.value.length, round, phases, timing });
+    }
+  }
+  const summaries = payloads.flatMap(({ name }) =>
+    ["first", "warm"].map((temperature) => {
+      const selected = samples.filter(
+        (sample) => sample.payload === name && (sample.round === 0) === (temperature === "first"),
+      );
+      return {
+        payload: name,
+        temperature,
+        phases: Object.fromEntries(
+          Object.keys(samples[0]!.phases).map((phase) => [
+            phase,
+            distribution(
+              selected.map((sample) => sample.phases[phase as keyof typeof sample.phases]),
+            ),
+          ]),
+        ),
+      };
+    }),
+  );
+  console.log(
+    "SQLITE_HANDOFF_BASELINE",
+    JSON.stringify({
+      runtime: { node: process.versions.node, bun: process.versions.bun },
+      units: "milliseconds; phase intervals overlap",
+      samples,
+      summaries,
+      testWallMs: performance.now() - started,
+    }),
+  );
+});
