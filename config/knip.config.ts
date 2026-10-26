@@ -62,13 +62,12 @@ const repositoryScriptEntries = [
   "scripts/ci-shard-timings-refresh.mts!",
   // The scheduled-run execution context design invokes this development replay by path.
   "scripts/dev/cron-context-replay.mts!",
-  // Maintained measurement commands invoke these roots by path; the archive and
-  // session commands also launch their preload hooks through --import.
+  // Maintained measurement commands invoke these roots by path; computed child
+  // launches already projected by knip-dynamic-consumers remain owned there.
   "scripts/perf/after-turn-context-measure.ts!",
   "scripts/perf/agent-runtime-dispatch-measure.ts!",
   "scripts/perf/approval-replay-burst-measure.ts!",
   "scripts/perf/approval-replay-burst-probe.mjs!",
-  "scripts/perf/archive-worker-churn-preload.mjs!",
   "scripts/perf/archive-worker-startup-measure.mjs!",
   "scripts/perf/attempt-stream-repair-measure.ts!",
   "scripts/perf/channels-status-inventory.ts!",
@@ -81,7 +80,6 @@ const repositoryScriptEntries = [
   "scripts/perf/provider-tool-normalization-measure.ts!",
   "scripts/perf/reply-tool-authority-measure.ts!",
   "scripts/perf/session-archive-staging-measure.ts!",
-  "scripts/perf/session-create-measure-loader.mjs!",
   "scripts/perf/session-delete-measure.ts!",
   "scripts/perf/session-delete-phases-loader.mjs!",
   "scripts/perf/session-entry-patch-prepare-measure.ts!",
