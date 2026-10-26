@@ -26,20 +26,23 @@ vi.mock("../infra/worker-cpu.js", async (importOriginal) => {
     const prepare = DatabaseSync.prototype.prepare;
     DatabaseSync.prototype.prepare = function(sql) {
       const statement = prepare.call(this, sql);
-      if (/delete from "agent_database_leases"/i.test(sql)) {
-        const run = statement.run.bind(statement);
-        statement.run = (...args) => {
-          if (Atomics.load(new Int32Array(workerData.cleanupFaultEnabled), 0)) {
-            const selected = prepare.call(this, "SELECT path FROM agent_database_leases WHERE lease_id = ?");
-            if (args.some((value) => typeof value === "string" && selected.get(value)?.path === workerData.cleanupFaultPath)) {
-              throw new AggregateError([
-                Object.assign(new Error("controlled idle worker lease failure; Authorization: Bearer synthetic-cleanup-secret"), { code: "SQLITE_BUSY", errcode: 5 }),
-                new Error("controlled lease release refused"),
-              ], "Agent database cleanup failed");
+      if (/delete from "?agent_database_leases"?/i.test(sql)) {
+        // DELETE RETURNING uses all() on current Node and iterate() on Bun.
+        for (const method of ["run", "all", "iterate"]) {
+          const execute = statement[method].bind(statement);
+          statement[method] = (...args) => {
+            if (Atomics.load(new Int32Array(workerData.cleanupFaultEnabled), 0)) {
+              const selected = prepare.call(this, "SELECT path FROM agent_database_leases WHERE lease_id = ?");
+              if (args.some((value) => typeof value === "string" && selected.get(value)?.path === workerData.cleanupFaultPath)) {
+                throw new AggregateError([
+                  Object.assign(new Error("controlled idle worker lease failure; Authorization: Bearer synthetic-cleanup-secret"), { code: "SQLITE_BUSY", errcode: 5 }),
+                  new Error("controlled lease release refused"),
+                ], "Agent database cleanup failed");
+              }
             }
-          }
-          return run(...args);
-        };
+            return execute(...args);
+          };
+        }
       }
       return statement;
     };

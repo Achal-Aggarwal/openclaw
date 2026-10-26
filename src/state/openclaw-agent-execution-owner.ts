@@ -6,7 +6,10 @@ import { sleepWithAbort } from "../infra/backoff.js";
 import { formatErrorMessage, formatErrorMessageWithCode } from "../infra/errors.js";
 import { isSqliteLockError } from "../infra/sqlite-error-diagnostics.js";
 import { resolveAgentDatabaseIdleHandleTtlMs } from "../infra/sqlite-handle-lifecycle.js";
-import { retainSqliteWorkerErrorCode } from "../infra/sqlite-worker-contract.js";
+import {
+  isSqliteWorkerError,
+  retainSqliteWorkerErrorCode,
+} from "../infra/sqlite-worker-contract.js";
 import {
   assertExistingDatabaseIdentity,
   type DatabasePathIdentity,
@@ -114,21 +117,6 @@ export function createAgentDatabaseExecution(
     clearTimeout(idleTimer);
     idleTimer = undefined;
   };
-  const describeCleanupFailure = (error: unknown): string => {
-    try {
-      return formatErrorMessageWithCode(error);
-    } catch {
-      return "Agent database cleanup failed";
-    }
-  };
-  const reportCleanupFailure = (reason: string) => {
-    // Diagnostic failures cannot turn a committed command into a replayable failure.
-    try {
-      log.warn(`Agent database idle cleanup failed (agent ${agentId}): ${reason}`);
-    } catch {
-      // The resource owner still retains the cleanup failure.
-    }
-  };
   const reportTerminal = (error: unknown) => {
     if (terminalListeners.size === 0) {
       return;
@@ -190,11 +178,20 @@ export function createAgentDatabaseExecution(
         },
         (error: unknown) => {
           const firstFailure = !cleanupFailure;
-          const reason = describeCleanupFailure(error);
+          let reason = "Agent database cleanup failed";
+          try {
+            reason = formatErrorMessageWithCode(error);
+          } catch {
+            // Formatting failures must not prevent retaining cleanup custody.
+          }
           cleanupFailure = { error, reason };
           executionState.idle.delete(owner);
           if (firstFailure) {
-            reportCleanupFailure(reason);
+            try {
+              log.warn(`Agent database cleanup failed (agent ${agentId}): ${reason}`);
+            } catch {
+              // Diagnostic failures cannot turn a committed command into a replayable failure.
+            }
           }
           throw error;
         },
@@ -299,12 +296,23 @@ export function createAgentDatabaseExecution(
             await closeNative(current);
           }
         } catch (cleanupError) {
-          throw retainSqliteWorkerErrorCode(
-            new AggregateError([error, cleanupError], "Agent operation and cleanup failed", {
-              cause: error,
+          const primary = error instanceof Error ? error : new Error(String(error));
+          const failure = Object.assign(
+            new Error(primary.message, {
+              cause: new AggregateError(
+                [error, cleanupError],
+                "Agent operation and cleanup failed",
+                {
+                  cause: error,
+                },
+              ),
             }),
-            error,
+            { name: primary.name },
           );
+          // Cleanup failures preserve the primary presentation without granting a retry.
+          throw isSqliteWorkerError(error, "outcome-unknown")
+            ? retainSqliteWorkerErrorCode(failure, error)
+            : failure;
         }
       }
       if (contended) {

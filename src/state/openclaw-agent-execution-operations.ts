@@ -73,7 +73,7 @@ async function loadAgentReplacementOperations() {
           captureFullFacts: true,
           postimages,
         });
-        const candidate = { ...result, publication };
+        const candidate = { maintenancePlans: result.maintenancePlans, publication };
         if (publication.source && publication.fullEntries?.size) {
           sealSessionEntryPublicationSource(publication.source);
         }
@@ -136,7 +136,7 @@ async function loadAgentRestartRecoveryOperations() {
   } satisfies Handlers;
 }
 
-export async function loadAgentEntryReadOperations() {
+async function loadAgentEntryReadOperations() {
   const kernel = await import("../config/sessions/session-entry-read.worker.js");
   const result = await import("../config/sessions/session-entry-read-result.worker.js");
   const cohort = await import("../config/sessions/session-entry-cohort.worker.js");
@@ -160,7 +160,10 @@ async function loadAgentEntryPatchOperations() {
     "session.entry.patch.prepare": (
       input: Parameters<typeof kernel.readSessionEntryPatchSnapshot>[1],
       { open },
-    ) => kernel.readSessionEntryPatchSnapshot(open(), input),
+    ) =>
+      kernel
+        .readSessionEntryPatchSnapshot(open(), input)
+        .map(({ sessionKey, entry }) => ({ sessionKey, entry })),
     "session.entry.patch.commit": kernel.commitSessionEntryPatch,
   } satisfies Handlers;
 }
@@ -227,7 +230,7 @@ export async function prepareAgentNativeBindingOperation(
   await kernel.prepareSessionNativeBindingDeletion(input, env);
 }
 
-export async function loadAgentTrajectoryOperations() {
+async function loadAgentTrajectoryOperations() {
   const kernel = await import("../trajectory/runtime-store.sqlite.js");
   const retention = await import("../trajectory/runtime-retention.sqlite.js");
   return {
@@ -568,6 +571,7 @@ export function createAgentWorkerOperationLoaders(
     "session.maintenance.prepare": loadMaintenanceOperations,
     "session.maintenance.metadata": loadMaintenanceOperations,
     "usageCache.writeRollup": loadUsageCacheOperations,
+    "usageCache.writeQuarters": loadUsageCacheOperations,
     "usageCache.prune": loadUsageCacheOperations,
     "usageCache.retireLegacy": loadUsageCacheOperations,
     "session.rowTranscript.backfill": loadSessionRowBackfillOperations,
