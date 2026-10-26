@@ -1,4 +1,5 @@
 // Owns managed source-install preparation, artifact consent and transaction settlement.
+import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import { uniqueStrings } from "@openclaw/normalization-core/string-normalization";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import type { PluginInstallRecord } from "../config/types.plugins.js";
@@ -10,7 +11,6 @@ import { parseRegistryNpmSpec } from "../infra/npm-registry-spec.js";
 import { normalizeUpdateChannel, resolveRegistryUpdateChannel } from "../infra/update-channels.js";
 import type { RuntimeEnv } from "../runtime.js";
 import { resolveCompatibilityHostVersion, VERSION } from "../version.js";
-import { installBundledPluginSource } from "./bundled-install.js";
 import type { BundledPluginSource } from "./bundled-sources.js";
 import {
   prepareManagedPluginArtifactConsentHandler,
@@ -23,6 +23,7 @@ import {
   type ClawHubPluginInstallRecordFields,
 } from "./clawhub-install-records.js";
 import { installPluginFromClawHub } from "./clawhub.js";
+import { prepareConfigForDisabledInstall } from "./enable.js";
 import { installPluginFromGitSpec } from "./git-install.js";
 import {
   installWithChannelFallback,
@@ -58,6 +59,7 @@ import type { PluginLifecycleRuntimeApply } from "./lifecycle.js";
 import { installPluginFromMarketplace } from "./marketplace.js";
 import { getOfficialExternalPluginCatalogEntryForPackage } from "./official-external-plugin-catalog.js";
 import { withPluginLifecycleLeaseAsync } from "./plugin-lifecycle-lease.js";
+import { validateJsonSchemaValue } from "./schema-validator.js";
 
 export type ManagedPluginSourceInstallRequest =
   | {
@@ -360,6 +362,39 @@ export async function installManagedPluginSource(
   });
 }
 
+type BundledPluginConfigEnablement =
+  | { mode: "ready" }
+  | { mode: "missing" }
+  | { mode: "invalid"; error: string };
+
+function resolveBundledPluginConfigEnablement(params: {
+  bundledSource: BundledPluginSource;
+  existingEntry: unknown;
+}): BundledPluginConfigEnablement {
+  if (!params.bundledSource.requiresConfig) {
+    return { mode: "ready" };
+  }
+  const entry = isRecord(params.existingEntry) ? params.existingEntry : undefined;
+  if (!entry || !Object.hasOwn(entry, "config")) {
+    return { mode: "missing" };
+  }
+  const config = entry.config;
+  if (!params.bundledSource.configSchema) {
+    return isRecord(config) && Object.keys(config).length > 0
+      ? { mode: "ready" }
+      : { mode: "invalid", error: "config must be a non-empty object" };
+  }
+  const result = validateJsonSchemaValue({
+    schema: params.bundledSource.configSchema,
+    cacheKey: `bundled-install:${params.bundledSource.pluginId}`,
+    value: config,
+    applyDefaults: true,
+  });
+  return result.ok
+    ? { mode: "ready" }
+    : { mode: "invalid", error: result.errors[0]?.text ?? "invalid plugin config" };
+}
+
 /** Execute one resolved plugin source through the shared install-and-persist pipeline. */
 async function installResolvedManagedPluginSource(
   params: Omit<ManagedPluginSourceInstallParams, "request"> & {
@@ -372,16 +407,54 @@ async function installResolvedManagedPluginSource(
   const env = params.env ?? process.env;
   const extensionsDir = resolveDefaultPluginExtensionsDir(env);
   if (request.source === "bundled") {
-    const result = await installBundledPluginSource({
+    const bundledParams = {
       ...params,
       rawSpec: request.rawSpec,
       bundledSource: request.bundledSource,
       warning: request.warning,
-    });
-    return {
-      ok: true,
-      ...result,
     };
+    // Bundled plugins with required config are recorded but not enabled until config validates.
+    const existingEntry =
+      bundledParams.snapshot.config.plugins?.entries?.[bundledParams.bundledSource.pluginId];
+    const configEnablement = resolveBundledPluginConfigEnablement({
+      bundledSource: bundledParams.bundledSource,
+      existingEntry,
+    });
+    if (configEnablement.mode === "invalid") {
+      throw new Error(
+        `Plugin "${bundledParams.bundledSource.pluginId}" has invalid configured settings: ${configEnablement.error}. Fix plugins.entries.${bundledParams.bundledSource.pluginId}.config, then rerun the install.`,
+      );
+    }
+    const shouldEnable = configEnablement.mode === "ready";
+    const configBase = shouldEnable
+      ? bundledParams.snapshot.config
+      : prepareConfigForDisabledInstall(
+          bundledParams.snapshot.config,
+          bundledParams.bundledSource.pluginId,
+        );
+    const configWarning = shouldEnable
+      ? undefined
+      : `Installed bundled plugin "${bundledParams.bundledSource.pluginId}" without enabling it because it requires configuration first. Configure it, then run \`openclaw plugins enable ${bundledParams.bundledSource.pluginId}\`.`;
+    const warnings = [bundledParams.warning, configWarning].filter((warning): warning is string =>
+      Boolean(warning),
+    );
+    const config = await persistPluginInstall({
+      ...bundledParams,
+      snapshot: {
+        ...bundledParams.snapshot,
+        config: configBase,
+      },
+      pluginId: bundledParams.bundledSource.pluginId,
+      install: {
+        source: "path",
+        spec: bundledParams.rawSpec,
+        sourcePath: bundledParams.bundledSource.localPath,
+        installPath: bundledParams.bundledSource.localPath,
+      },
+      enable: bundledParams.enable !== false && shouldEnable,
+      ...(warnings.length > 0 ? { warningMessage: warnings.join("\n") } : {}),
+    });
+    return { ok: true, pluginId: bundledParams.bundledSource.pluginId, warnings, config };
   }
 
   const consentExemptSource =
