@@ -417,8 +417,8 @@ it("places a fresh long transcript at its tail and warms a bounded upward window
   expect(view.container.querySelector('[data-virtual-row-key="fragment:255"]')).not.toBeNull();
   expect(transcriptRows(view.container).every((row) => Number(row.dataset.index) > 230)).toBe(true);
   await view.frame(160);
-  expect(transcriptRows(view.container).some((row) => Number(row.dataset.index) < 160)).toBe(true);
-  expect(transcriptRows(view.container).length).toBeLessThanOrEqual(128);
+  expect(transcriptRows(view.container).some((row) => Number(row.dataset.index) < 240)).toBe(true);
+  expect(transcriptRows(view.container).length).toBeLessThanOrEqual(32);
   const preparations = view.renderRow.mock.calls.length;
   await view.frame(16);
   expect(view.renderRow.mock.calls).toHaveLength(preparations);
