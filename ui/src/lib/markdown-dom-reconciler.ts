@@ -616,7 +616,11 @@ export class MarkdownDomReconciler {
         const template = document.createElement("template");
         // Serializing parsed HTML restores literal CRs; encode them before another parse.
         if (source.prepared) {
-          template.content.append(source.prepared.cloneNode(true));
+          const prepared = source.prepared;
+          // Consume the private parse once; remounts use pristine canonical HTML,
+          // never a node that live highlighting or decorations may have changed.
+          source.prepared = undefined;
+          template.content.append(prepared);
         } else {
           template.innerHTML = source.canonical
             .slice(source.canonical.indexOf(":") + 1)
