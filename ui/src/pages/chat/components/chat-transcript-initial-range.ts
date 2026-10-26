@@ -258,14 +258,20 @@ export class TranscriptInitialRange {
         : 0;
       // At speed, prepare the next viewport rather than rows the reader skips.
       // Virtual-core resolves this from cached sizes; no neighbor layout reads.
+      const predictedTop = Math.max(
+        0,
+        Math.min(
+          (virtualizer.scrollOffset ?? 0) + direction * distance,
+          Math.max(0, virtualizer.getTotalSize() - viewport),
+        ),
+      );
       const predictedOffset =
-        Math.max(0, (virtualizer.scrollOffset ?? 0) + direction * distance) +
-        ((warmOnly ? direction < 0 : direction > 0) ? viewport : 0);
+        predictedTop + ((warmOnly ? direction < 0 : direction > 0) ? viewport : 0);
       const predicted = virtualizer.getVirtualItemForOffset(Math.max(0, predictedOffset));
       // Prediction can reach an edge before the viewport. Prepare back into the
       // transcript instead of searching past an ordinary, nonfragment edge row.
       let searchDirection = direction;
-      if (distance && predicted) {
+      if (!warmOnly && distance && predicted) {
         if (predicted.index === 0) {
           searchDirection = 1;
         } else if (predicted.index === rows.length - 1) {
@@ -279,8 +285,18 @@ export class TranscriptInitialRange {
             ? range.endIndex
             : range.startIndex;
       const rendered = new Set(virtualizer.getVirtualItems().map((row) => row.key));
+      // Warming covers the predicted viewport, whose row count varies with
+      // measured heights. A fixed candidate cap left its last rows cold.
+      const opposite =
+        warmOnly && distance
+          ? virtualizer.getVirtualItemForOffset(predictedTop + (direction > 0 ? viewport : 0))
+          : undefined;
       const lookahead =
-        velocity || warmOnly ? 8 : Math.max(0, PREPARED_ROW_LIMIT - this.activeIndexes().length);
+        opposite && predicted
+          ? Math.abs(opposite.index - predicted.index) + 1
+          : velocity || warmOnly
+            ? 8
+            : Math.max(0, PREPARED_ROW_LIMIT - this.activeIndexes().length);
       let admitted = 0;
       let warmed = false;
       for (let step = 1; step <= lookahead && admitted === 0; step++) {

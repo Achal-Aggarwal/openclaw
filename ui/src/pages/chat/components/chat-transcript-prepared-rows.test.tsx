@@ -38,6 +38,7 @@ async function transcriptFixture(
   idlePreparation = false,
   plainFirstRow = false,
   ordinary = false,
+  viewportHeight = 600,
 ) {
   let now = 1;
   let nextFrame = 0;
@@ -63,9 +64,14 @@ async function transcriptFixture(
       vi.fn((id: number) => idleCallbacks.delete(id)),
     );
   }
+  vi.mocked(Element.prototype.getBoundingClientRect).mockReturnValue(
+    new DOMRect(0, 0, 800, viewportHeight),
+  );
   const container = document.body.appendChild(document.createElement("div"));
   Object.defineProperties(container, {
-    clientHeight: { configurable: true, value: 600 },
+    clientHeight: { configurable: true, value: viewportHeight },
+    offsetWidth: { configurable: true, value: 800 },
+    offsetHeight: { configurable: true, value: viewportHeight },
     scrollHeight: {
       configurable: true,
       get: () => Number.parseFloat(host.contentElement?.style.height ?? "0") || 0,
@@ -75,7 +81,7 @@ async function transcriptFixture(
     if (typeof options === "object") {
       container.scrollTop = Math.max(
         0,
-        Math.min(options.top ?? container.scrollTop, container.scrollHeight - 600),
+        Math.min(options.top ?? container.scrollTop, container.scrollHeight - viewportHeight),
       );
     }
   };
@@ -218,14 +224,14 @@ it("warms ordinary rows only in idle time without mounting their DOM", async () 
 it.each([1, -1])(
   "warms the next ordinary viewport in direction %s without idle delivery",
   async (direction) => {
-    const view = await transcriptFixture(direction > 0 ? 0 : 24_000, true, false, true);
+    const view = await transcriptFixture(direction > 0 ? 0 : 24_000, true, false, true, 1_000);
     await view.scrollTo(direction > 0 ? 60 : 180);
     const rendered = view.renderRow.mock.calls.length;
     const elements = view.container.querySelectorAll(".chat-virtual-row").length;
     await view.frame();
     const prepared = view.renderRow.mock.calls.slice(rendered);
     expect(prepared.length).toBeGreaterThan(0);
-    expect(prepared.length).toBeLessThanOrEqual(8);
+    expect(prepared.length).toBeGreaterThan(8);
     const last = prepared.at(-1)![0];
     const index = last.kind === "item" ? last.item : -1;
     expect(prewarmGroupedMessage(view.groups[index]!.messages[0]!.message, {})).toBe(false);
