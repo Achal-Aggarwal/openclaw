@@ -322,26 +322,39 @@ describe("plugin harness prompt media", () => {
       { path: "/tmp/shared-unreadable.png", contentType: "image/png" },
     ];
     const result = await preparePluginHarnessPromptImages({
-      images: [inlineImage],
-      imageOrder: ["inline"],
-      media: [recorded[0], { ...recorded[1], hydrationSuppressed: true, unresolvedThisTurn: true }],
-      userTurnTranscriptRecorder: {
-        async resolveMessage() {
-          return this.message;
-        },
-        message: {
-          role: "user",
-          content: "compare",
-          __openclaw: {
-            media: recorded,
-            mediaImageLayout: {
-              slots: [
-                { kind: "inline", factIndex: 0 },
-                { kind: "offloaded", factIndex: 1 },
-              ],
+      runParams: {
+        agentId: "main",
+        config: { agents: { defaults: { sandbox: { mode: "off" } } } },
+        sessionId: "session-run-suppressed",
+        images: [inlineImage],
+        imageOrder: ["inline"],
+        media: [
+          recorded[0],
+          { ...recorded[1], hydrationSuppressed: true, unresolvedThisTurn: true },
+        ],
+        userTurnTranscriptRecorder: {
+          async resolveMessage() {
+            return this.message;
+          },
+          message: {
+            role: "user",
+            content: "compare",
+            __openclaw: {
+              media: recorded,
+              mediaImageLayout: {
+                slots: [
+                  { kind: "inline", factIndex: 0 },
+                  { kind: "offloaded", factIndex: 1 },
+                ],
+              },
             },
           },
         },
+      },
+      runtime: {
+        model: { input: ["text", "image"] },
+        sessionId: "session-run-suppressed",
+        workspaceDir: "/tmp",
       },
     } as unknown as Parameters<typeof preparePluginHarnessPromptImages>[0]);
 

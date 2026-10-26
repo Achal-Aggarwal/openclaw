@@ -766,7 +766,8 @@ describe("bedrock mantle discovery", () => {
       );
 
       const provider = await resolveImplicitWithDependencies({
-        env: { ...env, AWS_BEARER_TOKEN_BEDROCK: "my-token" }, // pragma: allowlist secret
+        // A distinct token keeps this discovery out of the region cache other cases read.
+        env: { ...env, AWS_BEARER_TOKEN_BEDROCK: `responses-${modelId}` }, // pragma: allowlist secret
         fetchFn: mockFetch,
       });
 
