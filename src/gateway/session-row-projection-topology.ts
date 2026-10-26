@@ -4,19 +4,20 @@ import { resolveStateDir } from "../config/state-dir.js";
 import { prepareAgentDatabaseDeletionSnapshotRead } from "../state/agent-deletion-journal.read.js";
 import { resolveOpenClawStateSqlitePath } from "../state/openclaw-state-db.paths.js";
 import * as profiles from "../state/user-profile-list.js";
+import { measureStartup, type GatewayStartupTrace } from "./server-startup-trace.js";
 import type { createSessionRowEntryReadAccess } from "./session-row-membership-read.js";
 import { SessionRowFactsPending } from "./session-row-prepared-read.js";
 import * as records from "./session-row-projection-record.js";
 import { prepareSessionRowScopes } from "./session-row-scope.js";
 
-export async function prepareSessionRowTopologySources() {
+export async function prepareSessionRowTopologySources(startupTrace?: GatewayStartupTrace) {
   const env = cloneEnvWithPlatformSemantics(process.env);
   env.OPENCLAW_STATE_DIR = resolveStateDir(env);
   const profileCatalogPath = resolveOpenClawStateSqlitePath(env);
   const discoveryRead = prepareAgentDatabaseDeletionSnapshotRead({ env }, "runtime-discovery");
   const subagents = createSubagentSessionListReadView({ env });
   if (!subagents.snapshotIdentity()) {
-    await subagents.prepare();
+    await measureStartup(startupTrace, "sessions.projection.subagents", () => subagents.prepare());
   }
   return { env, profileCatalogPath, discoveryRead, subagents };
 }

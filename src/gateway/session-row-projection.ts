@@ -7,6 +7,7 @@ import {
 } from "../sessions/session-row-changes.js";
 import { isOpenClawAgentDatabaseRegistryChange } from "../state/openclaw-agent-db-registry-listing.js";
 import * as profiles from "../state/user-profile-list.js";
+import { measureStartup } from "./server-startup-trace.js";
 import { ensureSessionGroupCatalog } from "./session-group-catalog.js";
 import { createSessionMembershipProjection } from "./session-membership-projection.js";
 import { createSessionProjectionDrain, yieldSessionListWork } from "./session-projection-work.js";
@@ -47,8 +48,9 @@ import { replaceSessionRowFacts } from "./session-utils-row.js";
 export async function createSessionRowProjection(params: records.ProjectionOptions) {
   // Publications may borrow startup admission; projection work retains its own authority.
   const inOwnerContext = AsyncLocalStorage.snapshot();
+  const trace = params.startupTrace;
   const { env, profileCatalogPath, discoveryRead, subagents } =
-    await prepareSessionRowTopologySources();
+    await prepareSessionRowTopologySources(trace);
   let cfg = params.getConfig?.() ?? params.cfg;
   const getPolicyConfig = () => params.getPolicyConfig?.() ?? params.getConfig?.() ?? cfg;
   const rows = new Map<string, records.Row>();
@@ -578,10 +580,13 @@ export async function createSessionRowProjection(params: records.ProjectionOptio
     }),
   });
   await inOwnerContext(async () => {
-    stop.push((await profiles.prepareUserProfileCatalog({ env })).release);
-    await ensureSessionGroupCatalog();
+    const catalog = await measureStartup(trace, "sessions.projection.profiles", () =>
+      profiles.prepareUserProfileCatalog({ env }),
+    );
+    stop.push(catalog.release);
+    await measureStartup(trace, "sessions.projection.groups", ensureSessionGroupCatalog);
     for (;;) {
-      await refreshBatch();
+      await measureStartup(trace, "sessions.projection.initial-refresh", refreshBatch);
       if (disposed || !topologyDirty) {
         return;
       }

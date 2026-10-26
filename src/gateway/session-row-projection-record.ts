@@ -20,6 +20,7 @@ import { resolveSessionPinnedHarnessId } from "../sessions/agent-harness-session
 import type { OpenClawAgentDatabaseIdentity } from "../state/openclaw-agent-db-identity.js";
 import type { SessionRepositoryWorkspaceRecord } from "../state/session-repository-workspaces.types.js";
 import type { readSessionRowFacts } from "./server-methods/session-placement-read-projection.js";
+import type { GatewayStartupTrace } from "./server-startup-trace.js";
 import { compareSessionEntryPairs } from "./session-list-order.js";
 import { readSessionListSelectionFacts } from "./session-list-target.js";
 import { selectStoredSessionLineage } from "./session-store-key.js";
@@ -30,6 +31,7 @@ import type { GatewaySessionRow } from "./session-utils.types.js";
 import type { WorkerSessionPlacementStore } from "./worker-environments/placement-store.js";
 
 export type ProjectionOptions = {
+  startupTrace?: GatewayStartupTrace;
   cfg: OpenClawConfig;
   getConfig?: () => OpenClawConfig;
   getPolicyConfig?: () => OpenClawConfig;

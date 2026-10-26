@@ -64,8 +64,12 @@ export async function prepareGatewayKernelRequestRuntime(params: {
   const projectionReady = runtime.opts.updateCanary
     ? undefined
     : startupTrace.measure("sessions.projection", async () => {
-        const { createSessionRowProjection } = await import("./session-row-projection.js");
+        const { createSessionRowProjection } = await startupTrace.measure(
+          "sessions.projection.import",
+          () => import("./session-row-projection.js"),
+        );
         return createSessionRowProjection({
+          startupTrace,
           cfg: getRuntimeConfig(),
           getConfig: getRuntimeConfig,
           getPolicyConfig: gatewayRequestContext.getCommittedRuntimeConfig ?? getRuntimeConfig,
