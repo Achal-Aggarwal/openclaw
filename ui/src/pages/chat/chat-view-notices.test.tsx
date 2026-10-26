@@ -205,7 +205,7 @@ it.each([false, true])("updates startup recovery when the error changes (mobile=
   );
   const copy = container.querySelector(".chat-composer-neighbor-card__copy, .chat-error__recovery");
   expect(container.querySelector(".chat-error")?.textContent).toContain(
-    "Couldn't resume this conversation.",
+    "OpenClaw couldn't find the saved conversation data needed to continue.",
   );
   expect(copy?.textContent).toContain("Start a new conversation and send your request again.");
   expect(copy?.closest("details")).toBeNull();

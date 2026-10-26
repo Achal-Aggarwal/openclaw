@@ -4,7 +4,7 @@ const STARTUP_FAILURES = [
   {
     // codex-rs thread_processor.rs: read_thread_view has neither live nor persisted state.
     pattern: /^thread not loaded: \S+(?:$|\s*(?:\||: code=|\n))/u,
-    title: "Couldn't resume this conversation.",
+    title: "OpenClaw couldn't find the saved conversation data needed to continue.",
     channelRecovery: "Send /new to start a new conversation, then send your request again.",
     recovery: "Start a new conversation and send your request again.",
   },

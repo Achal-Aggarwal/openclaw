@@ -48,7 +48,7 @@ describe("failover user copy", () => {
   it.each([
     [
       "thread not loaded: synthetic-thread",
-      "Couldn't resume this conversation. Start a new conversation and send your request again.",
+      "OpenClaw couldn't find the saved conversation data needed to continue. Start a new conversation and send your request again.",
     ],
     [
       "managed worktree allocation lease core:managed-worktrees:create/capacity was lost",
@@ -65,7 +65,7 @@ describe("failover user copy", () => {
 
   it("keeps normalized startup diagnostics out of the compact summary", () => {
     const copy =
-      "Couldn't resume this conversation. Start a new conversation and send your request again.";
+      "OpenClaw couldn't find the saved conversation data needed to continue. Start a new conversation and send your request again.";
     expect(
       sanitizedCopy(
         `${copy}\n\nCodexAppServerRpcError: thread not loaded: synthetic-thread: code=-32600`,

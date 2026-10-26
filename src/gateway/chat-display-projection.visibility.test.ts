@@ -288,7 +288,7 @@ it.each([
       role: "custom",
       customType: "run-failed-before-reply",
       content:
-        "Couldn't resume this conversation. Start a new conversation and send your request again.",
+        "OpenClaw couldn't find the saved conversation data needed to continue. Start a new conversation and send your request again.",
       details: { runId: "run-1", diagnostic },
     },
   ]);

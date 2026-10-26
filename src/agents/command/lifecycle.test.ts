@@ -157,7 +157,9 @@ describe("createAgentCommandLifecycle", () => {
         );
       }
       const published = emitAgentEvent.mock.calls[0]?.[0].data.error;
-      expect(published).toContain("Couldn't resume this conversation.");
+      expect(published).toContain(
+        "OpenClaw couldn't find the saved conversation data needed to continue.",
+      );
       expect(published).toContain("Start a new conversation and send your request again.");
       expect(published).toContain(`\n\n${error.message}`);
       expect(error.message).toBe("thread not loaded: synthetic-thread");

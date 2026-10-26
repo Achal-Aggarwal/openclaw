@@ -115,7 +115,7 @@ describe("historical page recovery context", () => {
   it.each([
     [
       "thread not loaded: synthetic-thread | password=synthetic-password",
-      "Couldn't resume this conversation.",
+      "OpenClaw couldn't find the saved conversation data needed to continue.",
       "thread not loaded: synthetic-thread",
     ],
     [

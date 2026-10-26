@@ -69,7 +69,7 @@ suite.define(() => {
       },
       async ({ page }) => {
         const content =
-          "Couldn't resume this conversation. Start a new conversation and send your request again.";
+          "OpenClaw couldn't find the saved conversation data needed to continue. Start a new conversation and send your request again.";
         const diagnostic = "thread not loaded: synthetic-thread";
         await installMockGateway(page, {
           sessionKey,
@@ -139,7 +139,7 @@ suite.define(() => {
   it.each([
     [
       "thread not loaded: synthetic-thread",
-      "Couldn't resume this conversation.",
+      "OpenClaw couldn't find the saved conversation data needed to continue.",
       "Start a new conversation and send your request again.",
     ],
     [
@@ -168,7 +168,7 @@ suite.define(() => {
         await alert.waitFor();
         await captureDiagnosticProof(
           page,
-          title.includes("resume") ? "startup-context" : "startup-workspace",
+          title.includes("conversation") ? "startup-context" : "startup-workspace",
         );
         expect(await alert.textContent()).toContain(title);
         await expect.poll(() => alert.getByText(guidance, { exact: false }).isVisible()).toBe(true);
@@ -190,7 +190,7 @@ suite.define(() => {
         expect(await alert.getByLabel("Error details", { exact: true }).isVisible()).toBe(false);
         await captureDiagnosticProof(
           page,
-          title.includes("resume") ? "startup-context-mobile" : "startup-workspace-mobile",
+          title.includes("conversation") ? "startup-context-mobile" : "startup-workspace-mobile",
         );
         await input.fill("Keep this draft");
         const historyCount = (await gateway.getRequests("chat.history")).length;

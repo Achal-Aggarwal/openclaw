@@ -498,7 +498,10 @@ describe("session lifecycle state", () => {
   );
 
   it.each([
-    ["thread not loaded: synthetic-thread", "Couldn't resume this conversation."],
+    [
+      "thread not loaded: synthetic-thread",
+      "OpenClaw couldn't find the saved conversation data needed to continue.",
+    ],
     [
       "managed worktree allocation lease core:managed-worktrees:create/capacity was lost",
       "Couldn't finish preparing the code workspace.",

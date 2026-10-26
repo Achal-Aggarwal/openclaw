@@ -38,7 +38,7 @@ it("shows unshrinkable request guidance without verbose diagnostics", () => {
 it.each([
   [
     "thread not loaded: synthetic-thread",
-    "Couldn't resume this conversation. Send /new to start a new conversation, then send your request again.",
+    "OpenClaw couldn't find the saved conversation data needed to continue. Send /new to start a new conversation, then send your request again.",
   ],
   [
     "managed worktree allocation lease core:managed-worktrees:create/capacity was lost",
