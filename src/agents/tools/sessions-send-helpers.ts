@@ -34,7 +34,7 @@ export function sendFailure(
   });
 }
 
-export function sendReplyResult(
+function sendReplyResult(
   receipt: { runId: string; sessionKey: string; watched?: boolean },
   result: { replyText?: string; replyTruncated?: true; sourceReplyDelivered?: boolean },
 ) {
