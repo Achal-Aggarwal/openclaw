@@ -242,10 +242,8 @@ describe("Gateway config selection before migration admission", () => {
         fs.writeFileSync(selectedPath, JSON.stringify(clobbered));
         fs.writeFileSync(`${selectedPath}.bak`, JSON.stringify(future));
       } else if (name === "discarded clobbered environment") {
-        current = {
-          gateway: { mode: "local" },
-          env: { vars: { OPENCLAW_GATEWAY_TOKEN: "discarded-test-token" } },
-        };
+        // Missing gateway mode against a healthy last-good config marks it clobbered.
+        current = { env: { vars: { OPENCLAW_GATEWAY_TOKEN: "discarded-test-token" } } };
         backup = healthy;
       }
       fs.writeFileSync(configPath, JSON.stringify(current));
