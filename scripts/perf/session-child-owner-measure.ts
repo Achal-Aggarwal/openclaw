@@ -254,6 +254,45 @@ const requesterRoots = [
   ...new Set(Array.from(snapshot.values(), (entry) => entry.requesterSessionKey)),
 ];
 const lookup = memory.getSubagentSessionReadLookup(memory.subagentRuns);
+const bucketSizes = {
+  child: new Map<string, number>(),
+  owner: new Map<string, number>(),
+  requester: new Map<string, number>(),
+  collectorOwner: new Map<string, number>(),
+  collectorGroup: new Map<string, number>(),
+};
+for (const entry of memory.subagentRuns.values()) {
+  const owner = entry.childAgentId;
+  const keys = {
+    child: entry.childSessionKey,
+    owner: owner && `${owner.length}:${owner}${entry.childSessionKey}`,
+    requester: entry.requesterSessionKey,
+    collectorOwner:
+      entry.collect && owner ? `${owner.length}:${owner}${entry.childSessionKey}` : undefined,
+    collectorGroup:
+      entry.collect && entry.groupId
+        ? JSON.stringify([
+            entry.swarmRequesterSessionKey ?? entry.requesterSessionKey,
+            entry.groupId,
+          ])
+        : undefined,
+  };
+  for (const kind of Object.keys(bucketSizes) as Array<keyof typeof bucketSizes>) {
+    const key = keys[kind];
+    if (key) {
+      bucketSizes[kind].set(key, (bucketSizes[kind].get(key) ?? 0) + 1);
+    }
+  }
+}
+const bucketDistribution = Object.fromEntries(
+  Object.entries(bucketSizes).map(([kind, sizes]) => {
+    const histogram: Record<string, number> = {};
+    for (const size of sizes.values()) {
+      histogram[size] = (histogram[size] ?? 0) + 1;
+    }
+    return [kind, { buckets: sizes.size, histogram }];
+  }),
+);
 let previousTopology = lookup.captureTopology();
 let topologyChanges = 0;
 let checksum = 0;
@@ -266,9 +305,10 @@ let sampleOwnerRegions = false;
 const allocationRegions: {
   owner: HeapProfiler.SamplingHeapProfile[];
   descendant: HeapProfiler.SamplingHeapProfile[];
-} = { owner: [], descendant: [] };
+  list: HeapProfiler.SamplingHeapProfile[];
+} = { owner: [], descendant: [], list: [] };
 async function sampleAllocationRegion(
-  read: () => void,
+  read: () => void | Promise<void>,
   profiles: HeapProfiler.SamplingHeapProfile[],
 ): Promise<void> {
   // Temporal attribution survives V8 inlining; retain profiles only after sampling stops.
@@ -278,7 +318,7 @@ async function sampleAllocationRegion(
     includeObjectsCollectedByMinorGC: true,
   });
   try {
-    read();
+    await read();
   } finally {
     const { profile } = await inspector.post("HeapProfiler.stopSampling");
     profiles.push(profile);
@@ -390,7 +430,11 @@ async function run(count: number) {
     let cpu = process.threadCpuUsage(before);
     updateCpuMicros += cpu.user + cpu.system;
     before = process.threadCpuUsage();
-    await resolveList();
+    if (sampleListRegions) {
+      await sampleAllocationRegion(resolveList, allocationRegions.list);
+    } else {
+      await resolveList();
+    }
     cpu = process.threadCpuUsage(before);
     resolutionCpuMicros += cpu.user + cpu.system;
     completed += batch;
@@ -410,6 +454,7 @@ const observer = new PerformanceObserver((list) => {
 });
 observer.observe({ entryTypes: ["gc"] });
 const inspector = new Session();
+let sampleListRegions = false;
 try {
   await run(warmup);
   collectGarbage();
@@ -429,14 +474,9 @@ try {
   if (values.mode === "census") {
     await inspector.post("Profiler.enable");
     await inspector.post("Profiler.startPreciseCoverage", { callCount: true, detailed: false });
-  } else if (values.mode === "allocation" && values.workload === "list") {
-    await inspector.post("HeapProfiler.startSampling", {
-      samplingInterval: 32768,
-      includeObjectsCollectedByMajorGC: true,
-      includeObjectsCollectedByMinorGC: true,
-    });
   }
   sampleOwnerRegions = values.mode === "allocation" && values.workload === "owner";
+  sampleListRegions = values.mode === "allocation" && values.workload === "list";
   const started = performance.now();
   const before = process.threadCpuUsage();
   const work = await run(updates);
@@ -464,6 +504,7 @@ try {
     writeFileSync(path.join(root, "calls.json"), JSON.stringify(calls, null, 2));
   }
   let allocatedBytes: number | undefined;
+  let subagentReadAllocatedBytes: number | undefined;
   let ownerRegionAllocatedBytes: number | undefined;
   let descendantRegionAllocatedBytes: number | undefined;
   if (sampleOwnerRegions) {
@@ -478,10 +519,23 @@ try {
     );
     assert.equal(allocationRegions.owner.length, work.lists);
     assert.equal(allocationRegions.descendant.length, work.lists);
-  } else if (values.mode === "allocation") {
-    const { profile } = await inspector.post("HeapProfiler.stopSampling");
-    writeFileSync(path.join(root, "allocation.heapprofile"), JSON.stringify(profile));
-    allocatedBytes = totalAllocatedBytes(profile.head);
+  } else if (sampleListRegions) {
+    writeFileSync(path.join(root, "allocation-regions.json"), JSON.stringify(allocationRegions));
+    allocatedBytes = allocationRegions.list.reduce(
+      (sum, profile) => sum + totalAllocatedBytes(profile.head),
+      0,
+    );
+    const readFamily =
+      /subagent-(registry-(memory|read|queries|read-index|read-topology)|child-owner-match|run-generation|session-read-scope)\.ts$/;
+    const readBytes = (node: HeapProfiler.SamplingHeapProfileNode): number =>
+      readFamily.test(node.callFrame.url)
+        ? totalAllocatedBytes(node)
+        : node.children.reduce((sum, child) => sum + readBytes(child), 0);
+    subagentReadAllocatedBytes = allocationRegions.list.reduce(
+      (sum, profile) => sum + readBytes(profile.head),
+      0,
+    );
+    assert.equal(allocationRegions.list.length, work.lists);
   }
   const gc: Record<string, { count: number; totalMs: number }> = {};
   for (const entry of gcEntries) {
@@ -507,6 +561,11 @@ try {
     parentCount,
     childCount,
     registryRows: memory.subagentRuns.size,
+    bucketDistribution,
+    subagentReadAllocatedBytesPerList:
+      subagentReadAllocatedBytes === undefined
+        ? undefined
+        : subagentReadAllocatedBytes / work.lists,
     rows: rows.length,
     subagentRows: rows.filter(({ key }) => key.includes(":subagent:")).length,
     ...work,
