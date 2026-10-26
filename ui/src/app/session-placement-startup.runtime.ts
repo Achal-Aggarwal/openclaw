@@ -32,15 +32,6 @@ import {
   type ApplicationPlacementStartupStatus,
 } from "./session-placement-startup.ts";
 
-// Placement recovery and New Session intent share this deferred entry.
-// Idle Chat hints exclude it.
-export {
-  CreationComposer,
-  completeDraftSessionPlacement,
-  completeInitialSessionTurn,
-  prepareInstantThreadHandoff,
-} from "../pages/new-session/draft-submission-operations.runtime.ts";
-
 registerNewSessionRuntimeEnglish();
 
 type PlacementStartupPhase = NonNullable<

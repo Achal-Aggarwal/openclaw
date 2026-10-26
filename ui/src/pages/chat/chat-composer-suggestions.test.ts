@@ -167,6 +167,47 @@ describe("chat composer suggestion accessibility", () => {
     }
   });
 
+  it.each([false, true])(
+    "keeps the current command through catalog refresh (query changed: %s)",
+    async (changeQuery) => {
+      const commands = ["viewport-a", "viewport-b", "viewport-c"].map((name) => ({
+        key: name,
+        name,
+        description: name,
+      }));
+      replaceSlashCommands(commands);
+      const refresh = createDeferred();
+      const { container } = createReactiveDraftHarness({ onSlashIntent: () => refresh.promise });
+      inputDraft(container, "/viewport-");
+      await waitForSolid(() => expect(optionNames(container)).toHaveLength(3));
+      keydownComposer(container, "ArrowDown");
+      keydownComposer(container, "ArrowDown");
+      if (changeQuery) {
+        inputDraft(container, "/viewport-b");
+      }
+      const selectedId = activeId(container);
+      expect(selectedId).toContain(changeQuery ? "viewport-b" : "viewport-c");
+
+      replaceSlashCommands([
+        { key: "viewport-0", name: "viewport-0", description: "An earlier catalog option" },
+        ...commands,
+      ]);
+      refresh.resolve();
+      await refresh.promise;
+      await waitForSolid(() => {
+        expect(optionNames(container)).toEqual(
+          changeQuery
+            ? ["/viewport-b"]
+            : ["/viewport-0", "/viewport-a", "/viewport-b", "/viewport-c"],
+        );
+        expect(activeId(container)).toBe(selectedId);
+        expect(container.querySelector(`#${selectedId}`)?.getAttribute("aria-selected")).toBe(
+          "true",
+        );
+      });
+    },
+  );
+
   it("refreshes the current thinking argument menu after its catalog settles", async () => {
     const refresh = createDeferred();
     const { container } = createReactiveDraftHarness({
@@ -176,9 +217,15 @@ describe("chat composer suggestion accessibility", () => {
     inputDraft(container, "/think");
     keydownComposer(container, "Tab");
     expect(getComposerTextarea(container).value).toBe("/think ");
+    keydownComposer(container, "ArrowDown");
+    const selectedId = activeId(container);
+    expect(selectedId).toContain("arg-think-low");
     refresh.resolve();
     await refresh.promise;
-    await waitForSolid(() => expect(optionNames(container)).toEqual(["default", "low", "ultra"]));
+    await waitForSolid(() => {
+      expect(optionNames(container)).toEqual(["default", "low", "ultra"]);
+      expect(activeId(container)).toBe(selectedId);
+    });
   });
 
   it.each([false, true])(

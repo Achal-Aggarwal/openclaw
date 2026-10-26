@@ -169,8 +169,27 @@ export function createSlashMenu() {
           ) {
             return;
           }
-          // Parse the argument draft as well as its command token after refresh.
+          const mode = draft.slashMenuMode;
+          const command = draft.slashMenuCommand?.name;
+          const selected =
+            mode === "args"
+              ? draft.slashMenuArgItems[draft.slashMenuIndex]
+              : draft.slashMenuItems[draft.slashMenuIndex]?.name;
+          // Refresh the catalog without retiring the user's current selection.
           updateSlashMenu(host.getDraft(), draft, host, { skipSlashIntent: true });
+          if (
+            selected !== undefined &&
+            mode === draft.slashMenuMode &&
+            command === draft.slashMenuCommand?.name
+          ) {
+            const index =
+              mode === "args"
+                ? draft.slashMenuArgItems.indexOf(selected)
+                : draft.slashMenuItems.findIndex((item) => item.name === selected);
+            if (index >= 0) {
+              draft.slashMenuIndex = index;
+            }
+          }
         });
       });
   }

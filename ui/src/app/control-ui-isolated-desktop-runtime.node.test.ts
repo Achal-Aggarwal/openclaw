@@ -213,6 +213,8 @@ it("prioritizes signing and route dependencies over unevaluated interaction hint
     online: modulePath("../components/app-sidebar-online.tsx"),
     catalog: modulePath("../components/mcp-app-catalog-view.tsx"),
     placement: modulePath("./session-placement-startup.runtime.ts"),
+    placementOperations: modulePath("../pages/new-session/draft-placement-operations.runtime.ts"),
+    submission: submissionOperations,
     creator: modulePath("../pages/claws/creator-review-view.tsx"),
     signer: modulePath("../lib/nodes/device-signing.runtime.ts"),
     chat: modulePath("../pages/chat/route-entry.ts"),
@@ -220,7 +222,6 @@ it("prioritizes signing and route dependencies over unevaluated interaction hint
   const aliases: Record<string, string> = {
     "fixture:common": commonDependency,
     "fixture:placement-dependency": placementDependency,
-    "fixture:submission-operations": submissionOperations,
     "fixture:signing-fallback": signingFallback,
   };
   const sources: Record<string, string> = {
@@ -229,21 +230,16 @@ it("prioritizes signing and route dependencies over unevaluated interaction hint
     [placementDependency]:
       'globalThis.preloadBuildFixture.events.push("placement-dependency"); export const value = "placement";',
     [signingFallback]: 'export const value = "fallback";',
-    [submissionOperations]: `import { value } from "fixture:placement-dependency";
-      export { value };`,
   };
   for (const [name, id] of Object.entries(entries)) {
     aliases[`fixture:${name}`] = id;
-    const dependency = name === "placement" ? "fixture:placement-dependency" : "fixture:common";
+    const dependency = name.startsWith("placement")
+      ? "fixture:placement-dependency"
+      : "fixture:common";
     sources[id] = `import { value as dependency } from ${JSON.stringify(dependency)};
       globalThis.preloadBuildFixture.events.push(${JSON.stringify(name)});
       export const value = dependency;`;
   }
-  // The production entry owns its placement factory and reexports submission operations.
-  sources[entries.placement] = `import { value as dependency } from "fixture:submission-operations";
-    export { value } from "fixture:submission-operations";
-    globalThis.preloadBuildFixture.events.push("placement");
-    export default function createPlacement() { return dependency; }`;
   sources[entries.signer] = `globalThis.preloadBuildFixture.events.push("signer");
     export const value = "signer";
     export const fallback = () => import("fixture:signing-fallback");`;
@@ -278,23 +274,35 @@ it("prioritizes signing and route dependencies over unevaluated interaction hint
   const commonChunks = [entries.online, commonDependency].map((id) => chunkFor(id).fileName);
   const signerChunk = chunkFor(entries.signer).fileName;
   const chatChunk = chunkFor(entries.chat).fileName;
-  expect(chunkFor(entries.placement)).toBe(chunkFor(submissionOperations));
-  // Grouped dynamic imports retain a facade that invokes the shared initializer.
-  const placementEntry = chunks.find((chunk) => chunk.facadeModuleId === entries.placement)!;
-  expect(placementEntry.isDynamicEntry).toBe(true);
-  expect(placementEntry.moduleIds).toEqual([]);
-  const placementImplementation = [entries.placement, placementDependency].map(
-    (id) => chunkFor(id).fileName,
-  );
-  expect(placementEntry.imports.toSorted()).toEqual(placementImplementation.toSorted());
-  const placementChunks = [placementEntry.fileName, ...placementImplementation];
+  const staticClosure = (id: string) => {
+    const entry = chunks.find((chunk) => chunk.facadeModuleId === id) ?? chunkFor(id);
+    const files = new Set<string>();
+    const visit = (file: string) => {
+      if (files.has(file)) {
+        return;
+      }
+      files.add(file);
+      chunks.find((chunk) => chunk.fileName === file)?.imports.forEach(visit);
+    };
+    visit(entry.fileName);
+    return [...files];
+  };
+  const submissionChunks = staticClosure(submissionOperations);
+  const placementChunks = [
+    ...staticClosure(entries.placement),
+    ...staticClosure(entries.placementOperations),
+  ].filter((file) => !commonChunks.includes(file));
+  expect(chunkFor(entries.placement)).not.toBe(chunkFor(submissionOperations));
   const chatPreloads = routePreloads(html, "chat");
   expect(chatPreloads.toSorted()).toEqual(
     [...new Set([signerChunk, chatChunk, ...commonChunks])].toSorted(),
   );
   expect(routePreloads(html, "new").toSorted()).toEqual(
-    [...new Set([signerChunk, ...commonChunks, ...placementChunks])].toSorted(),
+    [...new Set([signerChunk, ...commonChunks, ...submissionChunks])].toSorted(),
   );
+  for (const file of placementChunks) {
+    expect(html).not.toContain(file);
+  }
   expect(chatPreloads[0]).toBe(signerChunk);
   expect(chatPreloads.indexOf(chatChunk)).toBeLessThan(
     chatPreloads.indexOf(chunkFor(entries.online).fileName),
@@ -321,6 +329,14 @@ it("prioritizes signing and route dependencies over unevaluated interaction hint
   expect(fixture.events).toEqual([]);
   expect((await fixture.load.online!()).value).toBe("common");
   expect(fixture.events).toEqual(["common", "online"]);
+  expect((await fixture.load.submission!()).value).toBe("common");
+  expect(fixture.events).toEqual(["common", "online", "submission"]);
   expect((await fixture.load.placement!()).value).toBe("placement");
-  expect(fixture.events).toEqual(["common", "online", "placement-dependency", "placement"]);
+  expect(fixture.events).toEqual([
+    "common",
+    "online",
+    "submission",
+    "placement-dependency",
+    "placement",
+  ]);
 });

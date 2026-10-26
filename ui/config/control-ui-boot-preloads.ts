@@ -108,9 +108,15 @@ export function collectControlUiBootAssets(
       if (
         entries.some((id) => {
           const key = controlUiBootManifestKey(id);
-          // Placement belongs to the first New Session action, never Chat boot.
-          if (key === "ui/src/app/session-placement-startup.runtime.ts") {
+          // Local submission is common; placement warms only after target selection.
+          if (key === "ui/src/pages/new-session/draft-submission-operations.runtime.ts") {
             return route === "new";
+          }
+          if (
+            key === "ui/src/app/session-placement-startup.runtime.ts" ||
+            key === "ui/src/pages/new-session/draft-placement-operations.runtime.ts"
+          ) {
+            return false;
           }
           const owner = controlUiBootEntryRoute(id);
           return owner === "shared" || owner === route;

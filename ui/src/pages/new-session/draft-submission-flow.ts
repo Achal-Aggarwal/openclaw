@@ -54,7 +54,14 @@ import { submitDraftInTerminal } from "./terminal-start.ts";
 registerNewSessionSetupEnglish();
 
 export function preloadDraftSubmissionOperations() {
-  return import("../../app/session-placement-startup.runtime.ts");
+  return import("./draft-submission-operations.runtime.ts");
+}
+
+function preloadDraftPlacementOperations() {
+  // The app owner must retain the created session even while its runtime is
+  // unavailable. Warm those bytes now without holding creation on evaluation.
+  void import("../../app/session-placement-startup.runtime.ts").catch(() => undefined);
+  return import("./draft-placement-operations.runtime.ts");
 }
 
 export class DraftSubmissionFlow {
@@ -400,6 +407,12 @@ export class DraftSubmissionFlow {
     this.applyRecoveryDraft(this.pendingPlacement.restore(gatewayUrl, recoveryScope));
   }
 
+  preloadPlacementOperations() {
+    if (resolveDraftSessionPlacement(this.pendingPlacement, this.place)) {
+      void preloadDraftPlacementOperations().catch(() => undefined);
+    }
+  }
+
   async submit(startup?: DraftStartupResumption, backgroundRequested = false) {
     if (!startup && catalog.isTarget(this.read().data)) {
       return this.startInTerminal();
@@ -476,12 +489,13 @@ export class DraftSubmissionFlow {
         Boolean(input.apiAttachments?.length),
         !startup && !input.pendingPlacement,
       );
-      const {
-        CreationComposer,
-        prepareInstantThreadHandoff,
-        completeDraftSessionPlacement,
-        completeInitialSessionTurn,
-      } = await preloadDraftSubmissionOperations();
+      const placementTarget = startup ? null : resolveDraftSessionPlacement(pending, this.place);
+      const [operations, placementOperations] = await Promise.all([
+        preloadDraftSubmissionOperations(),
+        placementTarget ? preloadDraftPlacementOperations() : undefined,
+      ]);
+      const { CreationComposer, prepareInstantThreadHandoff, completeInitialSessionTurn } =
+        operations;
       if (
         requestSignal.aborted ||
         !this.read().isConnected ||
@@ -532,7 +546,6 @@ export class DraftSubmissionFlow {
       if (this.creationComposer && this.visibilityValue === "incognito") {
         this.creationComposer.incognito = true;
       }
-      const placementTarget = startup ? null : resolveDraftSessionPlacement(pending, this.place);
       const remoteProject =
         !this.place.hostedEnvironment &&
         !startup &&
@@ -647,8 +660,8 @@ export class DraftSubmissionFlow {
         }
         return;
       }
-      if (placementTarget && submissionPlacementRecovery) {
-        await completeDraftSessionPlacement({
+      if (placementTarget && submissionPlacementRecovery && placementOperations) {
+        await placementOperations.completeDraftSessionPlacement({
           context,
           client: input.client,
           agentId: input.agentId,

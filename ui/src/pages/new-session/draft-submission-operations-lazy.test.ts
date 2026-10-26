@@ -15,7 +15,7 @@ const operationsImport = vi.hoisted(() => ({
   ready: Promise.withResolvers<void>(),
 }));
 
-vi.mock("../../app/session-placement-startup.runtime.ts", async (importOriginal) => {
+vi.mock("./draft-submission-operations.runtime.ts", async (importOriginal) => {
   if (++operationsImport.calls === 1) {
     await operationsImport.failed.promise;
     throw new Error("Submission code unavailable");
@@ -24,9 +24,34 @@ vi.mock("../../app/session-placement-startup.runtime.ts", async (importOriginal)
   return importOriginal();
 });
 
+const placementImport = vi.hoisted(() => ({
+  calls: 0,
+  entered: Promise.withResolvers<void>(),
+  failed: Promise.withResolvers<void>(),
+  runtimeCalls: 0,
+  runtimeEntered: Promise.withResolvers<void>(),
+  runtimeReady: Promise.withResolvers<void>(),
+}));
+
+vi.mock("./draft-placement-operations.runtime.ts", async () => {
+  placementImport.calls++;
+  placementImport.entered.resolve();
+  await placementImport.failed.promise;
+  throw new Error("Placement code unavailable");
+});
+
+vi.mock("../../app/session-placement-startup.runtime.ts", async () => {
+  placementImport.runtimeCalls++;
+  placementImport.runtimeEntered.resolve();
+  await placementImport.runtimeReady.promise;
+  return { default: vi.fn() };
+});
+
 afterEach(async () => {
   operationsImport.failed.resolve();
   operationsImport.ready.resolve();
+  placementImport.failed.resolve();
+  placementImport.runtimeReady.resolve();
   await vi.dynamicImportSettled();
   resetSubmissionMocks();
 });
@@ -34,6 +59,7 @@ afterEach(async () => {
 it("retains draft custody on import failure and rechecks held submissions before writing", async () => {
   stubObjectUrls("blob:failed-submission", "blob:original-submission");
   const failed = createDraftFixture();
+  failed.flow.preloadPlacementOperations();
   const failedAttachment = registerTextPayload("failed-submission");
   failed.flow.setMessage("Keep this unsent draft");
   failed.flow.attachmentDraft.replace([failedAttachment]);
@@ -151,4 +177,35 @@ it("retains draft custody on import failure and rechecks held submissions before
   ]) {
     fixture.flow.disconnect();
   }
+  expect(placementImport.calls).toBe(0);
+  expect(placementImport.runtimeCalls).toBe(0);
+
+  const placement = createDraftFixture({ methods: ["sessions.create", "sessions.dispatch"] });
+  expect(
+    placement.flow.pendingPlacement.stageCreate({
+      agentId: "main",
+      target: { kind: "device", deviceId: "worker-a" },
+      message: "Keep this recovered placement",
+      gatewayUrl: "ws://gateway.example",
+      recoveryScope: "principal-a",
+      createParams: { agentId: "main", message: "", worktree: true },
+    }),
+  ).not.toBeNull();
+  placement.flow.pendingPlacement.retryAllowed = true;
+  // A retained placement warms even when the current place selection is local.
+  placement.flow.preloadPlacementOperations();
+  await Promise.all([placementImport.entered.promise, placementImport.runtimeEntered.promise]);
+  expect(placementImport.calls).toBe(1);
+  expect(placementImport.runtimeCalls).toBe(1);
+  expect(placement.flow.canSubmit()).toBe(true);
+  const retry = placement.flow.submit();
+  expect(placement.context.sessions.createResult).not.toHaveBeenCalled();
+  placementImport.failed.resolve();
+  placementImport.runtimeReady.resolve();
+  await retry;
+  expect(placement.flow.error).toBeTruthy();
+  expect(placement.flow.submitting).toBe(false);
+  expect(placement.flow.pendingPlacement.message).toBe("Keep this recovered placement");
+  expect(placement.context.sessions.createResult).not.toHaveBeenCalled();
+  placement.flow.disconnect();
 });
