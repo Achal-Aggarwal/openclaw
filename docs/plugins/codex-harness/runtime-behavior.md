@@ -282,6 +282,8 @@ records retirement even if the transcript note cannot be written. Other pending
 turns of the same child remain independent. Parent subscription retention during
 ordinary completion retries is unchanged.
 
+If a chat’s previous client was retired while siblings still use it, the next turn waits for its exact thread to close or that process to exit. A passive read of that exact old client recovers a missed closure only when the matching thread is notLoaded; failed reads and still-loaded threads preserve the fence. Cancelling the waiting turn stops only its read and wait. Native resume still enforces its exclusive persistence writer lock.
+
 Managed local connections share a bounded inference relay. Up to 16 request
 preparations and uploads run at once, with another 16 waiting in arrival order.
 Responses keep streaming after their upload capacity is released, so a long
