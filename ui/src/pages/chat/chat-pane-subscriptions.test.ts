@@ -12,13 +12,15 @@ import type {
 import { createTestGatewayClient } from "../../test-helpers/gateway-client.ts";
 import { gatewayHelloForMethods } from "../../test-helpers/gateway-methods.ts";
 import { flush, waitForSolid } from "../../test-helpers/solid-settle.ts";
+import {
+  createGatewayBrowserClientFixture,
+  createInitializationContext,
+} from "./chat-application-context.test-support.ts";
 import { ChatComposerCapabilityHost } from "./chat-composer-capability-host.tsx";
 import { syncSelectedSessionMessageSubscription } from "./chat-history-subscription.ts";
 import { createMountedPanes } from "./chat-pane-mounted.test-support.ts";
 import {
   connectPaneTestView,
-  createGatewayBrowserClientFixture,
-  createInitializationContext,
   createRenderTestChatPane,
   createTestChatPane,
   getPaneTestRuntime,

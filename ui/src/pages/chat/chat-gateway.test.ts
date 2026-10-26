@@ -4,7 +4,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, onTestFinished,
 import { missingScopeErrorShape } from "../../../../packages/gateway-protocol/src/schema/error-codes.js";
 import { createDeferred } from "../../../../test/helpers/promise.js";
 import { createRequireRecord } from "../../../../test/helpers/record.js";
-import { GatewayRequestError } from "../../api/gateway.ts";
+import { GatewayRequestError } from "../../api/gateway-connect-errors.ts";
 import type { SessionsListResult } from "../../api/types.ts";
 import { extractText } from "../../lib/chat/message-extract.ts";
 import { prepareChatToolFamily } from "../../lib/chat/tool-family.ts";

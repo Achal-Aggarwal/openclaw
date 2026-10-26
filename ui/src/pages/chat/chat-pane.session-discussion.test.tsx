@@ -9,11 +9,8 @@ import { mountSolid } from "../../test-helpers/mount-solid.ts";
 import { flush } from "../../test-helpers/solid-settle.ts";
 import { buildChatDiscussionPanel } from "./chat-pane-discussion-panel.ts";
 import type { ChatDiscussionPanelSource } from "./chat-pane-panel-source.ts";
-import {
-  createSessionCapabilityFixture,
-  createTestChatPane,
-  type TestChatPane,
-} from "./chat-pane.test-support.ts";
+import { createTestChatPane, type TestChatPane } from "./chat-pane.test-support.ts";
+import { createSessionCapabilityFixture } from "./chat-session-capability.test-support.ts";
 import {
   SessionDiscussionPanel,
   type SessionDiscussionPanelConfig,

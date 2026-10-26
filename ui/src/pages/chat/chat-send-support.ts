@@ -4,7 +4,7 @@ import type { ChatQueueItem } from "../../lib/chat/chat-types.ts";
 import { parseSlashCommand } from "../../lib/chat/commands.ts";
 import { formatUiError } from "../../lib/format-error.ts";
 import { resolveSessionDisplayName } from "../../lib/session-display.ts";
-import { visibleSessionMatches } from "../../lib/sessions/index.ts";
+import { visibleSessionMatches } from "../../lib/sessions/navigation.ts";
 import {
   areUiSessionKeysEquivalent,
   isUiGlobalSessionKey,

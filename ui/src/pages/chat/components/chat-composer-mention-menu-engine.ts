@@ -1,7 +1,10 @@
 import { ConnectErrorDetailCodes } from "@openclaw/gateway-client/browser";
 import type { UsersMentionableResult } from "@openclaw/gateway-protocol";
 import type { StoreSetter } from "solid-js";
-import { GatewayRequestError, resolveGatewayErrorDetailCode } from "../../../api/gateway.ts";
+import {
+  GatewayRequestError,
+  resolveGatewayErrorDetailCode,
+} from "../../../api/gateway-connect-errors.ts";
 import { MAX_HUMAN_MENTIONS, updateHumanMentions } from "../../../lib/chat/human-mentions.ts";
 import {
   findMentionTarget,

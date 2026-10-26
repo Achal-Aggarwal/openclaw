@@ -19,17 +19,17 @@ import {
 } from "../../test-helpers/modal-dialog.ts";
 import { mountSolid } from "../../test-helpers/mount-solid.ts";
 import { openSubmenu } from "../../test-helpers/session-menu.ts";
+import { createGatewayBrowserClientFixture } from "./chat-application-context.test-support.ts";
 import { projectChatFields } from "./chat-field-projection.ts";
 import { createMountedPanes, refreshPane } from "./chat-pane-mounted.test-support.ts";
 import { runChatHeaderSessionAction } from "./chat-pane-session-menu-actions.ts";
 import {
-  createGatewayBrowserClientFixture,
   createPaneHeaderWorkspaceFixture,
-  createSessionCapabilityFixture,
   createTestChatPane,
   getPaneTestRuntime,
   type TestChatPane,
 } from "./chat-pane.test-support.ts";
+import { createSessionCapabilityFixture } from "./chat-session-capability.test-support.ts";
 import { selectedChatSessionRow } from "./chat-state-route.ts";
 import { renderPaneHeaderInto } from "./components/chat-pane-header.test-support.ts";
 import { PaneHeaderView } from "./components/chat-pane-header.tsx";

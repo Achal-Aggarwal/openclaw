@@ -2,7 +2,7 @@ import { t } from "../../i18n/index.ts";
 import { registerChatMessageMetadataEnglish } from "../../i18n/locales/en-chat-message-metadata.ts";
 import type { ChatQueueItem } from "../../lib/chat/chat-types.ts";
 import { INTERRUPTED_SETTINGS_WAIT_ERROR } from "../../lib/chat/outbox-store-codec.ts";
-import { visibleSessionMatches } from "../../lib/sessions/index.ts";
+import { visibleSessionMatches } from "../../lib/sessions/navigation.ts";
 import { resolveUiConversationIdentity } from "../../lib/sessions/session-key.ts";
 import { isExpiredIncognitoSession, setChatError } from "./chat-history-state.ts";
 import type {

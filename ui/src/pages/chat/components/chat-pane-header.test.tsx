@@ -15,10 +15,10 @@ import type { ChatMobileHost } from "../chat-mobile-host.ts";
 import {
   activePlacementSession,
   createPaneHeaderWorkspaceFixture,
-  createSessionCapabilityFixture,
   createTestChatPane,
   getPaneTestRuntime,
 } from "../chat-pane.test-support.ts";
+import { createSessionCapabilityFixture } from "../chat-session-capability.test-support.ts";
 import type { ChatPageHost } from "../chat-state-host.ts";
 import { openSlot } from "../sidebar-layout.ts";
 import {

@@ -79,7 +79,7 @@ const WorkspaceConflictTranscriptMessage = lazy(() => import("./chat-workspace-c
   export: "WorkspaceConflictTranscriptMessage",
 });
 
-export type GroupedMessageProps = {
+type GroupedMessageProps = {
   preparation: ChatMessageRenderPreparation;
   messageKey: string;
   options: GroupedMessageOptions;

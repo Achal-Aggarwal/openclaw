@@ -12,11 +12,8 @@ import { waitForSolid } from "../../test-helpers/solid-settle.ts";
 import { chatHistoryRequests } from "./chat-history-state.ts";
 import type { ChatBoardPanelSource } from "./chat-pane-panel-source.ts";
 import type { ResolvedBoardView } from "./chat-pane-shared.ts";
-import {
-  createSessionCapabilityFixture,
-  createTestChatPane,
-  mountBoardPanel,
-} from "./chat-pane.test-support.ts";
+import { createTestChatPane, mountBoardPanel } from "./chat-pane.test-support.ts";
+import { createSessionCapabilityFixture } from "./chat-session-capability.test-support.ts";
 import type { ChatPageHost } from "./chat-state-host.ts";
 import {
   cacheChatSessionSnapshot,

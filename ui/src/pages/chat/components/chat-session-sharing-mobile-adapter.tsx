@@ -21,14 +21,6 @@ import {
 
 registerEnglishCatalog(registerChatSessionEnglish);
 
-export type ChatSessionSharingMobileNavigation = {
-  onOpenSharing: () => void;
-  onOpenAccess: () => void;
-  onApplied: () => void;
-  /** Host-owned destination instance; undefined while Session access is not presented. */
-  accessTarget: () => object | undefined;
-};
-
 export type ChatSessionSharingMobileAdapter = {
   readonly available: boolean;
   options: ChatSessionSharingOptionsProps;
@@ -41,7 +33,13 @@ export type ChatSessionSharingMobileAdapter = {
 /** Create once under the retained session owner; read must expose live native Sharing props. */
 export function createChatSessionSharingMobileAdapter(
   read: () => PreparedSessionSharingInput | null | undefined,
-  navigation: ChatSessionSharingMobileNavigation,
+  navigation: {
+    onOpenSharing: () => void;
+    onOpenAccess: () => void;
+    onApplied: () => void;
+    /** Host-owned destination instance; undefined while Session access is not presented. */
+    accessTarget: () => object | undefined;
+  },
 ): ChatSessionSharingMobileAdapter {
   const source = createMemo(() => {
     const input = read();
