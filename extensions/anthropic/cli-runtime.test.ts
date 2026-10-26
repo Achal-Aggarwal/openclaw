@@ -352,6 +352,36 @@ describe("Claude native stdio boundary", () => {
     expect(liveSession.current()).toBe(handle);
   });
 
+  it.each(["local_agent", "local_workflow"])(
+    "settles the parent without a nested %s parent-lane receipt",
+    async (childType) => {
+      const liveSession = createLiveSession();
+      const context = await createContext(`nested-child-${childType}`, { liveSession });
+      const results: Record<string, unknown>[] = [];
+      for await (const record of executeClaudeCli(context)) {
+        if (record.type !== "result") {
+          continue;
+        }
+        results.push(record);
+        if (results.length === 1) {
+          expect(record).toHaveProperty("openclaw_interim_result", true);
+        } else {
+          // Assert on delivery, not a timeout: the broken owner emits this final
+          // answer as interim and then leaves its iterator open indefinitely.
+          expect(record).not.toHaveProperty("openclaw_interim_result");
+        }
+      }
+      expect(results).toHaveLength(2);
+      const final = resultDetail(results);
+      expect(final.answer).toBe("parent final");
+      const handle = liveSession.current();
+      expect(handle?.isIdle()).toBe(true);
+      const next = resultDetail(await collect({ ...context, useResume: true }));
+      expect(next).toMatchObject({ answer: "warm input", pid: final.pid });
+      expect(liveSession.current()).toBe(handle);
+    },
+  );
+
   it.each(["late-child", "late-child-run-ids"])(
     "keeps a prior turn's resumed Agent and late child out of later inputs for %s",
     async (scenario) => {

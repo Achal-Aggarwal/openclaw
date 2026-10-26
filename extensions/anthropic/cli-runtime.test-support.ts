@@ -108,6 +108,36 @@ for await (const line of createInterface({ input: process.stdin })) {
       result();
       continue;
     }
+    if (scenario.startsWith("nested-child-")) {
+      send({ type: "command_lifecycle", state: "started", command_uuid: message.uuid });
+      if (turn > 1) {
+        result({ answer: "warm input" });
+        continue;
+      }
+      send({ type: "system", subtype: "init", capabilities: ["msg_lifecycle_v1"] });
+      const parent = { task_id: "parent", task_type: "local_agent" };
+      const child = { task_id: "child", task_type: scenario.slice("nested-child-".length), parent_task_id: "parent" };
+      tasks([parent]);
+      system("task_started", { ...parent, is_backgrounded: true });
+      result({ answer: "waiting for parent" });
+      // Native's process-wide level precedes task_started. Nested Agents have a
+      // parent and depth, but unlike nested Bash they have no owned_by_subagent flag.
+      tasks([parent, child]);
+      system("task_started", { ...child,
+        ...(child.task_type === "local_agent" ? { spawn_depth: 2 } : {}), is_backgrounded: true });
+      system("task_notification", { task_id: "child", status: "completed" });
+      tasks([parent]);
+      system("task_notification", { task_id: "parent", status: "completed" });
+      // Only the parent notification is consumed in the main query. The child's
+      // receipt and answer belong to its launching agent, not this stream.
+      send({ type: "user", isReplay: true, parent_tool_use_id: null,
+        origin: { kind: "task-notification" }, message: { role: "user",
+          content: "<task-notification><task-id>parent</task-id></task-notification>" } });
+      tasks([]);
+      send({ type: "command_lifecycle", state: "completed", command_uuid: message.uuid });
+      result({ answer: "parent final" });
+      continue;
+    }
     if (scenario.startsWith("late-child")) {
       // Captured Claude Code 2.1.289/2.1.296 order: the Agent returns once its child Bash
       // is auto-backgrounded; the child finishes during the next input and resumes that Agent.
