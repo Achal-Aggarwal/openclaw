@@ -99,7 +99,8 @@ describe("secrets store CLI", () => {
   it("escapes readable env values while preserving JSON and plain output", async () => {
     const run = (...args: string[]) =>
       createProgram().parseAsync(["secrets", "store", ...args], { from: "user" });
-    const value = "café\u001b[31m\noperator-forged\tend\rrow\u0007";
+    const value =
+      "\u001b]8;;https://example.invalid\u0007café\u001b]8;;\u0007\u001b[31m\noperator-forged\tend\rrow\u0007";
     const entry = { name: "SERVICE_MODE", kind: "env", valuePreview: value };
     mocks.list.mockReturnValue([entry]);
     mocks.read.mockResolvedValue({ ok: true, value });
