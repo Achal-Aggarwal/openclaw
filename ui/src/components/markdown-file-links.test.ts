@@ -247,7 +247,7 @@ it("resolves authored links against their document without sharing a cached dire
 it("assigns document-scoped heading fragments for inline formatting, Unicode, and duplicates", () => {
   const fragment = render(
     "## A **formatted** heading!\n\n## Café 雪\n\n## A formatted heading!\n\n## A formatted heading-1",
-    { mode: "document" },
+    { mode: "document", fileLinkBasePath: "/workspace/readme.md" },
   );
   expect(
     [...fragment.querySelectorAll("h2")].map((heading) =>
@@ -257,4 +257,31 @@ it("assigns document-scoped heading fragments for inline formatting, Unicode, an
   expect(render("## Normal chat").querySelector("h2")?.hasAttribute("data-markdown-heading")).toBe(
     false,
   );
+});
+
+it.each([
+  [String.raw`\\server\share\docs\readme.md`, String.raw`\\server\share\docs\guide.md`],
+  ["//server/share/docs/readme.md", "//server/share/docs/guide.md"],
+  [String.raw`C:\workspace\docs\readme.md`, String.raw`C:\workspace\docs\guide.md`],
+])("preserves the document root and separator for %s", (basePath, expectedPath) => {
+  const fragment = render("[Sibling](guide.md#details)", {
+    fileLinks: true,
+    mode: "document",
+    fileLinkBasePath: basePath,
+  });
+  workspaceLink(fragment, expectedPath);
+  expect(fileLinks(fragment)[0]?.dataset.fileFragment).toBe("details");
+});
+
+it.each([5, 6])("preserves a level-%s heading target through document sanitization", (level) => {
+  const fragment = render("[Details](#details)\n\n" + "#".repeat(level) + " Details", {
+    fileLinks: true,
+    mode: "document",
+    fileLinkBasePath: "/workspace/readme.md",
+  });
+  expect(fragment.querySelector("h" + level)?.getAttribute("data-markdown-heading")).toBe(
+    "details",
+  );
+  workspaceLink(fragment, "/workspace/readme.md");
+  expect(fileLinks(fragment)[0]?.dataset.fileFragment).toBe("details");
 });

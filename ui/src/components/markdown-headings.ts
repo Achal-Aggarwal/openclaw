@@ -2,7 +2,8 @@ import type { MarkdownIt } from "markdown-it";
 
 export function installMarkdownHeadings(parser: MarkdownIt): void {
   parser.core.ruler.after("inline", "document-headings", (state) => {
-    if (state.env?.mode !== "document") {
+    // Only file readers provide a document path; passive documents retain their markup.
+    if (state.env?.mode !== "document" || !state.env.fileLinkBasePath) {
       return;
     }
     const used = new Set<string>();

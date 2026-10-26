@@ -171,7 +171,11 @@ function documentRelativeFilePath(path: string, basePath: string): string {
       parts.push(part);
     }
   }
-  return (base.startsWith("/") ? "/" : "") + parts.join("/");
+  const root = base.startsWith("//") ? "//" : base.startsWith("/") ? "/" : "";
+  const resolved = root + parts.join("/");
+  return basePath.includes("\\") && !basePath.includes("/")
+    ? resolved.replaceAll("/", "\\")
+    : resolved;
 }
 
 export function parseMarkdownFileLinkTarget(

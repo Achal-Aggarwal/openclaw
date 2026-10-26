@@ -16,11 +16,15 @@ const files = {
   "guides/faculty-guide.md":
     "# Faculty Guide\n\n[Development records](multiplayer-agentic-workflows.md#additional-human-agent-development-records)\n",
   "guides/multiplayer-agentic-workflows.md":
-    "# Multiplayer agentic workflows\n\n[Local records](#additional-human-agent-development-records)\n\n" +
+    "# Multiplayer agentic workflows\n\n[Local records](#additional-human-agent-development-records)\n\n[Level five](#level-five)\n\n[Level six](#level-six)\n\n" +
     "Background notes.\n\n".repeat(70) +
     "## " +
     section +
     "\n\nDevelopment records are here.\n\n" +
+    "More notes.\n\n".repeat(30) +
+    "##### Level five\n\n" +
+    "More notes.\n\n".repeat(30) +
+    "###### Level six\n\n" +
     "More notes.\n\n".repeat(30),
 };
 const fileResponse = (filePath: string, content: string) => ({
@@ -64,6 +68,7 @@ suite.define(() => {
         },
       });
       await page.goto(suite.server.baseUrl + "chat");
+      await page.evaluate(() => document.fonts.ready.then(() => undefined));
       await page.getByRole("button", { name: "Faculty Guide", exact: true }).click();
       const reader = page.locator(".sidebar-file-view__markdown:visible");
       const link = reader.getByText("Development records", { exact: true });
@@ -106,13 +111,37 @@ suite.define(() => {
       await local.scrollIntoViewIfNeeded();
       await local.press("Enter");
       await expect.poll(inReader).toBe(true);
+      for (const [name, level] of [
+        ["Level five", 5],
+        ["Level six", 6],
+      ] as const) {
+        await reader.getByRole("button", { name, exact: true }).click();
+        const target = reader.getByRole("heading", { name, level, exact: true });
+        await expect
+          .poll(() =>
+            target.evaluate((element) => {
+              const bounds = element.getBoundingClientRect();
+              const scroll = element
+                .closest(".sidebar-file-view__markdown-scroll")!
+                .getBoundingClientRect();
+              // Native scroll offsets round to CSS pixels; heading bounds can remain fractional.
+              return (
+                Math.round(bounds.top) >= Math.round(scroll.top) &&
+                Math.round(bounds.bottom) <= Math.round(scroll.bottom)
+              );
+            }),
+          )
+          .toBe(true);
+      }
       expect(page.url()).toBe(chatUrl);
       expect(
-        (await gateway.getRequests("sessions.files.get")).map((request) => request.params.path),
-      ).toEqual([
-        "guides/faculty-guide.md",
-        "/workspace/guides/multiplayer-agentic-workflows.md",
-        "/workspace/guides/multiplayer-agentic-workflows.md",
+        (await gateway.getRequests("sessions.files.get")).map((request) => request.params),
+      ).toMatchObject([
+        { path: "guides/faculty-guide.md" },
+        { path: "/workspace/guides/multiplayer-agentic-workflows.md" },
+        { path: "/workspace/guides/multiplayer-agentic-workflows.md" },
+        { path: "/workspace/guides/multiplayer-agentic-workflows.md" },
+        { path: "/workspace/guides/multiplayer-agentic-workflows.md" },
       ]);
       expect(await gateway.getRequests("sessions.resolve")).toHaveLength(resolutions);
     });
