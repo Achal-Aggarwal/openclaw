@@ -17,6 +17,7 @@ export class TranscriptInitialRange {
   private preparingRowKey: string | undefined;
   readonly rowIndexes = new Map<string, number>();
   private cancelPreparation?: () => void;
+  private preparationIsIdle = false;
   private prepareStarted = 0;
   private prepareLatency = 16;
   private scrollSample = { offset: 0, time: 0, velocity: 0, direction: -1 };
@@ -150,6 +151,11 @@ export class TranscriptInitialRange {
   }
 
   didCommit(): void {
+    if (this.preparationIsIdle && this.virtualizer().isScrolling) {
+      this.cancelPreparation?.();
+      this.cancelPreparation = undefined;
+      this.preparationIsIdle = false;
+    }
     this.queuePreparation();
   }
 
@@ -209,7 +215,7 @@ export class TranscriptInitialRange {
     }
   }
 
-  private queuePreparation(): void {
+  private queuePreparation(idleOnly = false): void {
     if (
       this.cancelPreparation ||
       this.preparingRowKey ||
@@ -219,10 +225,11 @@ export class TranscriptInitialRange {
     ) {
       return;
     }
-    const prepare = (deadline: number, prewarm = false) => {
+    const prepare = (deadline: number, prewarm = false, warmOnly = false) => {
       this.cancelPreparation = undefined;
+      this.preparationIsIdle = false;
       if (performance.now() >= deadline) {
-        this.queuePreparation();
+        this.queuePreparation(!warmOnly);
         return;
       }
       const virtualizer = this.virtualizer();
@@ -267,13 +274,13 @@ export class TranscriptInitialRange {
             ? range.endIndex
             : range.startIndex;
       const rendered = new Set(virtualizer.getVirtualItems().map((row) => row.key));
-      const lookahead = velocity
-        ? 8
-        : Math.max(0, PREPARED_ROW_LIMIT - this.activeIndexes().length);
+      const lookahead =
+        velocity || warmOnly ? 8 : Math.max(0, PREPARED_ROW_LIMIT - this.activeIndexes().length);
       let admitted = 0;
+      let warmed = false;
       for (let step = 1; step <= lookahead && admitted === 0; step++) {
         if (performance.now() >= deadline) {
-          this.queuePreparation();
+          this.queuePreparation(!warmOnly);
           return;
         }
         const index = origin + step * searchDirection;
@@ -286,10 +293,15 @@ export class TranscriptInitialRange {
           this.prewarmRow?.(index)
         ) {
           // The shared cache owns readiness; no DOM or range invalidation is needed.
+          if (warmOnly) {
+            warmed = true;
+            continue;
+          }
           this.queuePreparation();
           return;
         }
         if (
+          !warmOnly &&
           row?.estimatedSize !== undefined &&
           !rendered.has(row.key) &&
           !this.preparedRowKeys.has(row.key)
@@ -304,6 +316,9 @@ export class TranscriptInitialRange {
         }
       }
       if (!admitted) {
+        if (warmOnly) {
+          this.queuePreparation(!warmed);
+        }
         return;
       }
       this.prepareStarted = performance.now();
@@ -313,8 +328,18 @@ export class TranscriptInitialRange {
       });
       this.invalidate();
     };
-    if (typeof requestIdleCallback === "function") {
-      // Keep this slot through scrolling; prepare reads the latest viewport.
+    if (
+      !idleOnly &&
+      this.virtualizer().isScrolling &&
+      this.prewarmRow &&
+      typeof requestIdleCallback === "function"
+    ) {
+      // Idle delivery can starve during scrolling. Warm only the predicted
+      // ordinary rows here; fragment mounting stays on the idle path.
+      const frame = requestAnimationFrame(() => prepare(performance.now() + 3, true, true));
+      this.cancelPreparation = () => cancelAnimationFrame(frame);
+    } else if (typeof requestIdleCallback === "function") {
+      this.preparationIsIdle = true;
       const idleRequest = requestIdleCallback(
         (idle) => prepare(performance.now() + (idle.timeRemaining() >= 6 ? 6 : 0), true),
         { timeout: 250 },
@@ -331,6 +356,7 @@ export class TranscriptInitialRange {
   disconnect(): void {
     this.cancelPreparation?.();
     this.cancelPreparation = undefined;
+    this.preparationIsIdle = false;
     this.prepareStarted = 0;
     this.preparingRowKey = undefined;
     this.preparedRowKeys.clear();

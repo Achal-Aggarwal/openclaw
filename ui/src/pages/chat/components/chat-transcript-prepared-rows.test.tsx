@@ -215,6 +215,23 @@ it("warms ordinary rows only in idle time without mounting their DOM", async () 
   expect(view.container.querySelectorAll(".chat-virtual-row")).toHaveLength(elements);
 });
 
+it("warms the predicted ordinary rows during scrolling without waiting for idle delivery", async () => {
+  const view = await transcriptFixture(0, true, false, true);
+  await view.scrollTo(60);
+  const rendered = view.renderRow.mock.calls.length;
+  const elements = view.container.querySelectorAll(".chat-virtual-row").length;
+  expect(cancelIdleCallback).toHaveBeenCalledTimes(1);
+  await view.frame();
+  const prepared = view.renderRow.mock.calls.slice(rendered);
+  expect(prepared.length).toBeGreaterThan(0);
+  expect(prepared.length).toBeLessThanOrEqual(8);
+  const last = prepared.at(-1)![0];
+  const index = last.kind === "item" ? last.item : -1;
+  expect(index).toBeGreaterThan(60);
+  expect(prewarmGroupedMessage(view.groups[index]!.messages[0]!.message, {})).toBe(false);
+  expect(view.container.querySelectorAll(".chat-virtual-row")).toHaveLength(elements);
+});
+
 it("reuses a recent completed row after scrolling away and back, with a bounded DOM cache", async () => {
   const view = await transcriptFixture();
   await view.frame(8);
@@ -344,7 +361,7 @@ it("waits for idle time to prepare during scrolling and uses the latest viewport
   const scheduled = vi.mocked(requestIdleCallback).mock.calls.length;
   await view.scrollTo(60);
   expect(vi.mocked(requestIdleCallback).mock.calls).toHaveLength(scheduled);
-  expect(cancelIdleCallback).not.toHaveBeenCalled();
+  expect(cancelIdleCallback).toHaveBeenCalledTimes(1);
   const rendered = view.renderRow.mock.calls.length;
   await view.frame(2);
   expect(view.renderRow.mock.calls).toHaveLength(rendered);
@@ -356,7 +373,6 @@ it("waits for idle time to prepare during scrolling and uses the latest viewport
   const nextScheduled = vi.mocked(requestIdleCallback).mock.calls.length;
   await view.scrollTo(120);
   expect(vi.mocked(requestIdleCallback).mock.calls).toHaveLength(nextScheduled);
-  expect(cancelIdleCallback).not.toHaveBeenCalled();
   const afterScroll = view.renderRow.mock.calls.length;
   await view.frame(2);
   expect(view.renderRow.mock.calls).toHaveLength(afterScroll);
@@ -373,6 +389,7 @@ it("prepares inward when fast upward prediction reaches an ordinary first row", 
   await view.scrollTo(40);
   expect(view.container.querySelector('[data-virtual-row-key="fragment:1"]')).toBeNull();
 
+  await view.frame(1, false);
   await view.idle();
 
   const firstFragment = view.container.querySelector('[data-virtual-row-key="fragment:1"]');
