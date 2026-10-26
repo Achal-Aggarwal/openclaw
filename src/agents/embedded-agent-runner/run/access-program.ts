@@ -1,4 +1,5 @@
 import { isDeepStrictEqual } from "node:util";
+import type { ProviderPlugin } from "../../../plugins/types.js";
 import type { AuthProfileCredential } from "../../auth-profiles/types.js";
 import { FailoverError } from "../../failover-error.js";
 import { resolveSelectedModelCredential } from "../../model-auth-selected-credential.js";
@@ -7,10 +8,11 @@ import { getPreparedModelFullCatalogAuth } from "../../prepared-model-runtime-au
 import type { EmbeddedRunAttemptParams } from "./types.js";
 
 // OAuth refresh rotates tokens without changing the account that discovery observed.
-// Entitlements are per account: require the same account id, and the same user when both carry an email.
+// The provider owns account-and-user identity; workspace ids or optional emails are not enough.
 function isSameDiscoveredAccount(
   discovered: AuthProfileCredential | undefined,
   credential: AuthProfileCredential,
+  provider: ProviderPlugin | undefined,
 ): boolean {
   if (isDeepStrictEqual(discovered, credential)) {
     return true;
@@ -18,17 +20,14 @@ function isSameDiscoveredAccount(
   if (discovered?.type !== "oauth" || credential.type !== "oauth") {
     return false;
   }
-  const accountId = discovered.accountId?.trim();
-  const discoveredEmail = discovered.email?.trim().toLowerCase();
-  const email = credential.email?.trim().toLowerCase();
   return (
-    (!discoveredEmail || !email || discoveredEmail === email) &&
     discovered.provider === credential.provider &&
     discovered.enterpriseUrl === credential.enterpriseUrl &&
     discovered.issuer === credential.issuer &&
     discovered.clientId === credential.clientId &&
-    Boolean(accountId) &&
-    accountId === credential.accountId?.trim()
+    discovered.authFlow === credential.authFlow &&
+    provider?.auth.some((method) => method.matchesPersonalAccount?.(credential, discovered)) ===
+      true
   );
 }
 
@@ -69,6 +68,9 @@ export async function prepareEmbeddedAccessProgramGuard(
           isSameDiscoveredAccount(
             getPreparedModelFullCatalogAuth(snapshot)?.authStore.profiles[profileId],
             credential,
+            runtime?.pluginRegistry?.providers.find(
+              ({ provider }) => provider.id === attempt.provider,
+            )?.provider,
           )
         ? snapshot.providerOutcomes
         : [];

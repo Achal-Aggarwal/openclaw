@@ -1,4 +1,7 @@
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
+import { buildOpenAIProvider } from "../../../../extensions/openai/api.js";
+import { fetchWithSsrFGuard } from "../../../infra/net/fetch-guard.js";
+import { withGuardedFetchBeforeRequest } from "../../../infra/net/fetch-request-authority.js";
 import type { OAuthCredential } from "../../auth-profiles/types.js";
 import type { ModelCatalogSnapshot } from "../../model-catalog.types.js";
 import { setPreparedModelFullCatalogAuth } from "../../prepared-model-runtime-auth.js";
@@ -13,10 +16,23 @@ const route = {
   authRequirement: "subscription",
   requestTransportOverrides: "none",
 } as const;
+function accessFor(userId = "user-a", accountId = "account-a", nonce = "first") {
+  const payload = {
+    "https://api.openai.com/auth": {
+      chatgpt_account_id: accountId,
+      chatgpt_user_id: userId,
+    },
+    nonce,
+  };
+  return ["fixture", Buffer.from(JSON.stringify(payload)).toString("base64url"), "fixture"].join(
+    ".",
+  );
+}
+
 const discovered: OAuthCredential = {
   type: "oauth",
   provider: "openai",
-  access: "access-1",
+  access: accessFor(),
   refresh: "refresh-1",
   expires: 1_000,
   accountId: "account-a",
@@ -54,6 +70,7 @@ function attemptWith(credential: OAuthCredential) {
     authProfileStore: { version: 1, profiles: { [profileId]: credential } },
     runtimePlan: { auth: { modelRoute: route, selectedAuthMode: "oauth" } },
     preparedModelRuntime: {
+      pluginRegistry: { providers: [{ provider: buildOpenAIProvider() }] },
       accountCatalog: createPreparedAccountCatalogAccess(() => true),
       readFullModelCatalog: () => snapshot,
       isCurrent: () => true,
@@ -65,7 +82,12 @@ it("keeps the discovered program across an OAuth refresh of the same account", a
   await expect(prepareEmbeddedAccessProgramGuard(attemptWith(discovered))).resolves.toBeTypeOf(
     "function",
   );
-  const refreshed = { ...discovered, access: "access-2", refresh: "refresh-2", expires: 2_000 };
+  const refreshed = {
+    ...discovered,
+    access: accessFor("user-a", "account-a", "refreshed"),
+    refresh: "refresh-2",
+    expires: 2_000,
+  };
   await expect(prepareEmbeddedAccessProgramGuard(attemptWith(refreshed))).resolves.toBeTypeOf(
     "function",
   );
@@ -73,14 +95,55 @@ it("keeps the discovered program across an OAuth refresh of the same account", a
 
 it("never reuses discovered programs for a different account under the same profile", async () => {
   for (const credential of [
-    { ...discovered, access: "access-2", accountId: "account-b" },
-    { ...discovered, access: "access-2", accountId: undefined },
-    { ...discovered, access: "access-2", accountId: undefined, email: "user@example.test" },
-    { ...discovered, access: "access-2", issuer: "https://other.example.test" },
-    { ...discovered, access: "access-2", email: "other@example.test" },
+    { ...discovered, access: accessFor("user-b"), email: undefined },
+    { ...discovered, access: accessFor(""), email: undefined },
+    { ...discovered, access: accessFor("user-a", "account-b") },
+    { ...discovered, access: "opaque-token" },
+    { ...discovered, access: accessFor(), issuer: "https://other.example.test" },
+    { ...discovered, access: accessFor(), authFlow: "other-flow" },
   ]) {
     await expect(prepareEmbeddedAccessProgramGuard(attemptWith(credential))).rejects.toMatchObject({
       code: "OPENAI_ACCESS_PROGRAM_UNAVAILABLE",
     });
   }
 });
+
+it.each(["current", "revoked", "reassigned"])(
+  "checks %s authority at provider dispatch",
+  async (state) => {
+    const credential = { ...discovered, access: accessFor("user-a", "account-a", "refreshed") };
+    const attempt = attemptWith(credential);
+    let current = true;
+    attempt.preparedModelRuntime = { ...attempt.preparedModelRuntime!, isCurrent: () => current };
+    const check = await prepareEmbeddedAccessProgramGuard(attempt);
+    const fetchImpl = vi.fn(async () => new Response("ok"));
+    const request = withGuardedFetchBeforeRequest(check, () =>
+      fetchWithSsrFGuard({
+        url: "https://public.example/response",
+        lookupFn: async () => {
+          if (state === "revoked") {
+            current = false;
+          }
+          if (state === "reassigned") {
+            await attempt.preparedModelRuntime!.accountCatalog!.acquire({
+              profileId,
+              credential: { ...credential, access: accessFor("user-b") },
+              allowDiscovery: true,
+              load: async () => [],
+            });
+          }
+          return [{ address: "93.184.216.34", family: 4 }];
+        },
+        fetchImpl,
+      }),
+    );
+    if (state === "current") {
+      const result = await request;
+      await result.release();
+      expect(fetchImpl).toHaveBeenCalledOnce();
+    } else {
+      await expect(request).rejects.toMatchObject({ code: "OPENAI_ACCESS_PROGRAM_UNAVAILABLE" });
+      expect(fetchImpl).not.toHaveBeenCalled();
+    }
+  },
+);
