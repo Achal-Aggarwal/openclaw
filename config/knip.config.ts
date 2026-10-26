@@ -64,6 +64,8 @@ const repositoryScriptEntries = [
   "scripts/dev/cron-context-replay.mts!",
   // #183131 invokes this fresh-process cron flake workload by path.
   "scripts/perf/repeat-cron-test.mjs!",
+  // Its header documents the paired operator-role currency-check benchmark.
+  "scripts/perf/operator-role-source-policy-measure.mjs!",
   // db:postgres:gen/check invoke this generator through the source loader.
   "scripts/generate-postgres-schema.mts!",
   // CI preflight executes the manifest from its trusted harness checkout.
@@ -175,6 +177,22 @@ const repositoryScriptEntries = [
   "scripts/perf/subagent-maintenance-capture-measure.ts!",
   "scripts/perf/subagent-sweep-measure.ts!",
   "scripts/perf/tool-schema-preparation-measure.ts!",
+  // Retained source commands and selectable preloads execute directly by exact path.
+  "scripts/perf/after-turn-context-measure.ts!",
+  "scripts/perf/agent-runtime-dispatch-measure.ts!",
+  "scripts/perf/approval-replay-burst-measure.ts!",
+  "scripts/perf/channels-status-inventory.ts!",
+  "scripts/perf/extension-handler-lookup-measure.ts!",
+  "scripts/perf/reply-tool-authority-measure.ts!",
+  "scripts/perf/select-environment-scale.ts!",
+  "scripts/perf/session-archive-staging-measure.ts!",
+  "scripts/perf/session-delete-measure.ts!",
+  "scripts/perf/session-history-prewarm-measure.mjs!",
+  "scripts/perf/session-prepared-list-measure.ts!",
+  "scripts/perf/transcript-boot-preload.mjs!",
+  "scripts/perf/worker-pool-churn-preload.mjs!",
+  "scripts/perf/worktree-prompt-native-measure.ts!",
+  "scripts/perf/worktree-prompt-overlap-measure.ts!",
   // The performance guide and transcript driver invoke these tools and preloads by path.
   "scripts/lib/gateway-bench-transport-preload.ts!",
   "scripts/perf/async-store-measure.mjs!",
@@ -366,6 +384,7 @@ const repositoryScriptEntries = [
   // Maintained source headers invoke these standalone measurement commands by exact path.
   "scripts/perf/agent-fresh-array-copy-measure.ts!",
   "scripts/perf/agent-object-copy-measure.ts!",
+  "scripts/perf/agent-stream-update-measure.ts!",
   "scripts/perf/chat-display-admission-measure.mjs!",
   "scripts/perf/core-fresh-array-copies-measure.mjs!",
   "scripts/perf/delivery-info-measure.ts!",
@@ -489,6 +508,7 @@ const repositoryScriptEntries = [
   "scripts/perf/mcp-acquisition-measure.ts!",
   "scripts/perf/shell-extract-bench.ts!",
   "scripts/perf/subagent-active-read-measure.ts!",
+  "scripts/perf/subagent-descendant-count-measure.ts!",
   "scripts/perf/trusted-snapshot-freeze-measure.mjs!",
   "scripts/perf/git-read-sharing-measure.ts!",
   // Live proof and test owners spawn or preload these children through computed paths.
@@ -523,6 +543,7 @@ const repositoryScriptEntries = [
   "scripts/perf/operator-model-policy-load.mjs!",
   "scripts/perf/operator-model-policy-measure.ts!",
   "scripts/perf/provider-rate-limit-retention.ts!",
+  "scripts/perf/provider-rate-limit-stream-measure.ts!",
   "scripts/perf/session-cost-refresh-measure.ts!",
   "scripts/perf/sqlite-operation-receive-measure.ts!",
   "scripts/perf/tool-search-lexical-measure.ts!",
