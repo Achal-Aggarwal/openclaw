@@ -3699,6 +3699,7 @@ describe("chat model controls", () => {
   });
 
   it("applies model, reasoning, and speed for the session that opened the picker", async () => {
+    await import("./components/chat-effort-picker-panel.tsx");
     const { state } = createReasoningHeaderState({
       models: createOpenAiModelCatalog(),
     });
