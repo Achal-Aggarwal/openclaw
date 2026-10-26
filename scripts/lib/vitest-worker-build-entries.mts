@@ -253,6 +253,7 @@ export const preservedModuleBuildAssets = [
   "scripts/e2e/lib/upgrade-survivor/config-recipe/tools-tool-search.json",
   ".github/workflows/plugin-npm-release.yml",
   "scripts/lib/vitest-worker-bootstrap.mts",
+  "scripts/plugin-sdk-api-revision-compiler-loader.mjs",
 ];
 
 // Test-only roots share the invocation generation without changing package entries.
