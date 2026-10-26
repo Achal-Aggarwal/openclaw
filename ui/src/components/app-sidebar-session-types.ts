@@ -274,18 +274,6 @@ export function visibleSessionChildren(params: {
       );
 }
 
-export type SidebarSessionMenuState = {
-  session: SidebarRecentSession;
-  x: number;
-  y: number;
-};
-
-export type SidebarSessionGroupMenuState = {
-  group: string;
-  x: number;
-  y: number;
-};
-
 export type SidebarSessionSortMode = (typeof SIDEBAR_SESSION_SORT_OPTIONS)[number]["mode"];
 export type SidebarSessionStatusFilter = (typeof SIDEBAR_SESSION_STATUS_OPTIONS)[number];
 export type SidebarEmptyGroupsMode = "filtering" | "always" | "never";
@@ -294,11 +282,6 @@ export type SidebarSessionOwnerFilter = {
   involvingMe: boolean;
 };
 export type SidebarSessionsScrollState = "none" | "top" | "middle" | "bottom";
-
-export type SidebarSectionDropTarget = {
-  sectionId: string;
-  position: "before" | "after";
-};
 
 export type SidebarSessionMutationScope = {
   epoch: number;

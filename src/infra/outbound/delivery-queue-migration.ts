@@ -4,14 +4,11 @@ import { createRenderedMessageBatchPlan } from "../../channels/message/rendered-
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { resolveOutboundMediaMaxBytes } from "../../media/configured-max-bytes.js";
 import type { HookRunner } from "../../plugins/hooks.js";
-import { runOpenClawStateWriteTransaction } from "../../state/openclaw-state-db.js";
 import {
-  replacePendingDeliveryQueueEntryInDatabase,
-  movePendingDeliveryQueueEntryNamespaceInDatabase,
-} from "../delivery-queue-sqlite-namespace.kernel.js";
+  movePendingDeliveryQueueEntryNamespace,
+  replacePendingDeliveryQueueEntry,
+} from "../delivery-queue-sqlite-namespace.js";
 import {
-  resolveDeliveryQueueStateEnv,
-  type DeliveryQueueStateContext,
   countPendingDeliveryQueueEntriesForMaintenance,
   terminalizePendingDeliveryQueueEntry,
 } from "../delivery-queue-sqlite.js";
@@ -52,41 +49,6 @@ import {
   projectPreparedOutboundBatchForStorage,
 } from "./prepared-batch.js";
 import { normalizeOutboundReplyFacts } from "./reply-policy.js";
-
-type MovePendingDeliveryQueueEntryNamespaceParams = Parameters<
-  typeof movePendingDeliveryQueueEntryNamespaceInDatabase
->[1] & {
-  stateDir?: string;
-};
-
-/** Replaces a pending entry only while its authoritative serialized value is unchanged. */
-function replacePendingDeliveryQueueEntry(
-  params: Parameters<typeof replacePendingDeliveryQueueEntryInDatabase>[1] & {
-    stateDir?: string;
-  },
-  context?: DeliveryQueueStateContext,
-): boolean {
-  return runOpenClawStateWriteTransaction(
-    (database) => replacePendingDeliveryQueueEntryInDatabase(database, params),
-    { env: resolveDeliveryQueueStateEnv(params.stateDir, context) },
-    { operationLabel: "replace pending delivery queue entry" },
-  );
-}
-
-/**
- * Commits an asynchronously prepared replacement only if the authoritative
- * source row is unchanged, then removes or terminally fences the old owner.
- */
-function movePendingDeliveryQueueEntryNamespace(
-  params: MovePendingDeliveryQueueEntryNamespaceParams,
-  context?: DeliveryQueueStateContext,
-): "moved" | "source-changed" | "destination-exists" | "staging-missing" {
-  return runOpenClawStateWriteTransaction(
-    (database) => movePendingDeliveryQueueEntryNamespaceInDatabase(database, params),
-    { env: resolveDeliveryQueueStateEnv(params.stateDir, context) },
-    { operationLabel: "migrate delivery queue namespace" },
-  );
-}
 
 const LEGACY_PREPARATION_LEASE_MS = 5 * 60_000;
 

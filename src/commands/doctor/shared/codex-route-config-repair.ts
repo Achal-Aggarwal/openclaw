@@ -30,6 +30,7 @@ import {
   visitNonAgentModelSlots,
 } from "./codex-route-model-slots.js";
 import {
+  agentIdFromAgentPath,
   ensureCodexRuntimePolicy,
   rewriteModelConfigSlotIfCanonicalCodexRuntime,
   rewriteStringModelSlotIfCanonicalCodexRuntime,
@@ -42,15 +43,6 @@ import type {
   MutableRecord,
   SharedDefaultCompactionOverrideConsumers,
 } from "./codex-route-types.js";
-
-function agentIdFromAgentPath(agentPath: string): string | undefined {
-  for (const prefix of ["agents.entries.", "agents.list."]) {
-    if (agentPath.startsWith(prefix)) {
-      return agentPath.slice(prefix.length);
-    }
-  }
-  return undefined;
-}
 
 function rewriteModelPolicyAllowRefs(params: {
   hits: CodexRouteHit[];

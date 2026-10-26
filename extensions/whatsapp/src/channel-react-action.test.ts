@@ -25,69 +25,23 @@ const hoisted = vi.hoisted(() => ({
   })),
 }));
 
-vi.mock("./channel-react-action.runtime.js", async () => {
-  return {
-    handleWhatsAppAction: hoisted.handleWhatsAppAction,
-    resolveAuthorizedWhatsAppOutboundTarget: hoisted.resolveAuthorizedWhatsAppOutboundTarget,
-    resolveWhatsAppAccount: hoisted.resolveWhatsAppAccount,
-    resolveWhatsAppMediaMaxBytes: hoisted.resolveWhatsAppMediaMaxBytes,
-    sendMessageWhatsApp: hoisted.sendMessageWhatsApp,
-    resolveReactionMessageId: ({
-      args,
-      toolContext,
-    }: {
-      args: Record<string, unknown>;
-      toolContext?: { currentMessageId?: string | number | null };
-    }) => args.messageId ?? toolContext?.currentMessageId ?? null,
-    readStringOrNumberParam: (params: Record<string, unknown>, key: string) => {
-      const value = params[key];
-      if (typeof value === "number" && Number.isFinite(value)) {
-        return value;
-      }
-      if (typeof value === "string" && value.trim()) {
-        return value;
-      }
-      return undefined;
-    },
-    isWhatsAppGroupJid: (value?: string | null) => (value ?? "").trim().endsWith("@g.us"),
-    normalizeWhatsAppTarget: (value?: string | null) => {
-      const raw = (value ?? "").trim();
-      if (!raw) {
-        return null;
-      }
-      const stripped = raw.replace(/^whatsapp:/, "");
-      if (stripped.endsWith("@g.us")) {
-        return stripped;
-      }
-      return stripped.startsWith("+") ? stripped : `+${stripped.replace(/^\+/, "")}`;
-    },
-    readStringParam: (
-      params: Record<string, unknown>,
-      key: string,
-      options?: { required?: boolean; allowEmpty?: boolean; trim?: boolean },
-    ) => {
-      const value = params[key];
-      if (value == null) {
-        if (options?.required) {
-          const err = new Error(`${key} required`);
-          err.name = "ToolInputError";
-          throw err;
-        }
-        return undefined;
-      }
-      const text = typeof value === "string" ? value : "";
-      if (!options?.allowEmpty && !text.trim()) {
-        if (options?.required) {
-          const err = new Error(`${key} required`);
-          err.name = "ToolInputError";
-          throw err;
-        }
-        return undefined;
-      }
-      return text;
-    },
-  };
-});
+vi.mock("./action-runtime.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./action-runtime.js")>()),
+  handleWhatsAppAction: hoisted.handleWhatsAppAction,
+}));
+vi.mock("./action-runtime-target-auth.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./action-runtime-target-auth.js")>()),
+  resolveAuthorizedWhatsAppOutboundTarget: hoisted.resolveAuthorizedWhatsAppOutboundTarget,
+}));
+vi.mock("./accounts.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./accounts.js")>()),
+  resolveWhatsAppAccount: hoisted.resolveWhatsAppAccount,
+  resolveWhatsAppMediaMaxBytes: hoisted.resolveWhatsAppMediaMaxBytes,
+}));
+vi.mock("./send.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./send.js")>()),
+  sendMessageWhatsApp: hoisted.sendMessageWhatsApp,
+}));
 
 function whatsAppToolContext(currentChannelId: string, currentMessageId: string | number) {
   return {

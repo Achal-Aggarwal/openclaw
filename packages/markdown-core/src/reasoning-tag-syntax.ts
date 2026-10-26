@@ -210,6 +210,15 @@ export type ReductionState = {
   };
 };
 
+export type ReductionCheckpoint = {
+  boundary: number;
+  rawBefore: boolean;
+  terminalLiteral: boolean;
+  reset: boolean;
+  lastReset: number;
+  holdStart: number;
+};
+
 export function reduceReasoningText(
   text: string,
   codeSpans: Array<[number, number]>,
@@ -220,14 +229,7 @@ export function reduceReasoningText(
     mode: "hide" | "visible" | "static-strict" | "static-preserve";
     scope: "all" | "leading";
     start?: number;
-    checkpoint?: {
-      boundary: number;
-      rawBefore: boolean;
-      terminalLiteral: boolean;
-      reset: boolean;
-      lastReset: number;
-      holdStart: number;
-    };
+    checkpoint?: ReductionCheckpoint;
   },
 ): ReasoningTagTextDelta[] {
   const output: ReasoningTagTextDelta[] = [];

@@ -19,7 +19,6 @@ import {
   loadStoredCollapsedSessionSections,
   storeCollapsedSessionSections,
   type SidebarRecentSession,
-  type SidebarSectionDropTarget,
   type SidebarSessionMutationResult,
   type SidebarSessionMutationScope,
   type SidebarSessionPatch,
@@ -37,7 +36,10 @@ export class SessionOrganizer {
   draggingSessionKey: string | null = null;
   draggingSidebarSection: string | null = null;
   sessionDropTarget: string | null = null;
-  sidebarSectionDropTarget: SidebarSectionDropTarget | null = null;
+  sidebarSectionDropTarget: {
+    sectionId: string;
+    position: "before" | "after";
+  } | null = null;
   draggingSidebarEntry: string | null = null;
   sidebarZoneDragActive = false;
   sidebarZoneDropTarget: {

@@ -406,12 +406,15 @@ src/infra/database-engine/postgres-catalog.ts
 src/infra/database-engine/postgres-index-ordering.ts
 src/infra/database-engine/postgres-schema.ts
 src/infra/database-engine/postgres-search-schema.ts
+src/infra/database-engine/postgres-search.ts
 src/infra/database-engine/postgres-store-metadata.ts
+src/infra/database-engine/postgres-vector.ts
 src/infra/database-engine/registry.ts
 src/infra/database-engine/scalar.ts
 src/infra/database-engine/search-admission.ts
 src/infra/database-engine/search-extension.ts
 src/infra/database-engine/search.ts
+src/infra/database-engine/sqlite-full-text.ts
 src/infra/database-engine/sqlite-memory-search-fragments.ts
 src/infra/database-engine/sqlite-memory-vector-schema.ts
 src/infra/database-engine/sqlite-search-schema.ts
@@ -478,6 +481,7 @@ src/channels/ids.ts
 src/channels/message/ingress-queue-read-contract.ts
 src/channels/plugins/bootstrap-registry.ts
 src/channels/plugins/bundled-ids.ts
+src/channels/plugins/bundled-root.ts
 src/channels/plugins/bundled-setup-policy.ts
 src/channels/plugins/bundled.ts
 src/channels/plugins/channel-meta.ts
@@ -497,6 +501,7 @@ src/channels/registry-lookup.ts
 src/channels/registry-normalize.ts
 src/channels/registry.ts
 src/claws/add-state-worker-contract.ts
+src/claws/provenance-secondary-references.ts
 src/cli/command-format.ts
 src/cli/daemon-cli/restart-health.types.ts
 src/cli/parse-bytes.ts
@@ -552,6 +557,7 @@ src/commands/doctor/shared/legacy-config-migrations.web-search.ts
 src/commands/doctor/shared/legacy-config-record-shared.ts
 src/commands/doctor/shared/legacy-context-budget.ts
 src/commands/doctor/shared/legacy-copilot-discovery.ts
+src/commands/doctor/shared/legacy-model-ref-normalization.ts
 src/commands/doctor/shared/legacy-models-add-metadata.ts
 src/commands/doctor/shared/legacy-runtime-model-policy.ts
 src/commands/doctor/shared/legacy-runtime-model-providers.ts
@@ -1191,6 +1197,7 @@ src/infra/sqlite-planner-statistics.ts
 src/infra/sqlite-post-commit.ts
 src/infra/sqlite-private-directory.ts
 src/infra/sqlite-private-snapshot-fork.ts
+src/infra/sqlite-read-cache.ts
 src/infra/sqlite-reader-lifecycle.ts
 src/infra/sqlite-readonly-auth-schema.ts
 src/infra/sqlite-readonly-auth-transfer.ts
@@ -1206,6 +1213,7 @@ src/infra/sqlite-readonly-worker-protocol.ts
 src/infra/sqlite-readonly-worker-session.ts
 src/infra/sqlite-readonly-worker.ts
 src/infra/sqlite-recovery-files.ts
+src/infra/sqlite-recovery-snapshot.ts
 src/infra/sqlite-rollback-recovery.ts
 src/infra/sqlite-runtime-version.ts
 src/infra/sqlite-schema-admission.ts
@@ -1237,6 +1245,7 @@ src/infra/sqlite-snapshot.ts
 src/infra/sqlite-source-fence-contract.ts
 src/infra/sqlite-source-fence.ts
 src/infra/sqlite-source-handle.ts
+src/infra/sqlite-source-revision.ts
 src/infra/sqlite-source-revision.worker.ts
 src/infra/sqlite-staging-token.ts
 src/infra/sqlite-store.worker.ts
@@ -1316,6 +1325,7 @@ src/infra/update-managed-service-handoff-retained-custody.ts
 src/infra/update-managed-service-handoff-rows.ts
 src/infra/update-managed-service-handoff-schema.ts
 src/infra/update-managed-service-handoff-scope.ts
+src/infra/update-managed-service-handoff-source-inspection.ts
 src/infra/update-managed-service-handoff-store-repair.ts
 src/infra/update-preflight-details.ts
 src/infra/update-recovery-receipt-schema.ts
@@ -1923,6 +1933,7 @@ src/state/openclaw-agent-db-schema-refresh.ts
 src/state/openclaw-agent-db-schema.ts
 src/state/openclaw-agent-db-session-migrations.ts
 src/state/openclaw-agent-db-session-nodes-migration.ts
+src/state/openclaw-agent-db-session-provenance.ts
 src/state/openclaw-agent-db-terminal.ts
 src/state/openclaw-agent-db-transaction.ts
 src/state/openclaw-agent-db-validation-cache.ts
@@ -1993,6 +2004,7 @@ src/state/openclaw-state-db-cache.wal.ts
 src/state/openclaw-state-db-contract.ts
 src/state/openclaw-state-db-cron-delivery-migration.ts
 src/state/openclaw-state-db-cron-identity-migration.ts
+src/state/openclaw-state-db-delivery-queue-backfill.ts
 src/state/openclaw-state-db-doctor-schema.ts
 src/state/openclaw-state-db-engine.ts
 src/state/openclaw-state-db-existing-schema.ts
@@ -2725,6 +2737,7 @@ src/plugins/api-facades.ts
 src/plugins/api-lifecycle.ts
 src/plugins/cli-backend-registration.ts
 src/plugins/cli-backends.runtime.ts
+src/plugins/cli-callback-binding.ts
 src/plugins/inline-view.ts
 src/plugins/service-scheduler-binding.ts
 src/plugins/setup-registry.ts

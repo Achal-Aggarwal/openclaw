@@ -14,10 +14,12 @@ export type PreparedSkillUsage = {
   ts: number;
 };
 
+export type SkillUsageRow = { skillFile: string; useCount: number; lastUsedAtMs: number };
+
 export function readSkillUsageInDatabase(
   database: OpenClawStateDatabase,
   skillFiles: readonly string[],
-): { skillFile: string; useCount: number; lastUsedAtMs: number }[] {
+): SkillUsageRow[] {
   if (skillFiles.length === 0) {
     return [];
   }

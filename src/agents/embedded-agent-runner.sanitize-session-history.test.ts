@@ -411,6 +411,30 @@ describe("sanitizeSessionHistory", () => {
     });
   });
 
+  it("rejects dangling OpenAI Responses tool calls before provider replay when repair is disabled", async () => {
+    await expect(
+      sanitize(
+        [
+          user("start"),
+          assistant([toolCall("call_1")], { stopReason: "toolUse" }),
+          user("continue"),
+        ],
+        {
+          policy: makeAnthropicReplayPolicy({
+            sanitizeMode: "images-only",
+            sanitizeToolCallIds: false,
+            preserveNativeAnthropicToolUseIds: false,
+            repairToolUseResultPairing: false,
+            preserveSignatures: false,
+            dropReasoningFromHistory: false,
+            validateAnthropicTurns: false,
+            allowSyntheticToolResults: false,
+          }),
+        },
+      ),
+    ).rejects.toThrow(/invalid_replay_transcript.*dangling_tool_call.*call_1/);
+  });
+
   it("drops tool calls that are not in the allowed tool set", async () => {
     const out = await sanitize(
       [assistant([toolCall("call_1", "write")], { stopReason: "toolUse" })],

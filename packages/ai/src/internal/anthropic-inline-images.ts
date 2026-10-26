@@ -11,6 +11,10 @@ const ANTHROPIC_INLINE_IMAGES_DECODE_SAFETY_BYTES = 64 * 1024 * 1024;
 
 export type AnthropicInlineImageBudget = { totalBytes: number };
 
+export function createAnthropicInlineImageBudget(): AnthropicInlineImageBudget {
+  return { totalBytes: 0 };
+}
+
 export function resolveAnthropicImageMediaType(value: string): AnthropicImageMediaType {
   if (ANTHROPIC_IMAGE_MEDIA_TYPE_SET.has(value)) {
     return value as AnthropicImageMediaType;

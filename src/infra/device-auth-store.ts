@@ -1,44 +1,13 @@
 // Installation-local client token cache; paired-device authority remains Gateway-owned.
-import {
-  type DeviceAuthEntry,
-  normalizeDeviceAuthRole,
-  normalizeDeviceAuthScopes,
-} from "../shared/device-auth.js";
+import type { DeviceAuthEntry } from "../shared/device-auth.js";
+import { normalizeDeviceAuthRole } from "../shared/device-auth.js";
 import { runClientCredentialOperationAsync } from "./client-credential-async.js";
-import type { ClientTokenKey, ClientTokenRecord } from "./client-credential-store.js";
-
-type DeviceAuthRow = Pick<ClientTokenRecord, "token" | "role" | "scopes_json" | "updated_at_ms">;
-
-function deviceAuthEntryFromRow(row: DeviceAuthRow): DeviceAuthEntry | null {
-  try {
-    const scopes = JSON.parse(row.scopes_json) as unknown;
-    if (!Array.isArray(scopes)) {
-      return null;
-    }
-    return {
-      token: row.token,
-      role: row.role,
-      scopes: normalizeDeviceAuthScopes(scopes),
-      updatedAtMs: row.updated_at_ms,
-    };
-  } catch {
-    return null;
-  }
-}
-
-function createDeviceAuthEntry(params: {
-  role: string;
-  token: string;
-  scopes?: string[];
-  updatedAtMs?: number;
-}): DeviceAuthEntry {
-  return {
-    token: params.token,
-    role: normalizeDeviceAuthRole(params.role),
-    scopes: normalizeDeviceAuthScopes(params.scopes),
-    updatedAtMs: params.updatedAtMs ?? Date.now(),
-  };
-}
+import type { ClientTokenKey } from "./client-credential-store.js";
+import {
+  createDeviceAuthEntry,
+  deviceAuthEntryFromRow,
+  type DeviceAuthTokenObservation,
+} from "./device-auth-store.kernel.js";
 
 type DeviceAuthOperation = {
   env?: NodeJS.ProcessEnv;
@@ -48,10 +17,7 @@ type DeviceAuthOperation = {
 type DeviceAuthLookup = DeviceAuthOperation & { deviceId: string; role: string };
 type OriginDeviceAuthLookup = DeviceAuthLookup & { gatewayScope: string };
 type DeviceAuthRead = {
-  onSnapshot?: (observation: {
-    entry: DeviceAuthEntry | null;
-    expectedToken: string | null;
-  }) => void;
+  onSnapshot?: (observation: DeviceAuthTokenObservation) => void;
 };
 type DeviceAuthWrite = DeviceAuthLookup & {
   token: string;

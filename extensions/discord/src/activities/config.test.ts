@@ -1,7 +1,9 @@
+import type { DiscordAccountConfig } from "openclaw/plugin-sdk/config-contracts";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DiscordConfigSchema } from "../../config-api.js";
 import { mergeDiscordAccountConfig } from "../accounts.js";
-import { resolveDiscordActivitiesConfig } from "./config.js";
+import { DiscordActivitiesRuntime } from "./runtime.js";
+import { createActivityTestRuntime } from "./test-helpers.test-support.js";
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -30,26 +32,22 @@ describe("Discord Activities config", () => {
   });
 
   it("resolves config and environment secrets only when the block exists", () => {
-    expect(resolveDiscordActivitiesConfig({})).toEqual({
-      enabled: false,
-      reason: "not-configured",
+    const resolve = (activities: DiscordAccountConfig["activities"], env: NodeJS.ProcessEnv = {}) =>
+      new DiscordActivitiesRuntime(
+        createActivityTestRuntime().store,
+        () => ({ channels: { discord: { token: "testtok", applicationId: "456", activities } } }),
+        env,
+      ).resolveAccount("default");
+    expect(resolve(undefined, { DISCORD_CLIENT_SECRET: "envsec" })).toBeNull();
+    expect(resolve({})).toBeNull();
+    expect(resolve({ applicationId: "123" }, { DISCORD_CLIENT_SECRET: "envsec" })).toMatchObject({
+      clientSecret: "envsec",
+      applicationId: "123",
     });
-    expect(resolveDiscordActivitiesConfig({ activities: {} }, {})).toEqual({
-      enabled: false,
-      reason: "missing-client-secret",
+    expect(resolve({ clientSecret: "cfgsec" }, { DISCORD_CLIENT_SECRET: "envsec" })).toMatchObject({
+      clientSecret: "cfgsec",
+      applicationId: "456",
     });
-    expect(
-      resolveDiscordActivitiesConfig(
-        { activities: { applicationId: "123" } },
-        { DISCORD_CLIENT_SECRET: "envsec" },
-      ),
-    ).toEqual({ enabled: true, clientSecret: "envsec", applicationId: "123" });
-    expect(
-      resolveDiscordActivitiesConfig(
-        { activities: { clientSecret: "cfgsec" } },
-        { DISCORD_CLIENT_SECRET: "envsec" },
-      ),
-    ).toEqual({ enabled: true, clientSecret: "cfgsec" });
   });
 
   it("merges root Activity credentials with account-specific application IDs", () => {

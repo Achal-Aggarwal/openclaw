@@ -27,9 +27,7 @@ import { useVisiblePoll } from "../lib/reactive/visible-poll.ts";
 import { defineSolidBridge, type SolidBridgeElement } from "../lib/solid-bridge.ts";
 import type { JSX as SolidJSX } from "../types/solid-elements.d.ts";
 import {
-  type LoginFailureFeedback,
   type LoginFailureFeedbackParams,
-  type LoginFailureStep,
   resolveLoginFailureFeedback,
 } from "./login-gate-feedback.ts";
 import { ConnectCommand } from "./solid/connect-command.tsx";
@@ -55,6 +53,7 @@ export type LoginGateProps = LoginFailureFeedbackParams & {
 
 type BridgeProps = { props?: LoginGateProps };
 export type LoginGateElement = SolidBridgeElement<BridgeProps>;
+type LoginFailureFeedback = NonNullable<ReturnType<typeof resolveLoginFailureFeedback>>;
 type ViewProps = { model: LoginGateProps; cancelRefresh: () => void };
 const STATUS_ICONS: Record<LoginFailureFeedback["tone"], IconName> = {
   pending: "shieldEllipsis",
@@ -62,7 +61,7 @@ const STATUS_ICONS: Record<LoginFailureFeedback["tone"], IconName> = {
   danger: "shieldAlert",
 };
 
-function FailureStep(props: { step: LoginFailureStep }) {
+function FailureStep(props: { step: LoginFailureFeedback["steps"][number] }) {
   const segments = createMemo(() => {
     const unmatched = new Set(props.step.commands);
     const matches = [...unmatched]

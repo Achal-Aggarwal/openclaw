@@ -37,7 +37,6 @@ import type {
   SessionArchiveVisibility,
   SessionCreateReconciliation,
   SessionResetOptions,
-  SessionResetResult,
 } from "./session-types.ts";
 
 export function createSessionMutations(host: SessionMutationsHost) {
@@ -369,7 +368,7 @@ export function createSessionMutations(host: SessionMutationsHost) {
   const reset = async (
     key: string,
     options: SessionResetOptions = {},
-  ): Promise<SessionResetResult> => {
+  ): Promise<"completed" | "not-started" | "uncertain"> => {
     const scope = host.connection.capture();
     if (!scope) {
       return "not-started";

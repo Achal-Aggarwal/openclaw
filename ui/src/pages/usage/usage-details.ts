@@ -15,11 +15,7 @@ import {
 } from "../../lib/gateway-errors.ts";
 import type { GatewayPageBinding } from "../../lib/gateway-page-binding.ts";
 import { createPageRequest } from "../../lib/page-request.ts";
-import {
-  requestSessionUsage,
-  type SessionUsageQuery,
-  type SessionUsageTarget,
-} from "../../lib/sessions/usage.ts";
+import { requestSessionUsage, type SessionUsageQuery } from "../../lib/sessions/usage.ts";
 import type { SessionLogEntry, UsageSessionEntry } from "./usage-state-types.ts";
 
 type UsageDetailTarget = Pick<UsageSessionEntry, "key" | "agentId" | "sessionId">;
@@ -33,7 +29,7 @@ function createUsageDetailRequest<T>(
   gateway: GatewayPageBinding,
   request: (
     client: GatewayBrowserClient,
-    target: SessionUsageTarget,
+    target: { key: string; agentId?: string },
     signal: AbortSignal,
     sessionId: string | undefined,
   ) => Promise<T>,

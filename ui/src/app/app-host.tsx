@@ -31,7 +31,6 @@ import {
   ShellGatewayOwner,
   type OutboxStoreRuntime,
   type ShellGatewayHost,
-  type StoredOutboxScopeHost,
 } from "./app-shell-gateway.ts";
 import { ShellNavigationOwner, type ShellNavigationHost } from "./app-shell-navigation.ts";
 import { ShellPresentation } from "./app-shell-presentation.ts";
@@ -142,7 +141,7 @@ export class ShellOwner
     return routeId !== undefined && !isSettingsNavigationRoute(routeId) && !this.onboardingMode;
   }
 
-  storedOutboxScopeHost(context: ApplicationContext): StoredOutboxScopeHost {
+  storedOutboxScopeHost(context: ApplicationContext) {
     const gatewaySnapshot = context.gateway.snapshot;
     return {
       client: gatewaySnapshot.client,
@@ -156,7 +155,7 @@ export class ShellOwner
 
   private chatTitleContext(
     context: ApplicationContext,
-    outboxScopeHost: StoredOutboxScopeHost,
+    outboxScopeHost: ReturnType<ShellOwner["storedOutboxScopeHost"]>,
   ): string {
     const sessionKey = this.activeSessionKey;
     // An agent's main chat is its identity, so use its roster label when available.

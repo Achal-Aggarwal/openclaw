@@ -1,16 +1,18 @@
 import fs from "node:fs";
 import { samplePageCacheResidency } from "@openclaw/proc-safe/diagnostics";
 
+export type SqlitePageCacheResidency = {
+  scope: "file-sample";
+  sampledPages: number;
+  residentRatio: number;
+  pageSize: number;
+  sizeBytes: number;
+};
+
 /** Worker-only, bounded file residency sample; it does not identify SQLite's logical hot set. */
-export function readSqlitePageCacheResidency(pathname: string):
-  | {
-      scope: "file-sample";
-      sampledPages: number;
-      residentRatio: number;
-      pageSize: number;
-      sizeBytes: number;
-    }
-  | undefined {
+export function readSqlitePageCacheResidency(
+  pathname: string,
+): SqlitePageCacheResidency | undefined {
   if (process.platform !== "linux") {
     return undefined;
   }

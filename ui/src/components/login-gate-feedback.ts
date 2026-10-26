@@ -50,32 +50,12 @@ type LoginFailureTone = "pending" | "warn" | "danger";
 
 type LoginFormField = "url" | "credential";
 
-export type LoginFailureStep = {
-  text: string;
-  commands: string[];
-};
-
 type LoginFailureStepDefinition =
   | string
   | {
       key: string;
       commands: string[];
     };
-
-export type LoginFailureFeedback = {
-  kind: LoginFailureKind;
-  placement: LoginFailurePlacement;
-  tone: LoginFailureTone;
-  field?: LoginFormField;
-  title: string;
-  summary: string;
-  /** One command that resolves the failure on its own, shown as the hero action. */
-  primaryCommand?: string;
-  refreshAction?: { label: string };
-  steps: LoginFailureStep[];
-  docsHref: string;
-  rawError: string;
-};
 
 export type LoginFailureFeedbackParams = Parameters<typeof resolveAuthHintKind>[0] & {
   gatewayUrl?: string;
@@ -100,7 +80,7 @@ function buildFeedback(
     stepParams?: Record<string, string>;
     refreshAction?: { label: string };
   },
-): LoginFailureFeedback {
+) {
   const docsHref = params.docsHref ?? "https://docs.openclaw.ai/web/dashboard";
   const rawError = redactLoginFailureError(error);
   const translate = (key: string) => t(`${copy}.${key}`, params.stepParams);
@@ -111,6 +91,7 @@ function buildFeedback(
     field: params.field,
     title: translate(params.titleKey ?? "title"),
     summary: translate(params.summaryKey ?? "summary"),
+    /** One command that resolves the failure on its own, shown as the hero action. */
     primaryCommand: params.primaryCommand,
     refreshAction: params.refreshAction,
     steps: params.stepKeys.map((step) =>
@@ -123,9 +104,7 @@ function buildFeedback(
   };
 }
 
-export function resolveLoginFailureFeedback(
-  params: LoginFailureFeedbackParams,
-): LoginFailureFeedback | null {
+export function resolveLoginFailureFeedback(params: LoginFailureFeedbackParams) {
   if (params.connected || !params.lastError) {
     return null;
   }

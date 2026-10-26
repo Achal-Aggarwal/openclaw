@@ -12,6 +12,11 @@ import { createStructuredOutputTool } from "./tools/structured-output-tool.js";
 /** Requester-facing tools a non-interactive collector turn must never receive. */
 const COLLECTOR_WITHHELD_TOOL_NAMES = new Set(["ask_user", "sessions_send", "sessions_yield"]);
 
+export type SwarmCollectorToolContext = {
+  runId: string;
+  swarmOutputSchema?: Record<string, unknown>;
+};
+
 /**
  * Identity a Gateway request must present to own an admitted collector run.
  * `admittedRunId` is the host-selected run id carried by a run-bound CLI client
@@ -45,12 +50,9 @@ function ownsAdmittedCollectorRun(
  * has to present that run's own id, which reaches the resolver exclusively
  * through a Gateway-minted, run-bound CLI grant context.
  */
-export function resolveSwarmCollectorToolContext(admission: SwarmCollectorAdmission):
-  | {
-      runId: string;
-      swarmOutputSchema?: Record<string, unknown>;
-    }
-  | undefined {
+export function resolveSwarmCollectorToolContext(
+  admission: SwarmCollectorAdmission,
+): SwarmCollectorToolContext | undefined {
   const admittedRunId = admission.admittedRunId?.trim();
   if (!admittedRunId) {
     return undefined;

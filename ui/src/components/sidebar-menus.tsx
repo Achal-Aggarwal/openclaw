@@ -17,11 +17,7 @@ import {
   isSidebarRouteActive,
   renderSidebarNavLink as SidebarNavLink,
 } from "./app-sidebar-nav-menus.tsx";
-import type {
-  SidebarRecentSession,
-  SidebarSessionGroupMenuState,
-  SidebarSessionMenuState,
-} from "./app-sidebar-session-types.ts";
+import type { SidebarRecentSession } from "./app-sidebar-session-types.ts";
 import type { SessionMenuWork } from "./session-menu-solid.tsx";
 import { SESSION_MENU_OPEN_EVENT } from "./session-progress-hovercard-target.ts";
 import type { SidebarMenusOwner, SidebarRouteView } from "./sidebar-menus-types.ts";
@@ -62,9 +58,9 @@ type SidebarMenusState = {
   pluginNavigationMenuPosition:
     | (MenuPosition & { entry: ControlUiRegistration<ControlUiNavigationItem> })
     | null;
-  sessionMenu: SidebarSessionMenuState | null;
+  sessionMenu: { session: SidebarRecentSession; x: number; y: number } | null;
   sessionMenuWork: SessionMenuWork | null;
-  sessionGroupMenu: SidebarSessionGroupMenuState | null;
+  sessionGroupMenu: { group: string; x: number; y: number } | null;
   sessionSortMenuPosition: MenuPosition | null;
   peopleFilterMenuPosition: MenuPosition | null;
   catalogViewMenuPosition: (MenuPosition & { catalogId: string }) | null;

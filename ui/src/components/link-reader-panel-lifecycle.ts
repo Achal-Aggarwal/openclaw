@@ -15,11 +15,6 @@ export type LinkReaderPanelProps = {
   onClose: (() => void) | undefined;
 };
 
-export type LinkReaderPanelElements = {
-  address: HTMLInputElement | undefined;
-  content: HTMLElement | undefined;
-};
-
 /** Publishes the panel's current inputs after their DOM transition commits. */
 export function createLinkReaderPanelLifecycle(
   props: LinkReaderPanelProps,

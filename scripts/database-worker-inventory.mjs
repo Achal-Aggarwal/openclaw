@@ -186,6 +186,14 @@ const reviewed = new Map([
     },
   ],
   [
+    "src/infra/update-managed-service-handoff-source-inspection.ts",
+    {
+      tier: "T2",
+      evidence:
+        "Schema discovery supports only the managed source-custody lock primitive's first admission and repair.",
+    },
+  ],
+  [
     "src/gateway/session-row-projection.ts",
     {
       priority: 2,
@@ -2743,7 +2751,7 @@ const reviewedOperations = new Map([
           "pruneDeliveryQueueTombstones",
         ],
         evidence:
-          "Native migration: src/infra/outbound/delivery-queue-migration.ts:308; schema backfill: compactLegacyDeliveryQueueFailures in src/state/openclaw-state-db-legacy-backfills.ts. Bounded pruning also serves native namespace migration through delivery-queue-sqlite.kernel.ts:192. Other terminalization/pruning callers are delivery-queue.worker.ts:117,316,387,457 and session-delivery-queue.worker.ts:264.",
+          "Native migration: src/infra/outbound/delivery-queue-migration.ts:308; schema backfill: src/state/openclaw-state-db-delivery-queue-backfill.ts:93. Bounded pruning also serves native namespace migration through delivery-queue-sqlite.kernel.ts:192. Other terminalization/pruning callers are delivery-queue.worker.ts:117,316,387,457 and session-delivery-queue.worker.ts:264.",
       },
       {
         tier: "W",
@@ -2766,12 +2774,12 @@ const reviewedOperations = new Map([
         tier: "T2",
         operations: ["loadPendingDeliveryQueueRow"],
         evidence:
-          "Native replace/move: src/infra/outbound/delivery-queue-migration.ts. Other callers are enqueue/delivery workers.",
+          "Native replace/move: src/infra/delivery-queue-sqlite-namespace.ts:34,49 → outbound/delivery-queue-migration.ts:169,205,235,289,349,367,435. Other callers are enqueue/delivery workers.",
       },
     ],
   ],
   [
-    "src/infra/outbound/delivery-queue-migration.ts",
+    "src/infra/delivery-queue-sqlite-namespace.ts",
     [
       {
         tier: "T2",
@@ -3466,7 +3474,7 @@ const workerModules = new Set([
   "src/state/openclaw-agent-execution-maintenance.ts", // Only openclaw-agent-execution.worker.ts constructs this owner; admission invokes its startup repair callback solely inside that worker.
   "src/config/sessions/session-accessor.sqlite-entry-identity.ts", // Only reaction (agent execution worker), suggestion (sharing/transcript workers), and sharing native (sharing worker; host imports are types) kernels call this reader.
   "extensions/memory-core/src/memory/manager-publication-postgres.ts", // Only manager-publication.worker.ts binds this adapter to the admitted agent execution worker connection.
-  "src/infra/database-engine/search.ts", // Its executing queries belong to bindPostgresVector and accept only an admitted PostgresSqlConnection; PostgresSyncConnection dispatches them to postgres-sync/bridge.worker.ts, never native SQLite.
+  "src/infra/database-engine/postgres-vector.ts", // Accepts only an admitted PostgresSqlConnection; the shared executor dispatches through PostgresSyncConnection to postgres-sync/bridge.worker.ts, never native SQLite.
   "src/infra/database-engine/port-descriptor.ts", // SQL entry points run only in port-command.entry.worker.ts, port.worker.ts, and database-backup.operations.ts in its dedicated worker.
   "src/plugin-state/plugin-state.worker.ts", // Only openclaw-state.worker.ts imports and calls this command dispatcher; its nested callbacks share that worker ownership.
   "src/config/sessions/session-suggestion-store.kernel.ts", // session-sharing-store.worker.ts owns add/claim/release/finalize; session-transcript.worker.ts owns list. The host read facade imports only its type.
@@ -3582,6 +3590,7 @@ const workerModules = new Set([
   "src/gateway/worker-environments/store.kernel.ts", // Environment worker dispatcher creates this kernel only.
   "src/gateway/worker-environments/terminal-environment-retention.ts", // Read-worker prune pages and environment worker pruning only.
 
+  "src/infra/device-auth-store.kernel.ts", // Shared-state worker SQL; pairing token retirement is supplied only by its worker rotation kernel.
   "src/infra/device-pairing-cloud-worker.ts", // Bootstrap worker dispatcher owns binding checks and completion writes.
   "src/infra/push-apns-store-transaction.ts", // APNs worker cleanup and pairing worker clearApnsNodeIds only.
   "src/infra/push-apns-store.ts", // SQL read kernels are called only by the APNs worker dispatcher.

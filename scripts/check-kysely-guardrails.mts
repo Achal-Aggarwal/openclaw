@@ -87,6 +87,7 @@ const rawSqliteAllowPathGroups = {
     "src/state/openclaw-agent-db-schema.ts",
     "src/state/openclaw-agent-db-session-nodes-migration.ts",
     "src/state/openclaw-agent-db-session-migrations.ts",
+    "src/state/openclaw-agent-db-session-provenance.ts",
     "src/state/openclaw-agent-db.ts",
     // The outbox rebuild preserves historical rowids and stored schema-object SQL.
     "src/state/openclaw-agent-outbox-sequence-migration.ts",
@@ -99,6 +100,7 @@ const rawSqliteAllowPathGroups = {
     "src/state/openclaw-agent-write-layout-migration.ts",
     "src/state/sqlite-table-layout-migration.ts",
     "src/state/openclaw-state-db-audit-migration.ts",
+    "src/state/openclaw-state-db-delivery-queue-backfill.ts",
     "src/state/openclaw-state-db-legacy-backfills.ts",
     "src/state/openclaw-state-db-maintenance.ts",
     "src/state/openclaw-state-db-meeting-chronology-migration.ts",

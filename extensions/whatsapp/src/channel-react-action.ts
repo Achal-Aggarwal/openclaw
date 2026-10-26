@@ -1,19 +1,17 @@
 import { readBooleanParam } from "openclaw/plugin-sdk/boolean-param";
-import { jsonResult } from "openclaw/plugin-sdk/channel-actions";
-import { canonicalizeBase64, estimateBase64DecodedBytes } from "openclaw/plugin-sdk/media-runtime";
 import {
-  isWhatsAppGroupJid,
-  resolveAuthorizedWhatsAppOutboundTarget,
-  resolveWhatsAppAccount,
-  resolveWhatsAppMediaMaxBytes,
-  resolveReactionMessageId,
-  handleWhatsAppAction,
-  normalizeWhatsAppTarget,
+  jsonResult,
   readStringOrNumberParam,
   readStringParam,
-  sendMessageWhatsApp,
-  type OpenClawConfig,
-} from "./channel-react-action.runtime.js";
+  resolveReactionMessageId,
+} from "openclaw/plugin-sdk/channel-actions";
+import type { OpenClawConfig } from "openclaw/plugin-sdk/config-contracts";
+import { canonicalizeBase64, estimateBase64DecodedBytes } from "openclaw/plugin-sdk/media-runtime";
+import { resolveWhatsAppAccount, resolveWhatsAppMediaMaxBytes } from "./accounts.js";
+import { resolveAuthorizedWhatsAppOutboundTarget } from "./action-runtime-target-auth.js";
+import { handleWhatsAppAction } from "./action-runtime.js";
+import { isWhatsAppGroupJid, normalizeWhatsAppTarget } from "./normalize-target.js";
+import { sendMessageWhatsApp } from "./send.js";
 
 const WHATSAPP_CHANNEL = "whatsapp" as const;
 

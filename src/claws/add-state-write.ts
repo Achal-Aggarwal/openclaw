@@ -2,12 +2,12 @@ import {
   mergeWorkspaceSetupState,
   type WorkspaceSetupState,
 } from "../agents/workspace-state-store.js";
-import { createSqliteWorkerOperationAdmission } from "../infra/sqlite-worker-operation-admission.js";
-import { captureOpenClawStateWorkerContext } from "../state/openclaw-state-worker-context.js";
-import { runOpenClawStateWorkerOperation } from "../state/openclaw-state-worker-store.js";
 import { readClawInventory } from "./inventory-read.js";
 import { readClawPackageRefs } from "./provenance.js";
-import type { ClawMutationStateOptions } from "./state-mutation-options.js";
+import {
+  executeClawMutationStateCommand as execute,
+  type ClawMutationStateOptions,
+} from "./state-mutation-write.js";
 
 export type ClawAddStateOptions = ClawMutationStateOptions;
 
@@ -43,31 +43,8 @@ export async function mergeWorkspaceBootstrapSetupStateForAdd(
     options.assertCurrent?.();
     return mergeWorkspaceSetupState(workspaceDir, { bootstrapSeededAt }, nowMs, options);
   }
-  if (options.database) {
-    throw new Error("Worker-mode Claw lifecycle cannot use a caller-owned database handle.");
-  }
-  const context = captureOpenClawStateWorkerContext(options);
-  const assertCurrent = options.assertCurrent;
-  return runOpenClawStateWorkerOperation(
-    context,
-    (scope) =>
-      scope.execute({
-        type: "claws.add.mergeBootstrapSetupState",
-        input: { workspaceDir, bootstrapSeededAt, nowMs },
-      }),
-    {
-      assertCurrent,
-      createAdmission: () => ({
-        nativeLocations: [context.admission.databasePath],
-        admission: createSqliteWorkerOperationAdmission((request, grant) => {
-          if (request.stage !== "transaction" && request.stage !== "commit") {
-            throw new Error("Claw lifecycle state writes require transaction admission.");
-          }
-          context.admission.assertCurrent();
-          assertCurrent?.();
-          grant();
-        }),
-      }),
-    },
-  );
+  return execute(options, {
+    type: "claws.add.mergeBootstrapSetupState",
+    input: { workspaceDir, bootstrapSeededAt, nowMs },
+  });
 }

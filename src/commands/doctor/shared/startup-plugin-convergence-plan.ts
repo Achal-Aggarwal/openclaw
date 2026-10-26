@@ -9,101 +9,15 @@ import { resolveConfiguredGenericEmbeddingProviderId } from "../../../plugins/em
 import { collectConfiguredSpeechProviderIds } from "../../../plugins/gateway-startup-speech-providers.js";
 import { loadInstalledPluginIndexInstallRecords } from "../../../plugins/installed-plugin-index-record-reader.js";
 import { isNativeSessionCatalogOptOutOnly } from "../../../plugins/native-session-catalog-config.js";
-import { BUNDLED_OFFICIAL_EXTERNAL_PLUGIN_CATALOG_ENTRIES } from "../../../plugins/official-external-plugin-bundled-catalogs.js";
-import type { OfficialExternalPluginCatalogManifest } from "../../../plugins/official-external-plugin-catalog.types.js";
-import { normalizeLowercaseStringSet } from "../../../shared/normalized-string-set.js";
+import {
+  hasOfficialExternalChannelTarget,
+  hasOfficialExternalContractTarget,
+  hasOfficialExternalProviderTarget,
+  hasOfficialExternalWebContractEnvTarget,
+  hasOfficialExternalWebSearchTarget,
+} from "../../../plugins/official-external-plugin-targets.js";
 import { collectConfiguredProviderSelectionIds } from "./configured-provider-selection-ids.js";
 import { collectConfiguredRuntimeIds } from "./configured-runtime-plugin-installs.js";
-
-// Lightweight static projections for deciding whether plugin repair can be skipped.
-function envHasAny(env: NodeJS.ProcessEnv, names: readonly string[] | undefined): boolean {
-  return names?.some((name) => Boolean(env[name]?.trim())) ?? false;
-}
-
-function hasOfficialExternalProviderTarget(params: {
-  providerIds: Iterable<string>;
-  env: NodeJS.ProcessEnv;
-}): boolean {
-  const providerIds = normalizeLowercaseStringSet(params.providerIds);
-  return BUNDLED_OFFICIAL_EXTERNAL_PLUGIN_CATALOG_ENTRIES.some((entry) =>
-    entry.openclaw?.providers?.some(
-      (provider) =>
-        envHasAny(params.env, provider.envVars) ||
-        [provider.id, ...(provider.aliases ?? [])].some((providerId) => {
-          const normalized = normalizeOptionalLowercaseString(providerId);
-          return normalized ? providerIds.has(normalized) : false;
-        }),
-    ),
-  );
-}
-
-function hasOfficialExternalContractTarget(params: {
-  contract: keyof NonNullable<OfficialExternalPluginCatalogManifest["contracts"]>;
-  providerIds: Iterable<string>;
-}): boolean {
-  const providerIds = normalizeLowercaseStringSet(params.providerIds);
-  if (providerIds.size === 0) {
-    return false;
-  }
-  return BUNDLED_OFFICIAL_EXTERNAL_PLUGIN_CATALOG_ENTRIES.some((entry) =>
-    entry.openclaw?.contracts?.[params.contract]?.some((providerId) => {
-      const normalized = normalizeOptionalLowercaseString(providerId);
-      return normalized ? providerIds.has(normalized) : false;
-    }),
-  );
-}
-
-function hasOfficialExternalWebContractEnvTarget(params: { env: NodeJS.ProcessEnv }): boolean {
-  return BUNDLED_OFFICIAL_EXTERNAL_PLUGIN_CATALOG_ENTRIES.some((entry) => {
-    const manifest = entry.openclaw;
-    const contractIds = normalizeLowercaseStringSet(manifest?.contracts?.webFetchProviders ?? []);
-    return manifest?.webSearchProviders?.some((provider) => {
-      const providerId = normalizeOptionalLowercaseString(provider.id);
-      return Boolean(
-        providerId && contractIds.has(providerId) && envHasAny(params.env, provider.envVars),
-      );
-    });
-  });
-}
-
-function hasOfficialExternalChannelTarget(params: {
-  config: OpenClawConfig;
-  env: NodeJS.ProcessEnv;
-}): boolean {
-  const channels = isRecord(params.config.channels) ? params.config.channels : undefined;
-  return BUNDLED_OFFICIAL_EXTERNAL_PLUGIN_CATALOG_ENTRIES.some((entry) => {
-    const channel = entry.openclaw?.channel;
-    const channelId = normalizeOptionalLowercaseString(channel?.id);
-    if (!channelId) {
-      return false;
-    }
-    const channelConfig = channels?.[channelId];
-    return (
-      (isRecord(channelConfig) && channelConfig.enabled !== false) ||
-      envHasAny(params.env, [
-        ...(channel?.envVars ?? []),
-        ...(channel?.configuredState?.env?.allOf ?? []),
-        ...(channel?.configuredState?.env?.anyOf ?? []),
-      ])
-    );
-  });
-}
-
-function hasOfficialExternalWebSearchTarget(params: {
-  providerId?: string;
-  env: NodeJS.ProcessEnv;
-}): boolean {
-  const configuredId = normalizeOptionalLowercaseString(params.providerId);
-  return BUNDLED_OFFICIAL_EXTERNAL_PLUGIN_CATALOG_ENTRIES.some((entry) =>
-    entry.openclaw?.webSearchProviders?.some((provider) => {
-      const providerId = normalizeOptionalLowercaseString(provider.id);
-      return (
-        (configuredId !== undefined && providerId === configuredId) ||
-        envHasAny(params.env, provider.envVars)
-      );
-    }),
-  );
-}
 
 export type StartupPluginConvergencePlan = {
   required: boolean;

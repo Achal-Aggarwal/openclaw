@@ -1,3 +1,4 @@
+import { readClawSecondaryReferenceTables } from "../claws/provenance-secondary-references.js";
 import {
   executeSqliteQuerySync,
   executeSqliteQueryTakeFirstSync,
@@ -11,25 +12,6 @@ import type { OpenClawStateDatabase } from "./openclaw-state-db-contract.js";
 import { ensureAgentDeletionJournalPhaseSchema } from "./openclaw-state-db-schema-additive.js";
 import { tableExists } from "./openclaw-state-db-schema-helpers.js";
 import type { DB } from "./openclaw-state-db.generated.js";
-
-const CLAW_SECONDARY_REFERENCE_TABLES = [
-  "claw_package_refs",
-  "claw_mcp_server_refs",
-  "claw_cron_refs",
-] as const;
-
-function readClawSecondaryReferenceTables(db: EngineConnection, agentId: string): string[] {
-  return CLAW_SECONDARY_REFERENCE_TABLES.filter((table) => {
-    if (!tableExists(db, table)) {
-      return false;
-    }
-    return Boolean(
-      db /* sqlite-allow-raw: read-only point check for secondary Claw ownership before migration. */
-        .prepare(`SELECT 1 FROM ${table} WHERE agent_id = ? LIMIT 1`)
-        .get(agentId),
-    );
-  });
-}
 
 /** Deletion authority requires its admitted journal; unavailable rows must never grant cleanup. */
 export function readAgentDeletionJournalAuthorityInDatabase(

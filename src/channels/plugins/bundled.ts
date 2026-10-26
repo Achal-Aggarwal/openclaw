@@ -1,7 +1,5 @@
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { extractErrorCode, formatErrorMessage } from "../../infra/errors.js";
-import { resolveOpenClawPackageRootSync } from "../../infra/openclaw-root.js";
 import { isPathInside } from "../../infra/path-guards.js";
 import { createSubsystemLogger } from "../../logging/subsystem.js";
 import type {
@@ -13,62 +11,14 @@ import {
   resolveBundledChannelGeneratedPath,
   type BundledChannelPluginMetadata,
 } from "../../plugins/bundled-channel-runtime.js";
-import { resolveBundledPluginsDir } from "../../plugins/bundled-dir.js";
 import { unwrapDefaultModuleExport } from "../../plugins/module-export.js";
 import { pluginCacheRealpathSync } from "../../plugins/plugin-cache-files.js";
 import { getPluginCacheRoot, getPluginCacheSource } from "../../plugins/plugin-cache.js";
+import { resolveBundledChannelRootScope, type BundledChannelRootScope } from "./bundled-root.js";
 import { normalizeChannelMeta } from "./meta-normalization.js";
 import { loadChannelPluginModule } from "./module-loader.js";
 import type { AnyChannelPlugin as ChannelPlugin } from "./types.plugin.js";
 import type { ChannelId } from "./types.public.js";
-
-const OPENCLAW_PACKAGE_ROOT =
-  resolveOpenClawPackageRootSync({
-    argv1: process.argv[1],
-    cwd: process.cwd(),
-    moduleUrl: import.meta.url.startsWith("file:") ? import.meta.url : undefined,
-  }) ??
-  (import.meta.url.startsWith("file:")
-    ? path.resolve(fileURLToPath(new URL("../../..", import.meta.url)))
-    : process.cwd());
-
-type BundledChannelRootScope = {
-  packageRoot: string;
-  pluginsDir?: string;
-};
-
-function derivePackageRootFromExtensionsDir(extensionsDir: string): string {
-  const parentDir = path.dirname(extensionsDir);
-  const parentBase = path.basename(parentDir);
-  if (parentBase === "dist" || parentBase === "dist-runtime") {
-    return path.dirname(parentDir);
-  }
-  return parentDir;
-}
-
-/**
- * Resolves the package/cache scope used for bundled channel plugin metadata.
- */
-function resolveBundledChannelRootScope(
-  env: NodeJS.ProcessEnv = process.env,
-): BundledChannelRootScope {
-  const bundledPluginsDir = resolveBundledPluginsDir(env);
-  if (!bundledPluginsDir) {
-    return {
-      packageRoot: OPENCLAW_PACKAGE_ROOT,
-    };
-  }
-  const resolvedPluginsDir = path.resolve(bundledPluginsDir);
-  // A direct extensions directory belongs to the package root; any other scan dir is its own
-  // cache scope so tests and packaged runtimes do not share stale metadata.
-  return {
-    packageRoot:
-      path.basename(resolvedPluginsDir) === "extensions"
-        ? derivePackageRootFromExtensionsDir(resolvedPluginsDir)
-        : resolvedPluginsDir,
-    pluginsDir: resolvedPluginsDir,
-  };
-}
 
 type PluginRuntime = import("../../plugins/runtime/types.js").PluginRuntime;
 

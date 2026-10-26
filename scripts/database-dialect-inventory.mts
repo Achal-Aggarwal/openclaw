@@ -104,7 +104,7 @@ function findSites(file: string, source: ts.SourceFile): DialectSite[] {
     if (
       match.construct === "custom-function" &&
       (file === "src/infra/database-engine/postgres-search-schema.ts" ||
-        file === "src/infra/database-engine/search.ts")
+        file === "src/infra/database-engine/postgres-vector.ts")
     ) {
       return;
     }

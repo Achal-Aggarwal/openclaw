@@ -1,7 +1,13 @@
 import { For } from "solid-js";
 import { t } from "../../lib/reactive/i18n.ts";
 import { liveValue } from "../../lib/reactive/live-value.ts";
-import type { NewSessionTerminalHostOptions } from "./terminal-start.ts";
+
+type NewSessionTerminalHostOptions = {
+  hosts: Array<{ hostId: string; label: string }> | undefined;
+  hostId: string;
+  submitting: boolean;
+  onSelect: (hostId: string) => void;
+};
 
 export function NewSessionTerminalHost(props: {
   params: NewSessionTerminalHostOptions;

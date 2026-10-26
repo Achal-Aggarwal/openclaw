@@ -61,8 +61,7 @@ function advancePendingTagProbe(probe: PendingTagProbe, text: string): void {
   }
 }
 
-/** Creates a block-incremental parser that emits only Markdown-stable text. */
-export function createReasoningTagTextPartitioner(): {
+export interface ReasoningTagTextPartitioner {
   markStrict(): void;
   push(chunk: string): ReasoningTagTextDelta[];
   pushVisible(chunk: string): ReasoningTagTextDelta[];
@@ -71,7 +70,10 @@ export function createReasoningTagTextPartitioner(): {
   /** Whether more input can change buffered Markdown or reasoning-tag ownership. */
   hasPendingSyntax(): boolean;
   isInsideReasoning(): boolean;
-} {
+}
+
+/** Creates a block-incremental parser that emits only Markdown-stable text. */
+export function createReasoningTagTextPartitioner(): ReasoningTagTextPartitioner {
   const reduction: ReductionState = { depth: 0, visibleEver: false };
   let source = "";
   let endedBlankBlock = false;

@@ -178,20 +178,6 @@ function lastLogLine(tail: string | null | undefined): string | null {
   return last ? last.slice(0, MAX_UPDATE_FAILURE_CAUSE_CHARS) : null;
 }
 
-export type UpdateRunResponse = {
-  runId?: string;
-  ok?: boolean;
-  result?: {
-    status?: string;
-    reason?: string;
-    before?: { sha?: string | null; version?: string | null } | null;
-    after?: { sha?: string | null; version?: string | null } | null;
-  };
-  handoff?: { status?: string };
-  restart?: { coalesced?: boolean } | null;
-  sentinel?: { payload?: UpdateRestartStatusResponse["sentinel"] } | null;
-};
-
 export function createUpdateStatusRefresher(params: {
   getClient: () => GatewayBrowserClient | null;
   getEpoch: () => number;

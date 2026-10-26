@@ -5,8 +5,6 @@ import { ignoreMissingPath } from "./errno.js";
 import {
   createSqliteQueryCache,
   executeSqliteQuerySync,
-  executeSqliteQueryTakeFirstSync,
-  getNodeSqliteKysely,
   prepareSqliteQueryTakeFirstSync,
 } from "./kysely-sync.js";
 import {
@@ -29,30 +27,10 @@ import {
   parseManagedHandoffLeasePayload,
   type HandoffProcessIdentity,
 } from "./update-managed-service-handoff-schema.js";
-
-/** Match every schema object, including wrong shapes, using SQLite's identifier casing. */
-function hasManagedHandoffSchemaObject(db: HandoffDatabase): boolean {
-  return Boolean(
-    executeSqliteQueryTakeFirstSync(
-      db,
-      getNodeSqliteKysely<{ sqlite_schema: { name: string } }>(db)
-        .selectFrom("sqlite_schema")
-        .select("name")
-        .where((eb) => eb(eb.fn<string>("lower", ["name"]), "=", "managed_update_handoffs")),
-    ),
-  );
-}
-
-/** A first writer may have created the private inode before SQLite commits its schema. */
-function isManagedHandoffSchemaEmpty(db: HandoffDatabase): boolean {
-  return !executeSqliteQueryTakeFirstSync(
-    db,
-    getNodeSqliteKysely<{ sqlite_schema: { name: string } }>(db)
-      .selectFrom("sqlite_schema")
-      .select("name")
-      .limit(1),
-  );
-}
+import {
+  hasManagedHandoffSchemaObject,
+  isManagedHandoffSchemaEmpty,
+} from "./update-managed-service-handoff-source-inspection.js";
 
 export const managedHandoffLeaseText = z.string().min(1).max(4096);
 export const triageFailureSchema = z.strictObject({

@@ -172,8 +172,8 @@ const receipt = {
     "scripts/lib/postgres-ann-fixture.mjs": hash(
       fs.readFileSync(path.join(ROOT, "scripts/lib/postgres-ann-fixture.mjs")),
     ),
-    "src/infra/database-engine/search.ts": hash(
-      fs.readFileSync(path.join(ROOT, "src/infra/database-engine/search.ts")),
+    "src/infra/database-engine/postgres-vector.ts": hash(
+      fs.readFileSync(path.join(ROOT, "src/infra/database-engine/postgres-vector.ts")),
     ),
     "src/infra/database-engine/postgres-search-schema.ts": hash(
       fs.readFileSync(path.join(ROOT, "src/infra/database-engine/postgres-search-schema.ts")),

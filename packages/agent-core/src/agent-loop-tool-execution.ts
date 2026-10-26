@@ -38,13 +38,17 @@ export type ReadyToolCallExecution = {
   dispose: () => void;
 };
 
+export type PreparedToolCallExecution =
+  | { kind: "immediate"; outcome: ExecutedToolCallOutcome }
+  | ReadyToolCallExecution;
+
 export async function prepareToolCallExecution(
   prepared: PreparedToolCall,
   executionContext: AgentToolExecutionContext,
   signal: AbortSignal | undefined,
   emit: AgentEventSink,
   isLocalError?: AgentCoreStreamRuntimeDeps["isLocalError"],
-): Promise<{ kind: "immediate"; outcome: ExecutedToolCallOutcome } | ReadyToolCallExecution> {
+): Promise<PreparedToolCallExecution> {
   const updateEvents: Promise<void>[] = [];
   let acceptingUpdates = true;
   let pendingInput = executionContext.pendingInput;

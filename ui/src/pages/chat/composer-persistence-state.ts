@@ -28,14 +28,6 @@ export type ChatComposerPersistResult =
 
 export type ChatComposerDraftRevisionState = ReturnType<typeof readDraftRevisionState>;
 
-export type StoredChatComposerSnapshot = {
-  draft: string;
-  mentions?: readonly HumanMention[];
-  goalMode?: ChatGoalDraftMode;
-  replyTarget?: ChatReplyTarget;
-  queue: ChatQueueItem[];
-};
-
 export type RestoreOptions = {
   preserveCurrent?: boolean;
   sessionKey?: string;

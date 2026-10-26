@@ -176,11 +176,6 @@ export function prefValuesEqual(left: unknown, right: unknown): boolean {
   return left === right;
 }
 
-export type ServerUiPrefReadiness = {
-  appearanceReady: boolean;
-  navigationReady?: boolean;
-};
-
 export const PROFILE_UI_PREFERENCE_KEYS = [
   ...Object.values(UI_APPEARANCE_PREFERENCE_KEYS),
   ...Object.values(UI_NAVIGATION_PREFERENCE_KEYS),

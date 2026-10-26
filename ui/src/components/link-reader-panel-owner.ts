@@ -12,11 +12,9 @@ import { LinkReaderImages } from "./link-reader-images.ts";
 import {
   createLinkReaderPanelLifecycle,
   type LinkReaderPanelProps,
-  type LinkReaderPanelElements,
 } from "./link-reader-panel-lifecycle.ts";
 import {
   readerHostedTabs,
-  type LinkReaderPanelState,
   linkReaderPanelLayout,
   tabTarget,
   tabLabel,
@@ -45,7 +43,10 @@ export const LINK_READER_TAB_LIMIT = 10;
 export function createLinkReaderPanel(
   host: HTMLElement & LinkReaderPanelProps,
   scheduleAfterRender: (callback: () => void) => void,
-  elements: (activeId: string | null) => LinkReaderPanelElements,
+  elements: (activeId: string | null) => {
+    address: HTMLInputElement | undefined;
+    content: HTMLElement | undefined;
+  },
   notify: () => void,
 ) {
   const props = host;
@@ -54,7 +55,13 @@ export function createLinkReaderPanel(
   let hostedSignature = "";
 
   // Request admission and tab identity are synchronous; the projection only observes them.
-  const state: LinkReaderPanelState = {
+  const state: {
+    urlDraft: string;
+    invalidUrl: boolean;
+    tabLimitUrl: string | null;
+    tabs: ReaderTab[];
+    activeId: string | null;
+  } = {
     urlDraft: "",
     invalidUrl: false,
     tabLimitUrl: null,
@@ -105,7 +112,8 @@ export function createLinkReaderPanel(
     returnFocus = null;
     dockLayout.dispose();
   }
-  function sync(previous?: LinkReaderPanelProps): void {
+
+  function afterRender(previous: LinkReaderPanelProps | undefined): void {
     const changed = {
       has: (key: keyof LinkReaderPanelProps) => !previous || previous[key] !== props[key],
       get: <K extends keyof LinkReaderPanelProps>(key: K): LinkReaderPanelProps[K] | undefined =>
@@ -207,9 +215,6 @@ export function createLinkReaderPanel(
       createTab();
       focusAddress = false;
     }
-    resume();
-  }
-  function resume(): void {
     const active = activeTab();
     if (
       lifecycle.active() &&
@@ -234,9 +239,6 @@ export function createLinkReaderPanel(
         }
       }
     }
-  }
-  function afterRender(previous: LinkReaderPanelProps | undefined): void {
-    sync(previous);
     const { address, content } = elements(state.activeId);
     const signature = JSON.stringify([
       state.activeId,

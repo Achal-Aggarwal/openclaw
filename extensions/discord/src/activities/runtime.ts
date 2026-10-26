@@ -1,4 +1,5 @@
 import type { OpenClawConfig } from "openclaw/plugin-sdk/config-contracts";
+import { normalizeOptionalString as readNonEmpty } from "openclaw/plugin-sdk/string-coerce-runtime";
 import {
   isDiscordAccountEnabledForRuntime,
   listDiscordAccountIds,
@@ -6,7 +7,6 @@ import {
 } from "../accounts.js";
 import { resolveDiscordProxyFetchForAccount } from "../proxy-fetch.js";
 import { selectDiscordActivitiesRuntimeConfig } from "../runtime-config.js";
-import { resolveDiscordActivitiesConfig } from "./config.js";
 import type { DiscordActivityStore } from "./store.js";
 
 type ResolvedDiscordActivityAccount = {
@@ -49,18 +49,20 @@ export class DiscordActivitiesRuntime {
     ) {
       return null;
     }
-    const activities = resolveDiscordActivitiesConfig(account.config, this.env);
-    if (!activities.enabled) {
+    const activities = account.config.activities;
+    const clientSecret =
+      activities &&
+      (readNonEmpty(activities.clientSecret) ?? readNonEmpty(this.env.DISCORD_CLIENT_SECRET));
+    if (!clientSecret) {
       return null;
     }
     const applicationId =
-      activities.applicationId ??
+      readNonEmpty(activities?.applicationId) ??
       this.learnedApplicationIds.get(account.accountId) ??
       account.config.applicationId?.trim();
     if (!applicationId) {
       return null;
     }
-    const { clientSecret } = activities;
     const bot = account.token.trim();
     return {
       accountId: account.accountId,

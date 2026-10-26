@@ -1,38 +1,22 @@
 // Doctor-only import for retired per-server MCP OAuth JSON stores.
-import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import {
-  OAuthClientInformationSchema,
-  OAuthMetadataSchema,
-  OAuthProtectedResourceMetadataSchema,
-  OAuthTokensSchema,
-  OpenIdProviderDiscoveryMetadataSchema,
-} from "@modelcontextprotocol/core";
 import { root, type Root } from "@openclaw/fs-safe";
-import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import { mcpOAuthStoreKeyFromLegacyFileName } from "../agents/mcp-oauth-identity.js";
-import { getFileLockProcessStartTime } from "../shared/pid-alive.js";
 import { captureOpenClawStateWorkerContext } from "../state/openclaw-state-worker-context.js";
 import type { OpenClawStateWorkerContext } from "../state/openclaw-state-worker-context.types.js";
 import {
   executeOpenClawStateWorker,
   runOpenClawStateWorkerOperation,
 } from "../state/openclaw-state-worker-store.js";
-import { asFsSafeFileLockRoot, createFileLockManager } from "./file-lock-manager.js";
-import type { Root as LegacyLockRoot } from "./fs-safe.js";
 import { pathMayExistSync } from "./path-existence.js";
-import type { SqliteWorkerOperationAdmission } from "./sqlite-worker-operation-admission.js";
-import type { RetainedWorkerTransactionAdmission } from "./sqlite-worker-operation-settlement.js";
 import { createSqliteWorkerWriteAdmission } from "./sqlite-worker-store.js";
-import { assertAllowedJsonFields } from "./state-migrations.json-fields.js";
 import { withLegacyMigrationStateLock } from "./state-migrations.lock.js";
-import { isDefinitelyStaleLegacyMcpOAuthLock } from "./state-migrations.mcp-oauth-lock-stale.js";
+import { parseLegacyMcpOAuthStore } from "./state-migrations.mcp-oauth-format.js";
+import { withRootBoundedLegacyFileLock } from "./state-migrations.mcp-oauth-lock.js";
+import { importLegacyMcpOAuthStore } from "./state-migrations.mcp-oauth-store.js";
 import type { LegacyMcpOAuthDetection } from "./state-migrations.mcp-oauth.types.js";
-import type {
-  LegacyMcpOAuthImportResult,
-  PreparedLegacyMcpOAuthImport,
-} from "./state-migrations.mcp-oauth.worker-contract.js";
+import type { LegacyMcpOAuthImportResult } from "./state-migrations.mcp-oauth.worker-contract.js";
 import { resolveLegacyMigrationSourceKey } from "./state-migrations.receipts.js";
 import {
   LegacyMigrationSourceClaim,
@@ -41,247 +25,6 @@ import {
   type LegacyMigrationSourceSnapshot,
 } from "./state-migrations.source-snapshot.js";
 import type { MigrationMessages } from "./state-migrations.types.js";
-
-const LOCK_RETRIES = 20;
-const LOCK_RETRY_FACTOR = 1.3;
-const LOCK_RETRY_MIN_MS = 25;
-const LOCK_RETRY_MAX_MS = 500;
-const MCP_OAUTH_LOCKS = createFileLockManager("openclaw.mcp-oauth-legacy-migration");
-function createLockPayload(): Record<string, unknown> {
-  const payload: Record<string, unknown> = {
-    pid: process.pid,
-    createdAt: new Date().toISOString(),
-    nonce: randomUUID(),
-  };
-  const starttime = getFileLockProcessStartTime(process.pid);
-  if (starttime !== null) {
-    payload.starttime = starttime;
-  }
-  return payload;
-}
-
-function readLegacyRawPayload(payload: unknown): string {
-  return payload &&
-    typeof payload === "object" &&
-    "raw" in payload &&
-    typeof payload.raw === "string"
-    ? payload.raw
-    : "";
-}
-
-/** Share the retired runtime's sidecar protocol without leaving the pinned state root. */
-async function withRootBoundedLegacyFileLock<T>(
-  params: { stateRoot: LegacyLockRoot; targetRelativePath: string },
-  run: () => Promise<T>,
-): Promise<T> {
-  const targetPath = path.resolve(params.stateRoot.rootReal, params.targetRelativePath);
-  return await MCP_OAUTH_LOCKS.withLock(
-    targetPath,
-    {
-      lockPath: `${targetPath}.lock`,
-      lockRoot: asFsSafeFileLockRoot(params.stateRoot),
-      retry: {
-        retries: LOCK_RETRIES,
-        factor: LOCK_RETRY_FACTOR,
-        minTimeout: LOCK_RETRY_MIN_MS,
-        maxTimeout: LOCK_RETRY_MAX_MS,
-      },
-      staleRecovery: "fail-closed",
-      payload: createLockPayload,
-      parsePayload: (raw) => ({ raw }),
-      shouldReclaim: ({ payload }) =>
-        isDefinitelyStaleLegacyMcpOAuthLock({
-          raw: readLegacyRawPayload(payload),
-        }),
-    },
-    run,
-  );
-}
-
-const MAX_TIMESTAMP_MS = 8_640_000_000_000_000;
-const STORE_KEYS = new Set([
-  "clientInformation",
-  "tokens",
-  "tokenExpiresAt",
-  "codeVerifier",
-  "discoveryState",
-  "lastAuthorizationUrl",
-  "redirectUrl",
-  "state",
-]);
-const DISCOVERY_KEYS = new Set([
-  "authorizationServerUrl",
-  "authorizationServerMetadata",
-  "resourceMetadata",
-  "resourceMetadataUrl",
-]);
-
-function parseSafeUrl(value: unknown, label: string): string {
-  if (typeof value !== "string") {
-    throw new Error(`${label} is not a string`);
-  }
-  const parsed = URL.parse(value);
-  if (!parsed) {
-    throw new Error(`${label} is not a valid URL`);
-  }
-  if (["javascript:", "data:", "vbscript:"].includes(parsed.protocol)) {
-    throw new Error(`${label} uses an unsafe URL scheme`);
-  }
-  return value;
-}
-
-function parseDiscoveryState(value: unknown): Record<string, unknown> {
-  if (!isRecord(value)) {
-    throw new Error("legacy MCP OAuth discovery state is not an object");
-  }
-  assertAllowedJsonFields(value, DISCOVERY_KEYS, "legacy MCP OAuth discovery state", {
-    reportField: false,
-  });
-  const result: Record<string, unknown> = {
-    authorizationServerUrl: parseSafeUrl(
-      value.authorizationServerUrl,
-      "legacy MCP OAuth authorization server URL",
-    ),
-  };
-  if (value.authorizationServerMetadata !== undefined) {
-    const oauth = OAuthMetadataSchema.safeParse(value.authorizationServerMetadata);
-    const oidc = oauth.success
-      ? null
-      : OpenIdProviderDiscoveryMetadataSchema.safeParse(value.authorizationServerMetadata);
-    if (!oauth.success && !oidc?.success) {
-      throw new Error("legacy MCP OAuth authorization server metadata is invalid");
-    }
-    result.authorizationServerMetadata = value.authorizationServerMetadata;
-  }
-  if (value.resourceMetadata !== undefined) {
-    const parsed = OAuthProtectedResourceMetadataSchema.safeParse(value.resourceMetadata);
-    if (!parsed.success) {
-      throw new Error("legacy MCP OAuth resource metadata is invalid");
-    }
-    result.resourceMetadata = value.resourceMetadata;
-  }
-  if (value.resourceMetadataUrl !== undefined) {
-    result.resourceMetadataUrl = parseSafeUrl(
-      value.resourceMetadataUrl,
-      "legacy MCP OAuth resource metadata URL",
-    );
-  }
-  return result;
-}
-
-function parseLegacyMcpOAuthStore(value: unknown): Record<string, unknown> {
-  if (!isRecord(value)) {
-    throw new Error("legacy MCP OAuth store is not an object");
-  }
-  assertAllowedJsonFields(value, STORE_KEYS, "legacy MCP OAuth store", { reportField: false });
-  const result: Record<string, unknown> = {};
-  for (const [key, schema, message] of [
-    ["clientInformation", OAuthClientInformationSchema, "client information is invalid"],
-    ["tokens", OAuthTokensSchema, "tokens are invalid"],
-  ] as const) {
-    if (value[key] !== undefined) {
-      if (!schema.safeParse(value[key]).success) {
-        throw new Error(`legacy MCP OAuth ${message}`);
-      }
-      result[key] = value[key];
-    }
-  }
-  if (value.tokenExpiresAt !== undefined) {
-    if (
-      typeof value.tokenExpiresAt !== "number" ||
-      !Number.isFinite(value.tokenExpiresAt) ||
-      value.tokenExpiresAt < 0 ||
-      value.tokenExpiresAt > MAX_TIMESTAMP_MS
-    ) {
-      throw new Error("legacy MCP OAuth token expiry is invalid");
-    }
-    if (result.tokens !== undefined) {
-      result.tokenExpiresAt = value.tokenExpiresAt;
-    }
-  }
-  if (value.codeVerifier !== undefined) {
-    if (typeof value.codeVerifier !== "string" || value.codeVerifier.length === 0) {
-      throw new Error("legacy MCP OAuth code verifier is invalid");
-    }
-    result.codeVerifier = value.codeVerifier;
-  }
-  if (value.discoveryState !== undefined) {
-    result.discoveryState = parseDiscoveryState(value.discoveryState);
-  }
-  for (const [key, label] of [
-    ["lastAuthorizationUrl", "authorization URL"],
-    ["redirectUrl", "redirect URL"],
-  ] as const) {
-    if (value[key] !== undefined) {
-      result[key] = parseSafeUrl(value[key], `legacy MCP OAuth ${label}`);
-    }
-  }
-  // `state` was persisted but never read. Doctor deliberately leaves it retired.
-  return result;
-}
-
-type ImportOutcome =
-  | { ok: true; value: LegacyMcpOAuthImportResult; deliveryFailure?: { error: unknown } }
-  | { ok: false; error: unknown; restoreSource: boolean };
-
-/** Keep the filesystem claim until the original native writer's outcome is known. */
-async function importLegacyMcpOAuthStore(
-  context: OpenClawStateWorkerContext,
-  input: PreparedLegacyMcpOAuthImport,
-): Promise<ImportOutcome> {
-  let retained:
-    | { operation: RetainedWorkerTransactionAdmission; admission: SqliteWorkerOperationAdmission }
-    | undefined;
-  let commitRequested = false;
-  const createAdmission = createSqliteWorkerWriteAdmission(
-    (request) => {
-      context.admission.assertCurrent();
-      if (request.stage === "commit") {
-        // A failed grant may be definite, but it never justifies restoring an uncertain claim.
-        commitRequested = true;
-      }
-    },
-    [context.admission.databasePath],
-  );
-  try {
-    const value = await runOpenClawStateWorkerOperation(
-      context,
-      (scope) => scope.execute({ type: "legacyMcpOAuth.import", input }),
-      {
-        createAdmission(operation) {
-          const created = createAdmission(operation);
-          retained = { operation, admission: created.admission };
-          return created;
-        },
-      },
-    );
-    return { ok: true, value };
-  } catch (error) {
-    if (!retained) {
-      return { ok: false, error, restoreSource: true };
-    }
-    const settlement = await retained.operation.settled;
-    const facts = retained.admission.committed?.facts;
-    if (
-      settlement.kind === "completed" &&
-      isRecord(facts) &&
-      facts.sourceKey === input.sourceKey &&
-      typeof facts.imported === "boolean"
-    ) {
-      return {
-        ok: true,
-        value: { sourceKey: input.sourceKey, imported: facts.imported },
-        deliveryFailure: { error },
-      };
-    }
-    return {
-      ok: false,
-      error,
-      restoreSource:
-        settlement.kind === "not-entered" || (settlement.kind === "completed" && !commitRequested),
-    };
-  }
-}
 
 const LEGACY_MCP_OAUTH_DIR = "mcp-oauth";
 const DOCTOR_CLAIM_SUFFIX = ".doctor-importing";
