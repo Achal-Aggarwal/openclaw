@@ -67,6 +67,8 @@ const repositoryScriptEntries = [
   // Its header documents the paired operator-role currency-check benchmark.
   "scripts/perf/operator-role-source-policy-measure.mjs!",
   "scripts/perf/access-authority-callback-measure.mjs!",
+  // Its header documents the sandbox/workspace ownership assertion benchmark.
+  "scripts/perf/workspace-assertion-measure.mjs!",
   // Its header documents the full transcript-pairing repair benchmark.
   "scripts/perf/tool-result-pairing-measure.ts!",
   "scripts/perf/assistant-thinking-measure.ts!",
@@ -318,6 +320,7 @@ const repositoryScriptEntries = [
   "scripts/perf/pty-session-scan-measure.mjs!",
   "scripts/perf/publication-spawn-measure.ts!",
   "scripts/perf/replay-history-measure.ts!",
+  "scripts/perf/run-tool-validation-retention.ts!",
   "scripts/perf/session-actor-listener-measure.ts!",
   "scripts/perf/session-authority-retention.ts!",
   "scripts/perf/session-fork-retention-measure.mjs!",
@@ -354,6 +357,7 @@ const repositoryScriptEntries = [
   "scripts/perf/plugin-source-demand.mts!",
   "scripts/perf/responses-continuation-measure.mjs!",
   "scripts/perf/responses-continuation.ts!",
+  "scripts/perf/responses-history-conversion.ts!",
   "scripts/perf/schema-validator-cache-measure.ts!",
   "scripts/perf/session-lifecycle-boot.ts!",
   "scripts/perf/shared-skills-measure.ts!",
