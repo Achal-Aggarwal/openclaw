@@ -156,7 +156,7 @@ function parseCanonical(
     }
   }
 
-  const children = (parent: ParentNode): CanonicalNode[] => {
+  const children = (parent: Node & ParentNode): CanonicalNode[] => {
     const nodes = Array.from(parent.childNodes);
     const counts = new Map<string, number>();
     for (const node of nodes) {
@@ -177,8 +177,8 @@ function parseCanonical(
           element.hasAttribute("data-code-highlight") ||
           element.localName.includes("-")),
       );
-      return {
-        prepared: (prepared || !incremental) && opaque ? node.cloneNode(true) : undefined,
+      const descriptor: CanonicalNode = {
+        prepared: (prepared || !incremental) && opaque ? node : undefined,
         key: key && counts.get(key) === 1 ? key : index,
         canonical: `${node.nodeType}:${element ? element.outerHTML : node.textContent}`,
         tag: element?.localName,
@@ -192,9 +192,13 @@ function parseCanonical(
         text: node instanceof Text ? node.data : undefined,
         opaque,
       };
+      if (descriptor.prepared) {
+        parent.removeChild(node);
+      }
+      return descriptor;
     });
   };
-  // Opaque prepared nodes are detached clones: descriptors must not retain the
+  // Opaque prepared nodes are detached: descriptors must not retain the
   // parsed tree through parent pointers after its content has been replaced.
   return children(template.content);
 }

@@ -58,6 +58,28 @@ it("commits Markdown before onUpdate and retires a replaced island", () => {
   expect(replacement.childNodes).toHaveLength(0);
 });
 
+it("keeps reusable prepared Markdown isolated from mounted decorations", () => {
+  const fragment = document.createDocumentFragment();
+  const paragraph = document.createElement("p");
+  paragraph.textContent = "Prepared paragraph";
+  const list = document.createElement("ul");
+  list.innerHTML = "<li>Prepared item</li>";
+  fragment.append(paragraph, list);
+  const content = { html: paragraph.outerHTML + list.outerHTML, fragment };
+  const first = renderSolidRef(() => createMarkdownRef(() => ({ content })), {
+    targetElement: document.createElement("div"),
+  });
+  first.container.querySelector("p")!.textContent = "Mounted decoration";
+  const second = renderSolidRef(() => createMarkdownRef(() => ({ content })), {
+    targetElement: document.createElement("div"),
+  });
+  expect(second.container.querySelector("p")?.textContent).toBe("Prepared paragraph");
+  expect(second.container.querySelector("li")?.textContent).toBe("Prepared item");
+  expect(fragment.firstChild).toBe(paragraph);
+  expect(fragment.lastChild).toBe(list);
+  expect(paragraph.textContent).toBe("Prepared paragraph");
+});
+
 it.each([
   ["paragraph", "A growing reply", "p"],
   ["list", "- First item\n- Growing item", "ul"],
