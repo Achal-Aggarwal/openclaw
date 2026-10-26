@@ -75,6 +75,37 @@ struct LaunchAgentManagerTests {
         #expect(try String(contentsOf: blocker, encoding: .utf8) == "original")
     }
 
+    @Test(arguments: ["bootstrap", "kickstart"], [Int32(5), Int32(-1)])
+    func `failed launchctl commands do not report login changes as applied`(
+        operation: String, status: Int32) async throws
+    {
+        let directory = try makeTempDirForTests()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let plistURL = directory.appendingPathComponent("Library/LaunchAgents/login.plist")
+        let calls = LoginAgentCalls()
+        let manager = LaunchAgentManager(plistURL: plistURL) { arguments in
+            await calls.record(arguments)
+            return switch arguments.first {
+            case "print", "bootout": 3 // An absent job is expected on first enable.
+            case operation: status
+            default: 0
+            }
+        }
+
+        let applied = await manager.set(
+            enabled: true,
+            bundlePath: "/Applications/OpenClaw.app",
+            profile: AppProfile(environment: [:])).value
+
+        #expect(!applied)
+        #expect(FileManager.default.fileExists(atPath: plistURL.path))
+        let operations = await calls.arguments.compactMap(\.first)
+        #expect(operations.contains(operation))
+        if operation == "bootstrap" {
+            #expect(!operations.contains("kickstart"))
+        }
+    }
+
     @Test func `late startup status does not overwrite a newer disabled login choice`() async throws {
         let directory = try makeTempDirForTests()
         defer { try? FileManager.default.removeItem(at: directory) }
