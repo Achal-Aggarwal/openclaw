@@ -786,7 +786,8 @@ suite.define(() => {
             held.delete(first);
             reply(response, first);
             await expect.poll(() => receipts.length).toBe(first + 2);
-            expect(receipts[first + 1]?.access).toEqual(target ? { cyber: target } : undefined);
+            // Clearing the session override inherits the model's Standard request default.
+            expect(receipts[first + 1]?.access).toEqual({ cyber: "standard" });
             await expect.poll(async () => Boolean((await row()).hasActiveRun)).toBe(false);
             proof[name + "-queued-" + (target || "cleared")] = receipts.slice(first, first + 2);
           }
