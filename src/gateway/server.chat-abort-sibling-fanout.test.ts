@@ -9,6 +9,8 @@ import {
 import { runQaGatewayFixture } from "../../test/helpers/qa-gateway-cleanup.js";
 import type { GatewayEventFrame } from "../../ui/src/api/gateway.ts";
 import type { SessionsListResult } from "../../ui/src/api/types.ts";
+import { reconcileSessionChanged as baselineReconcileSessionChanged } from "../../ui/src/lib/sessions/reconcile.baseline.test-support.ts";
+import * as sessionReconciliation from "../../ui/src/lib/sessions/reconcile.ts";
 import {
   createGatewayHarness,
   createTestSessionCapability,
@@ -619,9 +621,16 @@ test("measures natural descendant settlement in the session-list owner", async (
     for (const key of [parentKey, rootKey]) {
       expect([...ancestors, ...ancestorRefs].some((row) => row.key === key)).toBe(true);
     }
-    const measured: { wallMs: number; cpuMs: number }[] = [];
-    const sortCounts: number[] = [];
-    for (let sample = -1; sample < 7; sample += 1) {
+    const candidateReconcileSessionChanged = sessionReconciliation.reconcileSessionChanged;
+    const replay = async (variant: "baseline" | "candidate", traceSorts = false) => {
+      const replacement = vi
+        .spyOn(sessionReconciliation, "reconcileSessionChanged")
+        .mockImplementation(
+          variant === "baseline"
+            ? baselineReconcileSessionChanged
+            : candidateReconcileSessionChanged,
+        );
+      const sortCounts: number[] = [];
       const client = createTestGatewayClient(async (method) => {
         if (method === "sessions.list") {
           return structuredClone(initial);
@@ -651,25 +660,24 @@ test("measures natural descendant settlement in the session-list owner", async (
         }
         const nativeSort = Array.prototype.sort;
         let frameSorts = 0;
-        const spy =
-          sample === -1
-            ? vi.spyOn(Array.prototype, "sort").mockImplementation(function (
-                this: unknown[],
-                compare,
-              ) {
-                if (this.length === before.sessions.length) {
-                  frameSorts += 1;
-                }
-                return nativeSort.call(this, compare);
-              })
-            : undefined;
+        const spy = traceSorts
+          ? vi.spyOn(Array.prototype, "sort").mockImplementation(function (
+              this: unknown[],
+              compare,
+            ) {
+              if (this.length === before.sessions.length) {
+                frameSorts += 1;
+              }
+              return nativeSort.call(this, compare);
+            })
+          : undefined;
         const cpu = process.cpuUsage();
         const started = performance.now();
         try {
           for (const frame of completion) {
             const startCount = frameSorts;
             harness.emitEvent(frame);
-            if (sample === -1) {
+            if (traceSorts) {
               sortCounts.push(frameSorts - startCount);
             }
           }
@@ -678,9 +686,6 @@ test("measures natural descendant settlement in the session-list owner", async (
         }
         const wallMs = performance.now() - started;
         const used = process.cpuUsage(cpu);
-        if (sample >= 0) {
-          measured.push({ wallMs, cpuMs: (used.user + used.system) / 1000 });
-        }
         for (const key of [rootKey, parentKey, leafKey]) {
           const actual = expectDefined(
             owner.state.result?.sessions.find((row) => row.key === key),
@@ -690,21 +695,55 @@ test("measures natural descendant settlement in the session-list owner", async (
           expect(actual.hasActiveSubagentRun).toBe(expected?.hasActiveSubagentRun);
           expect(actual.hasActiveRun).toBe(expected?.hasActiveRun);
         }
+        return {
+          wallMs,
+          cpuMs: (used.user + used.system) / 1000,
+          sortCounts,
+          result: structuredClone(owner.state.result),
+        };
       } finally {
         owner.dispose();
+        replacement.mockRestore();
       }
+    };
+    const baselineSorts = (await replay("baseline", true)).sortCounts;
+    const candidateSorts = (await replay("candidate", true)).sortCounts;
+    expect(candidateSorts.reduce((sum, count) => sum + count, 0)).toBeLessThan(
+      baselineSorts.reduce((sum, count) => sum + count, 0),
+    );
+    const pairs: {
+      order: string;
+      baseline: { wallMs: number; cpuMs: number };
+      candidate: { wallMs: number; cpuMs: number };
+    }[] = [];
+    for (let pair = 0; pair < 7; pair += 1) {
+      const order =
+        pair % 2 === 0
+          ? (["baseline", "candidate"] as const)
+          : (["candidate", "baseline"] as const);
+      const first = await replay(order[0]);
+      const second = await replay(order[1]);
+      expect(first.result).toEqual(second.result);
+      const baseline = order[0] === "baseline" ? first : second;
+      const candidate = order[0] === "candidate" ? first : second;
+      pairs.push({
+        order: order.join("/"),
+        baseline: { wallMs: baseline.wallMs, cpuMs: baseline.cpuMs },
+        candidate: { wallMs: candidate.wallMs, cpuMs: candidate.cpuMs },
+      });
     }
     console.log(
-      "SESSION_ANCESTOR_BASELINE",
+      "SESSION_ANCESTOR_PAIRED",
       JSON.stringify({
         rows: before.sessions.length,
         preludeFrames: prelude.length,
         frames: completion.length,
         ancestorCount: ancestors.length,
         ancestorReferenceCount: ancestorRefs.length,
-        sortCounts,
-        firstTimedReplay: measured[0],
-        processWarmFirstEventSamples: measured.slice(1),
+        baselineSorts,
+        candidateSorts,
+        firstTimedPair: pairs[0],
+        processWarmFirstEventPairs: pairs.slice(1),
         runtime: process.versions.bun ?? process.version,
       }),
     );
