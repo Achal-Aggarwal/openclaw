@@ -476,7 +476,7 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
       ? nextKeys
       : virtualizer.getVirtualItems().map(({ index }) => rows[index]!.key);
     return this.mcpAppUnmountGate.render(
-      rowModelChanged ? nextKeys : JSON.stringify(nextRowKeys),
+      nextRowKeys,
       () => {
         // Rows, lookup maps, and the retained renderer commit together. A
         // teardown-pending candidate must never replace the displayed model.

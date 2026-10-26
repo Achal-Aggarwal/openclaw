@@ -17,11 +17,10 @@ export class TranscriptInitialRange {
   // Completed fragments have no widget custody. Retain their keyed DOM while
   // keeping inactive rows outside the visible range's flow.
   readonly preparedRowKeys = new Set<string>();
-  private readonly preparingRows = new Map<string, number>();
+  private preparingRowKey: string | undefined;
   readonly rowIndexes = new Map<string, number>();
   private cancelPreparation?: () => void;
   private prepareStarted = 0;
-  private prepareDeadline = 0;
   private prepareLatency = 16;
   private scrollSample = { offset: 0, time: 0, velocity: 0, direction: -1 };
   get measuring(): boolean {
@@ -64,7 +63,7 @@ export class TranscriptInitialRange {
     this.retainViewportRows();
     return {
       activeRowKeys: new Set(this.activeIndexes().map((index) => rows[index]!.key)),
-      preparingRowKeys: new Set(this.preparingRows.keys()),
+      preparingRowKey: this.preparingRowKey,
     };
   }
 
@@ -147,24 +146,13 @@ export class TranscriptInitialRange {
         this.preparedRowKeys.delete(key);
       }
     }
-    for (const key of this.preparingRows.keys()) {
-      if (!this.preparedRowKeys.has(key)) {
-        this.preparingRows.delete(key);
-      }
+    if (this.preparingRowKey && !this.preparedRowKeys.has(this.preparingRowKey)) {
+      this.preparingRowKey = undefined;
+      this.prepareStarted = 0;
     }
   }
 
   didCommit(): void {
-    if (this.prepareStarted) {
-      const now = performance.now();
-      const cost = now - this.prepareStarted;
-      this.prepareStarted = 0;
-      // Reuse the original idle budget, including the first row's commit.
-      // At most two rows await layout; one expensive fragment may overrun.
-      if (this.preparingRows.size < 2 && now + cost < this.prepareDeadline) {
-        this.prepare(this.prepareDeadline);
-      }
-    }
     this.queuePreparation();
   }
 
@@ -175,14 +163,15 @@ export class TranscriptInitialRange {
     const size = this.measure(element, entry);
     const key = element.dataset.virtualRowKey;
     if (
-      key !== undefined &&
-      this.preparingRows.has(key) &&
+      key === this.preparingRowKey &&
       (entry || !this.virtualizer().targetWindow?.ResizeObserver)
     ) {
       // This is readiness latency, including layout, rather than CPU time.
-      this.prepareLatency = Math.max(1, performance.now() - this.preparingRows.get(key)!);
+      this.prepareLatency = Math.max(1, performance.now() - this.prepareStarted);
+      this.prepareStarted = 0;
       queueMicrotask(() => {
-        if (this.preparingRows.delete(key)) {
+        if (this.preparingRowKey === key) {
+          this.preparingRowKey = undefined;
           this.invalidate();
           this.queuePreparation();
         }
@@ -226,7 +215,7 @@ export class TranscriptInitialRange {
   private queuePreparation(): void {
     if (
       this.cancelPreparation ||
-      this.preparingRows.size > 0 ||
+      this.preparingRowKey ||
       this.overscan !== 0 ||
       this.pending ||
       this.tailRows > 0 ||
@@ -240,7 +229,68 @@ export class TranscriptInitialRange {
         this.queuePreparation();
         return;
       }
-      this.prepare(deadline);
+      const virtualizer = this.virtualizer();
+      const range = virtualizer.range;
+      if (!this.canPrepare() || !range || !virtualizer.scrollElement || this.prepareStarted) {
+        return;
+      }
+      const rows = this.rows;
+      const sampledDirection = this.scrollSample.direction;
+      // Initial placement and size compensation can point beyond an edge.
+      // Idle work there prepares inward, where the reader can actually go.
+      const inward =
+        (sampledDirection > 0 && range.endIndex === rows.length - 1) ||
+        (sampledDirection < 0 && range.startIndex === 0);
+      const direction = inward ? -sampledDirection : sampledDirection;
+      const viewport = virtualizer.scrollRect?.height ?? 600;
+      const velocity =
+        !inward && performance.now() - this.scrollSample.time < 100
+          ? this.scrollSample.velocity
+          : 0;
+      // At speed, prepare the next viewport rather than rows the reader skips.
+      // Virtual-core resolves this from cached sizes; no neighbor layout reads.
+      const predictedOffset =
+        (virtualizer.scrollOffset ?? 0) +
+        direction * velocity * (16 + this.prepareLatency) +
+        (direction > 0 ? viewport : 0);
+      const predicted = virtualizer.getVirtualItemForOffset(Math.max(0, predictedOffset));
+      const origin =
+        velocity && predicted
+          ? predicted.index - direction
+          : direction > 0
+            ? range.endIndex
+            : range.startIndex;
+      const rendered = new Set(virtualizer.getVirtualItems().map((row) => row.key));
+      const lookahead = velocity
+        ? 8
+        : Math.max(0, PREPARED_ROW_LIMIT - this.activeIndexes().length);
+      let admitted = 0;
+      for (let step = 1; step <= lookahead && admitted === 0; step++) {
+        const index = origin + step * direction;
+        const row = rows?.[index];
+        if (
+          row?.estimatedSize !== undefined &&
+          !rendered.has(row.key) &&
+          !this.preparedRowKeys.has(row.key)
+        ) {
+          if (performance.now() >= deadline) {
+            this.queuePreparation();
+            return;
+          }
+          this.preparedRowKeys.add(row.key);
+          this.preparingRowKey = row.key;
+          admitted++;
+        }
+      }
+      if (!admitted) {
+        return;
+      }
+      this.prepareStarted = performance.now();
+      virtualizer.setOptions({
+        ...virtualizer.options,
+        rangeExtractor: (next) => this.extract(next),
+      });
+      this.invalidate();
     };
     if (typeof requestIdleCallback === "function") {
       // Keep this slot through scrolling; prepare reads the latest viewport.
@@ -250,78 +300,18 @@ export class TranscriptInitialRange {
       );
       this.cancelPreparation = () => cancelIdleCallback(idleRequest);
     } else {
+      // Admit one atomic fragment early in the frame, then await its measurement.
+      // The fragment itself can overrun this six-millisecond admission budget.
       const frame = requestAnimationFrame((time) => prepare(time + 6));
       this.cancelPreparation = () => cancelAnimationFrame(frame);
     }
-  }
-
-  private prepare(deadline: number): void {
-    const virtualizer = this.virtualizer();
-    const range = virtualizer.range;
-    if (!this.canPrepare() || !range || !virtualizer.scrollElement || this.prepareStarted) {
-      return;
-    }
-    const rows = this.rows;
-    const sampledDirection = this.scrollSample.direction;
-    // Initial placement and size compensation can point beyond an edge.
-    // Idle work there prepares inward, where the reader can actually go.
-    const inward =
-      (sampledDirection > 0 && range.endIndex === rows.length - 1) ||
-      (sampledDirection < 0 && range.startIndex === 0);
-    const direction = inward ? -sampledDirection : sampledDirection;
-    const viewport = virtualizer.scrollRect?.height ?? 600;
-    const velocity =
-      !inward && performance.now() - this.scrollSample.time < 100 ? this.scrollSample.velocity : 0;
-    // At speed, prepare the next viewport rather than rows the reader skips.
-    // Virtual-core resolves this from cached sizes; no neighbor layout reads.
-    const predictedOffset =
-      (virtualizer.scrollOffset ?? 0) +
-      direction * velocity * (16 + this.prepareLatency) +
-      (direction > 0 ? viewport : 0);
-    const predicted = virtualizer.getVirtualItemForOffset(Math.max(0, predictedOffset));
-    const origin =
-      velocity && predicted
-        ? predicted.index - direction
-        : direction > 0
-          ? range.endIndex
-          : range.startIndex;
-    const rendered = new Set(virtualizer.getVirtualItems().map((row) => row.key));
-    const lookahead = velocity ? 8 : Math.max(0, PREPARED_ROW_LIMIT - this.activeIndexes().length);
-    let admitted = 0;
-    for (let step = 1; step <= lookahead && admitted === 0; step++) {
-      const index = origin + step * direction;
-      const row = rows?.[index];
-      if (
-        row?.estimatedSize !== undefined &&
-        !rendered.has(row.key) &&
-        !this.preparedRowKeys.has(row.key)
-      ) {
-        if (performance.now() >= deadline) {
-          this.queuePreparation();
-          return;
-        }
-        this.preparedRowKeys.add(row.key);
-        this.preparingRows.set(row.key, performance.now());
-        admitted++;
-      }
-    }
-    if (!admitted) {
-      return;
-    }
-    this.prepareStarted = performance.now();
-    this.prepareDeadline = deadline;
-    virtualizer.setOptions({
-      ...virtualizer.options,
-      rangeExtractor: (next) => this.extract(next),
-    });
-    this.invalidate();
   }
 
   disconnect(): void {
     this.cancelPreparation?.();
     this.cancelPreparation = undefined;
     this.prepareStarted = 0;
-    this.preparingRows.clear();
+    this.preparingRowKey = undefined;
     this.preparedRowKeys.clear();
     this.refresh();
 

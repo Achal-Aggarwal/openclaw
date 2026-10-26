@@ -20,7 +20,7 @@ export type TranscriptLayoutProps = {
   rows: readonly TranscriptRow[];
   getContent: (index: number) => TranscriptContent;
   activeRowKeys: ReadonlySet<string>;
-  preparingRowKeys?: ReadonlySet<string>;
+  preparingRowKey?: string;
   virtualizer: Virtualizer<HTMLDivElement, HTMLElement>;
   overlay: JSX.Element;
   header: ChatHistoryBoundaryProps | null;

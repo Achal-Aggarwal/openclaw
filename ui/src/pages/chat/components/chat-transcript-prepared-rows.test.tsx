@@ -80,11 +80,9 @@ async function transcriptFixture(initialOffset: number | null = 0, idlePreparati
   let presented = true;
   let queued = false;
   let disposed = false;
-  let rowCost = 4;
-  const renderRow = vi.fn((row: TranscriptRow<number>) => {
-    now += rowCost;
-    return <span>Message {row.kind === "item" ? row.item : ""}</span>;
-  });
+  const renderRow = vi.fn((row: TranscriptRow<number>) => (
+    <span>Message {row.kind === "item" ? row.item : ""}</span>
+  ));
   let renderer = renderRow;
   const draw = () => {
     const root = host.render(rows, renderer, null, false, null, null, presented);
@@ -117,9 +115,6 @@ async function transcriptFixture(initialOffset: number | null = 0, idlePreparati
     container,
     host,
     renderRow,
-    setRowCost(cost: number) {
-      rowCost = cost;
-    },
     async updateRow(index: number, item: number) {
       rows[index] = { kind: "item", key: `fragment:${index}`, item, estimatedSize: 100 };
       draw();
@@ -231,7 +226,7 @@ it("pauses queued preparation while hidden and retires it on disconnect", async 
   expect(transcriptRows(view.container)).toHaveLength(0);
 });
 
-it("budgets preparation ahead during fast scrolling and bounds rows awaiting measurement", async () => {
+it("prepares ahead during fast scrolling and waits for measurement before admitting another row", async () => {
   const view = await transcriptFixture();
   await view.frame(8);
   await view.scrollTo(1);
@@ -257,12 +252,9 @@ it("budgets preparation ahead during fast scrolling and bounds rows awaiting mea
   emitTranscriptResize(preparing!, 800, 100);
   await settle();
   expect(view.container.querySelectorAll("[data-preparing-row]")).toHaveLength(0);
-  view.setRowCost(2);
   await view.frame(1, false);
-  expect(view.renderRow.mock.calls).toHaveLength(rendered + 3);
-  expect(view.container.querySelectorAll("[data-preparing-row]")).toHaveLength(2);
-  await view.frame(2, false);
-  expect(view.renderRow.mock.calls).toHaveLength(rendered + 3);
+  expect(view.renderRow.mock.calls).toHaveLength(rendered + 2);
+  expect(view.container.querySelectorAll("[data-preparing-row]")).toHaveLength(1);
 });
 
 it("places a fresh long transcript at its tail and warms a bounded upward window", async () => {
