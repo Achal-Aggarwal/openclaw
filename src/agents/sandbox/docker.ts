@@ -24,7 +24,6 @@ import {
   type ContainerSourceLease,
 } from "./container-lifecycle.js";
 import { handleHotSandboxConfigMismatch } from "./current-config.js";
-import { throwAfterPartialSandboxCleanup } from "./docker-partial-cleanup.js";
 import {
   dockerPersistentTargetFromEngineTarget,
   dockerPersistentTargetToEngineTarget,
@@ -396,13 +395,39 @@ async function ensureSandboxContainerLifecycle(
         }
         throw creationError;
       }
-      await throwAfterPartialSandboxCleanup({
-        engine,
-        containerName,
-        containerId,
-        creationError,
-        onRemoved: () => releaseSandboxContainerSource(engine, containerName, containerId),
-      });
+      const cleanupErrors: unknown[] = [];
+      let removalConfirmed = false;
+      try {
+        const removal = await execContainer(engine, ["rm", "-f", containerId], {
+          allowFailure: true,
+        });
+        const detail = removal.stderr.trim() || removal.stdout.trim() || `exit ${removal.code}`;
+        removalConfirmed =
+          removal.code === 0 || /No such (container|object)|does not exist/iu.test(detail);
+        if (!removalConfirmed) {
+          cleanupErrors.push(
+            new Error(`Failed to remove partially created sandbox ${containerName}: ${detail}`),
+          );
+        }
+      } catch (cleanupError) {
+        cleanupErrors.push(cleanupError);
+      }
+      if (removalConfirmed) {
+        releaseSandboxContainerSource(engine, containerName, containerId);
+        try {
+          await removeRegistryEntry(containerName, { preserveRemovalIntent: true });
+        } catch (cleanupError) {
+          cleanupErrors.push(cleanupError);
+        }
+      }
+      if (cleanupErrors.length > 0) {
+        throw new AggregateError(
+          [creationError, ...cleanupErrors],
+          `Sandbox ${containerName} creation and cleanup both failed.`,
+          { cause: creationError },
+        );
+      }
+      throw creationError;
     }
   } else {
     params.assertCurrent?.();
