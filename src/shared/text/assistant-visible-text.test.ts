@@ -218,8 +218,8 @@ describe("MiniMax tool-call text", () => {
     const fenced =
       '```xml\n<minimax:tool_call><invoke name="exec">x</invoke></minimax:tool_call>\n```';
 
-    expect(minimaxToolCallTextFilter.transform(inline)).toBe(inline);
-    expect(minimaxToolCallTextFilter.transform(fenced)).toBe(fenced);
+    expect(minimaxToolCallTextFilter().transform(inline)).toBe(inline);
+    expect(minimaxToolCallTextFilter().transform(fenced)).toBe(fenced);
   });
 });
 
