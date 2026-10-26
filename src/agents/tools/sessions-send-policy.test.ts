@@ -324,6 +324,9 @@ describe("sessions_send directed policy at the tool boundary", () => {
         },
         16_000,
       );
+      if (projected.role !== "toolResult") {
+        throw new Error("expected a projected tool result");
+      }
       const text = projected.content.find((block) => block.type === "text")?.text;
       if (full.length > 16_000) {
         expect(text).toMatch(/\d+ more characters truncated/);

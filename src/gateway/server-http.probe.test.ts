@@ -412,6 +412,7 @@ describe("gateway probe endpoints", () => {
         getRuntimeConfig: () => ({ gateway: { trustedProxies: ["10.0.0.0/24"] } }),
         getReadiness: () => ({
           ready: healthy,
+          coreReady: true,
           failing: healthy ? [] : ["discord"],
           uptimeMs: 8_000,
         }),
