@@ -478,7 +478,6 @@ src/channels/ids.ts
 src/channels/message/ingress-queue-read-contract.ts
 src/channels/plugins/bootstrap-registry.ts
 src/channels/plugins/bundled-ids.ts
-src/channels/plugins/bundled-root.ts
 src/channels/plugins/bundled-setup-policy.ts
 src/channels/plugins/bundled.ts
 src/channels/plugins/channel-meta.ts

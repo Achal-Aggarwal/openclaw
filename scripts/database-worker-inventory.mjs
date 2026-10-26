@@ -2766,12 +2766,12 @@ const reviewedOperations = new Map([
         tier: "T2",
         operations: ["loadPendingDeliveryQueueRow"],
         evidence:
-          "Native replace/move: src/infra/delivery-queue-sqlite-namespace.ts:34,49 → outbound/delivery-queue-migration.ts:169,205,235,289,349,367,435. Other callers are enqueue/delivery workers.",
+          "Native replace/move: src/infra/outbound/delivery-queue-migration.ts. Other callers are enqueue/delivery workers.",
       },
     ],
   ],
   [
-    "src/infra/delivery-queue-sqlite-namespace.ts",
+    "src/infra/outbound/delivery-queue-migration.ts",
     [
       {
         tier: "T2",

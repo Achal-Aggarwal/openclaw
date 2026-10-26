@@ -1,6 +1,8 @@
+import fs from "node:fs";
+import { fileURLToPath } from "node:url";
 // Covers synchronous extra security audit aggregation.
 import { expectDefined } from "@openclaw/normalization-core/expect";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import type { OpenClawConfig } from "../config/config.js";
 import {
   createConfigResolutionFacts,
@@ -11,10 +13,6 @@ import {
   collectSmallModelRiskFindings,
 } from "./audit-extra.summary.js";
 import { collectSecretsInConfigFindings } from "./audit-secrets.js";
-
-vi.mock("../plugins/web-search-credential-presence.js", () => ({
-  hasConfiguredWebSearchCredential: () => false,
-}));
 
 describe("collectSecretsInConfigFindings", () => {
   it("distinguishes resolved env secrets from byte-identical stored literals", () => {
@@ -68,6 +66,16 @@ describe("collectAttackSurfaceSummaryFindings", () => {
 });
 
 describe("collectSmallModelRiskFindings", () => {
+  it("does not statically import web-search runtime providers", () => {
+    const source = fs.readFileSync(
+      fileURLToPath(new URL("./audit-extra.summary.ts", import.meta.url)),
+      "utf8",
+    );
+
+    expect(source).not.toMatch(/\bfrom\s+["'][^"']*web-search-providers\.runtime\.js["']/);
+    expect(source).not.toMatch(/\bfrom\s+["'][^"']*loader\.js["']/);
+  });
+
   const browserDefaultCfg = {
     agents: { defaults: { model: { primary: "ollama/mistral-8b" } } },
     tools: { web: { fetch: { enabled: false } } },
@@ -81,27 +89,40 @@ describe("collectSmallModelRiskFindings", () => {
   it.each([
     ["browser disabled", { ...browserDefaultCfg, browser: { enabled: false } }, "info"],
     ["browser enabled by default", browserDefaultCfg, "critical"],
+    [
+      "configured web search without browser",
+      {
+        ...browserDefaultCfg,
+        browser: { enabled: false },
+        tools: { web: { fetch: { enabled: false }, search: { apiKey: "brave-key" } } },
+      },
+      "critical",
+      "web=[web_search]",
+    ],
     ["plugin policy blocks configured browser", configuredBrowserBlockedByPluginPolicyCfg, "info"],
-  ] satisfies [string, OpenClawConfig, string][])("%s", (_name, cfg, expectedSeverity) => {
-    const finding = expectDefined(
-      collectSmallModelRiskFindings({
-        cfg,
-        env: {},
-      }).at(0),
-      "small model risk finding",
-    );
+  ] satisfies [string, OpenClawConfig, string, string?][])(
+    "%s",
+    (_name, cfg, expectedSeverity, expectedExposure = "web=[browser]") => {
+      const finding = expectDefined(
+        collectSmallModelRiskFindings({
+          cfg,
+          env: {},
+        }).at(0),
+        "small model risk finding",
+      );
 
-    expect(finding.checkId).toBe("models.small_params");
-    expect(finding.severity).toBe(expectedSeverity);
-    expect(finding.detail).toContain("ollama/mistral-8b");
-    const unsafe = expectedSeverity === "critical";
-    for (const snippet of unsafe
-      ? ["web=[browser]"]
-      : ["web=[off]", "No web/browser tools detected"]) {
-      expect(finding.detail).toContain(snippet);
-    }
-    expect(finding.detail).not.toContain(
-      unsafe ? "No web/browser tools detected" : "web=[browser]",
-    );
-  });
+      expect(finding.checkId).toBe("models.small_params");
+      expect(finding.severity).toBe(expectedSeverity);
+      expect(finding.detail).toContain("ollama/mistral-8b");
+      const unsafe = expectedSeverity === "critical";
+      for (const snippet of unsafe
+        ? [expectedExposure]
+        : ["web=[off]", "No web/browser tools detected"]) {
+        expect(finding.detail).toContain(snippet);
+      }
+      expect(finding.detail).not.toContain(
+        unsafe ? "No web/browser tools detected" : "web=[browser]",
+      );
+    },
+  );
 });
