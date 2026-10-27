@@ -54,6 +54,7 @@ function runInstallShell(script: string, env: NodeJS.ProcessEnv = {}) {
       encoding: "utf8",
       env: {
         ...process.env,
+        ZDOTDIR: undefined,
         HOME: home,
         ...env,
         BASH_ENV: "",
@@ -697,7 +698,7 @@ NODE
     expect(result.stdout).not.toContain("Installing Node.js via NodeSource");
   });
 
-  it.each(["v24.16.0", "v21.7.3"])("handles Alpine nodejs-current %s", (version) => {
+  it.each(["v24.22.1", "v21.7.3"])("handles Alpine nodejs-current %s", (version) => {
     const result = runInstallShell(`
       set -euo pipefail
       source "${SCRIPT_PATH}"
@@ -726,7 +727,7 @@ NODE
         fi
       }
       promote_supported_node_binary() { :; }
-      if [[ "${version}" == v24.16.0 ]]; then
+      if [[ "${version}" == v24.22.1 ]]; then
         finish_linux_node_install() { printf 'finish-linux-node\\n'; }
       else
         ui_error() { printf 'error:%s\\n' "$*"; }
@@ -734,20 +735,20 @@ NODE
       install_node
     `);
 
-    expect(result.status).toBe(version === "v24.16.0" ? 0 : 1);
+    expect(result.status).toBe(version === "v24.22.1" ? 0 : 1);
     expect(result.stdout).toContain("step:Installing Node.js|apk add --no-cache nodejs npm");
     expect(result.stdout).toContain("warn:Alpine nodejs package installed v20.15.1");
     expect(result.stdout).toContain(
       "step:Installing nodejs-current|apk add --no-cache nodejs-current npm",
     );
-    if (version === "v24.16.0") {
+    if (version === "v24.22.1") {
       expect(result.stdout).toContain("finish-linux-node");
     } else {
       expect(result.stdout).toContain(
         "error:Alpine apk repositories did not provide Node.js with WAL-reset-safe SQLite",
       );
       expect(result.stdout).toContain(
-        "Use an official node:26-alpine container or a glibc-based host",
+        "Use an official node:26.12.1-alpine container or a glibc-based host",
       );
     }
   });
@@ -761,7 +762,7 @@ NODE
       install_build_tools_linux() { return 0; }
       dnf() { printf 'unexpected-dnf:%s\n' "$*"; return 99; }
       node() {
-        if [[ "\${1:-}" == "-v" ]]; then printf 'v24.18.0\n'; return 0; fi
+        if [[ "\${1:-}" == "-v" ]]; then printf 'v24.22.1\n'; return 0; fi
         if [[ "\${1:-}" == "-e" ]]; then return 1; fi
         return 1
       }
@@ -787,16 +788,16 @@ NODE
       [
         "#!/usr/bin/env bash",
         'PREFIX="${OPENCLAW_PREFIX:?}"',
-        "node_dir() { printf '%s/tools/node-v24.19.0\\n' \"$PREFIX\"; }",
+        "node_dir() { printf '%s/tools/node-v24.22.1\\n' \"$PREFIX\"; }",
         "os_detect() { printf 'linux\\n'; }",
         "arch_detect() { printf 'x64\\n'; }",
         "install_node() {",
-        '  local dir="$PREFIX/tools/node-v24.19.0"',
+        '  local dir="$PREFIX/tools/node-v24.22.1"',
         '  local bin="$dir/bin"',
         '  mkdir -p "$bin"',
         "  cat > \"$bin/node\" <<'EOF'",
         "#!/usr/bin/env bash",
-        "if [[ \"${1:-}\" == '-v' ]]; then printf 'v24.19.0\\n'; exit 0; fi",
+        "if [[ \"${1:-}\" == '-v' ]]; then printf 'v24.22.1\\n'; exit 0; fi",
         "if [[ \"${1:-}\" == '-e' ]]; then exit 0; fi",
         "exit 1",
         "EOF",
@@ -1917,10 +1918,10 @@ EOF
   );
 
   it.each([
-    { os: "linux", active: "v26.8.2", managed: "v24.14.1", location: "env", expected: "system" },
-    { os: "macos", active: "v20.20.0", managed: "v24.16.0", location: "home", expected: "managed" },
+    { os: "linux", active: "v26.12.1", managed: "v24.14.1", location: "env", expected: "system" },
+    { os: "macos", active: "v20.20.0", managed: "v24.22.1", location: "home", expected: "managed" },
     { os: "linux", active: "v20.20.0", managed: "v24.14.1", location: "env", expected: "refuse" },
-    { os: "linux", active: "v20.20.0", managed: "v24.16.0", location: "hook", expected: "refuse" },
+    { os: "linux", active: "v20.20.0", managed: "v24.22.1", location: "hook", expected: "refuse" },
     {
       os: "linux",
       active: "v20.20.0",
@@ -1967,7 +1968,7 @@ EOF
     {
       os: "linux",
       active: "v20.20.0",
-      managed: "v24.16.0",
+      managed: "v24.22.1",
       location: "env",
       expected: "refuse",
       unsafeSqlite: true,
@@ -2017,7 +2018,7 @@ EOF
         case "$1" in
           use)
             version="${managed}"
-            if [ "\${3:-}" = 26 ]; then version=v26.8.2; fi
+            if [ "\${3:-}" = 26 ]; then version=v26.12.1; fi
             export PATH="$NVM_DIR/versions/node/$version/bin:$PATH"
             ;;
           version)
@@ -2025,7 +2026,7 @@ EOF
             case "$value" in
               'lts/*')
                 if [ -e "$NVM_DIR/remote-updated" ]; then echo N/A; else echo v24.14.1; fi ;;
-              26) echo v26.8.2 ;;
+              26) echo v26.12.1 ;;
               '') echo N/A ;;
               *) echo "$value" ;;
             esac
@@ -2035,9 +2036,9 @@ EOF
             touch "$NVM_DIR/remote-updated"
             ${installFails ? "return 42" : ""}
             if [ ! -e "$NVM_DIR/alias/default" ]; then printf '26\\n' > "$NVM_DIR/alias/default"; fi
-            mkdir -p "$NVM_DIR/versions/node/v26.8.2/bin"
-            printf '#!/bin/sh\\nif [ "$1" = "-v" ]; then echo v26.8.2; fi\\n' > "$NVM_DIR/versions/node/v26.8.2/bin/node"
-            chmod +x "$NVM_DIR/versions/node/v26.8.2/bin/node"
+            mkdir -p "$NVM_DIR/versions/node/v26.12.1/bin"
+            printf '#!/bin/sh\\nif [ "$1" = "-v" ]; then echo v26.12.1; fi\\n' > "$NVM_DIR/versions/node/v26.12.1/bin/node"
+            chmod +x "$NVM_DIR/versions/node/v26.12.1/bin/node"
             ;;
           *) return 1 ;;
         esac
@@ -2087,7 +2088,7 @@ EOF
       } else {
         const selectedBin =
           expected === "installed"
-            ? join(nvmDir, "versions/node/v26.8.2/bin")
+            ? join(nvmDir, "versions/node/v26.12.1/bin")
             : expected === "system"
               ? systemBin
               : nvmBin;
@@ -2149,7 +2150,7 @@ EOF
     const pkg = JSON.parse(readFileSync("package.json", "utf8")) as {
       engines?: { node?: string };
     };
-    expect(pkg.engines?.node).toBe(">=24.16.0 <25 || >=26.1.0");
+    expect(pkg.engines?.node).toBe(">=24.22.1 <25 || >=26.12.1");
 
     const tmp = tempDirs.make("openclaw-install-node-floor-");
     const bin = join(tmp, "bin");
@@ -2195,11 +2196,11 @@ EOF
 
   it.each(
     [
-      { version: "24.19.0", defect: "none", expected: 0 },
-      { version: "24.19.0", defect: "text", expected: 1 },
+      { version: "24.22.1", defect: "none", expected: 0 },
+      { version: "24.22.1", defect: "text", expected: 1 },
       { version: "24.15.0+vendor.1", defect: "none", expected: 1 },
-      { version: "24.19.0", defect: "blob", expected: 1 },
-      { version: "24.19.0", defect: "json", expected: 1 },
+      { version: "24.22.1", defect: "blob", expected: 1 },
+      { version: "24.22.1", defect: "json", expected: 1 },
     ].flatMap(({ version, defect, expected }) =>
       ["install.sh", "install-cli.sh"].map((installer) => ({
         version,
@@ -2322,7 +2323,7 @@ EOF
       [
         "#!/usr/bin/env bash",
         'if [[ "${1:-}" == "-p" ]]; then echo "24 15"; exit 0; fi',
-        'if [[ "${1:-}" == "-v" ]]; then echo "v24.16.0"; exit 0; fi',
+        'if [[ "${1:-}" == "-v" ]]; then echo "v24.22.1"; exit 0; fi',
         "",
       ].join("\n"),
     );
@@ -2434,95 +2435,83 @@ EOF
   });
 
   it.each([
-    { shell: "/bin/bash", profiles: [".bashrc", ".profile"], absent: [".zshrc", ".zprofile"] },
-    { shell: "/bin/zsh", profiles: [".zshrc", ".zprofile"], absent: [".bashrc", ".profile"] },
+    { shell: "bash", profiles: [".bashrc", ".profile"], absent: [".zshrc", ".zprofile"] },
+    { shell: "zsh", profiles: [".zshrc", ".zprofile"], absent: [".bashrc", ".profile"] },
     {
-      shell: "/usr/bin/fish",
-      profiles: [".config/fish/conf.d/openclaw.fish"],
-      absent: [".bashrc"],
+      shell: "zsh",
+      zdotdir: ".config/zsh profiles 'quoted'",
+      profiles: [".zshrc", ".zprofile"],
+      absent: [".zshrc", ".zprofile", ".bashrc", ".profile"],
     },
-  ])("persists a fresh Git install for $shell", ({ shell, profiles, absent }) => {
-    const tmp = tempDirs.make("openclaw-install-shell-path-");
-    const home = join(tmp, "home"),
-      bin = join(home, ".local", "bin");
-    mkdirSync(bin, { recursive: true });
-    writeFileSync(join(bin, "openclaw"), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
-    const env = { HOME: home, PATH: "/usr/bin:/bin", SHELL: shell };
-    const persist = runInstallShell(
-      `source "${SCRIPT_PATH}"; ensure_user_local_bin_on_path; ensure_user_local_bin_on_path`,
-      env,
-    );
-    expect(persist.status).toBe(0);
-    for (const profile of profiles) {
-      expect(readFileSync(join(home, profile), "utf8")).toBe(
-        shell.endsWith("fish")
-          ? 'fish_add_path -- "$HOME/.local/bin"\n'
-          : 'export PATH="$HOME/.local/bin:$PATH"\n',
+    { shell: "fish", profiles: [".config/fish/conf.d/openclaw.fish"], absent: [".bashrc"] },
+  ] as const)(
+    "persists a fresh Git install for $shell (ZDOTDIR=$zdotdir)",
+    ({ shell, profiles, absent, zdotdir }) => {
+      const home = join(tempDirs.make("openclaw-install-shell-path-"), "home");
+      const bin = join(home, ".local", "bin");
+      const profileDir = zdotdir ? join(home, zdotdir) : home;
+      mkdirSync(bin, { recursive: true });
+      writeFileSync(join(bin, "openclaw"), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+      const env = {
+        HOME: home,
+        ZDOTDIR: zdotdir ? profileDir : undefined,
+        PATH: "/usr/bin:/bin",
+        SHELL: `/bin/${shell}`,
+        BASH_ENV: "",
+        ENV: "",
+      };
+      const persist = runInstallShell(
+        `source "${SCRIPT_PATH}"; ensure_user_local_bin_on_path; ensure_user_local_bin_on_path`,
+        env,
       );
-    }
-    for (const profile of absent) {
-      expect(existsSync(join(home, profile))).toBe(false);
-    }
-    if (shell === "/bin/bash") {
-      const interactive = spawnSync(
-        "/bin/bash",
-        ["-ic", "printf 'openclaw-path=%s\\n' \"$(command -v openclaw)\""],
-        {
-          encoding: "utf8",
-          env: { HOME: home, PATH: "/usr/bin:/bin", BASH_ENV: "", ENV: "" },
-        },
-      );
-      const login = spawnSync(
-        "/bin/bash",
-        ["--noprofile", "--norc", "-c", '. "$HOME/.profile"; command -v openclaw'],
-        {
-          encoding: "utf8",
-          env: { HOME: home, PATH: "/usr/bin:/bin", BASH_ENV: "", ENV: "" },
-        },
-      );
-      expect(interactive.status).toBe(0);
-      expect(interactive.stdout.match(/^openclaw-path=.*$/gm)).toEqual([
-        `openclaw-path=${join(bin, "openclaw")}`,
-      ]);
-      expect(login.status).toBe(0);
-      expect(login.stdout.trim()).toBe(join(bin, "openclaw"));
-    } else if (shell === "/bin/zsh") {
-      if (spawnSync("zsh", ["--version"], { encoding: "utf8" }).status === 0) {
-        for (const args of [
-          ["-ic", "command -v openclaw"],
-          ["-lic", "command -v openclaw"],
-        ]) {
-          const fresh = spawnSync("zsh", args, {
-            encoding: "utf8",
-            env: { HOME: home, PATH: "/usr/bin:/bin", ZDOTDIR: home },
-          });
-          expect(fresh.status).toBe(0);
-          expect(fresh.stdout.trim()).toBe(join(bin, "openclaw"));
-        }
+      expect(persist.status, persist.stdout + persist.stderr).toBe(0);
+      for (const profile of profiles) {
+        expect(readFileSync(join(profileDir, profile), "utf8")).toBe(
+          shell === "fish"
+            ? 'fish_add_path -- "$HOME/.local/bin"\n'
+            : 'export PATH="$HOME/.local/bin:$PATH"\n',
+        );
       }
-    } else {
+      for (const profile of absent) {
+        expect(existsSync(join(home, profile))).toBe(false);
+      }
       const warning = runInstallShell(
         `source "${SCRIPT_PATH}"; warn_shell_path_missing_dir "$HOME/.local/bin" "user-local bin dir"`,
         env,
       );
       expect(warning.status).toBe(0);
       expect(warning.stdout).toContain("PATH missing user-local bin dir");
-      expect(warning.stdout).toContain(`set -gx PATH "${bin}" $PATH`);
       expect(warning.stdout).toContain(
-        `If your shell reads ${join(home, ".config/fish/conf.d/openclaw.fish")} and it adds this directory to PATH`,
+        `If your shell reads ${join(profileDir, profiles[0])} and it adds this directory to PATH`,
       );
       expect(warning.stdout).not.toContain("PATH updated in");
-      const fishPath = runInstallShell("command -v fish");
-      if (fishPath.status === 0) {
-        const fresh = spawnSync(fishPath.stdout.trim(), ["-lc", "command -v openclaw"], {
-          encoding: "utf8",
-          env: { HOME: home, PATH: "/usr/bin:/bin" },
-        });
-        expect(fresh.status).toBe(0);
-        expect(fresh.stdout.trim()).toBe(join(bin, "openclaw"));
+      if (shell === "fish") {
+        expect(warning.stdout).toContain(`set -gx PATH "${bin}" $PATH`);
       }
-    }
-  });
+      const executable = runInstallShell(`command -v ${shell}`).stdout.trim();
+      const commands =
+        shell === "bash"
+          ? [
+              ["-ic", "printf 'openclaw-path=%s\\n' \"$(command -v openclaw)\""],
+              ["--noprofile", "--norc", "-c", '. "$HOME/.profile"; command -v openclaw'],
+            ]
+          : shell === "zsh"
+            ? [
+                ["-ic", "command -v openclaw"],
+                ["-lic", "command -v openclaw"],
+              ]
+            : [["-lc", "command -v openclaw"]];
+      for (const args of executable ? commands : []) {
+        const fresh = spawnSync(executable, args, { encoding: "utf8", env });
+        expect(fresh.status, fresh.stdout + fresh.stderr).toBe(0);
+        expect(
+          shell === "bash" && args[0] === "-ic"
+            ? fresh.stdout.match(/^openclaw-path=(.*)$/m)?.[1]
+            : fresh.stdout.trim(),
+        ).toBe(join(bin, "openclaw"));
+      }
+    },
+  );
 
   it("updates existing startup files for dual-shell users", () => {
     const tmp = tempDirs.make("openclaw-install-dual-shell-path-");
@@ -3106,6 +3095,7 @@ EOF
       expect(result.stdout).not.toMatch(/(^|run: )source |^ {4}source /m);
       const command = result.stdout.match(/For this shell, run:\n {4}(.+)/)?.[1];
       expect(command).toBeTruthy();
+      expect(command).toContain("; hash -r");
       const direct = runInstallShell(`${command}; command -v openclaw; openclaw --version`, {
         HOME: home,
         PATH: "/usr/bin:/bin",
@@ -3195,22 +3185,6 @@ EOF
     expect(result.stdout).toContain("Fish: set -gx PATH ");
     expect(result.stdout).not.toContain("For this shell, run:");
     expect(result.stdout).not.toContain("source ");
-  });
-
-  it("refreshes the shell command cache in the direct PATH remedy", () => {
-    const result = runInstallShell(`
-      set -euo pipefail
-      source "${SCRIPT_PATH}"
-      printf 'export PATH="$HOME/.local/bin:$PATH"\\n' > "$HOME/.bashrc"
-      ORIGINAL_PATH="/usr/bin:/bin"
-      SHELL=/bin/bash
-      warn_shell_path_missing_dir "$HOME/.local/bin" "user-local bin dir"
-    `);
-
-    expect(result.status).toBe(0);
-    expect(result.stdout).toContain("For this shell, run:\n    export PATH=");
-    expect(result.stdout).not.toContain("source ");
-    expect(result.stdout).toContain("; hash -r");
   });
 
   it("resolves requested git install versions to checkout refs", () => {

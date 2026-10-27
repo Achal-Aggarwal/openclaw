@@ -1,12 +1,17 @@
 import { asOptionalObjectRecord } from "@openclaw/normalization-core/record-coerce";
+import { scanReasoningTags } from "../../packages/markdown-core/src/reasoning-tags.js";
 import { emitAgentEvent } from "../infra/agent-events.js";
 import type { AssistantMessage } from "../llm/types.js";
 import {
   readAssistantTextBlocksForPhase,
   resolveAssistantMessagePhase,
 } from "../shared/chat-message-content.js";
-import { toolCallXmlTextFilter } from "../shared/text/assistant-visible-text.js";
+import {
+  hasUnsettledPlainTextToolCall,
+  toolCallXmlTextFilter,
+} from "../shared/text/assistant-visible-text.js";
 import { downgradedToolCallTextFilter } from "../shared/text/downgraded-tool-call-text.js";
+import { findNativeToolMarkerTextBlocks } from "../shared/text/native-tool-marker.js";
 import { createTextProjection, trimTextFilter } from "../shared/text/text-projection.js";
 import { resolveCurrentSourceMessagingToolPartial } from "./embedded-agent-helpers/messaging-dedupe.js";
 import { updateLiveEditDiffProgress } from "./embedded-agent-live-edit-diff.js";
@@ -48,8 +53,6 @@ import {
   extractThinkingFromTaggedStream,
 } from "./embedded-agent-utils.js";
 import type { AgentEvent, AgentMessage } from "./runtime/index.js";
-
-const REASONING_TAG_RE = /<\s*\/?\s*(?:(?:antml:|mm:)?(?:think(?:ing)?|thought)|antthinking)\b/i;
 
 export function handleMessageUpdate(
   ctx: EmbeddedAgentSubscribeContext,
@@ -133,12 +136,9 @@ export function handleMessageUpdate(
     // streamReasoning rendering hook and message_tool_only source suppression
     // are gated downstream (dispatch wrapProgressCallback, #92738), so emission
     // here stays unconditional.
-    const block =
-      Array.isArray(msg.content) && msg.content.length === 1 ? msg.content[0] : undefined;
-    const nativeThinking = block?.type === "thinking" ? block : undefined;
     ctx.emitReasoningStream(
-      nativeThinking ?? (extractAssistantThinking(msg) || thinkingContent || thinkingDelta),
-      nativeThinking ? thinkingContent || thinkingDelta : undefined,
+      Array.isArray(msg.content) ? msg.content : [],
+      thinkingContent || thinkingDelta,
     );
     if (evtType === "thinking_end" && !suppressSourceReplyOutput) {
       // Mirror the open gate above: when confirmed source delivery has made the
@@ -338,7 +338,7 @@ export function handleMessageUpdate(
   ctx.emitReasoningStream(
     extractThinkingFromTaggedStream(ctx.state.deltaBuffer, ctx.state.thinkingTagStream, chunk),
   );
-  const wasThinking = ctx.state.partialBlockState.thinking;
+  const wasThinking = ctx.state.partialBlockState.reasoningDepth > 0;
   let visibleDelta = "";
   let textIsAppend = false;
   let appendDelta: string | null = null;
@@ -352,6 +352,10 @@ export function handleMessageUpdate(
   const isTerminalSnapshot = evtType === "text_end" && shouldReadPartialText;
   let selectedAssistant =
     shouldUsePhaseAwareBlockReply || isResponsesTextEvent ? streamAssistant : partialAssistant;
+  // Capture the following native call before the text checkpoint drops later blocks.
+  const nativeToolMarkerBlocks = isTerminalSnapshot
+    ? findNativeToolMarkerTextBlocks(selectedAssistant)
+    : undefined;
   if (
     isTerminalSnapshot &&
     selectedAssistant === partialAssistant &&
@@ -367,7 +371,10 @@ export function handleMessageUpdate(
     };
   }
   const snapshot = shouldReadPartialText
-    ? extractAssistantStreamSnapshot(ctx, selectedAssistant, { final: finalText })
+    ? extractAssistantStreamSnapshot(ctx, selectedAssistant, {
+        final: finalText,
+        nativeToolMarkerBlocks,
+      })
     : undefined;
   const previousPreparedSource = ctx.getPartialReplySourceText();
   if (snapshot) {
@@ -406,7 +413,11 @@ export function handleMessageUpdate(
     textIsAppend = true;
   } else if (next === undefined && deliveryPhase !== "final_answer") {
     const pendingTagFragment = ctx.state.partialBlockState.pendingTagFragment;
-    const shouldRecomputeFullStream = Boolean(pendingTagFragment) || REASONING_TAG_RE.test(chunk);
+    const reasoningTags = scanReasoningTags(chunk, false);
+    const shouldRecomputeFullStream =
+      Boolean(pendingTagFragment) ||
+      reasoningTags.tags.length > 0 ||
+      reasoningTags.pendingStart !== undefined;
     if (shouldRecomputeFullStream) {
       const recomputeState = createAssistantStreamBlockState();
       const recomputedRawText = ctx.stripBlockTags(preparedSource, recomputeState, {
@@ -442,8 +453,11 @@ export function handleMessageUpdate(
     });
   }
   if (next !== undefined) {
-    // Held fence fragments change this delta before the visible projection trims it.
-    const unchangedBlockAppend = textIsAppend && visibleDelta === chunk;
+    // A prior projection can hold bytes that this append must restore through a snapshot.
+    const unchangedBlockAppend =
+      textIsAppend &&
+      visibleDelta === chunk &&
+      ctx.state.assistantStream?.projection?.projector.matchesTrimmedSource !== false;
     if (!hasSnapshotText) {
       const kind =
         deliveryPhase !== "final_answer"
@@ -489,9 +503,9 @@ export function handleMessageUpdate(
       }
     }
     if (!suppressSourceReplyOutput) {
-      if (!wasThinking && ctx.state.partialBlockState.thinking) {
+      if (!wasThinking && ctx.state.partialBlockState.reasoningDepth > 0) {
         openReasoningStream(ctx);
-      } else if (wasThinking && !ctx.state.partialBlockState.thinking) {
+      } else if (wasThinking && ctx.state.partialBlockState.reasoningDepth === 0) {
         emitReasoningEnd(ctx);
       }
     }
@@ -538,11 +552,13 @@ export function handleMessageUpdate(
       (priorBlockIndex === streamContentIndex ||
         (priorBlockIndex === undefined && !priorBlockText)) &&
       projection?.projector.matchesTrimmedSource &&
+      (previousText.length > 0 || appendDelta === chunk) &&
       ((previousText === previousCleaned && next === cleanedText) ||
         (appendDelta !== null && replyDelta === appendDelta));
-    if (plainAppend) {
+    // Block snapshots only serve the optional block-delivery consumer.
+    if (ctx.params.onBlockReply && plainAppend) {
       ctx.blockChunker.append(chunk);
-    } else {
+    } else if (ctx.params.onBlockReply) {
       const previousBlock = extractAssistantStreamSnapshot(ctx, partialAssistant, {
         throughIndex: streamItemChanged ? blockSourceIndex : priorSourceIndex,
         observedText: streamItemChanged ? "" : priorBlockText,
@@ -601,7 +617,20 @@ export function handleMessageUpdate(
     return undefined;
   }
   if (ctx.params.onBlockReply && ctx.blockChunking) {
-    ctx.blockChunker.drain({ force: false, emit: ctx.emitBlockChunk });
+    // Delivered messages cannot retract mutable Markdown or tool-call prefixes. The
+    // projection owns settlement after activation; the raw grammar covers short prefixes.
+    const projector = projection?.projector;
+    const unsettled =
+      deliveryPhase === "final_answer" &&
+      !finalText &&
+      ((projector
+        ? projector.settledLength < projector.text.length
+        : ctx.state.blockReplyTextUnsettled) ||
+        hasUnsettledPlainTextToolCall(ctx.blockChunker.bufferedText));
+    ctx.state.blockReplyTextUnsettled = unsettled;
+    if (!unsettled) {
+      ctx.blockChunker.drain({ force: false, emit: ctx.emitBlockChunk });
+    }
   }
   if (evtType === "text_end") {
     const assistantMessageIndex = ctx.state.assistantMessageIndex;

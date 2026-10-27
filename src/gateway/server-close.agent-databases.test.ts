@@ -11,10 +11,8 @@ import { openContextEngineTurnOutboxWorkerStore } from "../agents/harness/contex
 import { isAgentRunRestartAbortReason } from "../agents/run-termination.js";
 import { admitReplyTurn } from "../auto-reply/reply/reply-turn-admission.js";
 import { runGatewayLoop } from "../cli/gateway-cli/run-loop.js";
-import {
-  mutateSessionGoal,
-  readSessionGoalOperationInDatabase,
-} from "../config/sessions/goals-operations.js";
+import { readSessionGoalOperationInDatabase } from "../config/sessions/goals-operation-receipts.js";
+import { mutateSessionGoal } from "../config/sessions/goals-operations.js";
 import { createSessionGoal } from "../config/sessions/goals.js";
 import { formatSqliteSessionFileMarker } from "../config/sessions/legacy-sqlite-marker.js";
 import {
@@ -170,7 +168,7 @@ it("settles accepted incognito outbox work after the close prelude and before ac
       async run() {
         accepted.resolve();
         await release.promise;
-        writing = outbox.enqueueIntent({ ...filter, admission, isHeartbeat: false });
+        writing = outbox.enqueueIntent({ ...filter, admission });
         await writing;
         persisted = await outbox.readNextPending(filter);
       },

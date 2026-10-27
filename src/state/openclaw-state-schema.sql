@@ -2361,9 +2361,40 @@ CREATE TABLE IF NOT EXISTS local_workspace_projections (
   journal_pack BLOB CHECK (journal_pack IS NULL OR length(journal_pack) <= 268435456),
   revision INTEGER NOT NULL DEFAULT 0 CHECK (revision >= 0),
   created_at_ms INTEGER NOT NULL,
-  CHECK ((baseline_json IS NULL) = (baseline_ref IS NULL)),
+  checkpoint_json TEXT,
+  tree_root_digest BLOB,
+  source_paths_digest BLOB,
+  canonical_fingerprints BLOB,
+  projection_fingerprints BLOB,
+  CHECK (baseline_json IS NULL OR baseline_ref IS NOT NULL),
   CHECK ((journal_json IS NULL) = (journal_pack IS NULL))
 ) STRICT;
+
+-- The projection owner advances changed nodes and its root in one acceptance.
+-- Legacy baseline_json remains only until that owner's resumable conversion.
+CREATE TABLE IF NOT EXISTS local_workspace_manifest_nodes (
+  worktree_id TEXT NOT NULL,
+  path TEXT NOT NULL,
+  node_json TEXT NOT NULL,
+  PRIMARY KEY (worktree_id, path),
+  FOREIGN KEY (worktree_id)
+    REFERENCES local_workspace_projections(worktree_id) ON DELETE CASCADE
+) STRICT;
+
+-- Immutable subtrees and source inventories are shared across projections and revisions.
+-- Large JSON packs measured 410k VFS reads/load WITHOUT ROWID versus 10k with rowid.
+CREATE TABLE IF NOT EXISTS local_workspace_tree_packs (
+  tree_digest BLOB NOT NULL PRIMARY KEY CHECK (length(tree_digest) = 32),
+  records_json TEXT NOT NULL,
+  children_json TEXT NOT NULL,
+  sweep_epoch INTEGER NOT NULL
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS local_workspace_source_path_sets (
+  path_digest BLOB NOT NULL PRIMARY KEY CHECK (length(path_digest) = 32),
+  paths_zstd BLOB NOT NULL,
+  sweep_epoch INTEGER NOT NULL
+) STRICT, WITHOUT ROWID;
 
 -- A reconciliation journal is written before managed-worktree mutation. The
 -- bounded Git base snapshot repairs any subset left by an interrupted apply.

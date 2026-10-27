@@ -72,11 +72,11 @@ NODE_BREW_FORMULA="node"
 # Linux package repositories can publish builds ahead of the Node release line.
 # Provision the supported LTS line there so a fresh install never receives a prerelease runtime.
 NODE_LINUX_DEFAULT_MAJOR=24
-NODE_24_MIN_MINOR=16
-NODE_24_MIN_PATCH=0
-NODE_26_MIN_MINOR=1
-NODE_26_MIN_PATCH=0
-NODE_SUPPORTED_VERSION_LABEL="24.16.0+ or 26.1.0+"
+NODE_24_MIN_MINOR=22
+NODE_24_MIN_PATCH=1
+NODE_26_MIN_MINOR=12
+NODE_26_MIN_PATCH=1
+NODE_SUPPORTED_VERSION_LABEL="24.22.1+ or 26.12.1+"
 
 ORIGINAL_PATH="${PATH:-}"
 
@@ -1645,17 +1645,18 @@ persist_shell_path_prepend() {
         bash_login_rc="$HOME/.bash_login"
     fi
 
+    local zsh_rc_dir="${ZDOTDIR:-$HOME}"
     local targets=()
     local fish_rc="$HOME/.config/fish/conf.d/openclaw.fish"
     case "$shell_name" in
         bash)
             targets+=("bash:$HOME/.bashrc" "bash:$bash_login_rc")
-            [[ -e "$HOME/.zshrc" || -L "$HOME/.zshrc" ]] && targets+=("zsh:$HOME/.zshrc")
-            [[ -e "$HOME/.zprofile" || -L "$HOME/.zprofile" ]] && targets+=("zsh:$HOME/.zprofile")
+            [[ -e "$zsh_rc_dir/.zshrc" || -L "$zsh_rc_dir/.zshrc" ]] && targets+=("zsh:$zsh_rc_dir/.zshrc")
+            [[ -e "$zsh_rc_dir/.zprofile" || -L "$zsh_rc_dir/.zprofile" ]] && targets+=("zsh:$zsh_rc_dir/.zprofile")
             [[ -e "$fish_rc" || -L "$fish_rc" ]] && targets+=("fish:$fish_rc")
             ;;
         zsh)
-            targets+=("zsh:$HOME/.zshrc" "zsh:$HOME/.zprofile")
+            targets+=("zsh:$zsh_rc_dir/.zshrc" "zsh:$zsh_rc_dir/.zprofile")
             [[ -e "$HOME/.bashrc" || -L "$HOME/.bashrc" ]] && targets+=("bash:$HOME/.bashrc")
             [[ -e "$bash_login_rc" || -L "$bash_login_rc" ]] && targets+=("bash:$bash_login_rc")
             [[ -e "$fish_rc" || -L "$fish_rc" ]] && targets+=("fish:$fish_rc")
@@ -1664,8 +1665,8 @@ persist_shell_path_prepend() {
             targets+=("fish:$fish_rc")
             [[ -e "$HOME/.bashrc" || -L "$HOME/.bashrc" ]] && targets+=("bash:$HOME/.bashrc")
             [[ -e "$bash_login_rc" || -L "$bash_login_rc" ]] && targets+=("bash:$bash_login_rc")
-            [[ -e "$HOME/.zshrc" || -L "$HOME/.zshrc" ]] && targets+=("zsh:$HOME/.zshrc")
-            [[ -e "$HOME/.zprofile" || -L "$HOME/.zprofile" ]] && targets+=("zsh:$HOME/.zprofile")
+            [[ -e "$zsh_rc_dir/.zshrc" || -L "$zsh_rc_dir/.zshrc" ]] && targets+=("zsh:$zsh_rc_dir/.zshrc")
+            [[ -e "$zsh_rc_dir/.zprofile" || -L "$zsh_rc_dir/.zprofile" ]] && targets+=("zsh:$zsh_rc_dir/.zprofile")
             ;;
         *)
             echo ""
@@ -2110,7 +2111,7 @@ install_node_with_apk() {
     active_version="$(node -v 2>/dev/null || echo "missing")"
     sqlite_version="$(node_binary_sqlite_version node)"
     ui_error "Alpine apk repositories did not provide Node.js with WAL-reset-safe SQLite; found ${active_version} with SQLite ${sqlite_version} (${active_path})"
-    echo "Use an official node:${NODE_DEFAULT_MAJOR}-alpine container or a glibc-based host until Alpine ships patched SQLite, then rerun the installer."
+    echo "Use an official node:26.12.1-alpine container or a glibc-based host until Alpine ships patched SQLite, then rerun the installer."
     exit 1
 }
 
@@ -2382,7 +2383,7 @@ ensure_pnpm() {
     local repo_dir="${1:-$PWD}"
     local spec version pnpm_dir corepack_cmd="" npm_cmd lifecycle_arg selected_version
     spec="$(repo_pnpm_spec "$repo_dir" || true)"
-    [[ "$spec" == pnpm@* ]] || spec="pnpm@12.12.1"
+    [[ "$spec" == pnpm@* ]] || spec="pnpm@12.15.0"
     version="${spec#pnpm@}"
     version="${version%%+*}"
     pnpm_dir="$(mktemp -d "${TMPDIR:-/tmp}/openclaw-pnpm.XXXXXX")" || return 1
@@ -2660,8 +2661,9 @@ warn_shell_path_missing_dir() {
     esac
     echo "  For future shells, check your shell startup file."
 
+    local zsh_rc_dir="${ZDOTDIR:-$HOME}"
     local rc
-    for rc in "$HOME/.bashrc" "$HOME/.bash_profile" "$HOME/.bash_login" "$HOME/.profile" "$HOME/.zshrc" "$HOME/.zprofile" "$HOME/.config/fish/conf.d/openclaw.fish"; do
+    for rc in "$HOME/.bashrc" "$HOME/.bash_profile" "$HOME/.bash_login" "$HOME/.profile" "$zsh_rc_dir/.zshrc" "$zsh_rc_dir/.zprofile" "$HOME/.config/fish/conf.d/openclaw.fish"; do
         if [[ -f "$rc" ]] && {
             grep -Fq "$dir" "$rc" || grep -Fq "$dir_home_form" "$rc" ||
                 { [[ -n "$managed_node_bin" ]] && { grep -Fq "$managed_node_bin" "$rc" || grep -Fq "$managed_node_home_form" "$rc"; }; }

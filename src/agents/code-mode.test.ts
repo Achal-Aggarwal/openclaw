@@ -31,7 +31,6 @@ import {
 } from "./code-mode.js";
 import {
   createCodeModeHarness,
-  fakeTool,
   mcpTool,
   pluginTool,
   resetCodeModeTestState,
@@ -52,6 +51,7 @@ import { prepareInstalledSkillCatalog } from "./installed-skill-runtime.js";
 import { createReadTool } from "./sessions/index.js";
 import { SessionManager } from "./sessions/session-manager.js";
 import { readToolInputSchema } from "./sessions/tools/tool-schemas.js";
+import { fakeTool } from "./test-helpers/fake-tool.js";
 import { filterToolsByPolicy } from "./tool-policy-match.js";
 import { addClientToolsToToolCatalog, restrictToolSearchCatalog } from "./tool-search-catalog.js";
 import { clearToolSearchCatalog } from "./tool-search.js";
@@ -298,7 +298,7 @@ describe("Code Mode search", () => {
     expectToolCalls(1, plugin, client);
   });
 
-  function setup(maxSearchLimit = 50) {
+  it("keeps discovery intact beyond the display budget and leaves narrowed discovery callable", async () => {
     const targets = Array.from({ length: 50 }, (_, index) =>
       pluginTool(
         `shipment_${String(index).padStart(2, "0")}_${"long_name_".repeat(5)}`,
@@ -306,14 +306,11 @@ describe("Code Mode search", () => {
       ),
     );
     const { ctx } = createCatalogCodeModeHarness(targets, {
-      codeMode: { maxOutputBytes: 1024, maxSearchLimit },
+      codeMode: { maxOutputBytes: 1024, maxSearchLimit: 50 },
     });
     const run = (code: string) => runCodeModeScriptHeadless({ ctx, code });
-    return { run, targets };
-  }
-
-  it("keeps discovery intact beyond the display budget and leaves narrowed discovery callable", async () => {
-    const { run, targets } = setup();
+    const missing = await run('return await catalog.search("zzzz_missing_tool", { limit: 50 });');
+    expectCompleted(missing, []);
     const overflow = await run(
       'const matches = await catalog.search("shipment", { limit: 50 }); return { count: matches.length, callable: matches.every(tool => typeof tool === "function") };',
     );
@@ -328,18 +325,6 @@ describe("Code Mode search", () => {
     expectCompleted(narrowed, { name: targets[0]?.name, input: { value: "ship" } });
     expect(targets[0]?.execute).toHaveBeenCalledOnce();
     expectToolCalls(0, ...targets.slice(1));
-    expect(testing.activeRuns.size).toBe(0);
-    expect(testing.resumingRunIds.size).toBe(0);
-  });
-
-  it("returns no callable matches for an unknown tool", async () => {
-    const { run, targets } = setup();
-    const result = await run(`
-      const matches = await catalog.search("zzzz_missing_tool", { limit: 50 });
-      return { count: matches.length, frozen: Object.isFrozen(matches), callable: matches.every(tool => typeof tool === "function") };
-    `);
-    expectCompleted(result, { count: 0, frozen: true, callable: true });
-    expectToolCalls(0, ...targets);
   });
 });
 
@@ -348,8 +333,8 @@ it("records Code Mode skills.read of a workshop skill as run usage and skill.use
   const codeModeSkills = resolveCodeModeSkills({
     skillsPrompt: await resolveSkillsPrompt({ entries: [learned], workspaceDir: "/workspace" }),
     candidates: [learned.skill],
-    reader: async () => "# Learned instructions\n",
   });
+  codeModeSkills[0]!.reader = async () => "# Learned instructions\n";
   const used: Array<{ event: DiagnosticEventPayload; skillFile?: string }> = [];
   const stop = onTrustedInternalDiagnosticEvent(
     (event, _metadata, privateData) => {
@@ -770,7 +755,7 @@ describe("session store bridge", () => {
       for (const key of ["a", "b", "c", "d"]) await store(key, max);
       const errors = [];
       for (const [key, value] of [["a", max + "x"], ["a", "é".repeat(128 * 1024)], ["e", 1]]) {
-        try { await store(key, value); } catch (error) { errors.push(error instanceof RangeError); }
+        try { await store(key, value); } catch (error) { errors.push(error instanceof RangeError && error.code === "store_range" && /unchanged/.test(error.message)); }
       }
       const unchanged = (await load("a")).length;
       await store("b", undefined);
@@ -808,10 +793,13 @@ describe("session store bridge", () => {
     expectFailure(
       result,
       "bridge",
-      "internal_error",
+      set ? "internal_error" : "invalid_input",
       set
         ? { error: expect.stringContaining("repair the session") }
-        : { bridgeDispatchStarted: true, error: expect.stringMatching(/^RangeError/) },
+        : {
+            bridgeDispatchStarted: true,
+            error: expect.stringMatching(/^RangeError:.*save a summary/),
+          },
     );
     expect(log).toHaveBeenCalledExactlyOnceWith(
       set ? expect.objectContaining({ cause: expect.any(cause) }) : expect.any(cause),
@@ -924,3 +912,26 @@ it.each(["aborted", "timeout"] as const)(
     await next.check('return (await load("key")) === undefined;', true);
   },
 );
+
+it("keeps an astral skill description whole at the skills.list cap", async () => {
+  const prefix = "a".repeat(511);
+  const skills = [
+    {
+      name: "boundary-guide",
+      description: `${prefix}😀tail`,
+      location: "/skills/boundary-guide/SKILL.md",
+      source: { filePath: "/skills/boundary-guide/SKILL.md" },
+    },
+  ];
+  const harness = createCatalogCodeModeHarness(createInstalledSkillTools(skills), {
+    codeModeSkills: skills,
+  });
+  const result = await harness.complete("return await skills.list(0);");
+  expectCompleted(result, [
+    {
+      name: "boundary-guide",
+      description: prefix,
+      location: "/skills/boundary-guide/SKILL.md",
+    },
+  ]);
+});

@@ -19,7 +19,6 @@ export async function prepareReplySubagentContinuation(
     provenance.sourceSessionKey === turn.sessionKey;
   if (
     !turn.sessionKey ||
-    turn.isHeartbeat ||
     (provenance && provenance.kind !== "external_user" && !operatorRecovery) ||
     !(entry?.spawnedBy || entry?.subagentRole || (entry?.spawnDepth ?? 0) > 0)
   ) {
@@ -43,7 +42,7 @@ export async function prepareReplySubagentContinuation(
       readChannelContextGatewayContextResolver(turn.sessionCtx) ??
       getPluginRuntimeGatewayRequestScope()?.resolveGatewayContext,
     assertCurrent,
-    acpSession: { cfg, activeSessionAgentId: turn.followupRun.run.agentId, sessionEntry: entry },
+    session: { cfg, activeSessionAgentId: turn.followupRun.run.agentId, sessionEntry: entry },
   });
   assertCurrent();
 }

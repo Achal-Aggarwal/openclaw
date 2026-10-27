@@ -1,11 +1,12 @@
 import { createChannelInboundEnvelopeBuilderAsync } from "openclaw/plugin-sdk/channel-inbound";
 import type { OpenClawConfig } from "openclaw/plugin-sdk/config-contracts";
+import { logError } from "openclaw/plugin-sdk/logging-core";
 import { resolveAgentRoute } from "openclaw/plugin-sdk/routing";
 import type { PluginRuntime } from "openclaw/plugin-sdk/runtime-store";
 import type { A2aTaskStore } from "./task-store.js";
 import type { ResolvedA2aChannelAccount } from "./types.js";
 
-type A2aInboundDispatchParams = {
+export async function dispatchA2aInbound(params: {
   account: ResolvedA2aChannelAccount;
   config: OpenClawConfig;
   channelRuntime: PluginRuntime["channel"];
@@ -15,12 +16,13 @@ type A2aInboundDispatchParams = {
   messageId: string;
   peerName: string;
   text: string;
-};
-
-export async function dispatchA2aInbound(params: A2aInboundDispatchParams): Promise<void> {
+}): Promise<void> {
+  const reportPersistenceError = (error: unknown) => {
+    logError(`A2A task persistence failed: ${String(error)}`);
+  };
   // Peer credentials admit tasks, never user commands (including plugin commands).
   if (params.text.trimStart().startsWith("/")) {
-    params.store.reject(
+    await params.store.reject(
       params.taskId,
       "A2A peers cannot execute slash commands. Send a task in plain text; only users can issue commands.",
     );
@@ -54,7 +56,7 @@ export async function dispatchA2aInbound(params: A2aInboundDispatchParams): Prom
     allowFrom: Object.keys(params.account.config.peers ?? {}),
   });
   if (ingress.ingress.admission !== "dispatch") {
-    params.store.reject(params.taskId, "A2A peer was blocked by channel ingress policy");
+    await params.store.reject(params.taskId, "A2A peer was blocked by channel ingress policy");
     return;
   }
 
@@ -110,11 +112,11 @@ export async function dispatchA2aInbound(params: A2aInboundDispatchParams): Prom
     delivery: {
       deliver: async (payload, info) => {
         if (info.kind === "final") {
-          params.store.complete(params.taskId, payload.text);
+          await params.store.complete(params.taskId, payload.text);
         }
       },
       onError: (error) => {
-        params.store.fail(params.taskId, error);
+        void params.store.fail(params.taskId, error).catch(reportPersistenceError);
       },
     },
     // Source replies complete the correlated task; the generic message tool
@@ -123,17 +125,20 @@ export async function dispatchA2aInbound(params: A2aInboundDispatchParams): Prom
       sourceReplyDeliveryMode: "automatic",
       onAgentRunTerminalOutcome: (outcome) => {
         if (outcome === "failed") {
-          params.store.fail(params.taskId, "Agent run failed");
+          void params.store.fail(params.taskId, "Agent run failed").catch(reportPersistenceError);
         }
       },
     },
     replyPipeline: {},
   });
   if (dispatch.admission.kind !== "dispatch") {
-    params.store.reject(params.taskId, `A2A channel declined the turn: ${dispatch.admission.kind}`);
+    await params.store.reject(
+      params.taskId,
+      `A2A channel declined the turn: ${dispatch.admission.kind}`,
+    );
   } else if (!dispatch.dispatched) {
-    params.store.fail(params.taskId, "A2A channel accepted the turn without dispatching it");
+    await params.store.fail(params.taskId, "A2A channel accepted the turn without dispatching it");
   } else if (!dispatch.dispatchResult.deferredToActiveRun) {
-    params.store.complete(params.taskId, undefined);
+    await params.store.complete(params.taskId, undefined);
   }
 }
