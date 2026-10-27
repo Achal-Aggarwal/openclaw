@@ -154,7 +154,7 @@ describe("chat transcript rendering", () => {
       props.showToolCalls = showTools;
       const { container } = await mountThread(props);
       for (const text of interruptedChatCommentary) {
-        expect(container.textContent).toContain(text);
+        await waitForSolid(() => expect(container.textContent).toContain(text));
       }
       await waitForSolid(() =>
         expect(Boolean(container.querySelector(".chat-activity-group__summary"))).toBe(showTools),
@@ -550,7 +550,7 @@ describe("chat transcript rendering", () => {
     );
     const { container, rerender } = await mountThread(props);
 
-    const notice = requireElement(container, ".chat-notice");
+    const notice = await waitForSolid(() => requireElement(container, ".chat-notice"));
     expect(notice.textContent).toContain("Archived by Ada");
     expect(notice.dataset.ts).toBe("2000");
     expect(notice.querySelector(".chat-bubble")).toBeNull();
