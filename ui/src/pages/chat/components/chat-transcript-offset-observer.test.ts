@@ -102,7 +102,11 @@ it.each([
     recordedEnd.push(endAnchor.isRecordedEnd(offset));
     order.push("virtualizer");
   });
-  const onNativeScroll = vi.fn(() => order.push("pane"));
+  const onNativeScroll = vi.fn((event: Event) => {
+    expect(event.currentTarget).toBe(element);
+    expect(event.target).toBe(element);
+    order.push("pane");
+  });
   onTestFinished(
     observeTranscriptOffset(
       {

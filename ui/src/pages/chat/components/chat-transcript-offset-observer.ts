@@ -157,6 +157,7 @@ export function observeTranscriptOffset(
   let nativeOffset = element?.scrollTop ?? 0;
   let maintenanceRevision = 0;
   let maintenanceFrame: number | null = null;
+  let nativeScrollEvent: Event | undefined;
   let touchY: number | undefined;
   const contactIds = new Set<number>();
   const localTouchY = (event: TouchEvent) =>
@@ -379,11 +380,12 @@ export function observeTranscriptOffset(
     touchY = nextY;
     publishInput(event);
   };
-  // Read the corrected viewport before the virtualizer's bubble listener writes rows.
+  // Composer geometry precedes native offset handling. Deliver pane policy in
+  // the virtualizer listener so Solid batches both before its next DOM commit.
   const captureScroll = (event: Event) => {
     owner.onComposerLayout(true);
     if (event.target === element) {
-      owner.onNativeScroll?.(event);
+      nativeScrollEvent = event;
     }
   };
   const listeners = new AbortController();
@@ -399,8 +401,13 @@ export function observeTranscriptOffset(
     listen(element, "touchcancel", finishTouch, passive);
   }
   const cleanup = observeElementOffset(instance, (offset, scrolling) => {
+    const event = nativeScrollEvent;
+    nativeScrollEvent = undefined;
     if (element !== owner.getScrollElement()) {
       return;
+    }
+    if (event?.currentTarget === element) {
+      owner.onNativeScroll?.(event);
     }
     publishOffset(offset, scrolling);
     if (scrolling && owner.state.maintenanceScrollOffset !== null) {

@@ -1,5 +1,7 @@
 import { expectDefined } from "@openclaw/normalization-core";
-import { afterEach, expect, it, vi } from "vitest";
+import { Virtualizer } from "@tanstack/virtual-core";
+import { createEffect, createRoot, createSignal } from "solid-js";
+import { afterEach, expect, it, onTestFinished, vi } from "vitest";
 import type { ApplicationContext } from "../../../app/context.ts";
 import { flush } from "../../../test-helpers/solid-settle.ts";
 import { projectChatFields } from "../chat-field-projection.ts";
@@ -14,6 +16,11 @@ import { ChatThread } from "./chat-thread-view.tsx";
 import type { ChatTranscript } from "./chat-transcript-controller.ts";
 import { TranscriptEndAnchor } from "./chat-transcript-end-anchor.ts";
 import { TranscriptLayoutOwner } from "./chat-transcript-layout-owner.ts";
+import {
+  observeTranscriptOffset,
+  TranscriptOffsetState,
+} from "./chat-transcript-offset-observer.ts";
+import { TranscriptPrependAnchor } from "./chat-transcript-prepend-anchor.ts";
 import { subscribeTranscriptScroll } from "./chat-transcript-scroll-events.ts";
 import { ChatSessionVirtualizerHost } from "./chat-transcript-virtualizer-host.ts";
 import { requireElement, threadProps } from "./chat-transcript.test-support.ts";
@@ -126,6 +133,63 @@ async function settleLayout() {
     await pane?.updateComplete;
   }
 }
+
+it("publishes native scroll policy and row position in one Solid update", async () => {
+  const viewport = document.body.appendChild(document.createElement("div"));
+  viewport.style.cssText = "height: 100px; overflow: auto; scroll-behavior: auto";
+  viewport.appendChild(document.createElement("div")).style.height = "1000px";
+  onTestFinished(() => viewport.remove());
+  const updates: number[][] = [];
+  createRoot((dispose) => {
+    onTestFinished(dispose);
+    const [policy, setPolicy] = createSignal(0);
+    const [position, setPosition] = createSignal(0);
+    createEffect(
+      () => [policy(), position()],
+      (value) => {
+        updates.push(value);
+      },
+    );
+    const virtualizer = new Virtualizer<HTMLDivElement, HTMLElement>({
+      count: 0,
+      getScrollElement: () => viewport,
+      estimateSize: () => 40,
+      scrollToFn: vi.fn(),
+      observeElementRect: vi.fn(),
+      observeElementOffset: vi.fn(),
+    });
+    virtualizer.scrollElement = viewport;
+    virtualizer.targetWindow = window;
+    onTestFinished(
+      observeTranscriptOffset(
+        {
+          state: new TranscriptOffsetState(),
+          getScrollElement: () => viewport,
+          endAnchor: new TranscriptEndAnchor(() => {}),
+          prependAnchor: new TranscriptPrependAnchor(new Map(), vi.fn()),
+          canFollowEnd: () => false,
+          isProgrammaticScroll: () => false,
+          cancelScroll: vi.fn(),
+          onLayoutCorrection: vi.fn(),
+          invalidate: vi.fn(),
+          onOffset: vi.fn(),
+          onReaderScroll: vi.fn(),
+          onComposerLayout: vi.fn(),
+          onNativeScroll: () => setPolicy(1),
+        },
+        virtualizer,
+        () => setPosition(1),
+      ),
+    );
+  });
+  flush();
+  viewport.scrollTop = 20;
+  await vi.waitFor(() => expect(updates.at(-1)).toEqual([1, 1]));
+  expect(updates).toEqual([
+    [0, 0],
+    [1, 1],
+  ]);
+});
 
 async function mountPane(followEnd = false, rowHeight?: number, messages?: unknown[]) {
   const fixture = createMountedPanes([
