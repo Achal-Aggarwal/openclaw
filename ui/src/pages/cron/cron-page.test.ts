@@ -1,10 +1,9 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { createDeferred } from "../../../../test/helpers/promise.js";
 import type { GatewayBrowserClient } from "../../api/gateway.ts";
-import type { CronJob } from "../../api/types.ts";
-import { createInitialCronState, startCronClone } from "../../lib/cron/index.ts";
-import { loadCronRunsForJob, updateCronRunsFilter } from "../../lib/cron/runs.ts";
-import { createTestGatewayClient } from "../../test-helpers/gateway-client.ts";
+import type { CronJob, CronJobsListResult } from "../../api/types.ts";
+import { startCronClone } from "../../lib/cron/index.ts";
+import { updateCronRunsFilter } from "../../lib/cron/runs.ts";
 import * as dom from "./cron-assertions.test-support.ts";
 import * as harness from "./cron-page.test-support.tsx";
 import { waitForCronPage as waitFor } from "./cron-page.test-support.tsx";
@@ -194,35 +193,83 @@ it.each([1, 2])("scopes %i attached jobs and opens a sole match", async (count) 
   await waitFor(() => expect(page.cron.cronSessionFilter).toBeUndefined());
   expect(page.cron.cronEditingJob).toBeNull();
 });
-it("clears filters for a linked run but preserves them for an unlinked job", async () => {
-  const request = cronRpc({ "cron.runs": () => cronRunsResponse() });
-  const state = createInitialCronState({
-    client: createTestGatewayClient(request),
-    connected: true,
-  });
-  const filters = {
+it.each(["visible", "later page"])("opens linked history for a job on %s", async (placement) => {
+  const job = scheduledJob("linked-job", { agentId: "main", name: "Linked automation" });
+  const entry = (runId: string, ts: number, summary: string) =>
+    createCronViewRun({ runId, ts, summary, jobId: job.id, status: undefined });
+  const jobs = createDeferred<CronJobsListResult>();
+  const request = cronRpc(
+    {
+      "cron.list": () => jobs.promise,
+      "cron.get": () => job,
+      "cron.status": () => ({ enabled: true, jobs: 1, triggersEnabled: true }),
+      "cron.runs": (params) => {
+        const filter = params as { id?: string; agentId?: string; runId?: string };
+        if (filter.id === job.id && filter.agentId && filter.agentId !== job.agentId) {
+          throw new Error("Automation not found");
+        }
+        const entries =
+          filter.id !== job.id
+            ? []
+            : filter.runId
+              ? [entry("cron:linked-job:1", 1, "Linked run")]
+              : Array.from({ length: 50 }, (_, i) => entry(`recent-${i}`, i + 2, "Recent run"));
+        return cronRunsResponse(entries);
+      },
+      "models.list": () => ({ models: [] }),
+    },
+    () => ({}),
+  );
+  const { page } = mountCronPage(request);
+  const previousFilters = {
     cronRunsQuery: "older search",
     cronRunsStatuses: ["error" as const],
     cronRunsDeliveryStatuses: ["not-delivered" as const],
   };
-  updateCronRunsFilter(state, filters);
-  await loadCronRunsForJob(state, "linked-job", "cron:linked-job:1");
-  expect(request).toHaveBeenLastCalledWith(
+  updateCronRunsFilter(page.cron, previousFilters);
+  page.routeSearch = "?job=linked-job&run=cron%3Alinked-job%3A1";
+  await waitFor(() => expect(page.cron.cronLoading).toBe(true));
+  const inventory = harness.cronListResponse(
+    placement === "visible"
+      ? [job]
+      : Array.from({ length: 50 }, (_, index) => ({
+          ...job,
+          id: `other-${index}`,
+          name: `Other automation ${index}`,
+        })),
+  );
+  if (placement === "later page") {
+    inventory.total = 51;
+    inventory.hasMore = true;
+    inventory.nextOffset = 50;
+  }
+  jobs.resolve(inventory);
+  await waitFor(() => {
+    expect(page.cron.cronEditingJob?.id).toBe(job.id);
+    expectHistoryTab(page);
+    expect(dom.text(page, ".cron-run-entry--highlighted")).toContain("Linked run");
+  });
+  expect(page.querySelectorAll(".cron-run-entry--highlighted")).toHaveLength(1);
+  expect(request).toHaveBeenCalledWith(
     "cron.runs",
     expect.objectContaining({
-      id: "linked-job",
+      id: job.id,
       runId: "cron:linked-job:1",
       query: undefined,
       statuses: undefined,
       deliveryStatuses: undefined,
     }),
   );
-  updateCronRunsFilter(state, filters);
-  await loadCronRunsForJob(state, "linked-job");
+  getButtonByText(page, "Show all runs").click();
+  await waitFor(() => expect(page.querySelectorAll(".cron-run-entry")).toHaveLength(50));
+  expect(page.querySelector(".cron-run-entry--highlighted")).toBeNull();
+  updateCronRunsFilter(page.cron, previousFilters);
+  page.routeSearch = "?job=linked-job";
+  await page.settle();
   expect(request).toHaveBeenLastCalledWith(
     "cron.runs",
     expect.objectContaining({
-      id: "linked-job",
+      id: job.id,
       runId: undefined,
       query: "older search",
       statuses: ["error"],

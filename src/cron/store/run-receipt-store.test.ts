@@ -137,6 +137,7 @@ async function messageRun(job: CronJob, runId: string) {
       storePath,
       state,
       controller,
+      admission,
       message,
       source,
       [Symbol.asyncDispose]: close,
@@ -167,6 +168,22 @@ it("allocates portable cursors inside the claim and reuses a deleted maximum", a
       { receipt_id: third.receiptId, cursor_id: 2 },
     ]);
   });
+});
+
+it("allows force-disabled message access only until its admission closes", async () => {
+  const job: CronJob = {
+    ...makeCronReceiptJob("force-disabled-message"),
+    enabled: false,
+    payload: { kind: "agentTurn", message: "synthetic", toolsAllow: ["message"] },
+    scheduledToolPolicy: { version: 1, mode: "trusted" },
+  };
+  await using run = await messageRun(job, "message-use-run");
+  const { admission, message, source } = run;
+  expect(message).not.toThrow();
+  expect(source).not.toThrow();
+  admission.close();
+  expect(message).toThrow("no longer active");
+  expect(source).toThrow("no longer active");
 });
 
 it.each([

@@ -190,6 +190,17 @@ async function expectRejects(promise: Promise<unknown>, message: string) {
   await expect(promise).rejects.toThrow(message);
 }
 
+async function expectPairedNodeListError(
+  provider: SessionCatalogProvider,
+  params: Omit<CatalogListParams, "hostIds"> = {},
+) {
+  await expect(listPairedNode(provider, params)).resolves.toEqual([
+    expect.objectContaining({
+      error: { code: "NODE_INVOKE_FAILED", message: expect.any(String) },
+    }),
+  ]);
+}
+
 const nodeInvokeRequest = (command: string, params: Record<string, unknown>) => ({
   nodeId: "node-1",
   command,
@@ -764,6 +775,50 @@ describe("OpenCode session catalog", () => {
       [nodeInvokeRequest(OPENCODE_SESSIONS_LIST_COMMAND, {})],
       [nodeInvokeRequest(OPENCODE_SESSION_READ_COMMAND, { threadId: "ses_remote" })],
     ]);
+  });
+
+  it("rejects malformed paired-node data and cursors before forwarding", async () => {
+    const invoke = vi.fn();
+    const { provider: catalog } = capturePairedNodeCatalog(
+      [pairedNode([OPENCODE_SESSIONS_LIST_COMMAND, OPENCODE_SESSION_READ_COMMAND])],
+      invoke,
+    );
+    for (const threadId of [123, "--help"]) {
+      invoke.mockResolvedValueOnce(pairedNodeSessionPage(pairedNodeSession({ threadId })));
+      await expectPairedNodeListError(catalog!);
+    }
+
+    invoke.mockResolvedValueOnce(
+      nodePayload({
+        threadId: "ses_remote",
+        items: [{ type: "invalid", text: "bad" }],
+      }),
+    );
+    await expect(readPairedNode(catalog!)).rejects.toThrow("invalid transcript page");
+
+    invoke.mockClear();
+    await expect(readPairedNode(catalog!, { cursor: "" })).rejects.toThrow("cursor is invalid");
+    await expectPairedNodeListError(catalog!, { cursors: { "node:node-1": "" } });
+    expect(invoke).not.toHaveBeenCalled();
+
+    invoke.mockResolvedValueOnce(nodePayload({ sessions: [], nextCursor: " wrapped " }));
+    await expectPairedNodeListError(catalog!);
+    invoke.mockResolvedValueOnce(
+      nodePayload({ threadId: "ses_remote", items: [], nextCursor: " wrapped " }),
+    );
+    await expect(readPairedNode(catalog!)).rejects.toThrow("invalid cursor");
+
+    const exactCursor = Buffer.from(JSON.stringify({ offset: 1 }), "utf8").toString("base64url");
+    invoke.mockResolvedValueOnce(nodePayload({ sessions: [] }));
+    await listPairedNode(catalog!, { cursors: { "node:node-1": exactCursor } });
+    expect(invoke).toHaveBeenLastCalledWith(
+      expect.objectContaining({ params: { cursor: exactCursor } }),
+    );
+    invoke.mockResolvedValueOnce(nodePayload({ threadId: "ses_remote", items: [] }));
+    await readPairedNode(catalog!, { cursor: exactCursor });
+    expect(invoke).toHaveBeenLastCalledWith(
+      expect.objectContaining({ params: { threadId: "ses_remote", cursor: exactCursor } }),
+    );
   });
 
   it("maps a shared-runtime pipe failure to the OpenCode-owned error", async () => {

@@ -126,7 +126,7 @@ function restartable(
     state: {
       ...launchState(runs),
       pluginCommandBinding: {
-        hostProcessId: previous,
+        hostProcessId: pluginCommand.hostProcessId,
         pluginIncarnation: pluginCommand.pluginIncarnation,
         sourceDigest,
       },
