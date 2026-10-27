@@ -112,7 +112,12 @@ it("keeps a shared chat stream when one full observer unsubscribes", async () =>
     } else {
       subscribers.unsubscribe(peer.client.connId, sub.key, sub.subscriptionId);
     }
-    ws.emitMessage({ type: "res", id, ok: true });
+    ws.emitMessage({
+      type: "res",
+      id,
+      ok: true,
+      payload: { key: sessionKey, subscribed: method === "subscribe" },
+    });
     await pending;
   };
   const publish = (content: string, deltaText: string) => {
@@ -121,6 +126,18 @@ it("keeps a shared chat stream when one full observer unsubscribes", async () =>
     broadcast("chat", { ...payload, message: assistant(content) }, { liveText });
   };
   try {
+    // Subscription requests stay held until the browser completes the Gateway handshake.
+    ws.emitConnectChallenge({ nonce: "shared-observers-challenge", ts: 1_800_000_000_000 });
+    expect(await client.connectSent).toBe(true);
+    const connect = JSON.parse(ws.sent.at(-1) ?? "{}");
+    expect(connect.method).toBe("connect");
+    ws.emitMessage({
+      type: "res",
+      id: connect.id,
+      ok: true,
+      payload: { type: "hello-ok", protocol: 4 },
+    });
+    await vi.advanceTimersByTimeAsync(0);
     await requestObserver("subscribe", "first");
     await requestObserver("subscribe", "second");
     publish("A", "A");
