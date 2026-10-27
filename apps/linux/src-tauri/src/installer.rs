@@ -165,15 +165,6 @@ pub(crate) fn browser_runtime(
     if !is_current() {
         return Err("The native browser document changed.".into());
     }
-    #[cfg(target_os = "linux")]
-    {
-        let runtime = crate::bundled_runtime::seed(app)?;
-        crate::runtime_action::bind_runtime(
-            &cli,
-            &runtime,
-            crate::runtime_action::Purpose::Browser,
-        )?;
-    }
     Ok(cli)
 }
 
@@ -185,13 +176,17 @@ fn install_at(
     #[cfg_attr(target_os = "windows", allow(unused_variables))] runtime_only: bool,
     spawn: Option<&SpawnCommand<'_>>,
 ) -> Result<(), String> {
-    #[cfg(any(target_os = "linux", target_os = "windows"))]
-    if let Some((runtime, entry)) = crate::bundled_runtime::seed_package(app)? {
+    #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
+    if let Some((runtime, entry)) = crate::bundled_runtime::seed_cli(app, &prefix)? {
         return crate::runtime_action::install_launcher(
             &prefix,
             &runtime,
             &entry,
-            crate::runtime_action::Purpose::Gateway,
+            if spawn.is_some() {
+                crate::runtime_action::Purpose::Browser
+            } else {
+                crate::runtime_action::Purpose::Gateway
+            },
         );
     }
     #[cfg(not(target_os = "windows"))]
@@ -226,14 +221,14 @@ fn install_at(
         }
         let runtime = crate::bundled_runtime::seed(app)?;
         let package_root = prepare_package_root(&prefix)?;
-        let mut command = Command::new(&runtime.bun);
+        let mut command = Command::new(&runtime.executable);
         configure_installer_environment(&mut command)?;
         // This private root has no dev dependencies; Bun rejects --production with --trust.
         command
             .args(["add", "--exact", "--trust"])
             .arg(format!("openclaw@{version}"))
             .current_dir(&package_root)
-            .env("OPENCLAW_PACKAGE_BUN_LAUNCHER", &runtime.bun);
+            .env("OPENCLAW_PACKAGE_BUN_LAUNCHER", &runtime.executable);
         use std::os::windows::process::CommandExt;
         command.creation_flags(0x08000000);
         let entry = package_root.join("node_modules/openclaw/openclaw.mjs");

@@ -55,8 +55,10 @@ impl Fixture {
 
     fn runtime(&self) -> BundledRuntime {
         BundledRuntime {
-            bun: self.0.join("bun"),
+            executable: self.0.join("bun"),
             sqlite: None,
+            flavor: RuntimeFlavor::Jit,
+            entry: None,
         }
     }
 
@@ -89,10 +91,10 @@ impl Fixture {
     fn healthy(&self) -> Value {
         let mut state = self.state();
         state["service"]["command"]["programArguments"][0] =
-            self.runtime().bun.to_string_lossy().as_ref().into();
+            self.runtime().executable.to_string_lossy().as_ref().into();
         state["service"]["runtimeIntent"] = serde_json::json!({
             "status": "known", "revision": "bundled-pin", "definition": "bundled-definition", "stored": true,
-            "pin": { "runtime": "bun", "path": self.runtime().bun }
+            "pin": { "runtime": "bun", "path": self.runtime().executable }
         });
         state["service"]["revision"] = "bundled-service".into();
         state
@@ -141,7 +143,7 @@ fn fresh_install_with_unknown_mutation_capability_carries_null_definition_and_bu
     assert_eq!(fixture.argument("--runtime"), "bun");
     assert_eq!(
         fixture.argument("--runtime-path"),
-        fixture.runtime().bun.to_string_lossy()
+        fixture.runtime().executable.to_string_lossy()
     );
 }
 
@@ -168,11 +170,15 @@ fn fresh_install_marks_a_preexisting_canonical_launcher_after_health() {
     let wrapper = fixture.canonical_launcher();
     assert!(Command::new("/bin/cp")
         .arg(Fixture::script())
-        .arg(&fixture.runtime().bun)
+        .arg(&fixture.runtime().executable)
         .status()
         .unwrap()
         .success());
-    fs::set_permissions(&fixture.runtime().bun, fs::Permissions::from_mode(0o700)).unwrap();
+    fs::set_permissions(
+        &fixture.runtime().executable,
+        fs::Permissions::from_mode(0o700),
+    )
+    .unwrap();
     fixture.write_state(&fixture.absent());
     let cli = fixture.cli();
     fresh(&cli, &fixture.runtime(), &|| true).unwrap();
@@ -183,7 +189,10 @@ fn fresh_install_marks_a_preexisting_canonical_launcher_after_health() {
     assert_eq!(launcher.runtime, fixture.runtime());
     assert!(inspect(&cli).unwrap().healthy_for(&fixture.runtime()));
     let executables = fs::read_to_string(fixture.0.join("executables")).unwrap();
-    assert_eq!(executables.lines().last(), fixture.runtime().bun.to_str());
+    assert_eq!(
+        executables.lines().last(),
+        fixture.runtime().executable.to_str()
+    );
     assert_eq!(fixture.installs(), 1);
 }
 
@@ -452,11 +461,11 @@ fn read_only_inspection_offers_current_runtime_without_installing() {
     let cli = fixture.cli();
     let before = inspect(&cli).unwrap();
     assert!(before.current_runtime().contains("/operator/node"));
-    assert!(!before.uses_runtime_path(&fixture.runtime().bun));
+    assert!(!before.uses_runtime_path(&fixture.runtime().executable));
     fixture.write_state(&fixture.healthy());
     assert!(inspect(&cli)
         .unwrap()
-        .uses_runtime_path(&fixture.runtime().bun));
+        .uses_runtime_path(&fixture.runtime().executable));
     assert_eq!(fixture.installs(), 0);
 }
 
@@ -562,11 +571,15 @@ fn healthy_activation_persists_previous_selection_and_failure_keeps_it() {
     let wrapper = fixture.canonical_launcher();
     assert!(Command::new("/bin/cp")
         .arg(Fixture::script())
-        .arg(&fixture.runtime().bun)
+        .arg(&fixture.runtime().executable)
         .status()
         .unwrap()
         .success());
-    fs::set_permissions(&fixture.runtime().bun, fs::Permissions::from_mode(0o700)).unwrap();
+    fs::set_permissions(
+        &fixture.runtime().executable,
+        fs::Permissions::from_mode(0o700),
+    )
+    .unwrap();
     let cli = fixture.cli();
     bind_runtime(&cli, &fixture.runtime(), Purpose::Gateway).unwrap();
     fixture.write_state(&fixture.healthy());
@@ -576,13 +589,21 @@ fn healthy_activation_persists_previous_selection_and_failure_keeps_it() {
         if index == 1 {
             let mut wrapped = inspect(&cli).unwrap().0;
             wrapped["service"]["command"]["programArguments"][0] =
-                serde_json::json!(fixture.runtime().bun);
+                serde_json::json!(fixture.runtime().executable);
             fixture.write_state(&wrapped);
         }
-        fs::write(path, "synthetic runtime").unwrap();
+        assert!(Command::new("/bin/cp")
+            .arg(Fixture::script())
+            .arg(path)
+            .status()
+            .unwrap()
+            .success());
+        fs::set_permissions(path, fs::Permissions::from_mode(0o700)).unwrap();
         let runtime = BundledRuntime {
-            bun: path.clone(),
+            executable: path.clone(),
             sqlite: None,
+            flavor: RuntimeFlavor::Jit,
+            entry: None,
         };
         let mut healthy = fixture.healthy();
         healthy["service"]["command"]["programArguments"][0] = serde_json::json!(path);
@@ -605,4 +626,94 @@ fn healthy_activation_persists_previous_selection_and_failure_keeps_it() {
     fs::write(fixture.0.join("healthy.json"), "invalid status").unwrap();
     assert!(activate(&cli, &fixture.runtime(), &inspect(&cli).unwrap(), &|| true).is_err());
     assert_eq!(fs::read(wrapper).unwrap(), bytes);
+}
+
+#[test]
+fn launcher_invocation_and_service_kind_follow_the_runtime_flavor() {
+    let fixture = Fixture::new();
+    let entry = fixture.0.join("entry with spaces.mjs");
+    fs::write(&entry, "fixture").unwrap();
+    let mut runtime = fixture.runtime();
+    runtime.entry = Some(entry.clone());
+    let jit = runtime.command(&entry);
+    assert_eq!(
+        jit.get_args().collect::<Vec<_>>(),
+        [std::ffi::OsStr::new("--no-install"), entry.as_os_str()]
+    );
+    assert_eq!(runtime.flavor.service_kind(), "bun");
+    runtime.flavor = RuntimeFlavor::Aot;
+    runtime.entry = None;
+    let aot = runtime.command(&entry);
+    assert_eq!(aot.get_args().count(), 0);
+    assert_eq!(runtime.flavor.service_kind(), "standalone");
+    let launcher = Launcher {
+        purpose: Purpose::Gateway,
+        runtime,
+        entry,
+        retention: None,
+    };
+    let rendered = String::from_utf8(render(&launcher).unwrap()).unwrap();
+    assert!(!rendered.contains(" --no-install "));
+    assert!(rendered.lines().last().unwrap().ends_with(" \"$@\""));
+}
+
+#[test]
+fn aot_activation_uses_the_new_bundled_cli_before_publishing_its_launcher() {
+    const CHILD: &str = "OPENCLAW_AOT_ACTIVATION_CHILD";
+    if std::env::var_os(CHILD).is_none() {
+        let output = Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", std::thread::current().name().unwrap()])
+            .env(CHILD, "1")
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        return;
+    }
+    let fixture = Fixture::new();
+    let entry = fixture.0.join("package/entry.mjs");
+    fs::create_dir_all(entry.parent().unwrap()).unwrap();
+    fs::write(&entry, "fixture").unwrap();
+    let old = fixture.runtime();
+    assert!(Command::new("/bin/cp")
+        .arg(Fixture::script())
+        .arg(&old.executable)
+        .status()
+        .unwrap()
+        .success());
+    fs::set_permissions(&old.executable, fs::Permissions::from_mode(0o700)).unwrap();
+    fs::remove_file(fixture.0.join("bin/openclaw")).unwrap();
+    install_launcher(&fixture.0, &old, &entry, Purpose::Gateway).unwrap();
+    let cli = fixture.cli();
+    let mut runtime = old.clone();
+    runtime.executable = fixture.0.join("aot-openclaw");
+    runtime.flavor = RuntimeFlavor::Aot;
+    assert!(Command::new("/bin/cp")
+        .arg(Fixture::script())
+        .arg(&runtime.executable)
+        .status()
+        .unwrap()
+        .success());
+    fs::set_permissions(&runtime.executable, fs::Permissions::from_mode(0o700)).unwrap();
+    let mut health = fixture.healthy();
+    health["service"]["command"]["programArguments"] =
+        serde_json::json!([runtime.executable, "gateway"]);
+    health["service"]["runtimeIntent"]["pin"] =
+        serde_json::json!({"runtime": "standalone", "path": runtime.executable});
+    fs::write(fixture.0.join("healthy.json"), health.to_string()).unwrap();
+    let confirmed = inspect(&cli).unwrap();
+    activate(&cli, &runtime, &confirmed, &|| true).unwrap();
+    assert_eq!(fixture.argument("--runtime"), "standalone");
+    let args = fs::read_to_string(fixture.0.join("args")).unwrap();
+    assert!(!args.contains("--no-install"));
+    assert!(!args.contains("entry.mjs"));
+    let launcher = read_launcher(&cli).unwrap().unwrap().selection.unwrap();
+    assert_eq!(launcher.runtime.flavor, RuntimeFlavor::Aot);
+    assert_eq!(launcher.runtime.executable, runtime.executable);
+    assert!(inspect(&cli).unwrap().healthy_for(&runtime));
+    assert!(old.executable.is_file());
 }

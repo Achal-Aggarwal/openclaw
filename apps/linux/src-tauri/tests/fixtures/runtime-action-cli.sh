@@ -3,7 +3,7 @@ case "$0" in
   */tools/node/bin/node) root=${0%/tools/node/bin/node} ;;
   */bin/openclaw) root=${0%/bin/openclaw} ;;
   */operator-cli) root=${0%/operator-cli} ;;
-  */bun) root=${0%/bun} ;;
+  */bun|*/second-bun|*/third-bun|*/aot-openclaw) root=${0%/*} ;;
   *) printf 'unexpected fixture launcher\n' >&2; exit 8 ;;
 esac
 printf '%s\n' "$0" >> "$root/executables"

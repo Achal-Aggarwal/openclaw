@@ -43,6 +43,8 @@ const elements = {
   remoteTransportSsh: document.querySelector("#remote-transport-ssh"),
   remoteUrl: document.querySelector("#remote-url"),
   remoteUrlField: document.querySelector("#remote-url-field"),
+  runtimeFlavor: document.querySelector("#runtime-flavor"),
+  runtimeSeparator: document.querySelector("#runtime-separator"),
   setupBack: document.querySelector("#setup-back"),
   setupContinue: document.querySelector("#setup-continue"),
   setupNavigation: document.querySelector(".setup-navigation"),
@@ -299,7 +301,6 @@ async function connect(action) {
     const snapshot = await invoke("bootstrap");
     if (snapshot.phase === "missingCli" || snapshot.phase === "unconfigured") {
       firstRunPhase = snapshot.phase;
-      firstRunBuild = await invoke("build_info").catch(() => null);
       if (firstRunBuild?.releaseBuild === false) {
         elements.channel.value = "dev";
       }
@@ -764,12 +765,23 @@ void refreshGateways();
 window.setInterval(() => void refreshGateways(), 2000);
 
 const mode = new URLSearchParams(window.location.search).get("mode");
+firstRunBuild = await invoke("build_info").catch(() => null);
+if (firstRunBuild?.runtimeFlavor === "jit" || firstRunBuild?.runtimeFlavor === "aot") {
+  elements.runtimeFlavor.textContent = firstRunBuild.runtimeFlavor === "aot"
+    ? "BUNDLED AOT · EXPERIMENTAL"
+    : "BUNDLED JIT";
+  if (firstRunBuild.testProfile) {
+    elements.runtimeFlavor.textContent += ` · PROFILE ${firstRunBuild.testProfile.toUpperCase()}`;
+  }
+  elements.runtimeFlavor.title = `OpenClaw ${firstRunBuild.version}`;
+  show(elements.runtimeFlavor, true);
+  show(elements.runtimeSeparator, true);
+}
 if (mode === "connectionSettings") {
   await editConnection();
 } else if (mode === "remoteError") {
   renderRemoteRetry();
 } else if (mode === "missingCli") {
-  firstRunBuild = await invoke("build_info").catch(() => null);
   render({
     description: "Install the OpenClaw CLI to connect to a local Gateway.",
     dot: "idle",
