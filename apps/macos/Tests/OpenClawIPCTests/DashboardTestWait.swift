@@ -39,3 +39,16 @@ enum DashboardTestWait {
         throw CancellationError()
     }
 }
+
+/// Tests of stale replies hold the outgoing page until the native owner has denied them.
+/// Ordinary retirement tests leave navigation unblocked and verify the document disappears.
+@MainActor
+final class DashboardRetirementNavigation: NSObject, WKNavigationDelegate {
+    func webView(
+        _: WKWebView,
+        decidePolicyFor navigationAction: WKNavigationAction,
+        decisionHandler: @escaping @MainActor @Sendable (WKNavigationActionPolicy) -> Void)
+    {
+        decisionHandler(navigationAction.request.url?.absoluteString == "about:blank" ? .cancel : .allow)
+    }
+}
