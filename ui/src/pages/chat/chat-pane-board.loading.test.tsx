@@ -162,7 +162,7 @@ it.each([false, true])(
   },
 );
 
-it("restores a prepared board before cached history paints on a connected gateway", async () => {
+it("restores a prepared board and cached history together on a connected gateway", async () => {
   const sessionKey = "agent:main:prepared-board";
   const { pane, request, snapshot, cleanup } = createGatewayBoardPane(sessionKey);
   request.mockReturnValue(createDeferred<BoardSnapshot>().promise);
@@ -185,7 +185,7 @@ it("restores a prepared board before cached history paints on a connected gatewa
   await Promise.resolve();
   expect(provider.hasLoadedSnapshot).toBe(true);
   expect(provider.snapshot$.value).toEqual(snapshot);
-  expect(pane.state.chatMessages).toEqual([]);
+  expect(pane.state.chatMessages).toEqual(transcript.messages);
   await vi.runAllTimersAsync();
   await hydration.promise;
   expect(pane.state.chatMessages).toEqual(transcript.messages);
