@@ -25,7 +25,7 @@ TEMP = Path(os.environ["RUNNER_TEMP"])
 OUT = TEMP / "compiler-cache-benchmark"
 SEED = TEMP / "compiler-cache-seed"
 CACHE = ROOT / ".artifacts/compiler-cache-benchmark"
-GRAPHS = {"ui-prod": "tsconfig.ui.json", "ui-editor": "ui/tsconfig.json"}
+GRAPHS = {"ui-components": "test/tsconfig/tsconfig.core.test.ui-components.json", "ui-prod": "tsconfig.ui.json"}
 EDITS = {
     "ordinary": ("ui/src/lib/format-duration.ts", "Math.floor(ms / 1_000)", "Math.trunc(ms / 1_000)"),
     "global": ("ui/src/components/sidebar-attention-element.ts", "interface HTMLElementTagNameMap {", 'interface HTMLElementTagNameMap {\n    "openclaw-cache-benchmark": HTMLElement;'),
