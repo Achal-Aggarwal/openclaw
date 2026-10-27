@@ -1496,14 +1496,10 @@ describe("doctor health contributions", () => {
       nodeEngine: null,
       error: "HTTP 404",
     });
-    const ctx = createDoctorLintContext({
-      cfg: { plugins: { entries: { codex: { enabled: true } } } },
-      mode: "lint",
-      allowExecSecretRefs: true,
-      runtime: { log: vi.fn(), error: vi.fn(), exit: vi.fn() },
-    });
-
-    expect(mocks.collectWorkspaceStatusHealthFindings).not.toHaveBeenCalled();
+    const ctx = createDoctorLintFixture(
+      { plugins: { entries: { codex: { enabled: true } } } },
+      { allowExecSecretRefs: true },
+    );
 
     await expect(
       runDoctorLintChecks(ctx, { checks: [check], onlyIds: ["core/doctor/workspace-status"] }),
@@ -1931,8 +1927,6 @@ describe("doctor health contributions", () => {
         ],
       });
       const ctx = createDoctorContext({
-        cfg: {},
-        configResult: {},
         shouldRepair: true,
         options: { nonInteractive: true },
         configPath: "/tmp/openclaw.json",
@@ -2197,25 +2191,6 @@ describe("doctor health contributions", () => {
       args: () => ["/tmp/openclaw-workspace"],
     },
     {
-      id: "device-pairing",
-      collect: mocks.collectDevicePairingHealthFindings,
-      seed: () => undefined,
-      finding: undefined,
-      cfg: { gateway: { mode: "local" } },
-      args: (ctx: ReturnType<typeof createDoctorLintFixture>) => [
-        { cfg: ctx.cfg, healthOk: false, env: ctx.env },
-      ],
-    },
-    {
-      id: "legacy-cron-store",
-      collect: mocks.collectLegacyCronStoreHealthFindings,
-      seed: (finding: HealthFinding) =>
-        mocks.collectLegacyCronStoreHealthFindings.mockResolvedValueOnce([finding]),
-      finding: {},
-      cfg: { cron: { store: "/tmp/openclaw-cron/jobs.json" } },
-      args: (ctx: ReturnType<typeof createDoctorLintFixture>) => [{ cfg: ctx.cfg }],
-    },
-    {
       id: "legacy-whatsapp-crontab",
       collect: mocks.collectLegacyWhatsAppCrontabHealthWarning,
       seed: () =>
@@ -2260,7 +2235,6 @@ describe("doctor health contributions", () => {
       const ctx = createDoctorLintFixture("cfg" in options ? options.cfg : {});
       const checkId = `core/doctor/${id}`;
       seed({ checkId, severity: "warning", message: "Synthetic owner finding", ...finding });
-      expect(collect).not.toHaveBeenCalled();
       await expectOptInLintFindings(
         ctx,
         checkId,
@@ -2273,17 +2247,11 @@ describe("doctor health contributions", () => {
     },
   );
 
-  it.each([
-    [
-      "doctor:legacy-cron",
-      ["core/doctor/legacy-whatsapp-crontab", "core/doctor/legacy-cron-store"],
-    ],
-    [
-      "doctor:startup-channel-maintenance",
-      ["core/doctor/channel-plugin-blockers", "core/doctor/channel-preview-warnings"],
-    ],
-  ] as const)("retains all public lint selectors for %s", (id, selectors) => {
-    expect(requireDoctorContribution(id).healthCheckIds).toEqual(selectors);
+  it("retains all public startup channel lint selectors", () => {
+    expect(requireDoctorContribution("doctor:startup-channel-maintenance").healthCheckIds).toEqual([
+      "core/doctor/channel-plugin-blockers",
+      "core/doctor/channel-preview-warnings",
+    ]);
   });
 
   it("preserves the shipped legacy dependency selector as a non-destructive deprecation", async () => {
@@ -2510,6 +2478,44 @@ describe("doctor health contributions", () => {
     });
   });
 
+  it("keeps device pairing opt-in for default lint selection", async () => {
+    const ctx = createDoctorLintFixture({ gateway: { mode: "local" } });
+    expect(mocks.collectDevicePairingHealthFindings).not.toHaveBeenCalled();
+
+    await expectOptInLintFindings(ctx, "core/doctor/device-pairing");
+    expect(mocks.collectDevicePairingHealthFindings).toHaveBeenCalledWith({
+      cfg: ctx.cfg,
+      healthOk: false,
+      env: ctx.env,
+    });
+  });
+
+  it("keeps legacy cron store opt-in for default lint selection", async () => {
+    const contribution = requireDoctorContribution("doctor:legacy-cron");
+    expect(contribution.healthCheckIds).toEqual([
+      "core/doctor/legacy-whatsapp-crontab",
+      "core/doctor/legacy-cron-store",
+    ]);
+
+    const ctx = createDoctorLintFixture({ cron: { store: "/tmp/openclaw-cron/jobs.json" } });
+
+    expect(mocks.collectLegacyCronStoreHealthFindings).not.toHaveBeenCalled();
+
+    mocks.collectLegacyCronStoreHealthFindings.mockResolvedValueOnce([
+      {
+        checkId: "core/doctor/legacy-cron-store",
+        severity: "warning",
+        message: "Legacy JSON cron store was found.",
+        path: "/tmp/openclaw-cron/jobs.json",
+        requirement: "legacy-cron-store",
+      },
+    ]);
+    await expectOptInLintFindings(ctx, "core/doctor/legacy-cron-store", [
+      expect.objectContaining({ checkId: "core/doctor/legacy-cron-store" }),
+    ]);
+    expect(mocks.collectLegacyCronStoreHealthFindings).toHaveBeenCalledWith({ cfg: ctx.cfg });
+  });
+
   it("defers channel package-state loading only until post-core plugin convergence", async () => {
     const contribution = requireDoctorContribution("doctor:channel-package-state-capabilities");
     mocks.collectBundledChannelPackageStateLoadFailures.mockReturnValue([
@@ -2595,7 +2601,6 @@ describe("doctor health contributions", () => {
       },
     );
     const ctx = createDoctorContext({
-      cfg: {},
       cfgForPersistence: {},
       configResult: { cfg: {} },
       shouldRepair: true,
