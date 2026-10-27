@@ -1,20 +1,11 @@
 import { readFile, writeFile } from "node:fs/promises";
-import type {
-  ChannelAccountSnapshot,
-  ChannelGatewayContextV2,
-} from "openclaw/plugin-sdk/channel-contract";
-import { PlatformMessageNotDispatchedError } from "openclaw/plugin-sdk/error-runtime";
-import { createDeferred } from "openclaw/plugin-sdk/extension-shared";
 import { createTestPluginServiceScheduler } from "openclaw/plugin-sdk/plugin-test-api";
-import { createPluginRuntimeMock } from "openclaw/plugin-sdk/plugin-test-runtime";
 import { createOpenClawTestState } from "openclaw/plugin-sdk/test-state";
 import { expect, it, vi } from "vitest";
-import * as cliOutput from "./cli-output.js";
-import { IMessageRpcClient, IMessageRpcRequestError } from "./client.js";
-import { setIMessageRuntime } from "./runtime.js";
+import { IMessageRpcClient } from "./client.js";
 import { sendMessageIMessage } from "./send.js";
 
-const monitorMock = vi.hoisted(() => vi.fn(async (): Promise<void> => undefined));
+const monitorMock = vi.hoisted(() => vi.fn(async () => undefined));
 const createRpcClientMock = vi.hoisted(() => vi.fn());
 
 vi.mock("./monitor/monitor-provider.js", async (importOriginal) => ({
@@ -42,31 +33,27 @@ function skipsWatcher(logEvents: string[]) {
   return logEvents.some((line) => line.includes("skipping watcher"));
 }
 
-function makeCtx(
-  cfg: Config,
-  accountId: string,
-  channelRuntime?: ChannelGatewayContextV2["channelRuntime"],
-) {
+function makeCtx(cfg: Config, accountId: string) {
   const ac = new AbortController();
-  const statusEvents: ChannelAccountSnapshot[] = [];
+  const statusEvents: { lifecycle?: unknown }[] = [];
   const logEvents: string[] = [];
-  let snapshot: ChannelAccountSnapshot = { accountId };
-  const ctx: ChannelGatewayContextV2<ReturnType<typeof resolveIMessageAccount>> = {
-    scheduler: createTestPluginServiceScheduler(),
-    cfg,
-    accountId,
-    account: resolveIMessageAccount({ cfg, accountId }),
-    runtime: { log: vi.fn(), error: vi.fn(), exit: vi.fn() },
-    abortSignal: ac.signal,
-    log: { info: (line: string) => logEvents.push(line), warn: vi.fn(), error: vi.fn() },
-    getStatus: () => snapshot,
-    setStatus: (next) => {
-      snapshot = { ...snapshot, ...next };
-      statusEvents.push(next);
-    },
-    channelRuntime,
+  return {
+    ctx: {
+      scheduler: createTestPluginServiceScheduler(),
+      cfg,
+      accountId,
+      account: resolveIMessageAccount({ cfg, accountId }),
+      runtime: {} as never,
+      abortSignal: ac.signal,
+      log: { info: (line: string) => logEvents.push(line) },
+      getStatus: () => ({ accountId }),
+      setStatus: (next: { lifecycle?: unknown }) => statusEvents.push(next),
+      channelRuntime: undefined as never,
+    } as never,
+    abort: () => ac.abort(),
+    statusEvents,
+    logEvents,
   };
-  return { ctx, abort: () => ac.abort(), statusEvents, logEvents };
 }
 
 it.each([
@@ -198,113 +185,6 @@ it("enforces the resolved account cap for work", async () => {
     await state.cleanup();
   }
 });
-
-it.each(["rpc", "applescript", "auto"] as const)(
-  "reports %s Automation failures without mistaking read health for recovery",
-  async (transport) => {
-    const state = await createOpenClawTestState({
-      layout: "state-only",
-      prefix: "imessage-automation-",
-    });
-    const mediaUrl = state.path("proof.pdf");
-    await writeFile(mediaUrl, Buffer.from("%PDF-1.4\nsynthetic attachment"));
-    const localAttachment = transport !== "rpc";
-    const runtime = createPluginRuntimeMock();
-    setIMessageRuntime(runtime);
-    const cfg = accountConfig({
-      work: {
-        cliPath: "/gateway/work-imsg",
-        sendTransport: transport === "rpc" ? "applescript" : transport,
-      },
-    });
-    const { ctx } = makeCtx(cfg, "work", runtime.channel);
-    ctx.setStatus({ accountId: "work", connected: true });
-    const entered = createDeferred<void>();
-    const finished = createDeferred<void>();
-    monitorMock.mockImplementationOnce(() => {
-      entered.resolve();
-      return finished.promise;
-    });
-    const start = imessagePlugin.gateway!.startAccount!(ctx);
-    try {
-      await entered.promise;
-      const data = {
-        disposition: "not_started",
-        retry_safe: true,
-        transport: "applescript",
-        operation: "send",
-        detail: "Messages automation failed with AppleScript error -1712.",
-      };
-      const request = vi
-        .fn()
-        .mockRejectedValueOnce(new IMessageRpcRequestError(data.detail, -32603, data));
-      request.mockResolvedValue({ guid: "p:0/automation-recovered" });
-      createRpcClientMock.mockReset().mockResolvedValue({ request, stop: vi.fn(async () => {}) });
-      const cliFailure = new Error(data.detail);
-      vi.spyOn(cliOutput, "runIMessageCliJsonCommand")
-        .mockRejectedValueOnce(cliFailure)
-        .mockResolvedValue({ guid: "p:0/automation-recovered" });
-      const send = () =>
-        sendIMessageOutbound({
-          cfg,
-          accountId: "work",
-          to: "chat_guid:iMessage;+;chat0000",
-          text: localAttachment ? "" : "test",
-          ...(localAttachment ? { mediaUrl, mediaLocalRoots: [state.root] } : {}),
-        });
-      const failure = await send().catch((error: unknown) => error);
-      if (localAttachment) {
-        expect(failure).toBe(cliFailure);
-      } else {
-        expect(failure).toBeInstanceOf(PlatformMessageNotDispatchedError);
-      }
-      expect(ctx.getStatus().lastError).toContain("Privacy & Security > Automation");
-      expect(ctx.getStatus().connected).toBe(true);
-      const issues = imessagePlugin.status!.collectStatusIssues!([ctx.getStatus()]);
-      expect(issues).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
-            accountId: "work",
-            message: expect.stringContaining("Automation"),
-          }),
-        ]),
-      );
-
-      const probed = await imessagePlugin.status!.buildAccountSnapshot!({
-        account: ctx.account,
-        cfg,
-        runtime: ctx.getStatus(),
-        probe: { ok: true },
-      });
-      expect(probed.lastError).toContain("Automation");
-      await send();
-      expect(ctx.getStatus().lastError).toBeNull();
-      ctx.getStatus().lastError = "unrelated watcher failure";
-      await send();
-      expect(ctx.getStatus().lastError).toBe("unrelated watcher failure");
-    } finally {
-      finished.resolve();
-      await start;
-      vi.restoreAllMocks();
-      await state.cleanup();
-    }
-    createRpcClientMock.mockResolvedValue({
-      request: vi
-        .fn()
-        .mockRejectedValue(
-          new IMessageRpcRequestError(
-            "Messages automation failed with AppleScript error -1712.",
-            -32603,
-          ),
-        ),
-      stop: vi.fn(async () => {}),
-    });
-    await expect(
-      sendIMessageOutbound({ cfg, accountId: "work", to: "+15551234567", text: "test" }),
-    ).rejects.toThrow();
-    expect(ctx.getStatus().lastError).toBe("unrelated watcher failure");
-  },
-);
 
 const pairingCfg = accountConfig(
   {

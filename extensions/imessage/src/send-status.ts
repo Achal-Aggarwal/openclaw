@@ -5,7 +5,9 @@ import { getOptionalIMessageRuntime } from "./runtime.js";
 type SendStatus = Pick<ChannelGatewayContextV2, "getStatus" | "setStatus">;
 const SEND_STATUS_CAPABILITY = "imessage-send-status";
 
-export function registerIMessageSendStatus(ctx: ChannelGatewayContextV2) {
+export function registerIMessageSendStatus(
+  ctx: SendStatus & Pick<ChannelGatewayContextV2, "accountId" | "channelRuntime" | "abortSignal">,
+) {
   return ctx.channelRuntime?.runtimeContexts.register({
     channelId: "imessage",
     accountId: ctx.accountId,
