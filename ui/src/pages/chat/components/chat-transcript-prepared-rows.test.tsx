@@ -37,7 +37,7 @@ async function transcriptFixture(
   initialOffset: number | null = 0,
   idlePreparation = false,
   plainFirstRow = false,
-  ordinary = false,
+  ordinary: boolean | "retained" = false,
   viewportHeight = 600,
   completedFrame: boolean | "toolCall" = false,
 ) {
@@ -91,7 +91,7 @@ async function transcriptFixture(
     key: `fragment:${index}`,
     item: index,
     estimatedSize: index === 0 && plainFirstRow ? undefined : 100,
-    retainDom: !ordinary && !(index === 0 && plainFirstRow),
+    retainDom: ordinary !== true && !(index === 0 && plainFirstRow),
   }));
   const groups = ordinary
     ? rows.map((_, index) =>
@@ -388,6 +388,7 @@ it("keeps warming in the reader's direction through opposite size compensation",
   const afterDown = view.renderRow.mock.calls.length;
   await view.frame();
   await view.task();
+  await view.task();
   const downward = view.renderRow.mock.calls
     .slice(afterDown)
     .map(([row]) => (row.kind === "item" ? row.item : -1));
@@ -531,7 +532,7 @@ it("uses cached geometry on the first reader movement after tail placement", asy
 });
 
 it("materializes one predicted row between scroll frames and uses the latest viewport", async () => {
-  const view = await transcriptFixture(0, true);
+  const view = await transcriptFixture(0, true, false, "retained");
   await view.scrollTo(60);
   const mounted = transcriptRows(view.container);
   await view.task();
@@ -553,6 +554,17 @@ it("materializes one predicted row between scroll frames and uses the latest vie
   const next = transcriptRows(view.container).find((row) => !afterScroll.includes(row));
   expect(next).toBeDefined();
   expect(Number(next!.dataset.index)).toBeGreaterThan(120);
+});
+
+it("stops preparing when the predicted DOM window has no retainable rows", async () => {
+  const view = await transcriptFixture(0, true, false, true);
+  await view.updateRow(120, 120);
+  await view.scrollTo(60);
+  await view.task();
+  await view.task();
+  const rendered = view.renderRow.mock.calls.length;
+  await view.task();
+  expect(view.renderRow.mock.calls).toHaveLength(rendered);
 });
 
 it("prepares inward when fast upward prediction reaches an ordinary first row", async () => {

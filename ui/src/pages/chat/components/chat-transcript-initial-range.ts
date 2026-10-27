@@ -295,13 +295,17 @@ export class TranscriptInitialRange {
             : domLookahead;
       let admitted = 0;
       let warmed = false;
+      let canMaterialize = false;
       for (let step = 1; step <= lookahead && admitted === 0; step++) {
         if (performance.now() >= deadline) {
-          this.queuePreparation(!warmOnly);
+          this.queuePreparation(warmOnly ? canMaterialize : true);
           return;
         }
         const index = origin + step * searchDirection;
         const row = rows?.[index];
+        const canPrepareRow =
+          row?.retainDom && !rendered.has(row.key) && !this.preparedRowKeys.has(row.key);
+        canMaterialize ||= Boolean(canPrepareRow);
         if (row && prewarm && !rendered.has(row.key) && this.prewarmRow?.(index, warmOnly)) {
           // The shared cache owns readiness; no DOM or range invalidation is needed.
           if (warmOnly) {
@@ -311,13 +315,7 @@ export class TranscriptInitialRange {
           this.queuePreparation();
           return;
         }
-        if (
-          !warmOnly &&
-          step <= domLookahead &&
-          row?.retainDom &&
-          !rendered.has(row.key) &&
-          !this.preparedRowKeys.has(row.key)
-        ) {
+        if (!warmOnly && step <= domLookahead && canPrepareRow) {
           if (performance.now() >= deadline) {
             this.queuePreparation();
             return;
@@ -328,8 +326,8 @@ export class TranscriptInitialRange {
         }
       }
       if (!admitted) {
-        if (warmOnly) {
-          this.queuePreparation(!warmed);
+        if (warmOnly && (warmed || canMaterialize)) {
+          this.queuePreparation(canMaterialize);
         }
         return;
       }
@@ -347,7 +345,7 @@ export class TranscriptInitialRange {
     ) {
       // Warm first, then mount one predicted row between scroll frames. Its
       // resize receipt gates the next mount even when idle delivery is starved.
-      const task = setTimeout(() => prepare(performance.now() + 6, true, !materialize), 0);
+      const task = setTimeout(() => prepare(performance.now() + 6, !materialize, !materialize), 0);
       this.cancelPreparation = () => clearTimeout(task);
     } else if (typeof requestIdleCallback === "function") {
       this.preparationIsIdle = true;
