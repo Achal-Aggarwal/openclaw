@@ -1,8 +1,11 @@
 // In-process owner workload; run with --expose-gc on an approved benchmark host.
 import assert from "node:assert/strict";
+import crypto, { createHash } from "node:crypto";
+import { once } from "node:events";
 import { mkdirSync, writeFileSync } from "node:fs";
 import type { HeapProfiler } from "node:inspector";
 import { Session } from "node:inspector/promises";
+import { SourceMap, syncBuiltinESMExports } from "node:module";
 import path from "node:path";
 import { constants, PerformanceObserver } from "node:perf_hooks";
 import { setImmediate as nextTurn } from "node:timers/promises";
@@ -30,25 +33,39 @@ const { values } = parseArgs({
     "list-path": { type: "string", default: "churn" },
     lists: { type: "string", default: "30" },
     serialized: { type: "boolean", default: false },
+    "freeze-clock": { type: "boolean", default: false },
+    samples: { type: "string", default: "1" },
+    controlled: { type: "boolean", default: false },
   },
 });
-const integer = (name: "parents" | "children" | "updates" | "warmup" | "sessions" | "lists") =>
-  parseStrictIntegerOption({ raw: values[name], label: `--${name}`, min: 1, fallback: 1 });
+const integer = (
+  name: "parents" | "children" | "updates" | "warmup" | "sessions" | "lists" | "samples",
+) => parseStrictIntegerOption({ raw: values[name], label: `--${name}`, min: 1, fallback: 1 });
 const parentCount = integer("parents");
 const childCount = integer("children");
 const updates = integer("updates");
 const warmup = integer("warmup");
 assert.ok(values["state-dir"], "--state-dir must name a new isolated directory");
-assert.ok(["timing", "allocation", "census"].includes(values.mode), "Invalid --mode");
+assert.ok(
+  ["timing", "allocation", "census", "equivalence"].includes(values.mode),
+  "Invalid --mode",
+);
 assert.ok(values.workload === "owner" || values.workload === "list", "Invalid --workload");
 assert.ok(values.workload !== "list" || values["team-shape"], "--workload list needs --team-shape");
-assert.ok(["churn", "hit", "miss"].includes(values["list-path"]), "Invalid --list-path");
+assert.ok(
+  ["churn", "hit", "miss", "run-churn"].includes(values["list-path"]),
+  "Invalid --list-path",
+);
 assert.ok(values["list-path"] === "churn" || values.workload === "list");
+assert.ok(!values.controlled || (process.send && values.workload === "list"));
+assert.ok(global.gc, "Run with --expose-gc");
 const collectGarbage = global.gc;
-assert.ok(collectGarbage, "Run with --expose-gc");
 const root = path.resolve(values["state-dir"]);
 const config = path.join(root, "openclaw.json");
 const now = Date.UTC(2026, 9, 25);
+if (values["freeze-clock"]) {
+  Date.now = () => now;
+}
 let fixture:
   | Awaited<ReturnType<typeof import("./team-shape-fixture.ts").generateTeamShapeFixture>>
   | undefined;
@@ -255,6 +272,8 @@ const resident =
     : undefined;
 const { parseAgentSessionKey } = await import("../../src/sessions/session-key-utils.js");
 const { serializeGatewayFrame } = await import("../../src/gateway/serialized-json.js");
+const { replaceSessionEntrySync } = await import("../../src/config/sessions/session-accessor.js");
+const { getSessionRowSelectionMetrics } = await import("../../src/infra/gateway-work-metrics.js");
 const ownerRows = rows.map((row) => ({ ...row, parsedKey: parseAgentSessionKey(row.key) }));
 const requesterRoots = [
   ...new Set(Array.from(snapshot.values(), (entry) => entry.requesterSessionKey)),
@@ -396,9 +415,19 @@ async function run(count: number) {
   if (values["list-path"] !== "churn") {
     for (let list = 0; list < count; list++) {
       let before = process.threadCpuUsage();
-      if (values["list-path"] === "miss") {
+      if (values["list-path"] === "run-churn") {
         for (let step = 0; step < 33; step++) {
           updateRun();
+          completed++;
+        }
+      } else if (values["list-path"] === "miss") {
+        for (let step = 0; step < 33; step++) {
+          const row = rows[sequence++ % rows.length]!;
+          const parsed = parseAgentSessionKey(row.key);
+          assert.ok(parsed);
+          const entry = { ...row.entry, label: `Synthetic metadata revision ${sequence}` };
+          replaceSessionEntrySync({ agentId: parsed.agentId, sessionKey: row.key }, entry);
+          row.entry = entry;
           completed++;
         }
       }
@@ -448,8 +477,10 @@ const observer = new PerformanceObserver((list) => {
 observer.observe({ entryTypes: ["gc"] });
 const inspector = new Session();
 let sampleListRegions = false;
-try {
-  await run(warmup);
+async function measure(sample: number) {
+  allocationRegions.list.length = 0;
+  allocationRegions.owner.length = 0;
+  allocationRegions.descendant.length = 0;
   collectGarbage();
   await nextTurn();
   await nextTurn();
@@ -462,9 +493,7 @@ try {
   descendantQueries = 0;
   responseBytes = 0;
   const heapBefore = process.memoryUsage().heapUsed;
-  if (values.mode !== "timing") {
-    inspector.connect();
-  }
+  const countersBefore = getSessionRowSelectionMetrics();
   if (values.mode === "census") {
     await inspector.post("Profiler.enable");
     await inspector.post("Profiler.startPreciseCoverage", { callCount: true, detailed: false });
@@ -486,6 +515,8 @@ try {
   const work = await run(values["list-path"] === "churn" ? updates : integer("lists"));
   const cpu = process.threadCpuUsage(before);
   const ended = performance.now();
+  const heapAfter = process.memoryUsage().heapUsed;
+  const countersAfter = getSessionRowSelectionMetrics();
   await nextTurn();
   await nextTurn();
   if (values.mode === "census") {
@@ -508,6 +539,7 @@ try {
     writeFileSync(path.join(root, "calls.json"), JSON.stringify(calls, null, 2));
   }
   let allocatedBytes: number | undefined;
+  let listProfiles: HeapProfiler.SamplingHeapProfile[] = [];
   let ownerRegionAllocatedBytes: number | undefined;
   let descendantRegionAllocatedBytes: number | undefined;
   if (sampleOwnerRegions) {
@@ -523,6 +555,7 @@ try {
     assert.equal(allocationRegions.owner.length, work.lists);
     assert.equal(allocationRegions.descendant.length, work.lists);
   } else if (sampleListRegions) {
+    listProfiles = allocationRegions.list;
     writeFileSync(path.join(root, "allocation-regions.json"), JSON.stringify(allocationRegions));
     allocatedBytes = allocationRegions.list.reduce(
       (bytes, profile) => bytes + totalAllocatedBytes(profile.head),
@@ -531,8 +564,76 @@ try {
     assert.equal(allocationRegions.list.length, work.lists);
   } else if (values.mode === "allocation") {
     const { profile } = await inspector.post("HeapProfiler.stopSampling");
+    listProfiles = [profile];
     writeFileSync(path.join(root, "allocation.heapprofile"), JSON.stringify(profile));
     allocatedBytes = totalAllocatedBytes(profile.head);
+  }
+  if (listProfiles.length && !values.controlled) {
+    const maps = new Map<string, SourceMap>();
+    inspector.on("Debugger.scriptParsed", ({ params }) => {
+      const prefix = "data:application/json;base64,";
+      if (params.sourceMapURL?.startsWith(prefix)) {
+        maps.set(
+          params.url,
+          new SourceMap(
+            JSON.parse(Buffer.from(params.sourceMapURL.slice(prefix.length), "base64").toString()),
+          ),
+        );
+      }
+    });
+    // Map tsx's single-line generated frames after sampling, outside the measured window.
+    await inspector.post("Debugger.enable");
+    await inspector.post("Debugger.disable");
+    inspector.removeAllListeners("Debugger.scriptParsed");
+    const sites = new Map<string, number>();
+    const visit = (node: HeapProfiler.SamplingHeapProfileNode, parents: string[] = []) => {
+      const frame = node.callFrame;
+      const source = maps.get(frame.url)?.findEntry(frame.lineNumber, frame.columnNumber);
+      const generated = `${frame.url}:${frame.lineNumber + 1}:${frame.columnNumber + 1}`;
+      const name = `${frame.functionName || "(anonymous)"}@${generated}${source ? ` -> ${JSON.stringify(source)}` : ""}`;
+      const key = [...parents.slice(-3), name].join(" < ");
+      sites.set(key, (sites.get(key) ?? 0) + node.selfSize / work.lists);
+      for (const child of node.children) {
+        visit(child, [...parents, name]);
+      }
+    };
+    for (const profile of listProfiles) {
+      visit(profile.head);
+    }
+    const ranked = [...sites].toSorted((left, right) => right[1] - left[1]);
+    writeFileSync(path.join(root, "allocation-sites.json"), JSON.stringify(ranked, null, 2));
+    maps.clear();
+    console.log(JSON.stringify({ listPath: values["list-path"], sites: ranked.slice(0, 30) }));
+  }
+  let responseHash: string | undefined;
+  if (values.mode === "equivalence") {
+    assert.ok(projection && listSessions && values["freeze-clock"]);
+    const frames: string[] = [];
+    const randomUUID = crypto.randomUUID;
+    let revision = 0;
+    crypto.randomUUID = () =>
+      `00000000-0000-4000-8000-${(++revision).toString(16).padStart(12, "0")}`;
+    syncBuiltinESMExports();
+    try {
+      for (const rowMode of [undefined, "compact", "sidebar", "dashboard"] as const) {
+        for (const archived of [false, true, "all"] as const) {
+          const payload = await listSessions({
+            projection,
+            acceptsSerializedJson: true,
+            opts: { rowMode, archived, agentId: "main", limit: 100 },
+          });
+          frames.push(
+            serializeGatewayFrame({ type: "res", id: "list", ok: true, payload }).toString(),
+          );
+        }
+      }
+    } finally {
+      crypto.randomUUID = randomUUID;
+      syncBuiltinESMExports();
+    }
+    const bytes = JSON.stringify(frames);
+    writeFileSync(path.join(root, "responses.json"), bytes);
+    responseHash = createHash("sha256").update(bytes).digest("hex");
   }
   const gc: Record<string, { count: number; totalMs: number }> = {};
   for (const entry of gcEntries) {
@@ -549,14 +650,17 @@ try {
     metric.count++;
     metric.totalMs += entry.duration;
   }
-  const heapAfter = process.memoryUsage().heapUsed;
   collectGarbage();
   const result = {
     mode: values.mode,
     workload: values.workload,
     listPath: values["list-path"],
     serialized: values.serialized,
+    frozenClock: values["freeze-clock"],
+    responseHash,
     responseBytes,
+    countersBefore,
+    countersAfter,
     fixture: fixture?.summary,
     parentCount,
     childCount,
@@ -604,8 +708,26 @@ try {
     heapAfter,
     retainedHeapAfter: process.memoryUsage().heapUsed,
   };
-  writeFileSync(path.join(root, "result.json"), JSON.stringify(result, null, 2));
+  writeFileSync(
+    path.join(root, `result${sample ? `-${sample}` : ""}.json`),
+    JSON.stringify(result, null, 2),
+  );
   console.log(JSON.stringify(result));
+  process.send?.({ sample, result });
+}
+try {
+  await run(warmup);
+  if (values.mode === "allocation" || values.mode === "census") {
+    inspector.connect();
+  }
+  for (let sample = 0; sample < integer("samples"); sample++) {
+    if (values.controlled) {
+      const command = once(process, "message");
+      process.send?.({ ready: sample });
+      assert.equal((await command)[0], "measure");
+    }
+    await measure(sample);
+  }
 } finally {
   observer.disconnect();
   inspector.disconnect();
@@ -623,5 +745,8 @@ try {
       await import("../../src/state/openclaw-state-db.js");
     await closeOpenClawAgentDatabasesAsync();
     await closeOpenClawStateDatabaseAsync();
+  }
+  if (values.controlled) {
+    process.disconnect?.();
   }
 }
