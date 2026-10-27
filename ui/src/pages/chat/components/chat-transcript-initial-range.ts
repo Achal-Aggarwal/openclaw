@@ -353,9 +353,11 @@ export class TranscriptInitialRange {
     ) {
       // Admit one slice per frame, after paint. Repeated zero-delay slices can
       // otherwise spend several budgets before the next scrolling frame.
-      const frame = requestAnimationFrame((time) => {
-        // A delayed timer must not borrow the next frame's preparation budget.
-        const task = setTimeout(() => prepare(time + 6, !materialize, !materialize), 0);
+      const frame = requestAnimationFrame(() => {
+        // Earlier callbacks can age the shared frame timestamp. Start this
+        // slice here, but never give a delayed timer a fresh budget.
+        const deadline = performance.now() + 6;
+        const task = setTimeout(() => prepare(deadline, !materialize, !materialize), 0);
         this.cancelPreparation = () => clearTimeout(task);
       });
       this.cancelPreparation = () => cancelAnimationFrame(frame);

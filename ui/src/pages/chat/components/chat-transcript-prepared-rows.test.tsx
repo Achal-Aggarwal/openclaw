@@ -213,13 +213,13 @@ async function transcriptFixture(
       draw();
       await settle();
     },
-    async frame(count = 1, measure = true) {
+    async frame(count = 1, measure = true, timestampLag = 0) {
       for (let index = 0; index < count; index++) {
         now += 16;
         const pending = [...frames.values()];
         frames.clear();
         for (const callback of pending) {
-          callback(now);
+          callback(now - timestampLag);
         }
         await settle();
         if (measure) {
@@ -653,6 +653,15 @@ it("warms arriving Markdown without speculative mounts during viewport-sized scr
   await view.task();
   expect(view.renderRow.mock.calls.length).toBeGreaterThan(rendered);
   expect(transcriptRows(view.container)).toEqual(mounted);
+});
+
+it("warms rows when earlier animation callbacks delay preparation delivery", async () => {
+  const view = await transcriptFixture(0, true, false, "retained");
+  await view.scrollTo(60);
+  const rendered = view.renderRow.mock.calls.length;
+  await view.frame(1, false, 8);
+  await view.task();
+  expect(view.renderRow.mock.calls.length).toBeGreaterThan(rendered);
 });
 
 it("defers late preparation timers instead of spending another frame's budget", async () => {
