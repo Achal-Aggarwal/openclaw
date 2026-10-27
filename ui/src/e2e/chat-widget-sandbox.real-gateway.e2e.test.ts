@@ -159,7 +159,10 @@ suite.define(() => {
         await page.addInitScript(installWarmConnectSocketTrace);
         await page.addInitScript(installWarmConnectIdentityGate);
         await page.goto(url);
-        if (await page.getByRole("link", { name: "Log in", exact: true }).isVisible()) {
+        // The entry probe reveals login or redirects into the app asynchronously.
+        const login = page.getByRole("link", { name: "Log in", exact: true });
+        await login.or(page.locator("openclaw-app")).first().waitFor();
+        if (await login.isVisible()) {
           await enterControlUiSession(page);
         }
         await waitForControlUiGatewayReady(page);
