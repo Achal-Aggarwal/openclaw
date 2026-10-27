@@ -84,8 +84,8 @@ function controlledWorkers(ids: string[], onFinish: (id: string) => void = () =>
   const started = createDeferred<void>();
   const workers = ids.map(() => createDeferred<Partial<ScenarioResult>>());
   const runChild = vi.fn<SuiteRunner>(async (params) => {
-    const index = ids.indexOf(params!.scenarioIds![0]!);
-    assert.notEqual(index, -1, "expected a selected worker scenario");
+    const index = runChild.mock.calls.length - 1;
+    expect(params!.scenarioIds).toEqual([ids[index]]);
     if (runChild.mock.calls.length === ids.length) {
       started.resolve();
     }
@@ -320,11 +320,11 @@ it.each(["caught write failure", "queue rejection"] as const)(
   },
 );
 
-it("keeps out-of-order progress times while draining partial artifacts before cleanup", async () => {
+it("keeps repeated worker slots and out-of-order progress while draining before cleanup", async () => {
   vi.useFakeTimers({ toFake: ["Date"] });
   const at = (second: number) => new Date(Date.UTC(2026, 7, 4, 0, 0, second));
   vi.setSystemTime(at(0));
-  const workers = controlledWorkers(["first", "second"]);
+  const workers = controlledWorkers(["same", "same"]);
   context.selectedScenarios.forEach((scenario) => {
     scenario.title = `Catalog ${scenario.id}`;
   });
@@ -333,7 +333,7 @@ it("keeps out-of-order progress times while draining partial artifacts before cl
   vi.mocked(lab.setScenarioRun).mockImplementation((next) => {
     snapshots.push(structuredClone(next));
     next?.scenarios.forEach((scenario, index) => {
-      if (scenario.status === "pass") {
+      if (scenario.status === "pass" || scenario.status === "fail") {
         completed[index]!.resolve();
       }
     });
@@ -349,7 +349,7 @@ it("keeps out-of-order progress times while draining partial artifacts before cl
     vi.setSystemTime(at(10));
   });
   const results = [
-    makeResult("result first"),
+    makeResult("result first", { status: "fail" }),
     makeResult("result second", {
       details: "",
       steps: [{ name: "check", status: "pass" }],
@@ -367,6 +367,8 @@ it("keeps out-of-order progress times while draining partial artifacts before cl
   partialWrite.resolve();
   const result = await run;
 
+  expect(new Set(workers.runChild.mock.calls.map(([params]) => params?.outputDir)).size).toBe(2);
+  expect(result.startedScenarioIds).toEqual(["same", "same"]);
   const recordedResults = results.map(withObservation);
   expect(result.scenarios).toEqual(recordedResults);
   expect(
@@ -376,8 +378,8 @@ it("keeps out-of-order progress times while draining partial artifacts before cl
     ["running", "pending"],
     ["running", "running"],
     ["running", "pass"],
-    ["pass", "pass"],
-    ["pass", "pass"],
+    ["fail", "pass"],
+    ["fail", "pass"],
   ]);
   expect(snapshots.at(-1)).toMatchObject({
     status: "completed",
@@ -593,21 +595,6 @@ it("retains a failed parent history when the continued isolated child is skipped
     expect(createHash("sha256").update(bytes).digest("hex")).toBe(artifact.sha256);
   }
   expect(first.evidence).toEqual(original);
-});
-
-it("preserves repeated isolated starts and independent progress slots", async () => {
-  context.concurrency = 1;
-  context.selectedScenarios = [makeScenario("same"), makeScenario("same")];
-  let calls = 0;
-  const runChild = vi.fn<SuiteRunner>(async (params) => {
-    calls += 1;
-    return childResult(params, makeScenario("same"), { status: calls === 1 ? "fail" : "pass" });
-  });
-  const result = await runIsolated({ lab, startLab: async () => createCleanupTestLab() }, runChild);
-  expect(new Set(runChild.mock.calls.map(([params]) => params?.outputDir)).size).toBe(2);
-  expect(result.startedScenarioIds).toEqual(["same", "same"]);
-  expect(result.scenarios.map((item) => item.status)).toEqual(["fail", "pass"]);
-  expect(latestProgress()?.scenarios.map((item) => item.status)).toEqual(["fail", "pass"]);
 });
 
 it("prints bounded and redacted nested failure progress before artifacts", async () => {
