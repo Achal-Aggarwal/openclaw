@@ -44,6 +44,7 @@ class AndroidLicenseNoticesTest {
         "AndroidX Room",
         "AndroidX SQLite",
         "AndroidX Wear",
+        "AndroidX WebKit",
         "AndroidX WindowManager",
         "Bouncy Castle Provider",
         "Chevrotain",
@@ -118,6 +119,7 @@ class AndroidLicenseNoticesTest {
         "nibor autolink",
         "OkHttp and Okio",
         "path-data-parser",
+        "Pele",
         "points-on-curve",
         "points-on-path",
         "roughjs",
@@ -146,5 +148,7 @@ class AndroidLicenseNoticesTest {
     assertTrue(licenses.any { license -> license.title == "CodexBar" && license.text.contains("Peter Steinberger") })
     assertTrue(licenses.any { license -> license.title == "Lobe Icons" && license.text.contains("LobeHub") })
     assertTrue(licenses.any { license -> license.title == "llama.cpp" && license.text.contains("ggml authors") })
+    assertTrue(licenses.any { license -> license.title == "Pele" && license.text.contains("Copyright (c) 2026 kepano") })
+    assertTrue(licenses.any { license -> license.title == "Pele" && license.text.contains("Copyright (c) 2026 Lucide Icons and Contributors") })
   }
 }

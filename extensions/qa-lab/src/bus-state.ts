@@ -1,31 +1,31 @@
 import { randomUUID } from "node:crypto";
 import {
+  parseQaTarget,
+  sanitizeQaBusToolCalls,
+  type QaBusConversation,
+  type QaBusCreateThreadInput,
+  type QaBusDeleteMessageInput,
+  type QaBusEditMessageInput,
+  type QaBusEvent,
+  type QaBusInboundMessageInput,
+  type QaBusMessage,
+  type QaBusOutboundMessageInput,
+  type QaBusPollInput,
+  type QaBusReadMessageInput,
+  type QaBusReactToMessageInput,
+  type QaBusSearchMessagesInput,
+  type QaBusSnapshotConversation,
+  type QaBusThread,
+} from "openclaw/plugin-sdk/qa-channel-protocol";
+import {
   buildQaBusSnapshot,
   cloneMessage,
   normalizeAccountId,
-  normalizeConversationFromTarget,
   pollQaBusEvents,
   requireQaBusMessageForAccount,
   searchQaBusMessages,
 } from "./bus-queries.js";
 import { createQaBusWaiterStore, throwQaBusClosed } from "./bus-waiters.js";
-import { sanitizeQaBusToolCalls } from "./qa-bus-protocol.js";
-import type {
-  QaBusConversation,
-  QaBusCreateThreadInput,
-  QaBusDeleteMessageInput,
-  QaBusEditMessageInput,
-  QaBusEvent,
-  QaBusInboundMessageInput,
-  QaBusMessage,
-  QaBusOutboundMessageInput,
-  QaBusPollInput,
-  QaBusReadMessageInput,
-  QaBusReactToMessageInput,
-  QaBusSearchMessagesInput,
-  QaBusSnapshotConversation,
-  QaBusThread,
-} from "./runtime-api.js";
 
 const DEFAULT_BOT_ID = "openclaw";
 const DEFAULT_BOT_NAME = "OpenClaw QA";
@@ -61,12 +61,10 @@ export function createQaBusState() {
     });
   const waiters = createQaBusWaiterStore(getSnapshot);
 
-  const pushEvent = (event: QaBusEventSeed): QaBusEvent => {
+  const pushEvent = (event: QaBusEventSeed): void => {
     cursor += 1;
-    const finalized = { cursor, ...event };
-    events.push(finalized);
+    events.push({ cursor, ...event });
     waiters.settle();
-    return finalized;
   };
 
   const publishMessage = (
@@ -193,11 +191,11 @@ export function createQaBusState() {
     },
     addOutboundMessage(input: QaBusOutboundMessageInput) {
       const accountId = normalizeAccountId(input.accountId);
-      const { conversation, threadId } = normalizeConversationFromTarget(input.to);
+      const { conversationId, chatType, threadId } = parseQaTarget(input.to);
       const message = createMessage({
         direction: "outbound",
         accountId,
-        conversation,
+        conversation: { id: conversationId, kind: chatType },
         senderId: input.senderId?.trim() || DEFAULT_BOT_ID,
         senderName: input.senderName?.trim() || DEFAULT_BOT_NAME,
         text: input.text,

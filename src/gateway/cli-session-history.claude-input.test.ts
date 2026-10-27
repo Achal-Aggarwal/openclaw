@@ -1,313 +1,338 @@
 import fs from "node:fs/promises";
-import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { useAutoCleanupTempDirTracker } from "../../test/helpers/temp-dir.js";
-import { withEnvAsync } from "../test-utils/env.js";
+import { expect, it } from "vitest";
+import { buildCliSessionDriftNote } from "../agents/cli-session-drift.js";
+import { HEARTBEAT_PROMPT } from "../auto-reply/heartbeat.js";
+import { applySessionHints } from "../auto-reply/reply/body.js";
+import { formatSystemTurnPrompt } from "../sessions/system-turn-prompt.js";
+import {
+  projectChatDisplayMessages,
+  projectChatDisplayMessagesWithState,
+} from "./chat-display-projection.js";
 import { classifyClaudeCliHistoryLine } from "./cli-session-history.claude-activity.js";
-import { readClaudeCliFallbackSeed } from "./cli-session-history.claude.js";
-import { buildLegacyReseedPrompt } from "./cli-session-history.test-support.js";
-import { expectRecordFields } from "./test-helpers.assertions.js";
+import {
+  cleanClaudeCliImportedUserDisplay,
+  parseClaudeCliHistoryEntry,
+  readClaudeCliFallbackSeed,
+} from "./cli-session-history.claude.js";
+import {
+  buildLegacyReseedPrompt,
+  claudeUser,
+  LEGACY_EXEC_COMPLETION_PROMPT,
+  mergeImportedChatHistoryMessages,
+  user,
+  withClaudeProjectsDir,
+} from "./cli-session-history.test-support.js";
 
-type ClaudeCliFallbackSeed = NonNullable<ReturnType<typeof readClaudeCliFallbackSeed>>;
-const tempDirs = useAutoCleanupTempDirTracker(afterEach);
+const blocks = (text: string) => [{ type: "text", text }];
+const assistantTurn = (text: string) => ({
+  type: "assistant",
+  message: { role: "assistant", content: blocks(text) },
+});
+const boundary = (content = "Conversation compacted") => ({
+  type: "system",
+  subtype: "compact_boundary",
+  content,
+});
+const summary = (text: string) => ({ type: "summary", summary: text });
+const REQUESTER_HINT =
+  'requester_profile is the verified linked requester. For "assign to me", use sessions assign_owner with ownerType="human" and ownerId=requester_profile.id, if available.';
+const frame = (json: string) =>
+  `Conversation info: ⟦openclaw:ctx⟧\n\`\`\`json\n${json}\n\`\`\`\n\n`;
+const execPrompt = LEGACY_EXEC_COMPLETION_PROMPT;
+// Saved transcripts keep the bytes the retired exec prompt builder wrote for runs without delivery.
+const SILENT_EXEC_OPENING =
+  "An async command completion event was triggered, but user delivery is disabled for this run. ";
+const SILENT_EXEC_CLOSING = " Do not mention, summarize, or reuse command output.";
+const silentExecPrompt =
+  `${SILENT_EXEC_OPENING}Handle the result internally and reply with exactly NO_REPLY as the entire final answer. ` +
+  `NO_REPLY discards anything written this turn that was not sent, so send confirmations before ending silently.${SILENT_EXEC_CLOSING}`;
+const silentHeartbeatToolExecPrompt =
+  `${SILENT_EXEC_OPENING}Handle the result internally. Use heartbeat_respond to report the wake outcome. ` +
+  `Set notify=false when nothing needs the user's attention. Set notify=true with notificationText only when the user should be interrupted.${SILENT_EXEC_CLOSING}`;
+const writeRows = (filePath: string, rows: readonly unknown[]) =>
+  fs.writeFile(filePath, rows.map((row) => JSON.stringify(row)).join("\n"));
 
-function requireFallbackSeed(
-  seed: ReturnType<typeof readClaudeCliFallbackSeed>,
-  label: string,
-): ClaudeCliFallbackSeed {
-  if (!seed) {
-    throw new Error(`expected ${label} fallback seed`);
-  }
-  return seed;
+function merge(localMessages: unknown[], importedMessages: unknown[]) {
+  return mergeImportedChatHistoryMessages({ localMessages, importedMessages });
 }
 
-describe("Claude history activity rows", () => {
-  it.each(["null", "[]", "42", "true", '"ignored"', "not json"])(
-    "ignores non-record or malformed activity row %s",
-    (line) => {
-      expect(
-        classifyClaudeCliHistoryLine({ line, cliSessionId: "activity", sourceLineNumber: 1 }),
-      ).toEqual({ humanTurn: false });
-    },
-  );
+function classify(line: string) {
+  return classifyClaudeCliHistoryLine({
+    line,
+    cliSessionId: "native-session",
+    sourceLineNumber: 1,
+  });
+}
+
+function expectVisible(message: ReturnType<typeof importUnmatched>, content: unknown) {
+  expect(message?.content).toEqual(content);
+  expect(message?.display).not.toBe(false);
+  expect(message?.provenance).toBeUndefined();
+}
+
+const internalInputs = [
+  ["resume", buildCliSessionDriftNote(["system-prompt"])],
+  [
+    "compact-command",
+    "<command-name>/compact</command-name>\n            <command-message>compact</command-message>\n            <command-args></command-args>",
+  ],
+  ["compact-output", "<local-command-stdout>Compacted </local-command-stdout>"],
+  ["exec", execPrompt],
+  ["exec-silent", silentExecPrompt],
+  ["exec-silent-heartbeat-tool", silentHeartbeatToolExecPrompt],
+  [
+    "exec-silent-with-scratch",
+    `${silentExecPrompt}\n\nHeartbeat monitor scratch:\ncheck disk usage`,
+  ],
+  [
+    "exec-with-queued-system-event",
+    `System: [2026-10-06 14:35:17 GMT+8] Control UI reaction added: 👍 by Alice on msg m1 from assistant\n\n${execPrompt}`,
+  ],
+  [
+    "exec-after-interrupted-run",
+    applySessionHints({
+      baseBody: execPrompt,
+      abortedLastRun: true,
+    }),
+  ],
+] as const;
+const RESTART_RECOVERY_OPENING = formatSystemTurnPrompt(
+  "Your previous turn was interrupted by a gateway restart while OpenClaw was waiting on tool/model work.",
+);
+const internalWakeInputs = [
+  ["heartbeat", `${HEARTBEAT_PROMPT}\nCurrent time: Saturday`],
+  [
+    "heartbeat",
+    `Run the following periodic tasks (only those due based on their intervals):\n\n- inbox: Check mail\n\nAfter completing all due tasks, reply with exactly NO_REPLY as the entire final answer. NO_REPLY discards anything written this turn that was not sent, so send confirmations before ending silently.`,
+  ],
+  ["restart_recovery", RESTART_RECOVERY_OPENING],
+  ["restart_recovery", `[Tue 2026-09-22 16:00 GMT+8] ${RESTART_RECOVERY_OPENING} Continue.`],
+] as const;
+
+function parseImportedUser(content: string | unknown[]) {
+  return parseClaudeCliHistoryEntry(claudeUser(content), "native-session", 1, new Map(), {
+    reseedMode: "recover",
+  });
+}
+
+function importUnmatched(content: string | unknown[]) {
+  const imported = parseImportedUser(content);
+  expect(imported?.content).toEqual(content);
+  const [merged] = merge([], [imported]);
+  expect(merged).toMatchObject({ content });
+  return cleanClaudeCliImportedUserDisplay(merged) as
+    | { content?: unknown; display?: unknown; provenance?: unknown }
+    | undefined;
+}
+
+it.each(internalInputs)("hides %s copies without hiding real user messages", (_kind, text) => {
+  for (const content of [text, blocks(text)]) {
+    const imported = parseImportedUser(content);
+    expect(projectChatDisplayMessages([imported])).toEqual([]);
+    expect(classify(JSON.stringify(claudeUser(content))).humanTurn).toBe(false);
+    const quoted = parseImportedUser(`Please explain this:\n${text}`);
+    expect(projectChatDisplayMessages([quoted])).toHaveLength(1);
+    const human = user(content, 1);
+    const merged = merge([human], imported ? [{ ...imported, timestamp: 2 }] : []);
+    expect(projectChatDisplayMessages(merged)).toMatchObject([{ role: "user", content }]);
+  }
 });
 
-describe("readClaudeCliFallbackSeed", () => {
-  let homeDir: string;
-  let projectsDir: string;
-  const SESSION_ID = "fallback-seed-session";
+it.each(["[Request interrupted by user]", "[Request interrupted by user for tool use]"])(
+  "hides the native %s row without hiding human text or look-alikes",
+  async (text) => {
+    await withClaudeProjectsDir(async ({ filePath, readMessages }) => {
+      const interrupt = claudeUser(blocks(text), { uuid: "interrupt" });
+      const visible = [
+        claudeUser(text, { uuid: "string" }),
+        ...["promptSource", "turnOrigin", "turnPosition", "permissionMode"].map((field) =>
+          claudeUser(blocks(text), { uuid: field, [field]: "user" }),
+        ),
+        claudeUser(`${text} Please explain.`, { uuid: "suffix" }),
+        claudeUser(blocks(` ${text}`), { uuid: "whitespace" }),
+        claudeUser([...blocks(text), ...blocks("Please explain.")], { uuid: "sibling" }),
+      ];
+      await writeRows(filePath, [interrupt, ...visible]);
+      const projected = projectChatDisplayMessagesWithState(merge([], await readMessages()));
+      expect(projected.messages.map((message) => message.content)).toEqual(
+        visible.map((entry) => entry.message.content),
+      );
+      expect(projected.activity).toEqual([]);
+      expect(classify(JSON.stringify(interrupt)).humanTurn).toBe(false);
+      for (const entry of visible) {
+        expect(classify(JSON.stringify(entry)).humanTurn).toBe(true);
+      }
+    });
+  },
+);
 
-  beforeEach(async () => {
-    homeDir = path.join(tempDirs.make("openclaw-fallback-seed-"), "home");
-    projectsDir = path.join(homeDir, ".claude", "projects", "demo-workspace");
-    await fs.mkdir(projectsDir, { recursive: true });
+it.each(["resume", "legacy requester"])(
+  "removes the %s decorator, not its image-bearing user turn",
+  (decoration) => {
+    const body = decoration === "resume" ? "real question" : `${REQUESTER_HINT}\n\nreal question`;
+    const prefix =
+      decoration === "resume"
+        ? buildCliSessionDriftNote(["system-prompt", "prompt-tools"])
+        : frame('{"requester_profile":{"id":"owner"}}') + REQUESTER_HINT;
+    const text = `${prefix}\n\n${body}`;
+    const image = {
+      type: "image",
+      source: { type: "base64", media_type: "image/png", data: "aa" },
+    };
+    expectVisible(importUnmatched([...blocks(text), image]), [...blocks(body), image]);
+  },
+);
+
+it.each(internalWakeInputs)("marks imported %s prompts internal", (sourceTool, text) => {
+  const internal = { display: false, provenance: { kind: "internal_system", sourceTool } };
+  expect(
+    [text, `System: [2026-10-03 08:56:29 GMT+8] Gateway restart ok\n\n${text}`].map(
+      parseImportedUser,
+    ),
+  ).toMatchObject([internal, internal]);
+});
+
+it.each([
+  "OpenClaw resumed this CLI session after prompt content changed. This is a quote.",
+  "[foo] [System] Please explain this tag.",
+  "[System] Please explain this tag.",
+  "[Tue 2026-09-22 16:00 GMT+8] [System] Please explain this tag.",
+  "System: Please preserve this log\n\nExplain it",
+  `Explain this instruction: ${REQUESTER_HINT}`,
+  `${REQUESTER_HINT} Extra user text.\n\nExplain it`,
+  `${frame('{"requester_profile":{"id":"owner"},"requester_profile_hint":"current"}')}${REQUESTER_HINT}\n\nExplain it`,
+  "System: Please explain this log\n\n[System] This is the line I am asking about.",
+  "Explain this log:\n```text\nlog\n```\n\nSystem: [2026-10-04 13:15:44 GMT+8] evidence\n\nWhat failed?",
+  `Explain this log:\n${frame('{"a":1}')}System: [2026-10-04 13:15:44 GMT+8] evidence\n\nWhat failed?`,
+])("leaves the look-alike human message %j untouched", (text) => {
+  expectVisible(importUnmatched(text), text);
+});
+
+it("preserves system-event evidence quoted in a later native text block", () => {
+  const content = [
+    ...blocks("Explain this log:\n"),
+    ...blocks(`${REQUESTER_HINT}\n\nSystem: [2026-10-04 13:15:44 GMT+8] evidence\n\nWhat failed?`),
+  ];
+  expect(importUnmatched(content)).toMatchObject({ content });
+});
+
+it.each([
+  ["", "2026-10-04T05:15:44Z", "real question"],
+  [
+    frame('{"a":1}'),
+    "unknown-time",
+    "Please explain this header:\n\nContext: ⟦openclaw:ctx⟧\nexample",
+  ],
+  [
+    frame('{"history_count":2}') +
+      "Recent chat history: ⟦openclaw:ctx⟧\n" +
+      "#123 2026-10-11 12:20:09 GMT+5:30 Alice: The conservatory has 137 benches.\n" +
+      "#124 2026-10-11 12:20:20 GMT+5:30 Alice: /model anthropic/claude-haiku-4-5\n\n",
+    "2026-10-11 12:20:20 GMT+5:30",
+    "Please explain this header:\n\nContext:\n<active_memory_plugin>\nexample\n</active_memory_plugin>",
+  ],
+])("drops queued system events below context %j", (context, stamp, question) => {
+  const events = `System: [${stamp}] Model switched.\nSystem: more\n\n`;
+  const text = `${context}${events}${question}`;
+  expect(importUnmatched(text)?.content).toBe(`${context}${question}`);
+  const canonical = user(`${context}${question}`, 1);
+  expect(merge([canonical], [{ ...parseImportedUser(text), timestamp: 2 }])).toMatchObject([
+    canonical,
+  ]);
+  const untouched = "real question\n\nSystem: quoted log line\n\nmore";
+  expect(importUnmatched(untouched)).toMatchObject({ content: untouched });
+});
+
+it.each(["null", "not json"])("ignores non-record or malformed activity row %s", (line) => {
+  expect(classify(line)).toEqual({ humanTurn: false });
+});
+
+function readSeed(
+  lines: readonly unknown[] | undefined,
+  options: { fromHome?: boolean; cliSessionId?: string } = {},
+) {
+  return withClaudeProjectsDir(async ({ filePath, sessionId, homeDir }) => {
+    if (lines) {
+      await fs.writeFile(filePath, `${lines.map((line) => JSON.stringify(line)).join("\n")}\n`);
+    } else {
+      await fs.rm(filePath);
+    }
+    return readClaudeCliFallbackSeed({
+      cliSessionId: options.cliSessionId ?? sessionId,
+      ...(options.fromHome ? {} : { homeDir }),
+    });
   });
+}
 
-  function readFallbackSeed(
-    cliSessionId = SESSION_ID,
-  ): ReturnType<typeof readClaudeCliFallbackSeed> {
-    return readClaudeCliFallbackSeed({ cliSessionId, homeDir });
-  }
+it.each([
+  ["missing", undefined, undefined],
+  ["empty", [claudeUser("sidechain user turn", { isSidechain: true })], undefined],
+  ["path escape", undefined, "../escape"],
+] as const)("returns no seed for %s", async (_kind, lines, cliSessionId) => {
+  expect(await readSeed(lines, { cliSessionId })).toBeUndefined();
+});
 
-  function readFallbackSeedFromHome(
-    cliSessionId = SESSION_ID,
-  ): Promise<ReturnType<typeof readClaudeCliFallbackSeed>> {
-    return withEnvAsync({ HOME: homeDir }, async () => readClaudeCliFallbackSeed({ cliSessionId }));
-  }
-
-  async function writeJsonl(lines: ReadonlyArray<unknown>): Promise<void> {
-    const file = path.join(projectsDir, `${SESSION_ID}.jsonl`);
-    await fs.writeFile(file, `${lines.map((line) => JSON.stringify(line)).join("\n")}\n`, "utf-8");
-  }
-
-  it("returns undefined when the Claude session file does not exist", () => {
-    const seed = readFallbackSeed();
-    expect(seed).toBeUndefined();
-  });
-
-  it("collects valid turns through the HOME-resolved session store despite null rows", async () => {
-    await writeJsonl([
-      {
-        type: "user",
-        uuid: "u-1",
-        message: { role: "user", content: "first user prompt" },
-      },
+it("collects valid turns through the HOME-resolved session store despite null rows", async () => {
+  const reseedPrompt = buildLegacyReseedPrompt();
+  const seed = await readSeed(
+    [
+      claudeUser(reseedPrompt),
+      claudeUser("first user prompt"),
       null,
-      {
-        type: "assistant",
-        uuid: "a-1",
-        message: {
-          role: "assistant",
-          model: "claude-sonnet-4-6",
-          content: [{ type: "text", text: "first assistant reply" }],
-        },
-      },
-      {
-        type: "user",
-        uuid: "u-2",
-        message: { role: "user", content: "second user prompt" },
-      },
-    ]);
+      assistantTurn("first assistant reply"),
+      claudeUser("second user prompt"),
+    ],
+    { fromHome: true },
+  );
+  expect(seed?.recentTurns).toMatchObject([
+    user(reseedPrompt),
+    user("first user prompt"),
+    assistantTurn("first assistant reply").message,
+    user("second user prompt"),
+  ]);
+  expect(seed?.summaryText).toBeUndefined();
+});
 
-    const seed = await readFallbackSeedFromHome();
-    const fallbackSeed = requireFallbackSeed(seed, "uncompacted session");
-    expect(fallbackSeed.summaryText).toBeUndefined();
-    expect(fallbackSeed.recentTurns).toHaveLength(3);
-    expectRecordFields(fallbackSeed.recentTurns[0], "fields", { role: "user" });
-    expectRecordFields(fallbackSeed.recentTurns[2], "fields", { role: "user" });
+it("seeds from the latest explicit summary", async () => {
+  expect(
+    await readSeed([
+      claudeUser("PRE-COMPACT user turn"),
+      assistantTurn("PRE-COMPACT assistant turn"),
+      summary("EARLY"),
+      boundary(),
+      claudeUser("mid-window turn"),
+      summary("LATER"),
+      boundary(),
+      claudeUser("tail turn"),
+      assistantTurn("tail reply"),
+    ]),
+  ).toMatchObject({
+    summaryText: "LATER",
+    recentTurns: [user("tail turn"), assistantTurn("tail reply").message],
   });
+});
 
-  it("preserves reseed envelopes in fallback model context", async () => {
-    const reseedPrompt = buildLegacyReseedPrompt();
-    await writeJsonl([
-      {
-        type: "user",
-        uuid: "u-1",
-        message: { role: "user", content: reseedPrompt },
-      },
-    ]);
-
-    const seed = requireFallbackSeed(readFallbackSeed(), "reseed session");
-
-    expectRecordFields(seed.recentTurns[0], "fields", { role: "user", content: reseedPrompt });
+it("seeds from the boundary after a compaction without a summary", async () => {
+  expect(
+    await readSeed([
+      summary("FIRST"),
+      boundary("Conversation compacted (1)"),
+      claudeUser("post-first-compact turn"),
+      boundary("Conversation compacted (2)"),
+      claudeUser("post-second-compact turn"),
+    ]),
+  ).toMatchObject({
+    summaryText: "Conversation compacted (2)",
+    recentTurns: [user("post-second-compact turn")],
   });
+});
 
-  it("uses the explicit /compact summary and drops pre-boundary turns", async () => {
-    await writeJsonl([
-      {
-        type: "user",
-        uuid: "u-pre",
-        message: { role: "user", content: "pre-compact user turn excluded from seed" },
-      },
-      {
-        type: "assistant",
-        uuid: "a-pre",
-        message: {
-          role: "assistant",
-          model: "claude-sonnet-4-6",
-          content: [{ type: "text", text: "PRE-COMPACT assistant turn" }],
-        },
-      },
-      {
-        type: "summary",
-        summary: "User asked about deployment; agent recommended a blue-green strategy.",
-        leafUuid: "a-pre",
-      },
-      {
-        type: "system",
-        subtype: "compact_boundary",
-        content: "Conversation compacted",
-        compactMetadata: { trigger: "manual", preTokens: 12345 },
-      },
-      {
-        type: "user",
-        uuid: "u-post",
-        message: { role: "user", content: "POST-COMPACT user follow-up" },
-      },
-      {
-        type: "assistant",
-        uuid: "a-post",
-        message: {
-          role: "assistant",
-          content: [{ type: "text", text: "POST-COMPACT assistant reply" }],
-        },
-      },
-    ]);
-
-    const seed = readFallbackSeed();
-    const fallbackSeed = requireFallbackSeed(seed, "compacted session");
-    expect(fallbackSeed.summaryText).toBe(
-      "User asked about deployment; agent recommended a blue-green strategy.",
-    );
-    expect(fallbackSeed.recentTurns).toHaveLength(2);
-    const recentText = JSON.stringify(fallbackSeed.recentTurns);
-    expect(recentText).toContain("POST-COMPACT user follow-up");
-    expect(recentText).toContain("POST-COMPACT assistant reply");
-    expect(recentText).not.toContain("PRE-COMPACT");
-  });
-
-  it("falls back to compact_boundary content when no explicit summary entry is present", async () => {
-    await writeJsonl([
-      {
-        type: "user",
-        uuid: "u-pre",
-        message: { role: "user", content: "early turn" },
-      },
-      {
-        type: "system",
-        subtype: "compact_boundary",
-        content: "Conversation compacted",
-        compactMetadata: { trigger: "auto", preTokens: 50000 },
-      },
-      {
-        type: "user",
-        uuid: "u-post",
-        message: { role: "user", content: "post-boundary user turn" },
-      },
-    ]);
-
-    const seed = readFallbackSeed();
-    const fallbackSeed = requireFallbackSeed(seed, "compact boundary session");
-    // Falls back to the boundary's content so the seed at least labels
-    // that compaction happened, instead of replaying nothing.
-    expect(fallbackSeed.summaryText).toBe("Conversation compacted");
-    expect(fallbackSeed.recentTurns).toHaveLength(1);
-    expect(JSON.stringify(fallbackSeed.recentTurns)).toContain("post-boundary user turn");
-  });
-
-  it("prefers the most recent summary when the session has been compacted multiple times", async () => {
-    await writeJsonl([
-      {
-        type: "summary",
-        summary: "EARLY summary that should be superseded.",
-        leafUuid: "x",
-      },
-      {
-        type: "system",
-        subtype: "compact_boundary",
-        content: "Conversation compacted",
-        compactMetadata: { trigger: "manual", preTokens: 1000 },
-      },
-      {
-        type: "user",
-        uuid: "u-mid",
-        message: { role: "user", content: "mid-window turn" },
-      },
-      {
-        type: "summary",
-        summary: "LATER summary that must win.",
-        leafUuid: "y",
-      },
-      {
-        type: "system",
-        subtype: "compact_boundary",
-        content: "Conversation compacted",
-        compactMetadata: { trigger: "manual", preTokens: 2000 },
-      },
-      {
-        type: "user",
-        uuid: "u-tail",
-        message: { role: "user", content: "tail turn" },
-      },
-    ]);
-
-    const seed = readFallbackSeed();
-    expect(seed?.summaryText).toBe("LATER summary that must win.");
-    expect(seed?.recentTurns).toHaveLength(1);
-    expect(JSON.stringify(seed?.recentTurns)).toContain("tail turn");
-    expect(JSON.stringify(seed?.recentTurns)).not.toContain("mid-window turn");
-  });
-
-  it("returns undefined when the session file is empty or has no usable content", async () => {
-    await writeJsonl([
-      // Sidechain entries are filtered out by the underlying parser.
-      {
-        type: "user",
-        uuid: "u-side",
-        isSidechain: true,
-        message: { role: "user", content: "sidechain user turn" },
-      },
-    ]);
-    const seed = readFallbackSeed();
-    expect(seed).toBeUndefined();
-  });
-
-  it("rejects path-like session ids instead of escaping the Claude projects tree", () => {
-    const seed = readFallbackSeed("../escape");
-    expect(seed).toBeUndefined();
-  });
-
-  it("falls back to the latest boundary content when a newer compaction has no summary", async () => {
-    await writeJsonl([
-      { type: "summary", summary: "FIRST compact summary", leafUuid: "x" },
-      {
-        type: "system",
-        subtype: "compact_boundary",
-        content: "Conversation compacted (1)",
-        compactMetadata: { trigger: "manual", preTokens: 1000 },
-      },
-      {
-        type: "user",
-        uuid: "u-mid",
-        message: { role: "user", content: "post-first-compact turn" },
-      },
-      {
-        type: "system",
-        subtype: "compact_boundary",
-        content: "Conversation compacted (2)",
-        compactMetadata: { trigger: "auto", preTokens: 2000 },
-      },
-      {
-        type: "user",
-        uuid: "u-tail",
-        message: { role: "user", content: "post-second-compact turn" },
-      },
-    ]);
-
-    const seed = readFallbackSeed();
-    const fallbackSeed = requireFallbackSeed(seed, "latest boundary session");
-    expect(fallbackSeed.summaryText).toBe("Conversation compacted (2)");
-    expect(fallbackSeed.summaryText).not.toBe("FIRST compact summary");
-    expect(fallbackSeed.recentTurns).toHaveLength(1);
-    expect(JSON.stringify(fallbackSeed.recentTurns)).toContain("post-second-compact turn");
-  });
-
-  it("uses a trailing summary that has no following compact_boundary marker", async () => {
-    await writeJsonl([
-      {
-        type: "user",
-        uuid: "u-1",
-        message: { role: "user", content: "earlier turn" },
-      },
-      { type: "summary", summary: "trailing summary without boundary", leafUuid: "x" },
-      {
-        type: "user",
-        uuid: "u-2",
-        message: { role: "user", content: "later turn" },
-      },
-    ]);
-
-    const seed = readFallbackSeed();
-    expect(seed?.summaryText).toBe("trailing summary without boundary");
-  });
+it("seeds from a trailing summary without a boundary", async () => {
+  expect(
+    await readSeed([
+      claudeUser("earlier turn"),
+      summary("trailing summary without boundary"),
+      claudeUser("later turn"),
+    ]),
+  ).toMatchObject({ summaryText: "trailing summary without boundary" });
 });
