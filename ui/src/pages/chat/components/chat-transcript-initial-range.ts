@@ -286,6 +286,26 @@ export class TranscriptInitialRange {
     ) {
       return;
     }
+    const idleRange = this.virtualizer().range;
+    if (
+      idleRange &&
+      this.idleMeasureStep > PREPARED_ROW_LIMIT &&
+      this.canSweepIdleGeometry?.() === false &&
+      performance.now() - this.scrollSample.time >= 100
+    ) {
+      const sampledDirection = this.scrollSample.direction;
+      const inward =
+        (sampledDirection > 0 && idleRange.endIndex === this.rows.length - 1) ||
+        (sampledDirection < 0 && idleRange.startIndex === 0);
+      const direction = inward ? -sampledDirection : sampledDirection;
+      const remaining =
+        direction > 0 ? this.rows.length - 1 - idleRange.endIndex : idleRange.startIndex;
+      // Streaming commits must not re-arm callbacks after the permitted sweep.
+      // Reader movement and structural changes reset the existing cursors.
+      if (this.idleStep > Math.min(IDLE_PREWARM_ROW_LIMIT, remaining)) {
+        return;
+      }
+    }
     const prepare = (deadline: number, prewarmRequested = false, warmOnlyRequested = false) => {
       this.cancelPreparation = undefined;
       this.preparationIsIdle = false;

@@ -303,6 +303,15 @@ it("warms active-run HTML and nearby geometry but defers distant DOM until compl
   );
   expect(view.container.querySelector("[data-preparing-row]")).toBeNull();
 
+  view.elapse(150);
+  const idleRequests = vi.mocked(requestIdleCallback).mock.calls.length;
+  for (let update = 0; update < 5; update++) {
+    view.draw();
+    await settle();
+    await view.idle();
+  }
+  expect(requestIdleCallback).toHaveBeenCalledTimes(idleRequests);
+
   const prepared = view.renderRow.mock.calls.length;
   await view.setRunActive(false);
   await view.idle();
