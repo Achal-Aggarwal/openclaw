@@ -1,6 +1,6 @@
 import { cleanup, render } from "@solidjs/testing-library";
 import type { JSX } from "@solidjs/web";
-import { createSignal, createStore, flush } from "solid-js";
+import { createSignal, createStore, flush, untrack } from "solid-js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { page, userEvent } from "vitest/browser";
 import {
@@ -31,28 +31,34 @@ import "../kbd.css";
 import "../../styles/chat/layout.css";
 import "../../styles/chat/split-view.css";
 
-function leaf(id: string, label: string, options: Partial<MenuItem> = {}): MenuItem {
-  return { id, label, ...options };
+function clickLink(link: HTMLAnchorElement, options: MouseEventInit = {}) {
+  link.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, ...options }));
 }
-function entries(prefix: string, count: number): MenuItem[] {
+function entries(prefix: string, count: number, padded = false): MenuItem[] {
   return Array.from({ length: count }, (_, index) => ({
     id: `${prefix.toLowerCase()}-${index}`,
-    label: `${prefix[0]!.toUpperCase()}${prefix.slice(1)} ${index + 1}`,
+    label: `${prefix[0]!.toUpperCase()}${prefix.slice(1)} ${padded ? String(index + 1).padStart(2, "0") : index + 1}`,
   }));
 }
 
 const extraNodes: Element[] = [];
 const documentRoot = document.documentElement;
-const originalDirection = documentRoot.getAttribute("dir");
+const originalAttributes = ["dir", "data-theme", "data-theme-mode"].map(
+  (name) => [name, documentRoot.getAttribute(name)] as const,
+);
+const originalStyle = documentRoot.style.cssText;
 const originalViewport = { width: window.innerWidth, height: window.innerHeight };
 afterEach(async () => {
   vi.useRealTimers();
   cleanup();
   extraNodes.splice(0).forEach((node) => node.remove());
-  if (originalDirection === null) {
-    documentRoot.removeAttribute("dir");
-  } else {
-    documentRoot.setAttribute("dir", originalDirection);
+  documentRoot.style.cssText = originalStyle;
+  for (const [name, value] of originalAttributes) {
+    if (value === null) {
+      documentRoot.removeAttribute(name);
+    } else {
+      documentRoot.setAttribute(name, value);
+    }
   }
   await page.viewport(originalViewport.width, originalViewport.height);
 });
@@ -60,50 +66,47 @@ afterEach(async () => {
 it("keeps disabled leaf explanations reachable without enabling activation", async () => {
   const select = vi.fn();
   const click = vi.fn();
-  const blocked = leaf("branch", "Unavailable submenu", {
-    disabled: true,
-    children: [leaf("child", "Child")],
-  });
   mountMenu({
     items: [
-      blocked,
-      leaf("disabled", "Unavailable default", { disabled: true }),
-      leaf("reason", "Unavailable explained", {
+      { id: "disabled", label: "Unavailable default", disabled: true },
+      {
+        id: "reason",
+        label: "Unavailable explained",
         disabled: true,
         focusableWhenDisabled: true,
         attributes: { title: "Connect to continue", onClick: click },
-      }),
-      leaf("allowed", "Allowed"),
-      { ...blocked, id: "last" },
+      },
+      {
+        id: "branch",
+        label: "Unavailable submenu",
+        disabled: true,
+        children: [{ id: "child", label: "Child" }],
+      },
+      { id: "allowed", label: "Allowed" },
     ],
     onSelect: select,
   });
-  trigger().focus();
-  await userEvent.keyboard("{ArrowDown}");
-  await phase(surface(), "open");
+  await openMenu();
   const explained = item("Unavailable explained");
   await expect.poll(() => document.activeElement).toBe(explained);
-  expect(explained).toMatchObject({ disabled: false, ariaDisabled: "true" });
+  expect(explained.disabled).toBe(false);
+  expect(explained.getAttribute("aria-disabled")).toBe("true");
   expect(item("Unavailable default").disabled).toBe(true);
   expect(item("Unavailable submenu").disabled).toBe(true);
   await userEvent.keyboard("{ArrowDown}");
   await expect.poll(() => document.activeElement).toBe(item("Allowed"));
   await userEvent.keyboard("{ArrowUp}");
   await expect.poll(() => document.activeElement).toBe(explained);
-  await userEvent.keyboard("{Enter} ");
+  await userEvent.keyboard("{Enter}");
+  await userEvent.keyboard(" ");
   explained.click();
   explained.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
-  expect([click.mock.calls, select.mock.calls]).toEqual([[], []]);
+  expect(click).not.toHaveBeenCalled();
+  expect(select).not.toHaveBeenCalled();
   expect(surface().matches(":popover-open")).toBe(true);
   await userEvent.keyboard("{ArrowDown}{Enter}");
-  expect(select.mock.calls.map(([entry]) => entry.id)).toEqual(["allowed"]);
-  await phase(surface(), "hidden");
-  trigger().focus();
-  await userEvent.keyboard("{ArrowUp}");
-  await phase(surface(), "open");
-  expect(document.activeElement).toBe(item("Allowed"));
-  await keyFocus("{ArrowDown}", explained);
-  expect(trigger("people-last").getAttribute("aria-disabled")).toBe("true");
+  expect(select).toHaveBeenCalledOnce();
+  expect(select.mock.calls[0]?.[0].id).toBe("allowed");
 });
 
 it("keeps embedded-button activation and arrow navigation native", async () => {
@@ -131,6 +134,100 @@ it("keeps embedded-button activation and arrow navigation native", async () => {
   await expect.poll(() => document.activeElement).toBe(item("Archive"));
 });
 
+it("preserves native link intent while routing selections", async () => {
+  const select = vi.fn();
+  const navigate = vi.fn();
+  const view = mountMenu({
+    items: [{ id: "settings", label: "Settings", href: "#settings" }],
+    onNavigate: navigate,
+    onSelect: select,
+  });
+  const prevented: boolean[] = [];
+  view.container.addEventListener("click", (event) => {
+    if (event.target instanceof Element && event.target.closest("a")) {
+      prevented.push(event.defaultPrevented);
+      event.preventDefault();
+    }
+  });
+  await openMenu();
+  const link = surface().querySelector<HTMLAnchorElement>("a")!;
+  expect(getComputedStyle(link).cursor).toBe("pointer");
+  for (const target of ["_blank", "named-window"]) {
+    link.target = target;
+    clickLink(link);
+  }
+  link.target = "";
+  link.download = "settings.txt";
+  clickLink(link);
+  link.removeAttribute("download");
+  expect(prevented).toEqual([false, false, false]);
+  const canceledClick = new MouseEvent("click", { bubbles: true, cancelable: true });
+  canceledClick.preventDefault();
+  link.dispatchEvent(canceledClick);
+  expect(prevented.at(-1)).toBe(true);
+
+  await userEvent.click(link);
+  await expect.poll(() => select).toHaveBeenCalledOnce();
+  expect(navigate).toHaveBeenCalledExactlyOnceWith({ href: "#settings", value: "settings" });
+  expect(prevented.at(-1)).toBe(true);
+  await phase(surface(), "hidden");
+});
+
+it("forwards link navigation from nested menus and closes the root", async () => {
+  const navigate = vi.fn();
+  mountMenu({
+    items: [
+      {
+        id: "manage",
+        label: "Manage",
+        children: [{ id: "models", label: "Models", href: "#models" }],
+      },
+    ],
+    onNavigate: navigate,
+  });
+  await openMenu();
+  await openMenu("people-manage");
+  await userEvent.click(surface("people-manage").querySelector<HTMLAnchorElement>("a")!);
+  await expect.poll(() => navigate).toHaveBeenCalledWith({ href: "#models", value: "models" });
+  await phase(surface(), "hidden");
+});
+
+it("rolls rejected initial and controlled visibility back", async () => {
+  const [open, setOpen] = createSignal(true);
+  let vetoShow = true;
+  let vetoHide = true;
+  const received: boolean[] = [];
+  mountMenu({
+    get open() {
+      return open();
+    },
+    onBeforeShow: (event) => vetoShow && event.preventDefault(),
+    onBeforeHide: (event) => vetoHide && event.preventDefault(),
+    onOpenChange: (accepted) => {
+      received.push(accepted);
+      setOpen(accepted);
+    },
+  });
+  expect(untrack(open)).toBe(false);
+  expect(surface().matches(":popover-open")).toBe(false);
+  expect(received).toEqual([false]);
+  update(() => setOpen(true));
+  expect(untrack(open)).toBe(false);
+  expect(received).toEqual([false, false]);
+  vetoShow = false;
+  update(() => setOpen(true));
+  await phase(surface(), "open");
+  expect(received).toEqual([false, false, true]);
+  update(() => setOpen(false));
+  expect(untrack(open)).toBe(true);
+  expect(surface().matches(":popover-open")).toBe(true);
+  expect(received).toEqual([false, false, true, true]);
+  vetoHide = false;
+  update(() => setOpen(false));
+  await phase(surface(), "hidden");
+  expect(received).toEqual([false, false, true, true, false]);
+});
+
 it("retains submenu content and identity across label updates", async () => {
   const icon = document.createElement("span"),
     details = document.createElement("span");
@@ -139,11 +236,13 @@ it("retains submenu content and identity across label updates", async () => {
     label: "People actions",
     lazy: true,
     items: [
-      leaf("assign", "Assign to", {
+      {
+        id: "assign",
+        label: "Assign to",
         icon,
         details,
-        children: () => [leaf("ada", "Ada Rivera")],
-      }),
+        children: () => [{ id: "ada", label: "Ada Rivera" }],
+      },
     ],
   });
   mountMenu(props);
@@ -166,7 +265,8 @@ it("retains submenu content and identity across label updates", async () => {
   expect([icon, details].every((node) => assignment.contains(node))).toBe(true);
   expect(trigger()).toBe(button);
   expect(button.getAttribute("aria-controls")).toBe(root.id);
-  expect([root.ariaLabel, child.ariaLabel]).toEqual(["Updated actions", "Updated assignment"]);
+  expect(root.getAttribute("aria-label")).toBe("Updated actions");
+  expect(child.getAttribute("aria-label")).toBe("Updated assignment");
   expect(document.getElementById("replacement-id:content")).toBeNull();
   await userEvent.keyboard("{ArrowLeft}{Escape}");
   await phase(root, "hidden");
@@ -192,20 +292,16 @@ it("updates root placement and RTL submenu geometry", async () => {
   expect(surface().dataset.placement).toBe("top-end");
   expect(surface().getBoundingClientRect().bottom).toBeLessThanOrEqual(button.top);
   await openMenu("people-assign");
-  expectSubmenuSide("people-assign", "right");
+  expect(surface("people-assign").getBoundingClientRect().left).toBeGreaterThanOrEqual(
+    trigger("people-assign").getBoundingClientRect().right,
+  );
   update(() => setPosition((draft) => Object.assign(draft, { dir: "rtl" })));
   await nextFrame();
   expect(surface("people-assign").dataset.placement).toBe("left-start");
-  expectSubmenuSide("people-assign", "left");
+  expect(surface("people-assign").getBoundingClientRect().right).toBeLessThanOrEqual(
+    trigger("people-assign").getBoundingClientRect().left,
+  );
 });
-
-function expectSubmenuSide(id: string, side: "left" | "right") {
-  const menu = surface(id).getBoundingClientRect(),
-    anchor = trigger(id).getBoundingClientRect();
-  expect(
-    side === "right" ? menu.left - anchor.right : anchor.left - menu.right,
-  ).toBeGreaterThanOrEqual(0);
-}
 
 it.each([
   { dir: "ltr", placement: "right-end", left: "60px", side: "right" },
@@ -218,9 +314,11 @@ it.each([
     dir: position.dir,
     placement: position.placement,
     items: [
-      leaf("gateways", "Gateways", {
-        children: [...entries("gateway", 9), leaf("settings", "Gateway settings")],
-      }),
+      {
+        id: "gateways",
+        label: "Gateways",
+        children: [...entries("gateway", 9), { id: "settings", label: "Gateway settings" }],
+      },
       ...entries("action", 5),
     ],
     onSelect: selected,
@@ -234,7 +332,11 @@ it.each([
   const bounds = child.getBoundingClientRect();
   expect(child.scrollHeight).toBeLessThanOrEqual(child.clientHeight);
   expect(bounds.bottom).toBeLessThanOrEqual(branch.bottom + 1);
-  expectSubmenuSide("people-gateways", position.side);
+  if (position.side === "right") {
+    expect(bounds.left).toBeGreaterThanOrEqual(branch.right);
+  } else {
+    expect(bounds.right).toBeLessThanOrEqual(branch.left);
+  }
   const settings = item("Gateway settings", "people-gateways");
   const row = settings.getBoundingClientRect();
   expect(row.top).toBeGreaterThanOrEqual(bounds.top);
@@ -255,6 +357,10 @@ async function finishHover() {
   flush();
 }
 
+function submenuBranch(id: string, children: MenuItem["children"]): MenuItem {
+  return { id, label: id, children };
+}
+
 async function openBranch(...ids: string[]) {
   for (const id of ids) {
     await openMenu(`people-${id}`);
@@ -272,7 +378,11 @@ function liveMenu(
     },
     children: children?.(controls),
   }));
-  return { ...view, update: (next: readonly MenuItem[]) => update(() => setItems(next)) };
+  const updateItems = (next: readonly MenuItem[]) => {
+    setItems(next);
+    flush();
+  };
+  return { ...view, update: updateItems };
 }
 
 describe("Solid menu branch lifetime", () => {
@@ -297,7 +407,7 @@ describe("Solid menu branch lifetime", () => {
     ));
     expect(view.handle.open()).toBe(true);
     expect(document.activeElement).toBe(input);
-    view.update([leaf("result", "Result")]);
+    view.update([{ id: "result", label: "Result" }]);
     view.update([]);
     await Promise.resolve();
     expect(view.handle.overlay.open).toBe(true);
@@ -317,6 +427,7 @@ describe("Solid menu branch lifetime", () => {
       vi.useRealTimers();
       await phase(surface("people-move"), "open");
       await phase(surface("people-assign"), "hidden");
+      expect(surface("people-assign").matches(":popover-open")).toBe(false);
       expect(document.activeElement).toBe(item("Engineering", "people-move"));
       await keyFocus(dir === "ltr" ? "{ArrowLeft}" : "{ArrowRight}", trigger("people-move"));
       expect(trigger("people-move").getAttribute("aria-expanded")).toBe("false");
@@ -328,10 +439,10 @@ describe("Solid menu branch lifetime", () => {
   );
 
   it("retires nested descendants when replacing, unmounting, and remounting a branch", async () => {
-    const nested = leaf("browser", "browser", {
-      children: [leaf("advanced", "advanced", { children: [leaf("network", "Network access")] })],
-    });
-    const files = leaf("files", "files", { children: [leaf("read", "Read file")] });
+    const nested = submenuBranch("browser", [
+      submenuBranch("advanced", [{ id: "network", label: "Network access" }]),
+    ]);
+    const files = submenuBranch("files", [{ id: "read", label: "Read file" }]);
     const view = liveMenu([nested, files]);
     await openMenu();
     await openBranch("browser", "browser-advanced", "files");

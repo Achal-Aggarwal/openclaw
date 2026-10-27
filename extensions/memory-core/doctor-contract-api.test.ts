@@ -1102,7 +1102,7 @@ describe("memory-core doctor dreaming migration", () => {
     expect(secondRun).toEqual({ changes: [], warnings: [] });
   });
 
-  it.each<[string, Uint8Array, number | null, string?, (number | null)?]>([
+  it.each<[string, Uint8Array<ArrayBuffer>, number | null, string?, (number | null)?]>([
     ["declared dimensions differ", encodeMemoryEmbedding([0, 1, 0]), 4],
     ["embedding lengths differ", encodeMemoryEmbedding([0, 1, 0, 0]), 3],
     ["the canonical embedding is malformed", new Uint8Array([1, 2, 3]), 3],

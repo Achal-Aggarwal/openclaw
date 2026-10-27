@@ -1,5 +1,4 @@
 import { cleanup, render } from "@solidjs/testing-library";
-import type { JSX } from "@solidjs/web";
 import { createSignal, flush, Show } from "solid-js";
 import { afterEach, describe, expect, it } from "vitest";
 import { userEvent } from "vitest/browser";
@@ -14,13 +13,11 @@ import {
 } from "../../test-helpers/solid-menu.tsx";
 import { MultiSelect } from "../multi-select.tsx";
 import {
-  controlInput,
   keyFocus as press,
   keyPhase,
   mountControls,
   submenu,
   tabFocus as tabTo,
-  update,
 } from "./menu-contract.test-support.tsx";
 import { Menu, type MenuEntry, type MenuItem, type MenuProps } from "./menu.tsx";
 import { Popover, type PopoverHandle } from "./popover.tsx";
@@ -54,7 +51,8 @@ describe("Solid menu navigation", () => {
     expect(panel.querySelector("[role=menuitem]")).toBeNull();
     expect(button.style.getPropertyValue("anchor-name")).toBe("");
     expect(panel.style.getPropertyValue("position-anchor")).toBe("");
-    update(() => setPlacement("top-end"));
+    setPlacement("top-end");
+    flush();
     trigger().focus();
     await keyPhase("{ArrowDown}", "open");
     const ready = item("Ready");
@@ -67,7 +65,8 @@ describe("Solid menu navigation", () => {
     await keyPhase("{Escape}", "hidden");
     if (lazy === "while-open") {
       expect(panel.querySelector("[role=menuitem]")).toBeNull();
-      update(() => setLabel("Updated"));
+      setLabel("Updated");
+      flush();
     }
     expect(view.handle.open()).toBe(true);
     await phase(surface(), "open");
@@ -83,17 +82,8 @@ describe("Solid menu navigation", () => {
   });
 
   it.each([false, true])("refuses lazy admission without active effects (veto %s)", (veto) => {
-    const [open, setOpen] = createSignal(true);
-    const changes: boolean[] = [];
     const view = mountMenu({
       lazy: true,
-      get open() {
-        return open();
-      },
-      onOpenChange: (accepted) => {
-        changes.push(accepted);
-        setOpen(accepted);
-      },
       items: veto ? [{ id: "ready", label: "Ready" }] : [],
       onBeforeShow: (event) => {
         if (veto) {
@@ -101,9 +91,6 @@ describe("Solid menu navigation", () => {
         }
       },
     });
-    expect(changes).toEqual([false]);
-    update(() => setOpen(true));
-    expect(changes).toEqual([false, false]);
     trigger().focus();
     expect(view.handle.open()).toBe(false);
     expect(surface().matches(":popover-open")).toBe(false);
@@ -142,11 +129,12 @@ describe("Solid menu navigation", () => {
       ];
       return {
         get items(): MenuEntry[] {
+          revision();
           return [
             {
               kind: "content",
               id: "search",
-              content: controlInput(controls, "Find agent", { "data-search": "" }),
+              content: <input ref={controls.ref()} data-search aria-label="Find agent" />,
             },
             {
               kind: "group",
@@ -169,7 +157,8 @@ describe("Solid menu navigation", () => {
     const footer = item("Footer");
     const alpha = surface().querySelector<HTMLElement>('[data-value="alpha"]')!;
     alpha.focus();
-    update(() => setRevision(1));
+    setRevision(1);
+    flush();
     expect(surface().querySelector(".agent-list")).toBe(group);
     expect(item("Footer")).toBe(footer);
     expect(document.activeElement).toBe(alpha);
@@ -192,35 +181,34 @@ describe("Solid menu navigation", () => {
     expect(selected).toEqual(["beta", "footer"]);
   });
 
-  it("preserves native link intent, vetoes, and nested navigation to the root", async () => {
+  it("preserves native link gestures, disables unavailable links, and honors selection vetoes", async () => {
     const selected: string[] = [];
-    const navigated: { href: string; value: string }[] = [];
-    let veto = true;
     let parentContextMenus = 0;
-    const links: MenuItem[] = [
-      { id: "disabled", label: "Unavailable", href: "/new?agent=other", disabled: true },
-      { id: "new", label: "New session", href: "/new?agent=main" },
-    ];
-    const view = mountMenu({
-      items: [submenu("links", "Links", links)],
-      onNavigate: (link) => navigated.push(link),
-      onSelect: (entry, event) => {
-        selected.push(entry.id);
-        if (veto) {
+    render(() => (
+      <aside
+        onContextMenu={(event) => {
+          parentContextMenus++;
           event.preventDefault();
-        }
-      },
-    });
-    view.container.addEventListener("contextmenu", (event) => {
-      parentContextMenus++;
-      event.preventDefault();
-    });
+        }}
+      >
+        <Menu
+          id="people"
+          label="People"
+          items={[
+            { id: "disabled", label: "Unavailable", href: "/new?agent=other", disabled: true },
+            { id: "new", label: "New session", href: "/new?agent=main" },
+          ]}
+          onSelect={(entry, event) => {
+            selected.push(entry.id);
+            event.preventDefault();
+          }}
+        />
+      </aside>
+    ));
+    flush();
     await openMenu();
-    await openMenu("people-links");
-    const menu = surface("people-links");
-    const link = menu.querySelector<HTMLAnchorElement>('a[data-value="new"]')!;
-    const disabled = menu.querySelector<HTMLAnchorElement>('a[data-value="disabled"]')!;
-    expect(getComputedStyle(link).cursor).toBe("pointer");
+    const link = surface().querySelector<HTMLAnchorElement>('a[data-value="new"]')!;
+    const disabled = surface().querySelector<HTMLAnchorElement>('a[data-value="disabled"]')!;
     const mouse = (target: Element, type: string, init: MouseEventInit = {}) => {
       const event = new MouseEvent(type, { bubbles: true, cancelable: true, ...init });
       target.dispatchEvent(event);
@@ -240,45 +228,29 @@ describe("Solid menu navigation", () => {
       }
       mouse(link, "click", { button: 1 });
       mouse(link, "auxclick", { button: 1 });
-      link.target = "_blank";
-      mouse(link, "click");
-      link.target = "";
-      link.download = "session.txt";
-      mouse(link, "click");
-      link.removeAttribute("download");
-      expect(prevented).toEqual(Array(8).fill(false));
-      const canceledClick = new MouseEvent("click", { bubbles: true, cancelable: true });
-      canceledClick.preventDefault();
-      link.dispatchEvent(canceledClick);
-      expect(prevented.at(-1)).toBe(true);
-      expect(mouse(link, "contextmenu", { button: 2 }).defaultPrevented).toBe(false);
-      expect(parentContextMenus).toBe(0);
-      expect(selected).toEqual([]);
-      expect(surface().matches(":popover-open")).toBe(true);
-      expect(mouse(trigger(), "contextmenu").defaultPrevented).toBe(true);
-      expect(parentContextMenus).toBe(1);
-      expect(disabled.hasAttribute("href")).toBe(false);
-      expect(disabled).toMatchObject({ ariaDisabled: "true", tabIndex: -1 });
-      disabled.click();
-      expect(selected).toEqual([]);
-      await userEvent.click(link);
-      expect(selected).toEqual(["new"]);
-      expect(surface().matches(":popover-open")).toBe(true);
-      link.focus();
-      await userEvent.keyboard("{Enter}");
-      expect(selected).toEqual(["new", "new"]);
-      expect(surface().matches(":popover-open")).toBe(true);
-      expect(navigated).toEqual([]);
-      veto = false;
-      await userEvent.click(link);
-      expect(selected).toEqual(["new", "new", "new"]);
-      expect(navigated).toEqual([{ href: "/new?agent=main", value: "new" }]);
-      expect(prevented.at(-1)).toBe(true);
-      await phase(surface(), "hidden");
+      expect(prevented).toEqual(Array(6).fill(false));
     } finally {
       window.removeEventListener("click", stopNavigation);
       window.removeEventListener("auxclick", stopNavigation);
     }
+    expect(mouse(link, "contextmenu", { button: 2 }).defaultPrevented).toBe(false);
+    expect(parentContextMenus).toBe(0);
+    expect(selected).toEqual([]);
+    expect(surface().matches(":popover-open")).toBe(true);
+    expect(mouse(trigger(), "contextmenu").defaultPrevented).toBe(true);
+    expect(parentContextMenus).toBe(1);
+    expect(disabled.hasAttribute("href")).toBe(false);
+    expect(disabled.getAttribute("aria-disabled")).toBe("true");
+    expect(disabled.tabIndex).toBe(-1);
+    disabled.click();
+    expect(selected).toEqual([]);
+    await userEvent.click(link);
+    expect(selected).toEqual(["new"]);
+    expect(surface().matches(":popover-open")).toBe(true);
+    link.focus();
+    await userEvent.keyboard("{Enter}");
+    expect(selected).toEqual(["new", "new"]);
+    expect(surface().matches(":popover-open")).toBe(true);
   });
 
   it("owns Tab dismissal with caller-selected focus destinations", async () => {
@@ -312,59 +284,32 @@ describe("Solid menu navigation", () => {
     expect(document.activeElement).toBe(trigger("provider"));
   });
 
-  it("owns checkbox/radio selection, vetoes, and custom-trigger keyboard navigation", async () => {
+  it("reopens at the selected item with a custom root trigger and preserves navigation", async () => {
     const [selected, setSelected] = createSignal("alpha");
-    const [notified, setNotified] = createSignal(false);
-    let veto = true;
     const choices = ["Alpha", "Beta", "Gamma"].map((label) => ({ id: label.toLowerCase(), label }));
     const view = mountMenu({
       get triggerAttributes(): MenuProps["triggerAttributes"] {
         return { id: "provider-trigger", "data-value": selected(), "aria-busy": "false" };
       },
       get items() {
-        return [
-          ...choices.map<MenuItem>((choice) => ({
-            id: choice.id,
-            label: choice.label,
-            type: "radio",
-            checked: choice.id === selected(),
-            attributes: { "data-initial-focus": choice.id === selected() ? "" : undefined },
-          })),
-          {
-            id: "notify",
-            label: "Notify",
-            type: "checkbox",
-            checked: notified(),
-            closeOnSelect: false,
-          } satisfies MenuItem,
-        ];
+        return choices.map<MenuItem>((choice) => ({
+          id: choice.id,
+          label: choice.label,
+          type: "radio",
+          checked: choice.id === selected(),
+          attributes: { "data-initial-focus": choice.id === selected() ? "" : undefined },
+        }));
       },
-      onSelect: (entry, event) => {
-        if (veto) {
-          event.preventDefault();
-        } else if (entry.type === "checkbox") {
-          setNotified((value) => !value);
-        } else {
-          setSelected(entry.id);
-        }
-      },
+      onSelect: (entry) => setSelected(entry.id),
     });
     const button = view.getByRole("button", { name: "People" });
-    expect(button).toMatchObject({ id: "provider-trigger", ariaBusy: "false" });
+    expect(button.id).toBe("provider-trigger");
+    expect(button.getAttribute("aria-busy")).toBe("false");
     expect(button.getAttribute("aria-controls")).toBe(surface().id);
     expect(surface().getAttribute("aria-labelledby")).toBe("provider-trigger");
     button.focus();
     await keyPhase("{Enter}", "open");
     expect(document.activeElement).toBe(item("Alpha"));
-    await userEvent.click(item("Beta"));
-    expect(item("Beta").getAttribute("aria-checked")).toBe("false");
-    expect(surface().matches(":popover-open")).toBe(true);
-    veto = false;
-    await userEvent.click(item("Notify"));
-    flush();
-    expect(item("Notify").getAttribute("aria-checked")).toBe("true");
-    expect(surface().matches(":popover-open")).toBe(true);
-    item("Alpha").focus();
     await userEvent.keyboard("{ArrowDown}{Enter}");
     flush();
     await phase(surface(), "hidden");
@@ -372,43 +317,48 @@ describe("Solid menu navigation", () => {
     expect(document.activeElement).toBe(button);
     await keyPhase("{Enter}", "open");
     expect(item("Beta").getAttribute("aria-checked")).toBe("true");
-    expect(item("Alpha").getAttribute("aria-checked")).toBe("false");
     expect(document.activeElement).toBe(item("Beta"));
     await press("{Home}", item("Alpha"));
-    await press("{End}", item("Notify"));
+    await press("{End}", item("Gamma"));
     await keyPhase("{Escape}", "hidden");
     expect(document.activeElement).toBe(button);
     await keyPhase("{ArrowUp}", "open");
-    expect(document.activeElement).toBe(item("Notify"));
+    expect(document.activeElement).toBe(item("Gamma"));
     await press("{Home}g", item("Gamma"));
     expect(item("Gamma").tabIndex).toBe(0);
     expect(surface().hasAttribute("aria-activedescendant")).toBe(false);
     await keyPhase("{Enter}", "hidden");
     expect(button.getAttribute("data-value")).toBe("gamma");
+    await keyPhase("{ArrowUp}", "open");
+    await keyPhase("{Escape}", "hidden");
+    expect(document.activeElement).toBe(button);
   });
 
-  it.each([
-    ["ltr", false],
-    ["rtl", false],
-    ["rtl", true],
-  ] as const)("preserves live %s sibling navigation (reopen=%s)", async (dir, reopen) => {
-    const [direction, setDirection] = createSignal<"ltr" | "rtl">("ltr");
-    mountMenu({
-      get dir() {
-        return direction();
-      },
-    });
-    if (reopen) {
-      await openMenu();
-      trigger("people-assign").focus();
-      await keyPhase("{ArrowRight}", "open", "people-assign");
-      await keyPhase("{ArrowLeft}{Escape}", "hidden");
-    }
-    update(() => setDirection(dir));
+  it.each(["ArrowDown", "ArrowUp"])(
+    "skips disabled submenu triggers when opened with %s",
+    async (key) => {
+      const children = [{ id: "child", label: "Child" }];
+      mountMenu({
+        items: [
+          submenu("first", "Unavailable first", children, true),
+          { id: "enabled", label: "Enabled" },
+          submenu("last", "Unavailable last", children, true),
+        ],
+      });
+      trigger().focus();
+      await keyPhase(`{${key}}`, "open");
+      expect(document.activeElement).toBe(item("Enabled"));
+      await press("{ArrowDown}", item("Enabled"));
+      expect(trigger("people-first").getAttribute("aria-disabled")).toBe("true");
+    },
+  );
+
+  it.each(["ltr", "rtl"] as const)("preserves sibling → Back → Down in %s", async (dir) => {
+    mountMenu({ dir });
     await openMenu();
-    trigger("people-assign").focus();
-    await keyPhase(dir === "ltr" ? "{ArrowRight}" : "{ArrowLeft}", "open", "people-assign");
-    expect(document.activeElement).toBe(item("Ada Rivera", "people-assign"));
+    expect(trigger("people-assign").dataset.value).toBe("assign");
+    expect(trigger("people-move").dataset.value).toBe("move");
+    await openMenu("people-assign");
     trigger("people-move").focus();
     await userEvent.keyboard(dir === "ltr" ? "{ArrowRight}" : "{ArrowLeft}");
     await phase(surface("people-move"), "open");
@@ -422,6 +372,33 @@ describe("Solid menu navigation", () => {
     expect(openSurfaces()).toEqual([surface()]);
   });
 
+  it.each(["before first open", "before reopen"] as const)(
+    "keeps live RTL keyboard direction when changed %s",
+    async (when) => {
+      const [direction, setDirection] = createSignal<"ltr" | "rtl">("ltr");
+      mountMenu({
+        get dir() {
+          return direction();
+        },
+      });
+      if (when === "before reopen") {
+        await openMenu();
+        trigger("people-assign").focus();
+        await keyPhase("{ArrowRight}", "open", "people-assign");
+        await keyPhase("{ArrowLeft}{Escape}", "hidden");
+      }
+      setDirection("rtl");
+      flush();
+      await openMenu();
+      trigger("people-assign").focus();
+      await keyPhase("{ArrowLeft}", "open", "people-assign");
+      expect(document.activeElement).toBe(item("Ada Rivera", "people-assign"));
+      await keyPhase("{ArrowRight}", "hidden", "people-assign");
+      expect(document.activeElement).toBe(trigger("people-assign"));
+      await press("{ArrowDown}", trigger("people-move"));
+    },
+  );
+
   it("clears search before closing the deepest branch and restores each trigger", async () => {
     mountControls((controls) => ({
       items: [
@@ -429,10 +406,14 @@ describe("Solid menu navigation", () => {
           id: "search",
           label: "Find person",
           children: [{ id: "ada", label: "Ada" }],
-          content: controlInput(controls, "Search people", {
-            "data-search": "",
-            "data-initial-focus": "",
-          }),
+          content: (
+            <input
+              ref={controls.ref()}
+              aria-label="Search people"
+              data-search=""
+              data-initial-focus=""
+            />
+          ),
         },
       ],
     }));
@@ -452,43 +433,53 @@ describe("Solid menu navigation", () => {
   });
 
   it("traverses rows and eligible controls while preserving editing and native Tab exit", async () => {
-    const view = mountControls((controls) => {
-      const input = (label: string, props: Parameters<typeof controlInput>[2] = {}) =>
-        controlInput(controls, label, { "data-form-control": "", ...props });
-      const button = (label: string, props: JSX.ButtonHTMLAttributes<HTMLButtonElement> = {}) => (
-        <button ref={controls.ref()} data-form-control="" {...props}>
-          {label}
-        </button>
-      );
-      return {
-        items: [
-          { id: "before", label: "Before settings" },
-          {
-            kind: "content",
-            id: "settings",
-            content: (
-              <>
-                {controlInput(controls, "Filter settings", { "data-search": "" })}
-                {button("Default")}
-                {button("Disabled", { disabled: true })}
-                {button("Unavailable", { "aria-disabled": "true" })}
-                {input("Hidden attribute", { hidden: true })}
-                {input("", { type: "hidden" })}
-                <span style={{ visibility: "hidden" }}>{input("Invisible")}</span>
-                <span ref={controls.ref()} data-form-control="">
-                  Not focusable
-                </span>
-                {button("Not sequential", { tabindex: -1 })}
-                <div inert>{input("Inert control")}</div>
-                {button("Coral")}
-                {input("Custom icon")}
-              </>
-            ),
-          },
-          { id: "after", label: "After settings" },
-        ],
-      };
-    });
+    const view = mountControls((controls) => ({
+      items: [
+        { id: "before", label: "Before settings" },
+        {
+          kind: "content",
+          id: "settings",
+          content: (
+            <>
+              <input ref={controls.ref()} aria-label="Filter settings" data-search="" />
+              <button ref={controls.ref()} data-form-control="">
+                Default
+              </button>
+              <button ref={controls.ref()} data-form-control="" disabled>
+                Disabled
+              </button>
+              <button ref={controls.ref()} data-form-control="" aria-disabled="true">
+                Unavailable
+              </button>
+              <input
+                ref={controls.ref()}
+                aria-label="Hidden attribute"
+                data-form-control=""
+                hidden
+              />
+              <input ref={controls.ref()} type="hidden" data-form-control="" />
+              <span style={{ visibility: "hidden" }}>
+                <input ref={controls.ref()} aria-label="Invisible" data-form-control="" />
+              </span>
+              <span ref={controls.ref()} data-form-control="">
+                Not focusable
+              </span>
+              <button ref={controls.ref()} data-form-control="" tabindex={-1}>
+                Not sequential
+              </button>
+              <div inert>
+                <input ref={controls.ref()} aria-label="Inert control" data-form-control="" />
+              </div>
+              <button ref={controls.ref()} data-form-control="">
+                Coral
+              </button>
+              <input ref={controls.ref()} aria-label="Custom icon" data-form-control="" />
+            </>
+          ),
+        },
+        { id: "after", label: "After settings" },
+      ],
+    }));
     await openMenu();
     const first = view.getByRole("button", { name: "Default" });
     const second = view.getByRole("button", { name: "Coral" });
@@ -529,7 +520,7 @@ describe("Solid menu navigation", () => {
       items: [],
       children: (
         <>
-          {controlInput(controls, "First control", { "data-form-control": "" })}
+          <input ref={controls.ref()} aria-label="First control" data-form-control="" />
           <Menu
             id="nested-controls"
             label="Nested controls"
@@ -541,9 +532,9 @@ describe("Solid menu navigation", () => {
               }
             }}
           >
-            {controlInput(controls, "Descendant control", { "data-form-control": "" })}
+            <input ref={controls.ref()} aria-label="Descendant control" data-form-control="" />
           </Menu>
-          {controlInput(controls, "Last control", { "data-form-control": "" })}
+          <input ref={controls.ref()} aria-label="Last control" data-form-control="" />
         </>
       ),
     }));
@@ -561,24 +552,61 @@ describe("Solid menu navigation", () => {
     await phase(surface(), "hidden");
     expect(document.activeElement).toBe(view.getByRole("button", { name: "After menu" }));
   });
+
+  it("publishes cancelable selection and renders owner-controlled checkbox/radio state", async () => {
+    const [entries, setEntries] = createSignal<readonly MenuItem[]>([
+      { id: "notify", label: "Notify", type: "checkbox", checked: false, closeOnSelect: false },
+      { id: "default", label: "Default", type: "radio", checked: true },
+      { id: "restricted", label: "Restricted", type: "radio", checked: false },
+    ]);
+    let veto = true;
+    mountMenu({
+      get items() {
+        return entries();
+      },
+      onSelect: (entry, event) => {
+        if (veto) {
+          event.preventDefault();
+          return;
+        }
+        setEntries((current) =>
+          current.map((value) => ({
+            ...value,
+            checked:
+              value.type === "radio" && entry.type === "radio"
+                ? value.id === entry.id
+                : value.id === entry.id
+                  ? !value.checked
+                  : value.checked,
+          })),
+        );
+      },
+    });
+    await openMenu();
+    await userEvent.click(item("Restricted"));
+    expect(item("Restricted").getAttribute("aria-checked")).toBe("false");
+    expect(surface().matches(":popover-open")).toBe(true);
+    veto = false;
+    await userEvent.click(item("Notify"));
+    flush();
+    expect(item("Notify").getAttribute("aria-checked")).toBe("true");
+    expect(surface().matches(":popover-open")).toBe(true);
+    await userEvent.click(item("Restricted"));
+    flush();
+    await phase(surface(), "hidden");
+    await openMenu();
+    expect(item("Restricted").getAttribute("aria-checked")).toBe("true");
+    expect(item("Default").getAttribute("aria-checked")).toBe("false");
+  });
 });
 
-function mountColdMenu(options: Partial<MenuProps> = {}, open = true) {
-  const selections: string[] = [];
+function mountColdMenu(options: Partial<MenuProps> = {}) {
   const view = mountMenu({
     lazy: true,
     items: ["Alpha", "Beta", "Gamma"].map((label) => ({ id: label.toLowerCase(), label })),
-    onSelect: (entry) => selections.push(entry.id),
     ...options,
   });
-  const { handle } = view;
-  const button = trigger(),
-    panel = surface();
-  if (open) {
-    expect(handle.open()).toBe(true);
-  }
-  const row = (id: string) => panel.querySelector<HTMLElement>(`[data-value="${id}"]`)!;
-  return { view, handle, button, panel, row, selections };
+  return { view, handle: view.handle, button: trigger(), panel: surface() };
 }
 
 function coldKey(target: Element, value: string) {
@@ -588,7 +616,7 @@ function coldKey(target: Element, value: string) {
 }
 
 it("defers cold button pointer focus until click without suppressing context menus", () => {
-  const { handle, button } = mountColdMenu({}, false);
+  const { handle, button } = mountColdMenu();
   const down = (mouseButton: number) => {
     const event = new PointerEvent("pointerdown", {
       button: mouseButton,
@@ -636,8 +664,10 @@ it.each([
   { keys: ["ArrowDown", "Enter"], focused: null, selected: ["beta"] },
   { keys: ["End", "Enter"], focused: null, selected: ["gamma"] },
 ])("replays queued $keys in navigation order", async ({ keys, focused, selected }) => {
-  const { row, selections } = mountColdMenu();
-  const first = row("alpha");
+  const selections: string[] = [];
+  const { handle, panel } = mountColdMenu({ onSelect: (entry) => selections.push(entry.id) });
+  expect(handle.open()).toBe(true);
+  const first = panel.querySelector<HTMLElement>('[data-value="alpha"]')!;
   for (const value of keys) {
     coldKey(first, value);
   }
@@ -651,8 +681,10 @@ it.each([
 it.each(["Enter", " "])(
   "commits a focused cold leaf with %j before immediate overlay close",
   (value) => {
-    const { handle, row, selections } = mountColdMenu();
-    const target = row("beta");
+    const selections: string[] = [];
+    const { handle, panel } = mountColdMenu({ onSelect: (entry) => selections.push(entry.id) });
+    expect(handle.open()).toBe(true);
+    const target = panel.querySelector<HTMLElement>('[data-value="beta"]')!;
     target.focus();
     expect(coldKey(target, value).defaultPrevented).toBe(true);
     handle.close();
@@ -661,27 +693,31 @@ it.each(["Enter", " "])(
 );
 
 it("continues from the entry row when focus returns to the button during first load", async () => {
-  const { button, row } = mountColdMenu();
-  expect(document.activeElement).toBe(row("alpha"));
+  const { handle, button, panel } = mountColdMenu();
+  expect(handle.open()).toBe(true);
+  expect(document.activeElement).toBe(panel.querySelector('[data-value="alpha"]'));
   button.focus();
   expect(coldKey(button, " ").defaultPrevented).toBe(true);
   await expect.poll(() => document.activeElement?.getAttribute("data-value")).toBe("beta");
 });
 
 it("leaves native control activation keys unhandled during first load", () => {
-  const { panel } = mountColdMenu({
-    children: (["button", "a", "input", "textarea", "select"] as const).map((tag) => {
-      const control = document.createElement(tag);
-      control.dataset.formControl = "";
-      if (control instanceof HTMLAnchorElement) {
-        control.href = "#native-control";
-      }
-      if (control instanceof HTMLSelectElement) {
-        control.add(new Option("Native option"));
-      }
-      return control;
-    }),
+  const { handle, panel } = mountColdMenu({
+    children: (
+      <>
+        <button data-form-control>Native button</button>
+        <a href="#native-control" data-form-control>
+          Native link
+        </a>
+        <input data-form-control />
+        <textarea data-form-control />
+        <select data-form-control>
+          <option>Native option</option>
+        </select>
+      </>
+    ),
   });
+  expect(handle.open()).toBe(true);
   for (const control of panel.querySelectorAll<HTMLElement>("[data-form-control]")) {
     control.focus();
     expect(coldKey(control, "Enter").defaultPrevented).toBe(false);
@@ -696,6 +732,7 @@ it("bubbles parent navigation from an open submenu button during first load", as
       { id: "next", label: "Next" },
     ],
   });
+  expect(handle.open()).toBe(true);
   flush();
   const child = [...handle.overlay.children][0]!;
   expect(child.request(true, "none")).toBe(true);
@@ -716,6 +753,7 @@ it("leaves Escape to the open child when focus stays on its cold parent button",
       </Show>
     ),
   });
+  expect(handle.open()).toBe(true);
   setShowHelp(true);
   flush();
   expect(help.overlay.parent).toBe(handle.overlay);
@@ -733,8 +771,9 @@ it("leaves Escape to the open child when focus stays on its cold parent button",
 });
 
 it("admits and focuses synchronously, retires old keys, and replays input after first load", async () => {
-  const { handle, button, row } = mountColdMenu();
-  const first = row("alpha");
+  const { handle, button, panel } = mountColdMenu();
+  expect(handle.open()).toBe(true);
+  const first = panel.querySelector<HTMLElement>('[data-value="alpha"]')!;
   expect(document.activeElement).toBe(first);
   coldKey(first, "g");
   expect(handle.close()).toBe(true);
@@ -747,11 +786,12 @@ it("admits and focuses synchronously, retires old keys, and replays input after 
   coldKey(button, "ArrowUp");
   await expect.poll(() => handle.overlay.open).toBe(true);
   await expect.poll(() => document.activeElement?.getAttribute("data-value")).toBe("gamma");
-  expect(row("alpha")).toBe(first);
+  expect(panel.querySelector('[data-value="alpha"]')).toBe(first);
 });
 
 it("does not reopen a disposed owner after loading", async () => {
   const { view, handle } = mountColdMenu();
+  expect(handle.open()).toBe(true);
   view.unmount();
   await Promise.resolve();
   expect(handle.overlay.open).toBe(false);
