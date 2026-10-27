@@ -358,7 +358,7 @@ describe("event-loop measurement telemetry", () => {
     expect(events.map((event) => event.trace)).toEqual([undefined, undefined]);
   });
 
-  it.each([
+  it.each<{ name: string; subscribe: () => () => void | Promise<void> }>([
     {
       name: "diagnostics disabled",
       subscribe: () => {
