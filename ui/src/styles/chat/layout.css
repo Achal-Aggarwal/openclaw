@@ -629,10 +629,12 @@ openclaw-pending-session-create {
 }
 
 .chat-virtual-block {
-  /* The outer extent owns scroll height; the leading spacer positions the
-     in-flow window. Cached rows stay outside that flow. */
+  /* Keep the row window in local coordinates, even near a long transcript's
+     tail. The outer extent owns scroll height; parked rows have no layout. */
   contain: size;
-  isolation: isolate;
+  position: absolute;
+  top: 0;
+  left: 0;
   width: 100%;
 }
 

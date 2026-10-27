@@ -112,13 +112,12 @@ function TranscriptRows(props: {
       {props.snapshot.header}
       <div class="chat-virtual-sizer" ref={(element) => props.columnRef(element)}>
         {props.snapshot.overlay}
-        <div class="chat-virtual-block">
-          <div
-            aria-hidden="true"
-            style={{
-              height: `${blockStart() - props.snapshot.virtualizer.options.scrollMargin}px`,
-            }}
-          />
+        <div
+          class="chat-virtual-block"
+          style={{
+            transform: `translateY(${blockStart() - props.snapshot.virtualizer.options.scrollMargin}px)`,
+          }}
+        >
           <For each={virtualRows()} keyed={(row) => row.key}>
             {(virtualRow) => {
               const index = createMemo(() => virtualRow().index);
