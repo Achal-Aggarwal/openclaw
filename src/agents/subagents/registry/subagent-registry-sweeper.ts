@@ -3,6 +3,7 @@ import type { GatewayRecoveryRuntime } from "../../../gateway/server-instance-ru
 import { getAgentRunContext } from "../../../infra/agent-run-registry.js";
 import { isFastTestRuntimeEnv } from "../../../infra/env.js";
 import {
+  getGatewayRestartDrainSignal,
   isGatewayRestartDrainError,
   runWithGatewayDetachedWorkAdmission,
 } from "../../../process/gateway-work-admission.js";
@@ -36,6 +37,7 @@ import {
   SUBAGENT_SUSPENDED_DELIVERY_RETENTION_MS,
   warnSuspendedDeliveryPressure,
 } from "./subagent-registry-suspended-delivery.js";
+import { createSubagentSweepCleanupTail } from "./subagent-registry-sweep-cleanup-tail.js";
 import {
   createSubagentSweepReadScope,
   deleteSweptSession,
@@ -191,20 +193,14 @@ export function createSubagentRegistrySweeper(params: {
     warn: params.warn,
   });
 
-  function runCleanupTail(runId: string, label: string, run: () => Promise<unknown>) {
-    // Cleanup can outlive the tick as well as the request that armed its timer.
-    void trackWork(() =>
-      runWithGatewayDetachedWorkAdmission(run, "subagents:sweeper-cleanup").catch(
-        (error: unknown) => params.warn(`subagent sweep ${label} failed`, { runId, error }),
-      ),
-    );
-  }
+  const runCleanupTail = createSubagentSweepCleanupTail({ trackWork, warn: params.warn });
 
   async function sweepOnce(recoveryOnly = false) {
     if (sweepInProgress) {
       return;
     }
     sweepInProgress = true;
+    const drainSignal = getGatewayRestartDrainSignal();
     try {
       const now = Date.now();
       recovery.prune();
@@ -263,6 +259,10 @@ export function createSubagentRegistrySweeper(params: {
         );
       }
       for (const [runId, snapshot] of runEntries) {
+        // Finish admitted cleanup, but leave the remaining durable backlog for the next Gateway.
+        if (drainSignal.aborted) {
+          return;
+        }
         readScope.assertCurrent();
         const selected = runs.get(runId);
         if (!selected || !isSameSubagentRunOwner(selected, snapshot)) {
@@ -582,6 +582,9 @@ export function createSubagentRegistrySweeper(params: {
           continue;
         }
         for (const [candidateRunId, candidate] of groupEntries) {
+          if (drainSignal.aborted) {
+            return;
+          }
           const warnCleanup = (message: string, failure?: { error: unknown }) =>
             params.warn(message, {
               runId: candidateRunId,
