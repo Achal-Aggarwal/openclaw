@@ -137,6 +137,7 @@ it("renders and updates the workspace rail inside the Files panel", async () => 
   expect(query(".chat-workspace-rail")).toBe(rail);
   expect(rail.querySelector<HTMLInputElement>('input[type="search"]')?.value).toBe("notes");
   element(rail, 'button[aria-label="notes.txt"]').click();
+  await vi.dynamicImportSettled();
   await vi.waitFor(() =>
     expect(sessions.getFile).toHaveBeenCalledExactlyOnceWith(state.sessionKey, "notes.txt", {
       agentId: "main",

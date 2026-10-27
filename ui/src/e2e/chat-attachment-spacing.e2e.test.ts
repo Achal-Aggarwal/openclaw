@@ -97,9 +97,20 @@ function attachment(index = 0) {
 }
 
 async function gap(above: Locator, below: Locator) {
-  const upper = (await above.boundingBox())!;
-  const lower = (await below.boundingBox())!;
-  return lower.y - upper.y - upper.height;
+  const lowerElement = await below.elementHandle();
+  try {
+    // Lazy media can move the transcript between browser calls; sample both boxes together.
+    return await above.evaluate((upperElement, lowerElement) => {
+      if (!upperElement.isConnected || !lowerElement.isConnected) {
+        throw new Error("Spacing elements detached before measurement.");
+      }
+      const upper = upperElement.getBoundingClientRect();
+      const lower = lowerElement.getBoundingClientRect();
+      return lower.y - upper.y - upper.height;
+    }, lowerElement);
+  } finally {
+    await lowerElement.dispose();
+  }
 }
 
 async function expectGap(above: Locator, below: Locator, reference: number) {
