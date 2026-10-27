@@ -75,6 +75,7 @@ suite.define(() => {
         historyMessages: [
           ...["First own note.", "Second own note.", "Last own note."].map((text, index) =>
             chatMessage("user", text, {
+              timestamp: 1700000000000 + index * 60_000,
               __openclaw: {
                 id: `own-note-${index}`,
                 seq: index + 1,
@@ -86,6 +87,7 @@ suite.define(() => {
           ),
           ...["First checklist note.", prompt, "Last checklist note."].map((text, index) =>
             chatMessage("user", text, {
+              timestamp: 1700000300000 + index * 60_000,
               __openclaw: {
                 id: index === 1 ? messageId : `riley-note-${index}`,
                 seq: index + 4,
@@ -117,10 +119,25 @@ suite.define(() => {
               .map((row) => row.getAttribute("data-message-actions-for")),
           );
       await expect.poll(() => visibleActionRows()).toEqual([`msg:id:${messageId}:0`]);
+      const visibleTimes = () =>
+        message
+          .locator("time")
+          .evaluateAll((times) =>
+            times
+              .filter((time) => time.checkVisibility({ checkOpacity: true }))
+              .map((time) => time.dateTime),
+          );
+      await expect.poll(visibleTimes).toEqual([new Date(1700000360000).toISOString()]);
+
       const ownedActions = message.locator(`[data-message-actions-for="msg:id:${messageId}:0"]`);
       await ownedActions.getByRole("button", { name: "Copy as markdown", exact: true }).focus();
       await page.mouse.move(0, 0);
       await expect.poll(() => visibleActionRows()).toEqual([`msg:id:${messageId}:0`]);
+      await expect.poll(visibleTimes).toEqual([new Date(1700000360000).toISOString()]);
+      await message.locator(".chat-bubble").filter({ hasText: "Last checklist note." }).hover();
+      await page.locator("textarea").first().focus();
+      await expect.poll(visibleTimes).toEqual([new Date(1700000420000).toISOString()]);
+
       const desktopViewport = page.viewportSize()!;
       await page.setViewportSize({ width: 560, height: 1000 });
       const ownGroup = page.locator(".chat-group.user", { hasText: "First own note." });

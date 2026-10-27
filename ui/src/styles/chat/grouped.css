@@ -149,8 +149,6 @@
   transition: opacity 120ms ease-out;
 }
 
-.chat-group:hover > .chat-group-footer,
-.chat-group:focus-within > .chat-group-footer,
 .chat-group-footer:has(.msg-meta[open]) {
   --chat-footer-disclosure-opacity: 1;
   --chat-footer-disclosure-pointer-events: auto;
@@ -171,7 +169,7 @@
 .chat-group-footer--persistent-identity {
   position: relative;
   opacity: var(--chat-persistent-footer-opacity, 1);
-  pointer-events: none;
+  pointer-events: var(--chat-footer-disclosure-pointer-events, none);
 }
 
 .chat-group-footer--persistent-identity .chat-confirm-wrap,
@@ -186,27 +184,10 @@
   );
 }
 
-.chat-group:hover .chat-group-footer--persistent-identity,
-.chat-group:focus-within .chat-group-footer--persistent-identity,
-.chat-group-footer--persistent-identity:has(.msg-meta[open]) {
-  pointer-events: auto;
-}
-
 .chat-group-footer--persistent-identity:has(.msg-meta[open]) {
   --chat-footer-detail-position: static;
   --chat-footer-open-detail-opacity: 1;
   --chat-footer-open-detail-pointer-events: auto;
-}
-
-.chat-group:hover
-  .chat-group-footer--persistent-identity
-  :is(.chat-confirm-wrap, .chat-group-timestamp, .msg-meta__summary, .chat-group-footer-actions),
-.chat-group:focus-within
-  .chat-group-footer--persistent-identity
-  :is(.chat-confirm-wrap, .chat-group-timestamp, .msg-meta__summary, .chat-group-footer-actions) {
-  position: static;
-  opacity: 1;
-  pointer-events: auto;
 }
 
 .chat-group-footer__meta {
@@ -252,11 +233,19 @@
 .chat-message-actions-row {
   --chat-message-action-opacity: 0;
   --chat-message-action-pointer-events: none;
+  --chat-footer-disclosure-opacity: 0;
+  --chat-footer-disclosure-pointer-events: none;
   --chat-action-gap: calc(4px + var(--chat-message-gap));
   position: relative;
   --chat-message-action-size: 24px;
   align-self: stretch;
   margin-top: 4px;
+}
+
+/* A grouped message keeps its own timestamp beside its actions. */
+.chat-message-actions-row > .msg-meta > .chat-group-timestamp {
+  opacity: var(--chat-footer-disclosure-opacity, 0);
+  pointer-events: var(--chat-footer-disclosure-pointer-events, none);
 }
 
 .chat-message-reactions {
@@ -534,13 +523,15 @@
 
 /* Each action row consumes only its own message's disclosure state. */
 .chat-group {
-  --chat-final-action-opacity: 0;
-  --chat-final-action-pointer-events: none;
+  --chat-final-disclosure-opacity: 0;
+  --chat-final-disclosure-pointer-events: none;
 }
 
 .chat-group > .chat-group-footer {
-  --chat-message-action-opacity: var(--chat-final-action-opacity);
-  --chat-message-action-pointer-events: var(--chat-final-action-pointer-events);
+  --chat-footer-disclosure-opacity: var(--chat-final-disclosure-opacity);
+  --chat-footer-disclosure-pointer-events: var(--chat-final-disclosure-pointer-events);
+  --chat-message-action-opacity: calc(var(--chat-final-disclosure-opacity) * 0.6);
+  --chat-message-action-pointer-events: var(--chat-final-disclosure-pointer-events);
 }
 
 :is(.chat-group-footer-actions, .chat-message-actions-row)
@@ -557,6 +548,8 @@
 .chat-message-footer {
   --chat-message-action-opacity: 0;
   --chat-message-action-pointer-events: none;
+  --chat-footer-disclosure-opacity: 0;
+  --chat-footer-disclosure-pointer-events: none;
   --chat-action-gap: calc(var(--chat-footer-offset) + var(--chat-message-gap));
 }
 
@@ -604,8 +597,9 @@
   > .chat-group-messages > .chat-message--reply:last-child > .chat-bubble:hover,
   > .chat-group-messages > .chat-agent-run-body:hover
 ) {
-  --chat-final-action-opacity: 0.6;
-  --chat-final-action-pointer-events: auto;
+  --chat-final-disclosure-opacity: 1;
+  --chat-final-disclosure-pointer-events: auto;
+  --chat-footer-detail-position: static;
 }
 
 .chat-group:not(
@@ -619,8 +613,9 @@
     > .chat-bubble:is(:focus-within, .chat-bubble--actions-revealed),
   > .chat-group-messages > .chat-agent-run-body:focus-within
 ) {
-  --chat-final-action-opacity: 0.6;
-  --chat-final-action-pointer-events: auto;
+  --chat-final-disclosure-opacity: 1;
+  --chat-final-disclosure-pointer-events: auto;
+  --chat-footer-detail-position: static;
 }
 
 .chat-group-footer:hover,
@@ -646,6 +641,11 @@
     --chat-footer-disclosure-opacity: 1;
     --chat-footer-disclosure-pointer-events: auto;
   }
+  .chat-group:not(.chat-group--peer) > .chat-group-footer {
+    --chat-footer-disclosure-opacity: inherit;
+    --chat-footer-disclosure-pointer-events: inherit;
+  }
+
   .chat-group:not(.chat-group--peer) > .chat-group-footer,
   .chat-group:not(.chat-group--peer) .chat-message-actions-row,
   .chat-group:not(.chat-group--peer) .chat-message-footer {

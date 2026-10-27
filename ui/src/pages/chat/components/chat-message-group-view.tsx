@@ -60,6 +60,7 @@ function MessageActionsRow(props: {
   options: NativeMessageGroupOptions;
   class?: string;
   reactionGroup?: MessageGroupData;
+  timestamp?: number;
 }) {
   let owner: HTMLDivElement | undefined;
   return (
@@ -86,6 +87,9 @@ function MessageActionsRow(props: {
         actionOwner={() => owner}
         messageKey={props.messageKey}
       />
+      <Show when={props.timestamp !== undefined}>
+        <MessageMeta timestamp={props.timestamp!} meta={null} />
+      </Show>
     </div>
   );
 }
@@ -446,6 +450,11 @@ function FramedMessage(props: {
               options={frame().options}
               class="chat-message-actions-row"
               reactionGroup={frame().group}
+              timestamp={
+                frame().normalizedRole === "user"
+                  ? prepared().source.normalizedMessage.timestamp
+                  : undefined
+              }
             />
           }
         >
@@ -588,7 +597,17 @@ function FramedMessageGroup(props: {
                 {/* Keep delivery status and timestamp in one slot to avoid wrapping them together. */}
                 <Show
                   when={frame().sendStatus}
-                  fallback={<MessageMeta timestamp={props.group.timestamp} meta={frame().meta} />}
+                  fallback={
+                    <MessageMeta
+                      timestamp={
+                        frame().normalizedRole === "user"
+                          ? frame().preparedMessages[frame().lastMessageIndex]!.source
+                              .normalizedMessage.timestamp
+                          : props.group.timestamp
+                      }
+                      meta={frame().meta}
+                    />
+                  }
                 >
                   <ChatSendStatus status={frame().sendStatus} actions={options()} />
                 </Show>
