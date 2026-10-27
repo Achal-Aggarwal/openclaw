@@ -301,6 +301,9 @@ complete logical prompt. Session gap and resume-drift notices also travel in
 using producer-owned fragments to keep runtime instructions separate from quoted
 conversation data. Private transports receive the full structured context; legacy
 raw-process transports retain their inline and compact room-event rendering.
+Full producer fragments can use more input tokens than the compact room-event
+form; the private transport preserves their instruction/data boundaries instead
+of substituting that summary.
 Preserved completion context is added only when resuming the same native
 conversation; a fresh, foreign, or forked session does not receive that handoff.
 
@@ -310,7 +313,11 @@ provenance, not its text or source-tool name. Mark it with the native runtime's
 non-user input marker, if it has one, so native history does not attribute it
 to the operator. Human inputs and inputs without provenance stay unmarked.
 This does not change canonical chat visibility: OpenClaw retains the original
-message, provenance, and sender, including visible forwarded messages. Native tool actions must use the provided, run-bound
+message, provenance, and sender, including visible forwarded messages. Claude's
+native fallback seed skips synthetic input rows, so forwarded prompts are absent
+from that fallback prelude, just like cron and recovery prompts; their assistant
+responses can remain. This does not remove the canonical forwarded messages.
+Native tool actions must use the provided, run-bound
 `requestToolPermission` callback rather than creating independent approval
 authority. OpenClaw retains cancellation, watchdogs, session policy, and MCP
 grant ownership. Paired-node execution and

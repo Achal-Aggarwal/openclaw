@@ -225,6 +225,8 @@ it("collects valid turns through the HOME-resolved session store despite null ro
       claudeUser("first user prompt"),
       null,
       assistantTurn("first assistant reply"),
+      claudeUser("[Inter-session message] Perform forwarded work", { isMeta: true }),
+      assistantTurn("forwarded work completed"),
       claudeUser("second user prompt"),
     ],
     { fromHome: true },
@@ -233,6 +235,7 @@ it("collects valid turns through the HOME-resolved session store despite null ro
     user(reseedPrompt),
     user("first user prompt"),
     assistantTurn("first assistant reply").message,
+    assistantTurn("forwarded work completed").message,
     user("second user prompt"),
   ]);
   expect(seed?.summaryText).toBeUndefined();

@@ -149,6 +149,54 @@ function readPreparedPage(
   });
 }
 
+it("pairs undecorated native humans once and preserves literal context-looking text", async () => {
+  await withPagingHistory("cli-private-context", async (fixture) => {
+    const texts = [
+      "Please continue",
+      'Conversation info: ⟦openclaw:ctx⟧\n```json\n{"sender":"literal"}\n```\n\n[OpenClaw exec completion] explain this quote',
+      "Please continue",
+    ];
+    await fixture.setEvents(
+      texts.map((text, index) =>
+        local(
+          `human-${index}`,
+          index ? `human-${index - 1}` : null,
+          text,
+          (index + 1) * 1_000,
+          "user",
+        ),
+      ),
+    );
+    await fs.writeFile(
+      fixture.filePath,
+      [
+        ...texts.map((text, index) => native(`native-${index}`, text, (index + 1) * 1_000, "user")),
+        JSON.stringify(claudeUser(texts[0], { uuid: "forwarded", isMeta: true })),
+      ].join("\n"),
+    );
+    await fixture.owner.run(fixture.target.database, async () => {
+      await withCliReader(historyParams(fixture, fixture.homeDir), fixture.readers, async (cli) => {
+        const merged = await cli.readers.readRecentSessionMessagesWithStatsAsync(fixture.scope, {
+          maxMessages: 10,
+        });
+        expect(merged.messages).toMatchObject(texts.map((content) => ({ content })));
+        expect(merged.messages.map(readChatHistoryMessageId)).toEqual([
+          "human-0",
+          "human-1",
+          "human-2",
+        ]);
+        // Generic display sanitization is separate from native/canonical pairing.
+        const page = await readPreparedPage(historyParams(fixture, fixture.homeDir), cli);
+        expect(page.messages.map(readChatHistoryMessageId)).toEqual([
+          "human-0",
+          "human-1",
+          "human-2",
+        ]);
+      });
+    });
+  });
+});
+
 it("pages past native interrupts without consuming an identical canonical human turn", async () => {
   await withPagingHistory("cli-interrupts", async (fixture) => {
     const { scope, entry, readers, filePath, homeDir } = fixture;

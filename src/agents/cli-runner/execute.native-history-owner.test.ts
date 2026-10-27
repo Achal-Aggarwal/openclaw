@@ -66,7 +66,7 @@ describe("native login history owner at execution", () => {
     { provider: "claude-cli", plugin: false },
     { provider: "google-gemini-cli", plugin: false },
     { provider: "claude-cli", plugin: true },
-  ])(
+  ] as const)(
     "keeps $provider catch-up private and out of fresh, foreign, and forked attempts (plugin=$plugin)",
     async ({ provider, plugin }) => {
       const prompts: string[] = [];
