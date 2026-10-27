@@ -3,7 +3,6 @@ import { locationParams, readLocation } from "./page-location.js";
 import {
   defaultOptions,
   repairPrompt,
-  runPrompt,
   scribeById,
   scribeLabel,
   scribeSetup,
@@ -52,8 +51,11 @@ describe("scribes catalog", () => {
     expect(prompt).toContain("declaration key `knowledge:scribe:conversations`");
     expect(prompt).toContain("Don't start a run from this turn");
     expect(prompt).toContain("`Scribe status: on — <one sentence: the automation");
-    expect(prompt.endsWith(`Run message:\n\n\`\`\`text\n${runPrompt(setup)}\n\`\`\``)).toBe(true);
-    expect(runPrompt(setup)).toMatch(
+    const runMessage = prompt.match(/Run message:\n\n```text\n([\s\S]+)\n```$/)?.[1];
+    expect(runMessage).toMatch(
+      /^Scheduled run of the Knowledge scribe "Learn from conversations"\./,
+    );
+    expect(runMessage).toMatch(
       /archived, from the last 90 days\.[\s\S]*"Learn from conversations"/,
     );
     expect(prompt, "no JSON in the prompt").not.toMatch(/[{}]|```json|SCRIBE_RESULT/);
