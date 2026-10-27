@@ -28,7 +28,8 @@ vi.mock("../chat-pane-layout-view.tsx", async (importOriginal) => {
 class GeometryPane extends ChatPaneRuntime {
   session: ChatSessionVirtualizerHost | undefined;
   fixtureStream: string | null = null;
-  private messages: unknown[] = [];
+  fixtureHistory = false;
+  fixtureMessages: unknown[] = [];
   private rowHeight = 120;
 
   initialize(
@@ -37,12 +38,12 @@ class GeometryPane extends ChatPaneRuntime {
     rowHeight = followEnd ? 360 : 120,
     messages?: unknown[],
   ) {
-    projectChatFields(this, ["fixtureStream"]);
+    projectChatFields(this, ["fixtureStream", "fixtureHistory", "fixtureMessages"]);
     this.context = context;
     this.paneId = "geometry-render";
     this.sessionKey = "agent:main:geometry-render";
     this.rowHeight = rowHeight;
-    this.messages =
+    this.fixtureMessages =
       messages ??
       Array.from({ length: 100 }, (_, index) => ({
         role: index % 2 === 0 ? "user" : "assistant",
@@ -68,9 +69,12 @@ class GeometryPane extends ChatPaneRuntime {
         component: GeometryLayout,
         props: {
           transcript: this.transcript,
-          thread: threadProps(this.paneId, this.sessionKey, this.messages, {
+          thread: threadProps(this.paneId, this.sessionKey, this.fixtureMessages, {
             stream: this.fixtureStream,
             assistantName: "Assistant",
+            historyPagination: this.fixtureHistory
+              ? { hasMore: true, loading: false, onShowEarlier: () => {} }
+              : undefined,
           }),
           rowHeight: this.rowHeight,
         },
@@ -207,6 +211,34 @@ it.each([
     layout.disconnect();
     slot.remove();
   }
+});
+
+it("retains the accepted history-header space while a touch holds the older row model", async () => {
+  const { host, viewport } = await mountPane();
+  host.fixtureHistory = true;
+  await settleLayout();
+  const retained = requireElement(host, ".chat-virtual-row");
+  const top = retained.getBoundingClientRect().top;
+  const touch = new Touch({ identifier: 1, target: viewport, clientY: 100 });
+  viewport.dispatchEvent(
+    new TouchEvent("touchstart", { touches: [touch], changedTouches: [touch], bubbles: true }),
+  );
+  host.fixtureMessages = [
+    { role: "assistant", content: "Earlier synthetic message", timestamp: 0 },
+    ...host.fixtureMessages,
+  ];
+  host.fixtureHistory = false;
+  await settleLayout();
+  expect(host.querySelector(".chat-history-boundary")).toBeNull();
+  expect(retained.dataset.index).toBe("0");
+  expect(Math.abs(retained.getBoundingClientRect().top - top)).toBeLessThanOrEqual(2);
+
+  viewport.dispatchEvent(
+    new TouchEvent("touchend", { touches: [], changedTouches: [touch], bubbles: true }),
+  );
+  await settleLayout();
+  expect(retained.dataset.index).toBe("1");
+  expect(Math.abs(retained.getBoundingClientRect().top - top)).toBeLessThanOrEqual(2);
 });
 
 it.each([120, 360, 1200])(
