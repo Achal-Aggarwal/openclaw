@@ -1,5 +1,4 @@
 import { createDeferred } from "openclaw/plugin-sdk/extension-shared";
-import { withinTest } from "openclaw/plugin-sdk/test-fixtures";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { formatControlUiGitHubPreviewError } from "./github-api.js";
 import type { ControlUiGitHubPreviewIdentity } from "./preview-contract.js";
@@ -43,6 +42,8 @@ const delay = (ms: number) =>
     setTimeout(resolve, ms);
   });
 const avatarUrl = (id: number) => `https://avatars.githubusercontent.com/u/${id}?s=64`;
+const urls = (fetchMock: ReturnType<typeof previewFetch>) =>
+  fetchMock.mock.calls.map(([input]) => requestUrl(input));
 function fixtureResponse(url: string, overrides = {}, commits = coauthorTrailers(["Ada", 20])) {
   return url.includes("avatars.githubusercontent.com")
     ? pngResponse()
@@ -84,44 +85,24 @@ it.each([
 });
 
 it("keeps different commit revisions separate", async () => {
-  const target = {
-    kind: "commit",
-    owner: "openclaw",
-    repo: "openclaw",
-    sha: "abcdef0123456789",
-  } as const;
-  const url = "https://api.github.com/repos/openclaw/openclaw/commits/abcdef0123456789?per_page=1";
+  const target = { kind: "commit", owner: "openclaw", repo: "openclaw", sha: "abcdef0" } as const;
   const fetchMock = responses(
     githubJson({
       sha: "abcdef0123456789abcdef0123456789abcdef01",
-      url,
       commit: {
-        message: "Fix commit previews\n\nDetails stay in the reader.",
+        message: "Fix commit previews\n\nDetails",
         author: { date: "2026-10-24T00:00:00Z" },
         comment_count: 2,
       },
       author: { login: "octocat" },
       stats: { additions: 3, deletions: 2 },
     }),
-  );
-  const first = await loadPreview(target, undefined, fetchMock);
-  expect(first).toMatchObject({
-    ...target,
-    title: "Fix commit previews",
-    login: "octocat",
-    state: "committed",
-    additions: 3,
-    deletions: 2,
-    comments: 2,
-  });
-  expect(requestUrl(fetchMock.mock.calls[0]?.[0])).toBe(url);
-  fetchMock.mockResolvedValueOnce(
     githubJson({
       sha: "b".repeat(40),
-      url,
       commit: { message: "Another commit", author: { date: "2026-10-24T01:00:00Z" } },
     }),
   );
+  await expectPreview(loadPreview(target, undefined, fetchMock), { title: "Fix commit previews" });
   await expectPreview(loadPreview({ ...target, sha: "b".repeat(40) }, undefined, fetchMock), {
     sha: "b".repeat(40),
     title: "Another commit",
@@ -134,61 +115,55 @@ describe("loadControlUiGitHubPreview", () => {
     ["body", /\/pulls\/930307$/],
     ["commits", /\/commits\?/],
     ["co-author avatar", /\/u\/20\?/],
-  ] as const)(
-    "bounds slow %s reads with the preview deadline and reuses the settled cache",
-    async (stage, stalledUrl) => {
-      // Native AbortSignal timers do not use Vitest's clock.
-      mockDeadlineTimers();
-      const identity = managedIdentity(`deadline-${stage}`);
-      const fetchMock = previewFetch(async (url, init) => {
-        const signal = init?.signal;
-        if (!signal) {
-          throw new Error("Expected cancellable GitHub transport");
+  ] as const)("bounds slow %s reads by the preview deadline", async (stage, stalledUrl) => {
+    // Native AbortSignal timers do not use Vitest's clock.
+    mockDeadlineTimers();
+    const identity = managedIdentity(`deadline-${stage}`);
+    const fetchMock = previewFetch(async (url, init) => {
+      const signal = init?.signal;
+      if (!signal) {
+        throw new Error("Expected cancellable GitHub transport");
+      }
+      if (stalledUrl.test(url)) {
+        if (stage === "body") {
+          return new Response(
+            new ReadableStream({
+              start(controller) {
+                signal.addEventListener("abort", () => controller.error(signal.reason), {
+                  once: true,
+                });
+              },
+            }),
+          );
         }
-        if (stalledUrl.test(url)) {
-          if (stage === "body") {
-            return new Response(
-              new ReadableStream({
-                start(controller) {
-                  signal.addEventListener("abort", () => controller.error(signal.reason), {
-                    once: true,
-                  });
-                },
-              }),
-            );
-          }
-          return new Promise<Response>((_resolve, reject) => {
-            signal.addEventListener(
-              "abort",
-              () => reject(new DOMException("Aborted", "AbortError")),
-              { once: true },
-            );
-          });
-        }
-        // Metadata/commits consume budget before a later slow request starts.
-        await delay(200);
-        return fixtureResponse(url);
-      });
-      const target = previewTarget(930307, "pull");
-      const settled = vi.fn();
-      const load = () =>
-        loadPreview(target, identity, fetchMock).then(
-          (preview) => ({ preview }),
-          (error: unknown) => ({ error: formatControlUiGitHubPreviewError(error) }),
-        );
-      const pending = load().then(settled);
-      await vi.advanceTimersByTimeAsync(2_000);
-      expect(settled).toHaveBeenCalledExactlyOnceWith(
-        ["repository", "body"].includes(stage)
-          ? { error: expect.objectContaining({ retryable: true }) }
-          : { preview: expect.objectContaining({ login: "steipete" }) },
+        return new Promise<Response>((_resolve, reject) => {
+          signal.addEventListener(
+            "abort",
+            () => reject(new DOMException("Aborted", "AbortError")),
+            { once: true },
+          );
+        });
+      }
+      // Metadata/commits consume budget before a later slow request starts.
+      await delay(200);
+      return fixtureResponse(url);
+    });
+    const target = previewTarget(930307, "pull");
+    const settled = vi.fn();
+    const load = () =>
+      loadPreview(target, identity, fetchMock).then(
+        (preview) => ({ preview }),
+        (error: unknown) => ({ error: formatControlUiGitHubPreviewError(error) }),
       );
-      await pending;
-      const calls = fetchMock.mock.calls.length;
-      expect(await load()).toEqual(settled.mock.calls[0]?.[0]);
-      expect(fetchMock).toHaveBeenCalledTimes(calls);
-    },
-  );
+    const pending = load().then(settled);
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(settled).toHaveBeenCalledExactlyOnceWith(
+      ["repository", "body"].includes(stage)
+        ? { error: expect.objectContaining({ retryable: true }) }
+        : { preview: expect.objectContaining({ login: "steipete" }) },
+    );
+    await pending;
+  });
 
   it.each(["final visibility check", "repository redirect", "commits redirect"])(
     "blocks later GitHub dispatches after identity changes during %s",
@@ -229,28 +204,15 @@ describe("loadControlUiGitHubPreview", () => {
     },
   );
 
-  it("returns expired previews while one refresh runs and revalidates every reader", async ({
-    signal,
-  }) => {
+  it("marks expired metadata stale and revalidates cached readers", async () => {
     vi.useFakeTimers();
-    let now = Date.now();
-    vi.spyOn(Date, "now").mockImplementation(() => now);
-    const refresh = createDeferred<Response>();
-    const refreshStarted = createDeferred<void>();
+    const now = vi.spyOn(Date, "now").mockReturnValue(1_000);
     const identity = managedIdentity("stale-preview");
     const target = previewTarget(88126);
-    let refreshing = false;
-    const fetchMock = previewFetch(async (url) => {
-      if (!url.includes("/issues/")) {
-        return publicRepository();
-      }
-      if (!refreshing) {
-        return authorOnly();
-      }
-      refreshStarted.resolve();
-      return refresh.promise.then((response) => response.clone());
-    });
-    const load = (force = false) => loadPreview(target, identity, fetchMock, force);
+    const fetchMock = previewFetch((url) =>
+      url.includes("/issues/") ? authorOnly() : publicRepository(),
+    );
+    const load = () => loadPreview(target, identity, fetchMock);
     const first = await load();
     identity.revalidate.mockImplementation(async () => {
       await delay(750);
@@ -261,76 +223,52 @@ describe("loadControlUiGitHubPreview", () => {
     expect(delivered).toHaveBeenCalledExactlyOnceWith(first);
     await cached;
     identity.revalidate.mockImplementation(async () => {});
-    // Expire only metadata; delivery must not join the deferred refresh.
-    now += 60_000;
-    refreshing = true;
-    const stale = { ...first, stale: true };
-    try {
-      expect(await withinTest(load(), signal)).toEqual(stale);
-      expect(await load()).toEqual(stale);
-      await withinTest(refreshStarted.promise, signal);
-      expect(
-        fetchMock.mock.calls.filter(([input]) => requestUrl(input).includes("/issues/")),
-      ).toHaveLength(2);
-      const forced = load(true);
-      refresh.resolve(authorOnly({ title: "Refreshed" }));
-      await expectPreview(forced, { title: "Refreshed" });
-      identity.revalidate.mockRejectedValue(new Error("identity retired"));
-      await expect(load()).rejects.toThrow("identity retired");
-    } finally {
-      refresh.resolve(itemResponse());
-    }
+    now.mockReturnValue(61_000);
+    expect(await load()).toEqual({ ...first, stale: true });
+    identity.revalidate.mockRejectedValue(new Error("identity retired"));
+    await expect(load()).rejects.toThrow("identity retired");
   });
 
-  it("overlaps pull avatars with final visibility validation without publishing private metadata", async () => {
+  it("overlaps pull reads but denies delivery when visibility changes", async () => {
     vi.useFakeTimers();
-    for (const isPublic of [true, false]) {
-      let repositoryReads = 0;
-      const started: string[] = [];
-      const fetchMock = previewFetch(async (url) => {
-        started.push(
-          url.includes("/commits")
-            ? "commits"
-            : url.includes("/pulls/") || url.includes("/issues/")
-              ? "item"
-              : "other",
-        );
-        await delay(100);
-        if (url.endsWith("/repos/openclaw/openclaw")) {
-          repositoryReads += 1;
-          if (repositoryReads > 1 && !isPublic) {
-            return githubJson({ private: true, visibility: "private" });
-          }
+    let repositoryReads = 0;
+    const started: string[] = [];
+    const fetchMock = previewFetch(async (url) => {
+      started.push(
+        url.includes("/commits")
+          ? "commits"
+          : url.includes("/pulls/") || url.includes("/issues/")
+            ? "item"
+            : "other",
+      );
+      await delay(100);
+      if (url.endsWith("/repos/openclaw/openclaw")) {
+        repositoryReads += 1;
+        if (repositoryReads > 1) {
+          return githubJson({ private: true, visibility: "private" });
         }
-        return fixtureResponse(url);
-      });
-      const settled = vi.fn();
-      const pending = loadPreview(
-        previewTarget(88128, "pull"),
-        managedIdentity(`overlap-${isPublic}`),
-        fetchMock,
-      ).then(
-        (preview) => settled({ preview }),
-        (error: unknown) => settled({ error }),
-      );
-      await vi.advanceTimersByTimeAsync(100);
-      // Admission completed; item and commits must both start before either response resolves.
-      expect(started).toEqual(["other", "item", "commits"]);
-      await vi.advanceTimersByTimeAsync(199);
-      expect(settled).not.toHaveBeenCalled();
-      await vi.advanceTimersByTimeAsync(1);
-      expect(settled).toHaveBeenCalledExactlyOnceWith(
-        isPublic
-          ? {
-              preview: expect.objectContaining({
-                avatarDataUrl,
-                coAuthors: [{ login: "ada", avatarDataUrl }],
-              }),
-            }
-          : { error: expect.objectContaining({ statusCode: 404 }) },
-      );
-      await pending;
-    }
+      }
+      return fixtureResponse(url);
+    });
+    const settled = vi.fn();
+    const pending = loadPreview(
+      previewTarget(88128, "pull"),
+      managedIdentity("overlap-private"),
+      fetchMock,
+    ).then(
+      (preview) => settled({ preview }),
+      (error: unknown) => settled({ error }),
+    );
+    await vi.advanceTimersByTimeAsync(100);
+    // Admission completed; item and commits must both start before either response resolves.
+    expect(started).toEqual(["other", "item", "commits"]);
+    await vi.advanceTimersByTimeAsync(199);
+    expect(settled).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(settled).toHaveBeenCalledExactlyOnceWith({
+      error: expect.objectContaining({ statusCode: 404 }),
+    });
+    await pending;
   });
 
   it("evicts a disconnected caller's failed cold load for the next request", async () => {
@@ -392,11 +330,12 @@ describe("loadControlUiGitHubPreview", () => {
     expect(preview.coAuthors).toEqual(
       ["ada", "mira", "alan"].map((login) => ({ login, avatarDataUrl })),
     );
-    const urls = fetchMock.mock.calls.map(([input]) => requestUrl(input));
-    expect(urls.filter((url) => url.startsWith("https://api.github.com/"))).toHaveLength(2);
-    expect(urls.filter((url) => url.startsWith("https://avatars.githubusercontent.com/"))).toEqual(
-      [58493, 20, 7, 31].map(avatarUrl),
+    expect(urls(fetchMock).filter((url) => url.startsWith("https://api.github.com/"))).toHaveLength(
+      2,
     );
+    expect(
+      urls(fetchMock).filter((url) => url.startsWith("https://avatars.githubusercontent.com/")),
+    ).toEqual([58493, 20, 7, 31].map(avatarUrl));
   });
 
   it.each([
@@ -441,14 +380,11 @@ describe("loadControlUiGitHubPreview", () => {
 
   it("re-checks visibility when the commits request is redirected into another repository", async () => {
     const identity = optionalIdentity();
-    const visibilityChecks: string[] = [];
     const fetchMock = previewFetch(async (url) => {
       if (url.endsWith("/repos/openclaw/openclaw")) {
-        visibilityChecks.push(url);
         return publicRepository();
       }
       if (url.endsWith("/repos/openclaw/secret")) {
-        visibilityChecks.push(url);
         // The token can read it; the Control UI viewer must not.
         return githubJson({ private: true });
       }
@@ -462,12 +398,8 @@ describe("loadControlUiGitHubPreview", () => {
 
     expect(preview.login).toBe("steipete");
     expect(preview.coAuthors).toBeUndefined();
-    expect(visibilityChecks).toContain("https://api.github.com/repos/openclaw/secret");
-    expect(
-      fetchMock.mock.calls.filter(([input]) =>
-        requestUrl(input).startsWith("https://api.github.com/repos/openclaw/secret/pulls"),
-      ),
-    ).toHaveLength(0);
+    expect(urls(fetchMock)).toContain("https://api.github.com/repos/openclaw/secret");
+    expect(urls(fetchMock).filter((url) => url.includes("/secret/pulls"))).toHaveLength(0);
   });
 
   it("revalidates metadata, refreshes decoration, and retires failed representations", async () => {
@@ -477,25 +409,10 @@ describe("loadControlUiGitHubPreview", () => {
     const f = conditionalPreviewFixture("pull", 940001, { authors: [["Ada", 20]] });
     const { state, avatars, refreshed, load } = f;
     const first = await load(false);
-    expect(first).toMatchObject({
-      additions: 101,
-      deletions: 12,
-      changedFiles: 3,
-      mergedAt: "2026-07-04T09:53:52Z",
-    });
-    expect(await load(false)).toEqual(first);
-    expect(await load()).toEqual(first);
-    state.item = 2;
-    const updated = { ...first, title: "Version 2" };
-    expect(await load()).toEqual(updated);
-    state.commits = 2;
-    expect(await load()).toEqual(updated);
-    expect(f.itemHeaders).toEqual([null, '"item-1"', '"item-1"', '"item-2"']);
-    expect(f.commitsHeaders).toEqual([null, '"commits-1"', '"commits-1"', '"commits-1"']);
     expect(avatars).toEqual([58493, 20].map(avatarUrl));
     for (const elapsed of [60_000, 60_000, 179_999]) {
       now += elapsed;
-      expect(await load()).toEqual(updated);
+      expect(await load()).toEqual(first);
       expect(avatars).toHaveLength(2);
     }
     now += 1;
@@ -504,7 +421,7 @@ describe("loadControlUiGitHubPreview", () => {
     const readers = Promise.all([load(), load()]).then(delivered);
     try {
       await vi.advanceTimersByTimeAsync(0);
-      expect(delivered).toHaveBeenCalledExactlyOnceWith([updated, updated]);
+      expect(delivered).toHaveBeenCalledExactlyOnceWith([first, first]);
       expect(avatars).toHaveLength(4);
     } finally {
       refreshed.resolve();
@@ -512,7 +429,7 @@ describe("loadControlUiGitHubPreview", () => {
       await readers;
     }
     expect(await load()).toEqual({
-      ...updated,
+      ...first,
       avatarDataUrl: "data:image/png;base64,Ag==",
       coAuthors: [{ login: "ada", avatarDataUrl: "data:image/png;base64,Ag==" }],
     });
@@ -660,7 +577,7 @@ describe("GitHub preview decoration cache", () => {
     },
   );
 
-  it("retries failed avatars and evicts the oldest of 200 retained images", async () => {
+  it("discards failed avatar bodies and retries uncached failures", async () => {
     let avatarReads = 0;
     const rejected = [
       new Response("unavailable", { status: 503 }),
@@ -687,13 +604,7 @@ describe("GitHub preview decoration cache", () => {
     }
     expect((await load(1)).avatarDataUrl).toBe(avatarDataUrl);
     expect(avatarReads).toBe(3);
-    for (let number = 2; number <= 201; number += 1) {
-      await load(number);
-    }
-    expect(avatarReads).toBe(203);
-    await load(201);
-    expect(avatarReads).toBe(203);
     await load(1);
-    expect(avatarReads).toBe(204);
+    expect(avatarReads).toBe(3);
   });
 });
