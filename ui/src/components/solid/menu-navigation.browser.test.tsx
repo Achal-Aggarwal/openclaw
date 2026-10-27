@@ -1,4 +1,5 @@
 import { cleanup, render } from "@solidjs/testing-library";
+import type { JSX } from "@solidjs/web";
 import { createSignal, flush, Show } from "solid-js";
 import { afterEach, describe, expect, it } from "vitest";
 import { userEvent } from "vitest/browser";
@@ -13,11 +14,13 @@ import {
 } from "../../test-helpers/solid-menu.tsx";
 import { MultiSelect } from "../multi-select.tsx";
 import {
+  controlInput,
   keyFocus as press,
   keyPhase,
   mountControls,
   submenu,
   tabFocus as tabTo,
+  update,
 } from "./menu-contract.test-support.tsx";
 import { Menu, type MenuEntry, type MenuItem, type MenuProps } from "./menu.tsx";
 import { Popover, type PopoverHandle } from "./popover.tsx";
@@ -51,8 +54,7 @@ describe("Solid menu navigation", () => {
     expect(panel.querySelector("[role=menuitem]")).toBeNull();
     expect(button.style.getPropertyValue("anchor-name")).toBe("");
     expect(panel.style.getPropertyValue("position-anchor")).toBe("");
-    setPlacement("top-end");
-    flush();
+    update(() => setPlacement("top-end"));
     trigger().focus();
     await keyPhase("{ArrowDown}", "open");
     const ready = item("Ready");
@@ -65,8 +67,7 @@ describe("Solid menu navigation", () => {
     await keyPhase("{Escape}", "hidden");
     if (lazy === "while-open") {
       expect(panel.querySelector("[role=menuitem]")).toBeNull();
-      setLabel("Updated");
-      flush();
+      update(() => setLabel("Updated"));
     }
     expect(view.handle.open()).toBe(true);
     await phase(surface(), "open");
@@ -134,7 +135,7 @@ describe("Solid menu navigation", () => {
             {
               kind: "content",
               id: "search",
-              content: <input ref={controls.ref()} data-search aria-label="Find agent" />,
+              content: controlInput(controls, "Find agent", { "data-search": "" }),
             },
             {
               kind: "group",
@@ -157,8 +158,7 @@ describe("Solid menu navigation", () => {
     const footer = item("Footer");
     const alpha = surface().querySelector<HTMLElement>('[data-value="alpha"]')!;
     alpha.focus();
-    setRevision(1);
-    flush();
+    update(() => setRevision(1));
     expect(surface().querySelector(".agent-list")).toBe(group);
     expect(item("Footer")).toBe(footer);
     expect(document.activeElement).toBe(alpha);
@@ -240,8 +240,7 @@ describe("Solid menu navigation", () => {
     expect(mouse(trigger(), "contextmenu").defaultPrevented).toBe(true);
     expect(parentContextMenus).toBe(1);
     expect(disabled.hasAttribute("href")).toBe(false);
-    expect(disabled.getAttribute("aria-disabled")).toBe("true");
-    expect(disabled.tabIndex).toBe(-1);
+    expect(disabled).toMatchObject({ ariaDisabled: "true", tabIndex: -1 });
     disabled.click();
     expect(selected).toEqual([]);
     await userEvent.click(link);
@@ -303,8 +302,7 @@ describe("Solid menu navigation", () => {
       onSelect: (entry) => setSelected(entry.id),
     });
     const button = view.getByRole("button", { name: "People" });
-    expect(button.id).toBe("provider-trigger");
-    expect(button.getAttribute("aria-busy")).toBe("false");
+    expect(button).toMatchObject({ id: "provider-trigger", ariaBusy: "false" });
     expect(button.getAttribute("aria-controls")).toBe(surface().id);
     expect(surface().getAttribute("aria-labelledby")).toBe("provider-trigger");
     button.focus();
@@ -387,8 +385,7 @@ describe("Solid menu navigation", () => {
         await keyPhase("{ArrowRight}", "open", "people-assign");
         await keyPhase("{ArrowLeft}{Escape}", "hidden");
       }
-      setDirection("rtl");
-      flush();
+      update(() => setDirection("rtl"));
       await openMenu();
       trigger("people-assign").focus();
       await keyPhase("{ArrowLeft}", "open", "people-assign");
@@ -406,14 +403,10 @@ describe("Solid menu navigation", () => {
           id: "search",
           label: "Find person",
           children: [{ id: "ada", label: "Ada" }],
-          content: (
-            <input
-              ref={controls.ref()}
-              aria-label="Search people"
-              data-search=""
-              data-initial-focus=""
-            />
-          ),
+          content: controlInput(controls, "Search people", {
+            "data-search": "",
+            "data-initial-focus": "",
+          }),
         },
       ],
     }));
@@ -433,53 +426,43 @@ describe("Solid menu navigation", () => {
   });
 
   it("traverses rows and eligible controls while preserving editing and native Tab exit", async () => {
-    const view = mountControls((controls) => ({
-      items: [
-        { id: "before", label: "Before settings" },
-        {
-          kind: "content",
-          id: "settings",
-          content: (
-            <>
-              <input ref={controls.ref()} aria-label="Filter settings" data-search="" />
-              <button ref={controls.ref()} data-form-control="">
-                Default
-              </button>
-              <button ref={controls.ref()} data-form-control="" disabled>
-                Disabled
-              </button>
-              <button ref={controls.ref()} data-form-control="" aria-disabled="true">
-                Unavailable
-              </button>
-              <input
-                ref={controls.ref()}
-                aria-label="Hidden attribute"
-                data-form-control=""
-                hidden
-              />
-              <input ref={controls.ref()} type="hidden" data-form-control="" />
-              <span style={{ visibility: "hidden" }}>
-                <input ref={controls.ref()} aria-label="Invisible" data-form-control="" />
-              </span>
-              <span ref={controls.ref()} data-form-control="">
-                Not focusable
-              </span>
-              <button ref={controls.ref()} data-form-control="" tabindex={-1}>
-                Not sequential
-              </button>
-              <div inert>
-                <input ref={controls.ref()} aria-label="Inert control" data-form-control="" />
-              </div>
-              <button ref={controls.ref()} data-form-control="">
-                Coral
-              </button>
-              <input ref={controls.ref()} aria-label="Custom icon" data-form-control="" />
-            </>
-          ),
-        },
-        { id: "after", label: "After settings" },
-      ],
-    }));
+    const view = mountControls((controls) => {
+      const input = (label: string, props: Parameters<typeof controlInput>[2] = {}) =>
+        controlInput(controls, label, { "data-form-control": "", ...props });
+      const button = (label: string, props: JSX.ButtonHTMLAttributes<HTMLButtonElement> = {}) => (
+        <button ref={controls.ref()} data-form-control="" {...props}>
+          {label}
+        </button>
+      );
+      return {
+        items: [
+          { id: "before", label: "Before settings" },
+          {
+            kind: "content",
+            id: "settings",
+            content: (
+              <>
+                {controlInput(controls, "Filter settings", { "data-search": "" })}
+                {button("Default")}
+                {button("Disabled", { disabled: true })}
+                {button("Unavailable", { "aria-disabled": "true" })}
+                {input("Hidden attribute", { hidden: true })}
+                {input("", { type: "hidden" })}
+                <span style={{ visibility: "hidden" }}>{input("Invisible")}</span>
+                <span ref={controls.ref()} data-form-control="">
+                  Not focusable
+                </span>
+                {button("Not sequential", { tabindex: -1 })}
+                <div inert>{input("Inert control")}</div>
+                {button("Coral")}
+                {input("Custom icon")}
+              </>
+            ),
+          },
+          { id: "after", label: "After settings" },
+        ],
+      };
+    });
     await openMenu();
     const first = view.getByRole("button", { name: "Default" });
     const second = view.getByRole("button", { name: "Coral" });
@@ -520,7 +503,7 @@ describe("Solid menu navigation", () => {
       items: [],
       children: (
         <>
-          <input ref={controls.ref()} aria-label="First control" data-form-control="" />
+          {controlInput(controls, "First control", { "data-form-control": "" })}
           <Menu
             id="nested-controls"
             label="Nested controls"
@@ -532,9 +515,9 @@ describe("Solid menu navigation", () => {
               }
             }}
           >
-            <input ref={controls.ref()} aria-label="Descendant control" data-form-control="" />
+            {controlInput(controls, "Descendant control", { "data-form-control": "" })}
           </Menu>
-          <input ref={controls.ref()} aria-label="Last control" data-form-control="" />
+          {controlInput(controls, "Last control", { "data-form-control": "" })}
         </>
       ),
     }));

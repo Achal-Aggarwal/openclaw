@@ -34,6 +34,9 @@ import "../../styles/chat/split-view.css";
 function clickLink(link: HTMLAnchorElement, options: MouseEventInit = {}) {
   link.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, ...options }));
 }
+function leaf(id: string, label: string, options: Partial<MenuItem> = {}): MenuItem {
+  return { id, label, ...options };
+}
 function entries(prefix: string, count: number, padded = false): MenuItem[] {
   return Array.from({ length: count }, (_, index) => ({
     id: `${prefix.toLowerCase()}-${index}`,
@@ -68,29 +71,24 @@ it("keeps disabled leaf explanations reachable without enabling activation", asy
   const click = vi.fn();
   mountMenu({
     items: [
-      { id: "disabled", label: "Unavailable default", disabled: true },
-      {
-        id: "reason",
-        label: "Unavailable explained",
+      leaf("disabled", "Unavailable default", { disabled: true }),
+      leaf("reason", "Unavailable explained", {
         disabled: true,
         focusableWhenDisabled: true,
         attributes: { title: "Connect to continue", onClick: click },
-      },
-      {
-        id: "branch",
-        label: "Unavailable submenu",
+      }),
+      leaf("branch", "Unavailable submenu", {
         disabled: true,
-        children: [{ id: "child", label: "Child" }],
-      },
-      { id: "allowed", label: "Allowed" },
+        children: [leaf("child", "Child")],
+      }),
+      leaf("allowed", "Allowed"),
     ],
     onSelect: select,
   });
   await openMenu();
   const explained = item("Unavailable explained");
   await expect.poll(() => document.activeElement).toBe(explained);
-  expect(explained.disabled).toBe(false);
-  expect(explained.getAttribute("aria-disabled")).toBe("true");
+  expect(explained).toMatchObject({ disabled: false, ariaDisabled: "true" });
   expect(item("Unavailable default").disabled).toBe(true);
   expect(item("Unavailable submenu").disabled).toBe(true);
   await userEvent.keyboard("{ArrowDown}");
@@ -138,7 +136,7 @@ it("preserves native link intent while routing selections", async () => {
   const select = vi.fn();
   const navigate = vi.fn();
   const view = mountMenu({
-    items: [{ id: "settings", label: "Settings", href: "#settings" }],
+    items: [leaf("settings", "Settings", { href: "#settings" })],
     onNavigate: navigate,
     onSelect: select,
   });
@@ -177,11 +175,7 @@ it("forwards link navigation from nested menus and closes the root", async () =>
   const navigate = vi.fn();
   mountMenu({
     items: [
-      {
-        id: "manage",
-        label: "Manage",
-        children: [{ id: "models", label: "Models", href: "#models" }],
-      },
+      leaf("manage", "Manage", { children: [leaf("models", "Models", { href: "#models" })] }),
     ],
     onNavigate: navigate,
   });
@@ -197,6 +191,11 @@ it("rolls rejected initial and controlled visibility back", async () => {
   let vetoShow = true;
   let vetoHide = true;
   const received: boolean[] = [];
+  const expectVisibility = (visible: boolean, events: boolean[]) => {
+    expect(untrack(open)).toBe(visible);
+    expect(surface().matches(":popover-open")).toBe(visible);
+    expect(received).toEqual(events);
+  };
   mountMenu({
     get open() {
       return open();
@@ -208,24 +207,19 @@ it("rolls rejected initial and controlled visibility back", async () => {
       setOpen(accepted);
     },
   });
-  expect(untrack(open)).toBe(false);
-  expect(surface().matches(":popover-open")).toBe(false);
-  expect(received).toEqual([false]);
+  expectVisibility(false, [false]);
   update(() => setOpen(true));
-  expect(untrack(open)).toBe(false);
-  expect(received).toEqual([false, false]);
+  expectVisibility(false, [false, false]);
   vetoShow = false;
   update(() => setOpen(true));
   await phase(surface(), "open");
-  expect(received).toEqual([false, false, true]);
+  expectVisibility(true, [false, false, true]);
   update(() => setOpen(false));
-  expect(untrack(open)).toBe(true);
-  expect(surface().matches(":popover-open")).toBe(true);
-  expect(received).toEqual([false, false, true, true]);
+  expectVisibility(true, [false, false, true, true]);
   vetoHide = false;
   update(() => setOpen(false));
   await phase(surface(), "hidden");
-  expect(received).toEqual([false, false, true, true, false]);
+  expectVisibility(false, [false, false, true, true, false]);
 });
 
 it("retains submenu content and identity across label updates", async () => {
@@ -236,13 +230,11 @@ it("retains submenu content and identity across label updates", async () => {
     label: "People actions",
     lazy: true,
     items: [
-      {
-        id: "assign",
-        label: "Assign to",
+      leaf("assign", "Assign to", {
         icon,
         details,
-        children: () => [{ id: "ada", label: "Ada Rivera" }],
-      },
+        children: () => [leaf("ada", "Ada Rivera")],
+      }),
     ],
   });
   mountMenu(props);
@@ -314,11 +306,9 @@ it.each([
     dir: position.dir,
     placement: position.placement,
     items: [
-      {
-        id: "gateways",
-        label: "Gateways",
-        children: [...entries("gateway", 9), { id: "settings", label: "Gateway settings" }],
-      },
+      leaf("gateways", "Gateways", {
+        children: [...entries("gateway", 9), leaf("settings", "Gateway settings")],
+      }),
       ...entries("action", 5),
     ],
     onSelect: selected,
