@@ -25,6 +25,7 @@ export type ChatRouteData =
       canonicalLocation?: RouteLocation;
       canonicalLocationReady?: Promise<RouteLocation | null>;
       canonicalLocationSource?: RouteLocation;
+      confirmedRoute?: () => Extract<ChatRouteData, { kind: "session" }> | null;
     }
   | {
       kind: "ambiguous";

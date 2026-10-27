@@ -2,6 +2,7 @@
 import type { ModelsSnapshotEvent, SessionsResolveResult } from "@openclaw/gateway-protocol";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createDeferred } from "../../../../test/helpers/promise.js";
+import { createApplicationRouter } from "../../app-routes.ts";
 import { gatewayHelloForMethods } from "../../test-helpers/gateway-methods.ts";
 import { loadChatRoute } from "./route-loader.ts";
 import {
@@ -110,6 +111,41 @@ describe("prepared short-route identity", () => {
   let h: ReturnType<typeof fixture>;
   beforeEach(() => {
     h = fixture();
+  });
+  it("settles a confirmed route without resolving it again, then revalidates normally", async () => {
+    const router = createApplicationRouter();
+    const route = router.getRoute("chat")!;
+    const component = vi.spyOn(route, "component").mockResolvedValue({ renderSolid: () => null });
+    const context = { ...h.context, router };
+    try {
+      const navigating = router.navigate("chat", context, {}, location);
+      await h.started();
+      h.emit();
+      await navigating;
+      const data = session(
+        router.getState().matches[0]!.data as Awaited<ReturnType<typeof loadChatRoute>>,
+      );
+      h.reply.resolve({ ...resolved, displayName: "Original title" });
+      expect(await data.canonicalLocationReady).toEqual(location);
+
+      await router.revalidate(context, "chat");
+      expect(router.getState().matches[0]?.data).toMatchObject({
+        kind: "session",
+        sessionKey: sessionRouteKey,
+      });
+      expect(router.getState().matches[0]?.data).not.toHaveProperty("canonicalLocationReady");
+      expect(h.request.mock.calls.filter(([method]) => method === "sessions.resolve")).toHaveLength(
+        1,
+      );
+
+      await router.revalidate(context, "chat");
+      expect(h.request.mock.calls.filter(([method]) => method === "sessions.resolve")).toHaveLength(
+        2,
+      );
+    } finally {
+      router.stop();
+      component.mockRestore();
+    }
   });
   it.each(["prepared event", "RPC response"] as const)(
     "reuses canonical identity from a %s when the original route began before hello",

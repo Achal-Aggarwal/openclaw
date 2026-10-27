@@ -529,6 +529,7 @@ export async function loadChatRoute(
       ? { kind: "unique" as const, session: localRow, isCurrent: isResolutionSourceCurrent }
       : await resolveShortSessionReference(context, target, routeLocation, signal);
   if (resolution.kind === "prepared") {
+    let confirmedRoute: Extract<ChatRouteData, { kind: "session" }> | null = null;
     const canonicalLocationReady = resolution.resolution
       .then((resolved) => {
         if (
@@ -547,6 +548,7 @@ export async function loadChatRoute(
           preferenceDerived: false,
           shortId: target.shortId,
         });
+        confirmedRoute = canonical;
         // A successful no-op confirmation still releases provisional route admission.
         return canonical ? (canonical.canonicalLocation ?? routeLocation) : null;
       })
@@ -560,6 +562,7 @@ export async function loadChatRoute(
       ...(target.shortId.length > 8 ? { shortId: target.shortId } : {}),
       canonicalLocationReady,
       canonicalLocationSource: routeLocation,
+      confirmedRoute: () => (resolution.isCurrent() ? confirmedRoute : null),
     };
   }
   if (resolution.kind === "not-found") {
@@ -622,15 +625,18 @@ export async function loadSessionPage(
   // SAFETY: Matching this face selects only this page's loadChatRoute result.
   const data = current?.data as ChatRouteData | undefined;
   // Revalidating an established link must not adopt another session with the same prefix.
-  const result = await loadChatRoute(
-    context,
-    location,
-    face,
-    signal,
-    cause === "revalidate"
-      ? { sessionKey: data?.kind === "session" ? data.sessionKey : undefined }
-      : undefined,
-  );
+  // A no-op URL confirmation still publishes settled data, but already resolved its identity.
+  const result =
+    (data?.kind === "session" ? data.confirmedRoute?.() : null) ??
+    (await loadChatRoute(
+      context,
+      location,
+      face,
+      signal,
+      cause === "revalidate"
+        ? { sessionKey: data?.kind === "session" ? data.sessionKey : undefined }
+        : undefined,
+    ));
   const creation = context.chatSubmissions.creation;
   if ("kind" in result && result.kind === "session") {
     if (creation?.sessionKey === result.sessionKey) {
