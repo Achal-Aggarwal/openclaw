@@ -530,32 +530,29 @@ it("uses cached geometry on the first reader movement after tail placement", asy
   ).toHaveLength(0);
 });
 
-it("waits for idle time to mount prepared rows and uses the latest viewport", async () => {
+it("materializes one predicted row between scroll frames and uses the latest viewport", async () => {
   const view = await transcriptFixture(0, true);
-  const scheduled = vi.mocked(requestIdleCallback).mock.calls.length;
   await view.scrollTo(60);
-  expect(vi.mocked(requestIdleCallback).mock.calls).toHaveLength(scheduled);
-  expect(cancelIdleCallback).toHaveBeenCalledTimes(1);
   const mounted = transcriptRows(view.container);
-  await view.frame(2);
   await view.task();
   expect(transcriptRows(view.container)).toEqual(mounted);
-  await view.idle(2);
-  expect(transcriptRows(view.container)).toEqual(mounted);
-  await view.idle();
+  await view.task();
+  const prepared = transcriptRows(view.container).find((row) => !mounted.includes(row));
+  expect(prepared).toBeDefined();
+  expect(prepared!.getAttribute("data-preparing-row")).toBe("true");
+  expect(Number(prepared!.dataset.index)).toBeGreaterThan(60);
+  await view.task();
   expect(transcriptRows(view.container)).toHaveLength(mounted.length + 1);
 
-  const nextScheduled = vi.mocked(requestIdleCallback).mock.calls.length;
+  emitTranscriptResize(prepared!, 800, 100);
+  await settle();
   await view.scrollTo(120);
-  expect(vi.mocked(requestIdleCallback).mock.calls).toHaveLength(nextScheduled);
   const afterScroll = transcriptRows(view.container);
-  await view.frame(2);
   await view.task();
-  expect(transcriptRows(view.container)).toEqual(afterScroll);
-  await view.idle();
-  const prepared = transcriptRows(view.container).find((row) => !afterScroll.includes(row));
-  expect(prepared).toBeDefined();
-  expect(Number(prepared!.dataset.index)).toBeGreaterThan(120);
+  await view.task();
+  const next = transcriptRows(view.container).find((row) => !afterScroll.includes(row));
+  expect(next).toBeDefined();
+  expect(Number(next!.dataset.index)).toBeGreaterThan(120);
 });
 
 it("prepares inward when fast upward prediction reaches an ordinary first row", async () => {
@@ -567,7 +564,7 @@ it("prepares inward when fast upward prediction reaches an ordinary first row", 
 
   await view.frame(1, false);
   await view.task();
-  await view.idle();
+  await view.task();
 
   const firstFragment = view.container.querySelector('[data-virtual-row-key="fragment:1"]');
   expect(firstFragment).not.toBeNull();

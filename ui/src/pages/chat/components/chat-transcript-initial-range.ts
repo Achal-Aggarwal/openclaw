@@ -207,7 +207,7 @@ export class TranscriptInitialRange {
     }
   }
 
-  private queuePreparation(idleOnly = false): void {
+  private queuePreparation(materialize = false): void {
     if (
       this.cancelPreparation ||
       this.preparingRowKey ||
@@ -341,14 +341,13 @@ export class TranscriptInitialRange {
       this.invalidate();
     };
     if (
-      !idleOnly &&
       this.virtualizer().isScrolling &&
       this.prewarmRow &&
       typeof requestIdleCallback === "function"
     ) {
-      // Warm before the next scroll frame consumes this predicted viewport.
-      // A separate task keeps parsing outside the current render's layout work.
-      const task = setTimeout(() => prepare(performance.now() + 6, true, true), 0);
+      // Warm first, then mount one predicted row between scroll frames. Its
+      // resize receipt gates the next mount even when idle delivery is starved.
+      const task = setTimeout(() => prepare(performance.now() + 6, true, !materialize), 0);
       this.cancelPreparation = () => clearTimeout(task);
     } else if (typeof requestIdleCallback === "function") {
       this.preparationIsIdle = true;
