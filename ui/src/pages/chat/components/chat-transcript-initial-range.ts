@@ -343,10 +343,16 @@ export class TranscriptInitialRange {
       this.prewarmRow &&
       typeof requestIdleCallback === "function"
     ) {
-      // Warm first, then mount one predicted row between scroll frames. Its
-      // resize receipt gates the next mount even when idle delivery is starved.
-      const task = setTimeout(() => prepare(performance.now() + 6, !materialize, !materialize), 0);
-      this.cancelPreparation = () => clearTimeout(task);
+      // Admit one slice per frame, after paint. Repeated zero-delay slices can
+      // otherwise spend several budgets before the next scrolling frame.
+      const frame = requestAnimationFrame(() => {
+        const task = setTimeout(
+          () => prepare(performance.now() + 6, !materialize, !materialize),
+          0,
+        );
+        this.cancelPreparation = () => clearTimeout(task);
+      });
+      this.cancelPreparation = () => cancelAnimationFrame(frame);
     } else if (typeof requestIdleCallback === "function") {
       this.preparationIsIdle = true;
       const idleRequest = requestIdleCallback(

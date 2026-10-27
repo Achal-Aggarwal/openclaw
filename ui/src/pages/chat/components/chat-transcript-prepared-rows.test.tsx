@@ -338,6 +338,7 @@ it.each([1, -1])(
     const rendered = view.renderRow.mock.calls.length;
     const elements = view.container.querySelectorAll(".chat-virtual-row").length;
     expect(view.renderRow.mock.calls).toHaveLength(rendered);
+    await view.frame(1, false);
     await view.task();
     const prepared = view.renderRow.mock.calls.slice(rendered);
     expect(prepared.length).toBeGreaterThan(0);
@@ -388,6 +389,7 @@ it("keeps warming in the reader's direction through opposite size compensation",
   const afterDown = view.renderRow.mock.calls.length;
   await view.frame();
   await view.task();
+  await view.frame();
   await view.task();
   const downward = view.renderRow.mock.calls
     .slice(afterDown)
@@ -537,11 +539,19 @@ it("materializes one predicted row between scroll frames and uses the latest vie
   const mounted = transcriptRows(view.container);
   await view.task();
   expect(transcriptRows(view.container)).toEqual(mounted);
+  await view.frame(1, false);
+  await view.task();
+  expect(transcriptRows(view.container)).toEqual(mounted);
+  const warmed = view.renderRow.mock.calls.length;
+  await view.task();
+  expect(view.renderRow.mock.calls).toHaveLength(warmed);
+  await view.frame(1, false);
   await view.task();
   const prepared = transcriptRows(view.container).find((row) => !mounted.includes(row));
   expect(prepared).toBeDefined();
   expect(prepared!.getAttribute("data-preparing-row")).toBe("true");
   expect(Number(prepared!.dataset.index)).toBeGreaterThan(60);
+  await view.frame(1, false);
   await view.task();
   expect(transcriptRows(view.container)).toHaveLength(mounted.length + 1);
 
@@ -549,7 +559,9 @@ it("materializes one predicted row between scroll frames and uses the latest vie
   await settle();
   await view.scrollTo(120);
   const afterScroll = transcriptRows(view.container);
+  await view.frame(1, false);
   await view.task();
+  await view.frame(1, false);
   await view.task();
   const next = transcriptRows(view.container).find((row) => !afterScroll.includes(row));
   expect(next).toBeDefined();
@@ -560,9 +572,12 @@ it("stops preparing when the predicted DOM window has no retainable rows", async
   const view = await transcriptFixture(0, true, false, true);
   await view.updateRow(120, 120);
   await view.scrollTo(60);
+  await view.frame(1, false);
   await view.task();
+  await view.frame(1, false);
   await view.task();
   const rendered = view.renderRow.mock.calls.length;
+  await view.frame(1, false);
   await view.task();
   expect(view.renderRow.mock.calls).toHaveLength(rendered);
 });
@@ -576,6 +591,7 @@ it("prepares inward when fast upward prediction reaches an ordinary first row", 
 
   await view.frame(1, false);
   await view.task();
+  await view.frame(1, false);
   await view.task();
 
   const firstFragment = view.container.querySelector('[data-virtual-row-key="fragment:1"]');
