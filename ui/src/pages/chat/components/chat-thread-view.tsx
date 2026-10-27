@@ -47,6 +47,7 @@ import {
 import { ChatToolFamilyBoundary, useChatToolReadiness } from "./chat-tool-family-boundary.tsx";
 import type { ChatTranscript } from "./chat-transcript-controller.ts";
 import { projectChatTranscript } from "./chat-transcript-projection.ts";
+import type { TranscriptHeader } from "./chat-transcript-session.ts";
 import { resolveAssistantDisplayAvatar } from "./chat-welcome.ts";
 import { ChatWelcome } from "./chat-welcome.tsx";
 
@@ -72,6 +73,7 @@ type ChatThreadInput = {
   props: ChatThreadProps;
   transcript: ChatTranscript;
   bindViewport?: (element: HTMLDivElement) => () => void;
+  historySupplement?: TranscriptHeader;
 };
 
 export function ChatThread(input: ChatThreadInput) {
@@ -159,13 +161,19 @@ function PreparedChatThread(input: ChatThreadInput) {
     Boolean(input.props.gatewayClient?.connected),
   ]);
   const markdownRef = createMarkdownBlocksRef(() => input.props.transcriptVisible ?? true);
-  const historyHeader = () =>
-    input.props.historyPagination
-      ? {
-          props: input.props.historyPagination,
-          height: CHAT_HISTORY_BOUNDARY_HEIGHT_PX,
-        }
-      : null;
+  // The supplement takes the header only once the transcript has no earlier page,
+  // so its controls never stack under the history boundary.
+  const headerContent = (
+    <Show when={input.props.historyPagination} fallback={input.historySupplement?.content}>
+      {(pagination) => <ChatHistoryBoundary {...pagination()} />}
+    </Show>
+  );
+  const historyHeader = (): TranscriptHeader | null => {
+    const height = input.props.historyPagination
+      ? CHAT_HISTORY_BOUNDARY_HEIGHT_PX
+      : input.historySupplement?.height;
+    return height === undefined ? null : { content: headerContent, height };
+  };
   const historySentinel = (
     <div class="chat-history-sentinel" ref={[elementRef(input.props.onHistorySentinelRef)]} />
   );
@@ -180,9 +188,7 @@ function PreparedChatThread(input: ChatThreadInput) {
       return (
         <div class="chat-thread-inner">
           {sentinel()}
-          {isEmpty() && !showLoadingSkeleton() && input.props.historyPagination ? (
-            <ChatHistoryBoundary {...input.props.historyPagination} />
-          ) : undefined}
+          {isEmpty() && !showLoadingSkeleton() ? historyHeader()?.content : undefined}
           {showLoadingSkeleton() ? (
             mobile() ? (
               <ChatConversationLoading route={false} />

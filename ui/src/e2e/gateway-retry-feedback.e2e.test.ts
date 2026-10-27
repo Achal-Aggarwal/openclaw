@@ -122,7 +122,7 @@ suite.define(() => {
         await waitForControlUiGatewayReady(page);
         await status.getByText("Connected", { exact: true }).waitFor();
         expect(await status.getAttribute("class")).toContain("gateway-status--connected");
-        expect(await spinnerLocator.count()).toBe(0);
+        await spinnerLocator.waitFor({ state: "detached" });
       },
     ),
   );

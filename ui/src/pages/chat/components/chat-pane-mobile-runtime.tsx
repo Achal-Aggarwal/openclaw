@@ -49,7 +49,7 @@ export function ChatPaneMobileRuntime(props: {
   // The destination's first visit mounts its content under this retained header owner.
   const retainPage = (render: () => Element) => {
     const opened = createMemo<boolean>(
-      (previous) => previous === true || host()?.destination.page?.render === page,
+      (previous) => previous === true || activePageRender() === page,
     );
     const content = (
       <Show when={opened()}>
@@ -108,6 +108,7 @@ export function ChatPaneMobileRuntime(props: {
     export: "ChatSessionAccessMobile",
   });
   const host = () => props.header.detailsControl?.mobileHost;
+  const activePageRender = createMemo(() => host()?.destination.page?.render);
   const sharing = () => props.header.mobileSharing;
   const machine = createChatMachinePresentation(props.placement);
   const peopleId = () => `${props.header.paneId}-mobile-people`;
