@@ -4,7 +4,7 @@ import type { SubagentRunRecord } from "./subagent-registry.types.js";
 export function isRestoredRequesterWakeRunnable(
   entry: SubagentRunRecord,
   rows: Iterable<SubagentRunRecord>,
-  _pauseNotice: boolean,
+  pauseNotice: boolean,
 ): boolean {
   const wake = entry.requesterSettleWake;
   if (
@@ -19,7 +19,11 @@ export function isRestoredRequesterWakeRunnable(
   ) {
     return false;
   }
+  if (pauseNotice) {
+    return entry.pauseReason === "sessions_yield" && Boolean(wake.pauseNotice);
+  }
   if (
+    entry.pauseReason === "sessions_yield" ||
     entry.execution.status !== "terminal" ||
     entry.execution.endedAt === undefined
   ) {
@@ -43,6 +47,7 @@ export function isRestoredRequesterWakeRunnable(
       (child) =>
         child.execution.status === "terminal" &&
         child.execution.endedAt !== undefined &&
+        child.pauseReason !== "sessions_yield" &&
         !child.execution.restartRecovery &&
         child.terminalOwner !== "interrupted-recovery" &&
         settled(child),
