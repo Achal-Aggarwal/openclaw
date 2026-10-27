@@ -1,14 +1,23 @@
-import type { Context } from "@openclaw/llm-core";
+import type { AssistantMessage, Context } from "@openclaw/llm-core";
 import { describe, expect, it } from "vitest";
 import { makeTextToolResult } from "../../../../test/helpers/text-tool-result.js";
 import { convertResponsesMessages as convertProviderResponsesMessages } from "../providers/openai-responses-shared.js";
+import { createZeroUsage } from "../usage.test-support.js";
 import { buildOpenAIResponsesReasoningReplayMetadata } from "./openai-responses-compaction-replay.js";
 import * as fixtures from "./openai-responses-prompt-observer.test-support.js";
 import { convertResponsesMessages } from "./openai-responses-replay-internal.js";
-
-import { createZeroUsage } from "../usage.test-support.js";
-import type { AssistantMessage } from "@openclaw/llm-core";
-function createAssistant(content: AssistantMessage["content"]): AssistantMessage { return { role: "assistant", content, api: model.api, provider: model.provider, model: model.id, usage: createZeroUsage(), stopReason: "toolUse", timestamp: 1 }; }
+function createAssistant(content: AssistantMessage["content"]): AssistantMessage {
+  return {
+    role: "assistant",
+    content,
+    api: model.api,
+    provider: model.provider,
+    model: model.id,
+    usage: createZeroUsage(),
+    stopReason: "toolUse",
+    timestamp: 1,
+  };
+}
 const model = fixtures.createModel();
 const identity = { sessionId: "session-current", authProfileId: "profile-current" };
 const item = {
