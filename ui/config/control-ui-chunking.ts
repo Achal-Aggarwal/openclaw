@@ -92,10 +92,6 @@ export function controlUiStableChunkName(id: string): string | undefined {
     case "ui/src/pages/chat/components/chat-run-failure-notice.tsx":
       // Common factories download together; Rolldown keeps their lazy initializers separate.
       return "chat-interaction-runtime";
-    case "ui/src/pages/chat/chat-transcript-prewarm.ts":
-    case "ui/src/pages/chat/components/chat-divider.tsx":
-    case "ui/src/components/solid/markdown-html.tsx":
-      return "control-ui-boot-chat";
     case "ui/src/pages/chat/components/chat-realtime-controls.tsx":
       return "chat-transcript-realtime";
     case "ui/src/pages/chat/components/chat-forwarded-attribution.tsx":
@@ -531,6 +527,12 @@ export function createControlUiCodeSplitting(options: { includeBootGroups?: bool
                 modules.add("src/config/patch-replace-paths.ts");
                 modules.add("src/infra/plain-object.ts");
                 modules.add("src/infra/prototype-keys.ts");
+              }
+              if (route === "chat") {
+                // Keep these in the existing route partition, not a second named group.
+                modules.add("ui/src/pages/chat/chat-transcript-prewarm.ts");
+                modules.add("ui/src/pages/chat/components/chat-divider.tsx");
+                modules.add("ui/src/components/solid/markdown-html.tsx");
               }
               return {
                 name: `control-ui-boot-${route}`,
