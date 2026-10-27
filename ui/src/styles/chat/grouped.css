@@ -548,8 +548,6 @@
 .chat-message-footer {
   --chat-message-action-opacity: 0;
   --chat-message-action-pointer-events: none;
-  --chat-footer-disclosure-opacity: 0;
-  --chat-footer-disclosure-pointer-events: none;
   --chat-action-gap: calc(var(--chat-footer-offset) + var(--chat-message-gap));
 }
 
@@ -602,6 +600,7 @@
   --chat-footer-detail-position: static;
 }
 
+.chat-group:not(.chat-group--peer).chat-group--meta-revealed,
 .chat-group:not(
     :has(> .chat-group-messages > :is(.chat-message-actions-row, .chat-message-footer))
   ):focus-within,
@@ -641,11 +640,6 @@
     --chat-footer-disclosure-opacity: 1;
     --chat-footer-disclosure-pointer-events: auto;
   }
-  .chat-group:not(.chat-group--peer) > .chat-group-footer {
-    --chat-footer-disclosure-opacity: inherit;
-    --chat-footer-disclosure-pointer-events: inherit;
-  }
-
   .chat-group:not(.chat-group--peer) > .chat-group-footer,
   .chat-group:not(.chat-group--peer) .chat-message-actions-row,
   .chat-group:not(.chat-group--peer) .chat-message-footer {
