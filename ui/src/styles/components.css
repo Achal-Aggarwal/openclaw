@@ -325,16 +325,16 @@ openclaw-session-owner-chip .viewer-avatar__initials {
   inset: 4px;
 }
 
-/* Two identities share one run: the arc traces the union outline of the owner
-   stack's pair instead of a circle. Sized to .session-owner-stack (18px faces
-   at ±5px around the glyph center) plus the ring's 2px gap. */
+/* Two identities share one run: trace the owner pair with a pixel of stroke
+   clearance. Bound animated SVG paint to this box instead of the sidebar. */
 .session-glyph__trace {
   position: absolute;
-  top: -1px;
-  left: -6px;
-  width: 32px;
-  height: 22px;
-  overflow: visible;
+  top: -2px;
+  left: -7px;
+  width: 34px;
+  height: 24px;
+  overflow: hidden;
+  contain: paint;
   pointer-events: none;
 }
 
