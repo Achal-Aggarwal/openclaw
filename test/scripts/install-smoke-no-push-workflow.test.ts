@@ -548,10 +548,7 @@ it("binds independent installer producer-consumer pairs to immutable artifact tu
     const producerScope = `needs.${producerName}.outputs`;
     const consumerName = `installer_smoke_${group}`;
     const producer = job(producerName);
-    expect(producer.needs, producerName).toEqual([
-      "preflight",
-      "installer_smoke_candidate_payload",
-    ]);
+    expect(producer.needs, producerName).toEqual(["preflight"]);
     expect(producer["timeout-minutes"], producerName).toBe(45);
     expect(producer.outputs, producerName).toEqual({
       ...imageOutputs,
@@ -798,12 +795,6 @@ expected_artifact_name="install-smoke-candidate-payload-\${TARGET_SHA}-\${ARTIFA
 
 it("drains every independent producer and consumer without sibling failure suppression", () => {
   const aggregate = job("installer_smoke");
-  for (const group of ["update", "nonroot"]) {
-    expect(job(`installer_smoke_${group}_image`).needs).toEqual([
-      "preflight",
-      "installer_smoke_candidate_payload",
-    ]);
-  }
   for (const group of ["update", "nonroot"]) {
     expect(job(`installer_smoke_${group}`).needs).toEqual([
       "preflight",
