@@ -36,6 +36,7 @@ export type TranscriptCallbacks = {
   onNativeScroll?: (event: Event) => void;
   /** The pane owns reader intent; geometry-only follow must honor that policy. */
   canFollowEnd?: () => boolean;
+  isRunActive?: () => boolean;
 };
 
 export const CHAT_TRANSCRIPT_ESTIMATED_ROW_PX = 120;

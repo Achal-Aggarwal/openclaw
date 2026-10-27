@@ -45,6 +45,7 @@ export class TranscriptInitialRange {
       entry: ResizeObserverEntry | undefined,
     ) => number,
     private readonly prewarmRow?: (index: number, mode: MarkdownPrewarmMode) => boolean,
+    private readonly canPrepareIdle?: () => boolean,
   ) {
     this.tailRows = initialOffset === null ? 1 : 0;
   }
@@ -281,7 +282,7 @@ export class TranscriptInitialRange {
       this.preparingRowKey ||
       this.pending ||
       this.tailRows > 0 ||
-      !this.canPrepare()
+      !this.canPrepareNow()
     ) {
       return;
     }
@@ -294,7 +295,7 @@ export class TranscriptInitialRange {
       }
       const virtualizer = this.virtualizer();
       const range = virtualizer.range;
-      if (!this.canPrepare() || !range || !virtualizer.scrollElement || this.prepareStarted) {
+      if (!this.canPrepareNow() || !range || !virtualizer.scrollElement || this.prepareStarted) {
         return;
       }
       const rows = this.rows;
@@ -497,6 +498,15 @@ export class TranscriptInitialRange {
       const frame = requestAnimationFrame((time) => prepare(time + 6));
       this.cancelPreparation = () => cancelAnimationFrame(frame);
     }
+  }
+
+  private canPrepareNow(): boolean {
+    // Active generation owns idle time; reader scrolling still warms its next viewport.
+    return (
+      this.canPrepare() &&
+      ((this.scrollSample.time > 0 && performance.now() - this.scrollSample.time < 100) ||
+        this.canPrepareIdle?.() !== false)
+    );
   }
 
   disconnect(): void {

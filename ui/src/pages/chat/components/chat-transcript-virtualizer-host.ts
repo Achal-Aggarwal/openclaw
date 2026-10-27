@@ -185,6 +185,7 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
       () => this.connected && this.renderer.isPresented(),
       (element, entry) => this.presentation.measureElement(element, entry),
       (index, mode) => this.renderer.prewarmRow(index, mode),
+      () => !this.callbacks.isRunActive?.(),
     );
     this.mcpAppUnmountGate = createMcpAppUnmountGate(invalidate);
     this.positionRail = createPositionRailGutter(
@@ -762,7 +763,6 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
       return;
     }
     if (
-      (this.initialRange.pending || this.offsetState.scrollCommand?.target === "end") &&
       this.canAutoFollow() &&
       !(this.offsetState.pendingInteractionAnchor || this.offsetState.touchActive)
     ) {

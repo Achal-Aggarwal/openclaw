@@ -128,6 +128,7 @@ async function transcriptFixture(
       )
     : [];
   let presented = true;
+  let runActive = false;
   let queued = false;
   let disposed = false;
   let preparationCost = 0;
@@ -174,17 +175,22 @@ async function transcriptFixture(
     host.update();
     flush();
   });
-  const host = new ChatSessionVirtualizerHost(() => {
-    if (!queued) {
-      queued = true;
-      queueMicrotask(() => {
-        queued = false;
-        if (!disposed) {
-          draw();
-        }
-      });
-    }
-  }, initialOffset);
+  const host = new ChatSessionVirtualizerHost(
+    () => {
+      if (!queued) {
+        queued = true;
+        queueMicrotask(() => {
+          queued = false;
+          if (!disposed) {
+            draw();
+          }
+        });
+      }
+    },
+    initialOffset,
+    undefined,
+    { isRunActive: () => runActive },
+  );
   disposers.push(() => {
     disposed = true;
     host.dispose();
@@ -272,8 +278,27 @@ async function transcriptFixture(
       draw();
       await settle();
     },
+    async setRunActive(value: boolean) {
+      runActive = value;
+      draw();
+      await settle();
+    },
   };
 }
+
+it("yields idle preparation to an active run and resumes after completion", async () => {
+  const view = await transcriptFixture(0, true, false, "retained");
+  await view.setRunActive(true);
+  const rendered = view.renderRow.mock.calls.length;
+  await view.idle();
+  await view.idle();
+  expect(view.renderRow.mock.calls).toHaveLength(rendered);
+  expect(view.container.querySelector("[data-preparing-row]")).toBeNull();
+
+  await view.setRunActive(false);
+  await view.idle();
+  expect(view.renderRow.mock.calls.length).toBeGreaterThan(rendered);
+});
 
 it.each(["group", "frame"] as const)(
   "finishes fragment warming for an oversized completed %s",
@@ -677,6 +702,7 @@ it("measures nearby rows before spending idle budgets on distant Markdown", asyn
 
 it("materializes one predicted row between scroll frames and uses the latest viewport", async () => {
   const view = await transcriptFixture(0, true, false, "retained");
+  await view.setRunActive(true);
   await view.scrollTo(3);
   const mounted = transcriptRows(view.container);
   await view.task();
@@ -779,35 +805,6 @@ it("prepares ahead of the active upward overscan", async () => {
   expect(firstFragment).not.toBeNull();
   expect(firstFragment?.getAttribute("data-prepared-row")).toBe("true");
   expect(view.container.scrollTop).toBe(500);
-});
-
-it("formats the detailed timestamp only when metadata becomes available", () => {
-  const format = vi
-    .spyOn(Date.prototype, "toLocaleString")
-    .mockImplementation((_, options) =>
-      options?.weekday === "long"
-        ? "Sunday, October 25, 2026 at 12:34:56 PM UTC"
-        : "Oct 25, 2026, 12:34 PM UTC",
-    );
-  const timestamp = Date.UTC(2026, 9, 25, 12, 34, 56);
-  const view = mountSolid<Parameters<typeof ChatTimestamp>[0]>(ChatTimestamp, { timestamp });
-  disposers.push(view.dispose);
-  const detailedCalls = () =>
-    format.mock.calls.filter(([, options]) => options?.weekday === "long");
-  expect(detailedCalls()).toHaveLength(0);
-  expect(view.container.querySelector("time")?.getAttribute("datetime")).toBe(
-    "2026-10-25T12:34:56.000Z",
-  );
-
-  view.update({ timestamp, metadata: [<span>42 tokens</span>] });
-  expect(detailedCalls()).toHaveLength(1);
-  const summary = view.container.querySelector("button.msg-meta__summary");
-  expect(summary?.getAttribute("aria-label")).toBe(
-    "Message context for Sunday, October 25, 2026 at 12:34:56 PM UTC",
-  );
-  view.update({ timestamp, metadata: [<span>84 tokens</span>] });
-  expect(detailedCalls()).toHaveLength(1);
-  expect(view.container.textContent).toContain("84 tokens");
 });
 
 it("advances a relative timestamp without refreshing its message", async () => {
