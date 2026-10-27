@@ -1,4 +1,5 @@
 // Detached chat.send dispatch owns runtime delivery, post-dispatch persistence, and terminalization.
+import { formatForLog } from "../ws-log.js";
 import { performance } from "node:perf_hooks";
 import {
   GATEWAY_CLIENT_CAPS,
@@ -702,7 +703,7 @@ export function startChatDispatch(params: StartChatDispatchParams): void {
       return dispatchErrorLifecycle.handleError(error);
     })
     .finally(() => replyAdmissionTicket?.release());
-  void (async () => {
+  const completion = (async () => {
     try {
       await dispatch;
     } finally {
@@ -724,4 +725,9 @@ export function startChatDispatch(params: StartChatDispatchParams): void {
       }
     }
   })();
+  // Ordinary chat.send detaches completion; Goal acknowledgments still consume its rejection.
+  void completion.catch((error: unknown) => {
+    context.logGateway.warn(`webchat dispatch settlement failed: ${formatForLog(error)}`);
+  });
+
 }
