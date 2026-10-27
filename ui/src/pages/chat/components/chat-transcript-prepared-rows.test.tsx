@@ -608,18 +608,24 @@ it("prepares ahead during scrolling and waits for measurement before admitting a
   expect(view.container.querySelectorAll("[data-preparing-row]")).toHaveLength(1);
 });
 
-it("places a fresh long transcript at its tail and warms a bounded upward window", async () => {
+it("warms idle geometry beyond its bounded upward DOM window", async () => {
   const view = await transcriptFixture(null);
-  await view.frame(8);
+  await view.frame(32);
   expect(view.container.scrollTop).toBeGreaterThan(24_000);
   expect(view.container.querySelector('[data-virtual-row-key="fragment:255"]')).not.toBeNull();
   expect(transcriptRows(view.container).every((row) => Number(row.dataset.index) > 230)).toBe(true);
-  await view.frame(160);
+  await view.scrollTo(249);
+  await view.scrollTo(250);
+  await view.frame(320);
   expect(transcriptRows(view.container).some((row) => Number(row.dataset.index) < 250)).toBe(true);
-  expect(transcriptRows(view.container).length).toBeLessThanOrEqual(24);
+  // The 24 retained rows share the DOM with the active viewport and its neighbours.
+  expect(view.container.querySelectorAll("[data-prepared-row]").length).toBeLessThanOrEqual(24);
+  expect(transcriptRows(view.container).length).toBeLessThanOrEqual(32);
   const ahead = view.container.querySelector('[data-virtual-row-key="fragment:235"]');
   expect(ahead).not.toBeNull();
   const preparations = view.renderRow.mock.calls.length;
+  expect(new Set(view.renderRow.mock.calls.map(([row]) => row.key)).size).toBe(256);
+  expect(view.container.querySelector('[data-virtual-row-key="fragment:0"]')).toBeNull();
   const aheadPreparations = view.renderRow.mock.calls.filter(
     ([row]) => row.key === "fragment:235",
   ).length;

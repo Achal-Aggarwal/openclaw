@@ -24,6 +24,7 @@ export class TranscriptInitialRange {
   private prepareStarted = 0;
   private prepareLatency = 16;
   private idleStep = 1;
+  private idleMeasureStep = 1;
   private scrollSample = { time: 0, distance: 0, velocity: 0, direction: -1 };
   private viewportOnly = false;
   private cachedWindow = false;
@@ -90,6 +91,12 @@ export class TranscriptInitialRange {
         if (index !== undefined) {
           indexes.add(index);
         }
+      }
+      const preparingIndex = this.preparingRowKey
+        ? this.rowIndexes.get(this.preparingRowKey)
+        : undefined;
+      if (preparingIndex !== undefined) {
+        indexes.add(preparingIndex);
       }
       return [...indexes].toSorted((left, right) => left - right);
     }
@@ -181,6 +188,7 @@ export class TranscriptInitialRange {
 
   updateRows(rows: readonly TranscriptRow[]): void {
     this.idleStep = 1;
+    this.idleMeasureStep = 1;
     const indexes = this.rowIndexes;
     indexes.clear();
     rows.forEach((row, index) => indexes.set(row.key, index));
@@ -190,7 +198,7 @@ export class TranscriptInitialRange {
         this.preparedRowKeys.delete(key);
       }
     }
-    if (this.preparingRowKey && !this.preparedRowKeys.has(this.preparingRowKey)) {
+    if (this.preparingRowKey && !rows[indexes.get(this.preparingRowKey) ?? -1]?.retainDom) {
       this.preparingRowKey = undefined;
       this.prepareStarted = 0;
     }
@@ -207,6 +215,7 @@ export class TranscriptInitialRange {
 
   recordReaderMovement(delta: number): void {
     this.idleStep = 1;
+    this.idleMeasureStep = 1;
     const now = performance.now();
     const previous = this.scrollSample;
     this.scrollSample = {
@@ -225,6 +234,7 @@ export class TranscriptInitialRange {
     const size = this.measure(element, entry);
     const key = element.dataset.virtualRowKey;
     if (
+      key !== undefined &&
       key === this.preparingRowKey &&
       (entry || !this.virtualizer().targetWindow?.ResizeObserver)
     ) {
@@ -234,6 +244,9 @@ export class TranscriptInitialRange {
       queueMicrotask(() => {
         if (this.preparingRowKey === key) {
           this.preparingRowKey = undefined;
+          if (!this.preparedRowKeys.has(key)) {
+            this.refresh();
+          }
           this.invalidate();
           this.queuePreparation();
         }
@@ -382,7 +395,11 @@ export class TranscriptInitialRange {
       let warmed = false;
       let canMaterialize = false;
       let candidates = 0;
-      for (let step = 1; candidates < lookahead && admitted === 0; step++) {
+      for (
+        let step = moving || warmOnly ? 1 : this.idleMeasureStep;
+        candidates < lookahead && admitted === 0;
+        step++
+      ) {
         if (performance.now() >= deadline) {
           this.queuePreparation(warmOnly ? canMaterialize && !skipSpeculativeDom : true);
           return;
@@ -392,12 +409,16 @@ export class TranscriptInitialRange {
         if (!row) {
           break;
         }
-        // Idle capacity counts completed rows, not intervening live/widget rows.
-        if (moving || warmOnly || row.retainDom) {
-          candidates++;
+        if (!moving && !warmOnly) {
+          this.idleMeasureStep = step + 1;
         }
         const canPrepareRow =
           row.retainDom && !rendered.has(row.key) && !this.preparedRowKeys.has(row.key);
+        // Idle admission skips retained DOM and live/widget rows to keep
+        // measuring beyond a cached prefix after the reader changes direction.
+        if (moving || warmOnly || canPrepareRow) {
+          candidates++;
+        }
         canMaterialize ||= Boolean(canPrepareRow);
         // Distant HTML must not evict the nearby fragments needed by the next scroll.
         const mode = warmOnly || step <= 8 ? "fragment" : "html";
@@ -415,7 +436,11 @@ export class TranscriptInitialRange {
             this.queuePreparation();
             return;
           }
-          this.preparedRowKeys.add(row.key);
+          // Keep nearby DOM hot; farther idle rows live only until their
+          // measurement enters the virtualizer's geometry cache.
+          if (moving || this.preparedRowKeys.size < PREPARED_ROW_LIMIT) {
+            this.preparedRowKeys.add(row.key);
+          }
           this.preparingRowKey = row.key;
           admitted++;
         }
