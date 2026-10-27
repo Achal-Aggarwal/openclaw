@@ -1,5 +1,4 @@
 import { lazy, lazyModule } from "solid-js";
-import type { TranscriptPreparationRequest } from "./chat-transcript-layout.ts";
 
 const activity = lazyModule(() => import("./chat-message-activity-view.tsx"));
 const work = lazyModule(() => import("./chat-work-group-summary.tsx"));
@@ -60,9 +59,7 @@ const preload = [
   () => WorkspaceConflictTranscriptMessage.preload(),
 ];
 
-export function prepareTranscriptSpecializations(
-  mask: number,
-): TranscriptPreparationRequest | undefined {
+export function prepareTranscriptSpecializations(mask: number) {
   if (!mask) return undefined;
   const indexes = modules.flatMap((_, index) => (mask & (1 << index) ? [index] : []));
   return {

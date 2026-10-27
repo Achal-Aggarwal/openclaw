@@ -6,6 +6,8 @@ import { ContentPresentation } from "../../../lib/solid/presentation.ts";
 import { waitForSolid } from "../../../test-helpers/solid-settle.ts";
 import { mountTestTranscript } from "../test-helpers/chat-transcript-native.tsx";
 import type { TranscriptPreparationRequest } from "./chat-transcript-layout.ts";
+import { GuardedTranscriptItem } from "./chat-transcript-render-guard.ts";
+import { nativeRows } from "./chat-transcript-rows.ts";
 import {
   installTranscriptDomMocks,
   resetTranscriptTestDom,
@@ -129,7 +131,14 @@ it("retires presentation while an import holds accepted rows", async () => {
     return <button disabled={!presented()}>Accepted action</button>;
   }
   const held = heldPreparation();
-  const accepted = [{ kind: "content" as const, key: "row", content: () => <PresentedControl /> }];
+  const renderTyping = vi.spyOn(nativeRows, "typing").mockImplementation(PresentedControl);
+  const accepted = [
+    {
+      kind: "content" as const,
+      key: "row",
+      content: new GuardedTranscriptItem([], { kind: "typing", actors: [] }),
+    },
+  ];
   const view = await mountTestTranscript("admission-presentation", accepted);
   try {
     const button = view.container.querySelector<HTMLButtonElement>("button")!;
@@ -142,6 +151,7 @@ it("retires presentation while an import holds accepted rows", async () => {
     await waitForSolid(() => expect(button.disabled).toBe(false));
   } finally {
     view.transcript.dispose();
+    renderTyping.mockRestore();
     held.resolve();
   }
 });
