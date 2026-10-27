@@ -374,6 +374,13 @@ suite.define(() => {
           ]);
           await capture("04b-cached-group-removed");
           await expect.poll(() => focus.count()).toBe(0);
+          await page.reload();
+          await expect.poll(() => aside.getAttribute("data-snapshot-state")).toBe("cached");
+          await capture("04c-cached-group-removed-reload");
+          await expect.poll(() => focus.count()).toBe(0);
+          await expect
+            .poll(() => sidebar.locator('[data-personal-session-group="newer-layout"]').count())
+            .toBe(1);
           await evaluateControlUiContext(
             page,
             ({ navigation }, groups) => navigation.update({ personalSessionGroups: groups }),
