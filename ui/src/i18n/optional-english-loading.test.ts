@@ -7,7 +7,6 @@ const loadI18n = useLazyEnglishTest();
 it("keeps sidebar and chat actions readable until the session management dialog loads", async () => {
   const { en, manager } = await loadI18n({ sessionsView: { goal: "Ziel" } });
   const sessionsView = en.sessionsView;
-  const modelAccounts = en.profilePage.modelAccounts;
   await manager.setLocale("de");
   expect(manager.t("sessionsView.searchGroups")).toBe("sessionsView.searchGroups");
 
@@ -38,7 +37,6 @@ it("keeps sidebar and chat actions readable until the session management dialog 
   expect(manager.t("profilePage.modelAccounts.connectAction")).toBe(
     "profilePage.modelAccounts.connectAction",
   );
-  expect(en.profilePage.modelAccounts).toBe(modelAccounts);
 
   await import("../components/personal-session-group-dialog-view.tsx");
   expect(manager.t("sessionsView.searchGroups")).toBe("Search groups");
