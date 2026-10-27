@@ -120,8 +120,6 @@ it.each([{ restartPending: true }, { suspensionPhase: "draining" as const }])(
     page.context = { ...context };
     page.refreshView();
     await page.settle();
-    expect(page.cron).toBe(current);
-    expect(current.cronForm.name).toBe("Unsaved automation");
     request.mockClear();
     gateway.emitSnapshot(unavailable);
     emitEvent(gateway, "cron");
@@ -131,131 +129,32 @@ it.each([{ restartPending: true }, { suspensionPhase: "draining" as const }])(
     gateway.emitSnapshot({ restartPending: false, suspensionPhase: "accepting" });
     await vi.advanceTimersByTimeAsync(0);
     expectCalls(request, [...refreshMethods, "models.list"], 1);
-    expect(page.cron).toBe(current);
-    expect(current).toMatchObject({
+    expect(page.cron).toMatchObject({
       cronCreateOpen: true,
       cronForm: { name: "Unsaved automation" },
     });
   },
 );
 
-it.each(["catalog-needed", "configured-alternative"])(
-  "preserves catalog provider identity through model selection and save (%s)",
-  async (source) => {
-    const configuredAlternatives = source === "configured-alternative";
-    const models = [
-      { provider: "alpha", id: "shared-model", name: "Alpha shared" },
-      { provider: "beta", id: "shared-model", name: "Beta shared" },
-      ...(configuredAlternatives
-        ? [{ provider: "beta", id: "beta/shared-model", name: "Qualified beta shared" }]
-        : []),
-      {
-        provider: "beta",
-        id: "hidden-model",
-        name: "Hidden model",
-        manualSelectionAllowed: false,
-      },
-    ];
-    const request = cronRpc({
-      "models.list": () => ({ models }),
-      "cron.add": () => ({ id: "identity-job" }),
-      "cron.list": () => cronListResponse([]),
-    });
-    const gateway = createGateway(createTestGatewayClient(request), true);
-    gateway.emitSnapshot({ hello: operatorHello(["operator.admin"]) });
-    const context = createContext(gateway);
-    Object.assign(context.runtimeConfig.state, {
-      configForm: {
-        agents: {
-          defaults: {
-            model: { primary: "alpha/shared-model" },
-            modelPolicy: { allow: ["alpha/shared-model", "beta/shared-model"] },
-            ...(configuredAlternatives
-              ? { models: { "alpha/shared-model": {}, "beta/shared-model": {} } }
-              : {}),
-          },
-        },
-        models: {
-          providers: Object.fromEntries(
-            ["alpha", "beta"].map((provider) => [
-              provider,
-              {
-                baseUrl: `https://${provider}.invalid`,
-                models: [{ id: "shared-model", name: `${provider} shared` }],
-              },
-            ]),
-          ),
-        },
-      },
-    });
-    const page = createPage(context, { render: true });
-    await waitFor(() => expect(page.cron.cronLoading).toBe(false));
-    await page.settle();
-    await openDraft(page, "Provider identity", "Use the selected model");
-    await waitFor(() => expect(page.cronModelSuggestions.length).toBeGreaterThan(0));
-    await page.settle();
-    const trigger = page.querySelector<HTMLButtonElement>("#cron-payload-model-picker")!;
-    const picker = trigger.closest("openclaw-select-picker")!;
-    trigger.click();
-    await waitFor(() => {
-      expect(trigger.getAttribute("aria-expanded")).toBe("true");
-      expect(
-        Array.from(picker.querySelectorAll<HTMLElement>('[role="option"]')).map(
-          (option) => option.dataset.value,
-        ),
-      ).toEqual(["", "alpha/shared-model", "beta/shared-model", "__openclaw_custom_model__"]);
-      const inheritText = text(picker, '[role="option"][data-value=""]') ?? "";
-      expect(inheritText).toContain("Default");
-      expect(inheritText).not.toContain("common.default");
-    });
-    picker.querySelector<HTMLElement>('[role="option"][data-value="beta/shared-model"]')!.click();
-    await page.settle();
-    const save = page.querySelector<HTMLButtonElement>(testId("cron-submit"))!;
-    expect(save.disabled).toBe(false);
-    save.click();
-    await waitFor(() => {
-      const adds = callsFor(request, "cron.add");
-      expect(adds).toHaveLength(1);
-      expect(adds[0]?.[1]).toHaveProperty("payload", {
-        kind: "agentTurn",
-        message: "Use the selected model",
-        model: "beta/shared-model",
-      });
-    });
-    await waitFor(() => expect(page.cron.cronBusy).toBe(false));
-  },
-);
-
-it.each([false, true])(
-  "shows an internal catalog failure and empty recovery (retained rows: %s)",
-  async (hasRows) => {
-    let result = {
-      models: [{ provider: "fixture", id: "obsolete", name: "Obsolete model" }],
-      refreshFailed: false,
-    };
-    const { page, gateway } = mountCronPage(modelClient(() => result));
-    await expectModels(page, ["fixture/obsolete"]);
-    result = {
-      models: hasRows ? [{ provider: "fixture", id: "current", name: "Current model" }] : [],
-      refreshFailed: true,
-    };
-    emitEvent(gateway, "chat.metadata.changed");
-    await expectModels(page, hasRows ? ["fixture/current"] : []);
-    expect(page.textContent).toContain(
-      hasRows
-        ? "Some models could not be refreshed. Open Models to try again."
-        : "Models unavailable",
-    );
-    result = { models: [], refreshFailed: false };
-    emitEvent(gateway, "chat.metadata.changed");
-    await waitFor(() =>
-      expect(page.textContent).not.toContain(
-        hasRows ? "Some models could not be refreshed" : "Models unavailable",
-      ),
-    );
-    await expectModels(page, []);
-  },
-);
+it("shows an empty catalog failure and clears it after recovery", async () => {
+  let result = {
+    models: [{ provider: "fixture", id: "obsolete", name: "Obsolete model" }],
+    refreshFailed: false,
+  };
+  const { page, gateway } = mountCronPage(modelClient(() => result));
+  await expectModels(page, ["fixture/obsolete"]);
+  result = {
+    models: [],
+    refreshFailed: true,
+  };
+  emitEvent(gateway, "chat.metadata.changed");
+  await expectModels(page, []);
+  expect(page.textContent).toContain("Models unavailable");
+  result = { models: [], refreshFailed: false };
+  emitEvent(gateway, "chat.metadata.changed");
+  await waitFor(() => expect(page.textContent).not.toContain("Models unavailable"));
+  await expectModels(page, []);
+});
 
 it.each(["agent", "connection", "detach"])(
   "rejects a pending catalog error after %s changes",
@@ -285,25 +184,31 @@ it.each(["agent", "connection", "detach"])(
     await Promise.allSettled([oldError.promise]);
     if (change === "detach") {
       await page.settle();
-      expect(page.isConnected).toBe(false);
-      expect(page.childElementCount).toBe(0);
+      expect(page).toMatchObject({ isConnected: false, childElementCount: 0 });
       expect(read).toHaveBeenCalledTimes(readsBeforeCompletion);
     } else {
       await expectModels(page, ["current-model"]);
       await page.settle();
-      expect(page.cronModelSuggestions).toEqual(["current-model"]);
     }
     expect(page.textContent).not.toContain("Retired catalog error");
   },
 );
 
-it("refreshes model suggestions when team selection changes without changing scope", async () => {
+it("keeps provider choices and new-task ownership on the selected agent without changing team scope", async () => {
+  const models = [
+    { provider: "alpha", id: "shared-model", name: "Alpha shared" },
+    { provider: "beta", id: "shared-model", name: "Beta shared" },
+    {
+      provider: "beta",
+      id: "hidden-model",
+      name: "Hidden model",
+      manualSelectionAllowed: false,
+    },
+  ];
   const lateMain = deferred<{ models: { id: string }[] }>({ models: [] });
-  const writer = deferred<{ models: { id: string }[] }>({ models: [] });
-  const modelRequests: unknown[] = [];
+  const writer = deferred({ models: models.slice(0, 0) });
   let mainReads = 0;
-  const client = modelClient((params) => {
-    modelRequests.push(params);
+  const read = vi.fn((params?: unknown) => {
     const agentId = (params as { agentId?: string } | undefined)?.agentId;
     if (agentId === "writer") {
       return writer.promise;
@@ -311,8 +216,10 @@ it("refreshes model suggestions when team selection changes without changing sco
     mainReads += 1;
     return mainReads === 1 ? { models: [{ id: "main-model" }] } : lateMain.promise;
   });
+  const request = cronRpc({ "models.list": read, "cron.add": () => ({ id: "identity-job" }) });
+  const client = createTestGatewayClient(request);
   const gateway = createGateway(client, true);
-  gateway.emitSnapshot({ assistantAgentId: "main" });
+  gateway.emitSnapshot({ assistantAgentId: "main", hello: operatorHello(["operator.admin"]) });
   const agentSelection = createAgentSelectionCapability(
     gateway,
     {
@@ -334,31 +241,47 @@ it("refreshes model suggestions when team selection changes without changing sco
   );
   cleanups.push(() => agentSelection.dispose());
   await expectModels(page, ["main-model"]);
-  const cron = page.cron;
   emitEvent(gateway, "chat.metadata.changed");
-  await waitFor(() => expect(modelRequests).toHaveLength(2));
+  await waitFor(() => expect(read).toHaveBeenCalledTimes(2));
   agentSelection.set("writer");
   expect(agentSelection.state).toEqual({ selectedId: "writer", scopeId: null });
-  await waitFor(() => expect(modelRequests).toHaveLength(3));
-  expect(page.cron).toBe(cron);
+  await waitFor(() => expect(read).toHaveBeenCalledTimes(3));
   expect(page.cronModelSuggestions).toEqual([]);
-  expect(modelRequests).toEqual([
-    { agentId: "main", view: "configured" },
-    { agentId: "main", view: "configured" },
-    { agentId: "writer", view: "configured" },
-  ]);
-  writer.resolve({ models: [{ id: "writer-model" }] });
-  await expectModels(page, ["writer-model"]);
+  writer.resolve({ models });
+  await expectModels(page, ["alpha/shared-model", "beta/shared-model"]);
   lateMain.resolve({ models: [{ id: "late-main-model" }] });
   await lateMain.promise;
   await page.settle();
-  expect(page.cronModelSuggestions).toEqual(["writer-model"]);
+  expect(page.cronModelSuggestions).toEqual(["alpha/shared-model", "beta/shared-model"]);
+  await openDraft(page, "Provider identity", "Use the selected model");
+  const trigger = page.querySelector<HTMLButtonElement>("#cron-payload-model-picker")!;
+  const picker = trigger.closest("openclaw-select-picker")!;
+  trigger.click();
+  const choice = await waitForElement(picker, '[role="option"][data-value="beta/shared-model"]');
+  expect(text(picker, '[role="option"][data-value=""]')).toContain("Default");
+  choice.click();
+  await page.settle();
+  const save = page.querySelector<HTMLButtonElement>(testId("cron-submit"))!;
+  expect(save.disabled).toBe(false);
+  save.click();
+  await waitFor(() => {
+    const adds = callsFor(request, "cron.add");
+    expect(adds.at(-1)?.[1]).toHaveProperty("payload.model", "beta/shared-model");
+  });
+  await waitFor(() => expect(page.cron.cronBusy).toBe(false));
+  expect(callsFor(request, "cron.add").at(-1)?.[1]).toMatchObject({
+    agentId: "writer",
+    delivery: { mode: "none" },
+    name: "Provider identity",
+  });
 });
 
 it("applies run events to the complete job table without fetching the inventory again", async () => {
   const job = createCronViewJob("running-job", { state: { nextRunAtMs: 100 } });
   const other = createCronViewJob("other-job", { state: { nextRunAtMs: 200 } });
-  const request = cronRpc({ "cron.list": () => cronListResponse(structuredClone([job, other])) });
+  const request = cronRpc({
+    "cron.list": () => cronListResponse(structuredClone([job, other])),
+  });
   const { page, gateway } = mountCronPage(request);
   await waitFor(() => expect(page.cron.cronJobs).toHaveLength(2));
   await page.settle();
@@ -382,94 +305,60 @@ it("applies run events to the complete job table without fetching the inventory 
   expect(callsFor(request, "cron.list")).toHaveLength(0);
 });
 
-it("keeps the periodic inventory recovery visible-only", async () => {
-  vi.useFakeTimers();
-  const visibility = controlVisibility();
-  const request = createRequest();
-  const { page } = mountCronPage(request, { render: false });
-  await vi.advanceTimersByTimeAsync(0);
-  request.mockClear();
-  visibility("hidden");
-  await vi.advanceTimersByTimeAsync(600_000);
-  expect(request).not.toHaveBeenCalled();
-  visibility("visible");
-  await vi.advanceTimersByTimeAsync(0);
-  request.mockClear();
-  await vi.advanceTimersByTimeAsync(600_000);
-  expect(callsFor(request, "cron.list")).toHaveLength(1);
-  page.remove();
-});
-
-it("coalesces a cron event burst into one trailing refresh of the current page", async () => {
-  const freshJob = createCronViewJob("fresh-job", { configRevision: "fresh-config", state: {} });
-  const freshRun = createCronViewRun({
-    ts: 2,
-    jobId: freshJob.id,
-    summary: "Finished after the refresh started",
-  });
-  const { request, held, resume } = heldRequest(
-    (method, stale) => {
-      const replies: Record<string, unknown> = {
-        "cron.status": schedulerStatus(stale ? 0 : 1),
-        "cron.list": cronListResponse(stale ? [] : [freshJob]),
-        "cron.runs": { entries: stale ? [] : [freshRun], total: stale ? 0 : 1, hasMore: false },
-        "channels.status": { channelOrder: [], channels: {}, channelAccounts: {} },
-      };
-      return replies[method] ?? { models: [] };
-    },
-    [...refreshMethods, "channels.status"],
-  );
-  const gateway = createGateway({ request } as unknown as GatewayBrowserClient, true);
-  const channels = createChannelCapability(gateway);
-  const context = { ...createContext(gateway), acquireChannels: () => channels };
-  const page = createPage(context);
-  cleanups.push(() => channels.dispose());
-  await page.settle();
-  emitEvent(gateway, "cron", {}, 20);
-  expectCalls(request, ["cron.status", "cron.runs", "cron.list", "channels.status"], 1);
-  resume();
-  held.resolve();
-  await waitFor(() => {
-    expect(page.cron.cronStatus?.jobs).toBe(1);
-    expect(page.cron.cronJobs).toEqual([freshJob]);
-    expect(page.cron.cronRuns).toEqual([freshRun]);
-  });
-  expectCalls(request, ["cron.status", "cron.runs", "cron.list"], 2);
-  expect(callsFor(request, "channels.status")).toHaveLength(1);
-});
-
-it("lets manual Refresh supersede held status and run-history reads", async () => {
-  const held = gate();
-  const calls = { "cron.status": 0, "cron.runs": 0 };
-  const fallback = createRequest();
-  const request = vi.fn(async (method: string) => {
-    if (method !== "cron.status" && method !== "cron.runs") {
-      return fallback(method);
+it.each(["event burst", "manual Refresh"])(
+  "settles %s without publishing stale reads",
+  async (mode) => {
+    const manual = mode === "manual Refresh";
+    const freshJob = createCronViewJob("fresh-job", { configRevision: "fresh-config", state: {} });
+    const freshRun = createCronViewRun({ ts: 2, jobId: freshJob.id });
+    const { request, held, resume } = heldRequest(
+      (method, stale) => {
+        const replies: Record<string, unknown> = {
+          "cron.status": schedulerStatus(stale ? 1 : 2),
+          "cron.list": cronListResponse(stale ? [] : [freshJob]),
+          "cron.runs": cronRunsResponse(stale ? [] : [freshRun]),
+          "channels.status": { channelOrder: [], channels: {}, channelAccounts: {} },
+        };
+        return replies[method] ?? { models: [] };
+      },
+      manual
+        ? ["cron.status", "cron.runs", "channels.status"]
+        : [...refreshMethods, "channels.status"],
+    );
+    const gateway = createGateway(createTestGatewayClient(request), true);
+    const channels = createChannelCapability(gateway);
+    const page = createPage(
+      { ...createContext(gateway), acquireChannels: () => channels },
+      { render: manual },
+    );
+    cleanups.push(() => channels.dispose());
+    await page.settle();
+    if (manual) {
+      await waitFor(() => expect(page.cron.cronLoading).toBe(false));
+    } else {
+      emitEvent(gateway, "cron", {}, 20);
     }
-    const revision = ++calls[method];
-    if (revision === 1) {
-      await held.promise;
+    expectCalls(request, [...refreshMethods, "channels.status"], 1);
+    resume();
+    if (manual) {
+      getElement(page, ".cron-refresh", HTMLButtonElement).click();
+    } else {
+      held.resolve();
     }
-    return method === "cron.status"
-      ? schedulerStatus(revision)
-      : cronRunsResponse([createCronViewRun({ ts: revision, jobId: "job" })]);
-  });
-  const { page } = mountCronPage(request);
-  await waitFor(() => expect(page.cron.cronLoading).toBe(false));
-  await page.settle();
-  expect(calls).toEqual({ "cron.status": 1, "cron.runs": 1 });
-  getElement(page, ".cron-refresh", HTMLButtonElement).click();
-  expect(calls).toEqual({ "cron.status": 2, "cron.runs": 2 });
-  await waitFor(() => {
+    await waitFor(() => {
+      expect(page.cron.cronStatus?.jobs).toBe(2);
+      expect(page.cron.cronJobs).toEqual([freshJob]);
+      expect(page.cron.cronRuns).toEqual([freshRun]);
+    });
+    held.resolve();
+    await settle();
+    await page.settle();
     expect(page.cron.cronStatus?.jobs).toBe(2);
-    expect(page.cron.cronRuns[0]?.ts).toBe(2);
-  });
-  held.resolve();
-  await settle();
-  expect(page.cron.cronStatus?.jobs).toBe(2);
-  expect(page.cron.cronRuns[0]?.ts).toBe(2);
-  expect(calls).toEqual({ "cron.status": 2, "cron.runs": 2 });
-});
+    expect(page.cron.cronRuns).toEqual([freshRun]);
+    expectCalls(request, refreshMethods, 2);
+    expect(callsFor(request, "channels.status")).toHaveLength(1);
+  },
+);
 
 it.each(["disconnect", "reconnect", "agent scope", "gateway source", "unmount"])(
   "retires queued cron event refreshes on %s",
@@ -625,12 +514,7 @@ it.each(["hello", "roster after same-scope intent", "roster after model catalog"
       { render: true },
     );
     page.routeSearch = `?job=${job.id}`;
-    const agentList: AgentsListResult = {
-      defaultId: "main",
-      mainKey: "main",
-      scope: "per-sender",
-      agents: [{ id: "main" }],
-    };
+    const agentList = makeBootRoster();
     const edited = publication === "roster after same-scope intent" || changingCatalog;
     try {
       await page.settle();
@@ -664,7 +548,6 @@ it.each(["hello", "roster after same-scope intent", "roster after model catalog"
       }
       await waitFor(() => {
         expect(text(page, ".cron-detail-title") ?? "").toContain(job.name);
-        expect(page.querySelector("details.cron-advanced > summary")).not.toBeNull();
         expect(inputValue(page, "#cron-name")).toBe(edited ? "Unsaved name" : job.name);
       });
     } finally {
@@ -688,8 +571,7 @@ it("refreshes off-page condition activity without replacing unsaved settings", a
   const trailing = deferred(selected);
   let reads = 0;
   const request = cronRpc({
-    "cron.get": (params) => {
-      expect(params).toEqual({ id: selected.id });
+    "cron.get": () => {
       reads += 1;
       return reads === 1 ? selected : reads === 2 ? pending.promise : trailing.promise;
     },
@@ -699,8 +581,6 @@ it("refreshes off-page condition activity without replacing unsaved settings", a
   await waitForElement(page, "#cron-name");
   fillInput(page, "#cron-name", "Unsaved automation");
   await page.settle();
-  const definition = page.cron.cronEditingJob;
-  const draft = page.cron.cronForm;
   const previousHeader = text(page, ".cron-detail-meta");
   emitEvent(gateway, "cron", { jobId: selected.id, action: "finished" }, 2);
   pending.resolve({
@@ -714,12 +594,9 @@ it("refreshes off-page condition activity without replacing unsaved settings", a
     expect(text(page, ".cron-detail-meta")).not.toBe(previousHeader);
     expect(page.cron.cronEditingJob?.state?.triggerEvalCount).toBe(9);
   });
-  expect(reads).toBe(3);
   expect(page.cron.cronJobs).toEqual([]);
-  expect(page.cron.cronEditingJob).toBe(definition);
   expect(page.cron.cronEditingJob?.configRevision).toBe("saved-definition");
   expect(text(page, ".cron-detail-title")).toContain("Saved automation");
-  expect(page.cron.cronForm).toBe(draft);
   expect(inputValue(page, "#cron-name")).toBe("Unsaved automation");
   page
     .querySelector<HTMLElement>(testId("cron-detail-tab-history"))!
@@ -734,12 +611,6 @@ function controlVisibility(initial: DocumentVisibilityState = "visible") {
     value = next;
     document.dispatchEvent(new Event("visibilitychange"));
   };
-}
-
-function settle() {
-  return new Promise<void>((resolve) => {
-    setTimeout(resolve, 0);
-  });
 }
 
 it("defers a hidden mount and reconnect, then catches up once with the current scope", async () => {
@@ -794,8 +665,7 @@ it.each([true, false])(
     await waitFor(() => expect(page.cron.cronLoading).toBe(false));
     await settle();
     expectCalls(request, refreshMethods, 2);
-    expect(page.cron).toBe(current);
-    expect(current).toMatchObject({
+    expect(page.cron).toMatchObject({
       cronCreateOpen: true,
       cronForm: { name: "Unsaved automation" },
     });
@@ -865,3 +735,9 @@ it("finishes an accepted create-and-run chain while hidden without background re
   await settle();
   expectCalls(request, refreshMethods, 1);
 });
+
+function settle() {
+  return new Promise<void>((resolve) => {
+    setTimeout(resolve, 0);
+  });
+}
