@@ -17,15 +17,25 @@ type RunCompletedEvent = Extract<
   { type: "run.completed" }
 >;
 
-test.each<Pick<RunCompletedEvent, "abortCause" | "timeoutPhase" | "timeoutSource">>([
-  {},
-  { abortCause: "user_abort" },
-  { abortCause: "timeout", timeoutPhase: "tool_execution", timeoutSource: "idle" },
-])("exports run interruption facts on spans only: %j", async (interruption) => {
+type Interruption = Pick<RunCompletedEvent, "abortCause" | "timeoutPhase" | "timeoutSource">;
+test.each<[Interruption, boolean]>([
+  [{}, true],
+  [{ abortCause: "user_abort" }, true],
+  [{ abortCause: "timeout", timeoutPhase: "tool_execution", timeoutSource: "idle" }, true],
+  [
+    {
+      abortCause: "private-cause",
+      timeoutPhase: "private-phase",
+      timeoutSource: "private-source",
+    } as unknown as Interruption,
+    false,
+  ],
+])("exports only bounded interruption facts on spans: %j", async (interruption, trusted) => {
   const { reader } = installTestMeter();
   await startOtelService({ traces: true, metrics: true });
   const outcome = interruption.abortCause ? "aborted" : "completed";
-  emitTrustedDiagnosticEvent({
+  const emit = trusted ? emitTrustedDiagnosticEvent : emitDiagnosticEvent;
+  emit({
     type: "run.completed",
     ...RUN_FIXTURE,
     durationMs: 100,
@@ -47,31 +57,8 @@ test.each<Pick<RunCompletedEvent, "abortCause" | "timeoutPhase" | "timeoutSource
     ["timeoutPhase", "openclaw.run.timeout_phase"],
     ["timeoutSource", "openclaw.run.timeout_source"],
   ] as const) {
-    expect(attributes?.[attribute]).toBe(interruption[field]);
+    expect(attributes?.[attribute]).toBe(trusted ? interruption[field] : undefined);
     expect(duration?.dataPoints[0]?.attributes).not.toHaveProperty(attribute);
-  }
-});
-
-test("omits unknown interruption values from untrusted JavaScript diagnostic inputs", async () => {
-  await startOtelService({ traces: true });
-  // JavaScript emitters do not enforce the diagnostic event's TypeScript enum fields.
-  emitDiagnosticEvent({
-    type: "run.completed",
-    ...RUN_FIXTURE,
-    durationMs: 100,
-    outcome: "aborted",
-    abortCause: "private-cause",
-    timeoutPhase: "private-phase",
-    timeoutSource: "private-source",
-  } as unknown as RunCompletedEvent);
-  await waitForDiagnosticEventsDrained();
-
-  const attributes = sdk.exporter
-    .getFinishedSpans()
-    .find((span) => span.name === "openclaw.run")?.attributes;
-  expect(attributes).toMatchObject({ "openclaw.outcome": "aborted" });
-  for (const field of ["abort_cause", "timeout_phase", "timeout_source"]) {
-    expect(attributes).not.toHaveProperty(`openclaw.run.${field}`);
   }
   expect(JSON.stringify(attributes)).not.toContain("private-");
 });

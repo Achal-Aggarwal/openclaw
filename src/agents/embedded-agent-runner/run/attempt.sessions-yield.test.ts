@@ -105,6 +105,39 @@ async function persistentSession(label: string) {
   return { dir, scope, sessionManager: await SessionManager.openAsync(scope, dir) };
 }
 
+function createYieldSession(calls: ReturnType<typeof attemptToolCall>) {
+  const outcomes: Extract<AgentEvent, { type: "tool_execution_end" }>[] = [];
+  let requests = 0;
+  let agent: Agent;
+  const session = createAgentBackedAttemptSession((model, tools) => {
+    agent = new Agent({
+      initialState: { model, tools },
+      streamFn: () =>
+        streamAttemptAssistant(
+          model,
+          ++requests === 1 ? calls : [{ type: "text", text: "Unexpected continuation" }],
+        ),
+    });
+    agent.subscribe((event) => {
+      if (event.type === "tool_execution_end") {
+        outcomes.push(event);
+      }
+    });
+    return agent;
+  });
+  return {
+    session,
+    outcomes,
+    get requests() {
+      return requests;
+    },
+    abort: async (reason?: unknown) => {
+      agent.abort(reason);
+      await agent.waitForIdle();
+    },
+  };
+}
+
 describe("stripSessionsYieldArtifacts", () => {
   it("leaves a continuable suffix unchanged", async () => {
     const session = buildSession([user], SessionManager.inMemory());
@@ -265,8 +298,7 @@ describe("automation yield", () => {
           { includeTrusted: ["run.completed"] },
         ),
       );
-      const outcomes: Extract<AgentEvent, { type: "tool_execution_end" }>[] = [];
-      let requests = 0;
+      let execution: ReturnType<typeof createYieldSession> | undefined;
       hoisted.createOpenClawCodingToolsMock.mockImplementation((options) => [
         createSessionsYieldTool({
           sessionId: "embedded-session",
@@ -286,26 +318,8 @@ describe("automation yield", () => {
           sessionManager: SessionManager.inMemory(),
         },
         createSession: () => {
-          const session = createAgentBackedAttemptSession((model, tools) => {
-            const agent = new Agent({
-              initialState: { model, tools },
-              streamFn: () => {
-                requests++;
-                return streamAttemptAssistant(
-                  model,
-                  requests === 1
-                    ? attemptToolCall("yield-call", "sessions_yield")
-                    : [{ type: "text", text: "Unexpected continuation" }],
-                );
-              },
-            });
-            agent.subscribe((event) => {
-              if (event.type === "tool_execution_end") {
-                outcomes.push(event);
-              }
-            });
-            return agent;
-          });
+          execution = createYieldSession(attemptToolCall("yield-call", "sessions_yield"));
+          const { session } = execution;
           const abort = session.abort.bind(session);
           session.abort = async (abortReason?: unknown) => {
             if (lateAbort && abortReason === SESSIONS_YIELD_ABORT_REASON) {
@@ -322,14 +336,15 @@ describe("automation yield", () => {
         expect(error).toBe(reason);
         return undefined;
       });
-      expect(outcomes).toMatchObject([
+      const completed = expectDefined(execution, "yield execution");
+      expect(completed.outcomes).toMatchObject([
         {
           toolName: "sessions_yield",
           isError: false,
           result: { details: { status: "yielded", note: expect.stringContaining("scheduler") } },
         },
       ]);
-      expect(requests).toBe(1);
+      expect(completed.requests).toBe(1);
       expect(externalAbort.signal.aborted).toBe(lateAbort);
       if (result) {
         expect(result.yieldDetected).toBe(true);
@@ -348,8 +363,7 @@ describe("embedded yield tool batch", () => {
     const stopError = new Error("operator stopped the turn");
     const yielded = createDeferred();
     const sideEffects: string[] = [];
-    const outcomes: Extract<AgentEvent, { type: "tool_execution_end" }>[] = [];
-    let requests = 0;
+    let execution: ReturnType<typeof createYieldSession> | undefined;
     hoisted.createOpenClawCodingToolsMock.mockImplementation((options) => {
       const params = expectDefined(options, "tool options");
       const sibling = (name: string) => ({
@@ -386,36 +400,13 @@ describe("embedded yield tool batch", () => {
         sessionManager: SessionManager.inMemory(),
       },
       createSession: () => {
-        let agent: Agent;
-        const session = createAgentBackedAttemptSession((model, tools) => {
-          agent = new Agent({
-            initialState: { model, tools },
-            streamFn: () => {
-              requests++;
-              return streamAttemptAssistant(
-                model,
-                requests === 1
-                  ? [
-                      ...attemptToolCall("before-call", "before"),
-                      ...attemptToolCall("yield-call", "sessions_yield"),
-                      ...attemptToolCall("after-call", "after"),
-                    ]
-                  : [{ type: "text", text: "Unexpected continuation" }],
-              );
-            },
-          });
-          agent.subscribe((event) => {
-            if (event.type === "tool_execution_end") {
-              outcomes.push(event);
-            }
-          });
-          return agent;
-        });
-        session.abort = async (reason?: unknown) => {
-          agent.abort(reason);
-          await agent.waitForIdle();
-        };
-        return session;
+        execution = createYieldSession([
+          ...attemptToolCall("before-call", "before"),
+          ...attemptToolCall("yield-call", "sessions_yield"),
+          ...attemptToolCall("after-call", "after"),
+        ]);
+        execution.session.abort = execution.abort;
+        return execution.session;
       },
     }).catch((error: unknown) => {
       if (!stop) {
@@ -425,8 +416,10 @@ describe("embedded yield tool batch", () => {
       return undefined;
     });
 
-    expect(requests).toBe(1);
+    const completed = expectDefined(execution, "yield execution");
+    expect(completed.requests).toBe(1);
     expect(sideEffects).toEqual(stop ? [] : ["before", "after"]);
+    const { outcomes } = completed;
     expect(outcomes).toHaveLength(3);
     const outcomesByCallId = Object.fromEntries(
       outcomes.map((outcome) => [outcome.toolCallId, outcome]),

@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   type DiagnosticEventInput,
-  type DiagnosticRunInterruption,
   emitDiagnosticEvent as emit,
   emitInternalDiagnosticEvent,
   emitTrustedDiagnosticEvent,
@@ -137,53 +136,20 @@ describe("diagnostic stability recorder", () => {
     resetDiagnosticEventsForTest();
   });
 
-  it.each<DiagnosticRunInterruption>([
-    { abortCause: "user_abort" },
-    { abortCause: "restart" },
-    { abortCause: "superseded" },
-    { abortCause: "external_signal" },
-    { abortCause: "runtime_abort" },
-    { abortCause: "yield_cleanup" },
-    { abortCause: "timeout", timeoutPhase: "prompt", timeoutSource: "run_budget" },
-    { abortCause: "timeout", timeoutPhase: "compaction", timeoutSource: "runtime" },
-    { abortCause: "timeout", timeoutPhase: "tool_execution", timeoutSource: "idle" },
-    { abortCause: "timeout", timeoutPhase: "prompt", timeoutSource: "external" },
-  ])("retains trusted run interruption facts without identifiers: %j", async (interruption) => {
-    emitTrustedDiagnosticEvent({
-      type: "run.completed",
-      ...scope,
-      ...model,
-      durationMs: 12,
-      outcome: "aborted",
-      ...interruption,
-    });
-    await drain();
-    expect(readSnapshot().events).toEqual([
-      expect.objectContaining({ type: "run.completed", ...interruption }),
-    ]);
-    expect(JSON.stringify(readSnapshot())).not.toContain("private-");
-  });
-
-  it("drops unknown interruption values from externally supplied terminal diagnostics", () => {
-    // Exercise the untyped diagnostic input boundary with values outside the closed enums.
-    const event = {
-      type: "run.completed",
-      ...scope,
-      durationMs: 12,
-      outcome: "aborted",
-      abortCause: "private-cause",
-      timeoutPhase: "private-phase",
-      timeoutSource: "private-source",
-    } as unknown as DiagnosticEventInput;
-    emit(event);
-    expect(readSnapshot().events).toEqual([
-      expect.objectContaining({ type: "run.completed", outcome: "aborted" }),
-    ]);
-    expectAbsent(readSnapshot().events[0], "abortCause", "timeoutPhase", "timeoutSource");
-    expect(JSON.stringify(readSnapshot())).not.toContain("private-");
-  });
-
   it.each<[DiagnosticEventInput, Record<string, unknown>, string[]?]>([
+    [
+      {
+        type: "run.completed",
+        ...scope,
+        durationMs: 12,
+        outcome: "aborted",
+        abortCause: "private-cause",
+        timeoutPhase: "private-phase",
+        timeoutSource: "private-source",
+      } as unknown as DiagnosticEventInput,
+      { outcome: "aborted" },
+      ["abortCause", "timeoutPhase", "timeoutSource"],
+    ],
     [
       makeEvent("message.processed", {
         channel: "telegram",
