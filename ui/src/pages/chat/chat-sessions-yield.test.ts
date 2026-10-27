@@ -51,21 +51,20 @@ const pendingHandoff = { timestamp: 2_000, runId: "parent-run" };
 const silentBoundary = expect.objectContaining({ kind: "notice", handoffBoundary: true, text: "" });
 
 describe("sessions_yield transcript projection", () => {
-  it.each([["nested exec activity", nestedHistory]])(
-    "leaves no transcript row for %s and reports the pending handoff",
-    (_name, messages) => {
-      const original = structuredClone(messages);
-      // Only the boundary remains, and it carries nothing a reader could see.
-      expect(buildChatItems(createProps({ messages, showToolCalls: false }))).toEqual([
-        silentBoundary,
-      ]);
-      expect(pendingSessionsYield(messages)).toEqual(pendingHandoff);
-      expect(pendingSessionsYield(messages)).toEqual(pendingHandoff);
-      expect(messages).toEqual(original);
-    },
-  );
+  it.each([
+    ["separate tool result", separateHistory],
+    ["nested exec activity", nestedHistory],
+  ])("leaves no transcript row for %s and reports the pending handoff", (_name, messages) => {
+    const original = structuredClone(messages);
+    expect(buildChatItems(createProps({ messages, showToolCalls: false }))).toEqual([
+      silentBoundary,
+    ]);
+    expect(pendingSessionsYield(messages)).toEqual(pendingHandoff);
+    expect(pendingSessionsYield(messages)).toEqual(pendingHandoff);
+    expect(messages).toEqual(original);
+  });
 
-  it.each([true])(
+  it.each([false, true])(
     "never displays private yield inputs before confirmation (failed=%s)",
     (failed) => {
       const messages = [
@@ -147,9 +146,73 @@ describe("sessions_yield transcript projection", () => {
     expect(JSON.stringify(hidden)).toContain("Delegated implementation.");
   });
 
-  it.each([[separateHistory[1]!]])("requires a successful call/result pair", (...messages) => {
+  it("requires a successful call/result pair", () => {
+    const messages = [separateHistory[1]!];
     expect(pendingSessionsYield(messages)).toBeNull();
     expect(buildChatItems(createProps({ messages, showToolCalls: false }))).toEqual([]);
+  });
+
+  it("reads a leading receipt with annotations without changing its public acknowledgment", () => {
+    const acknowledgment = 'I’ll check {docs} and the "CLI".\nThen report back.';
+    const messages = [
+      separateHistory[0],
+      {
+        ...separateHistory[1],
+        details: { display: "Yield" },
+        content: [
+          {
+            type: "text",
+            text: " \n" + JSON.stringify({ status: "yielded", acknowledgment }, null, 2),
+          },
+          { type: "text", text: "The session will resume when its children finish." },
+        ],
+      },
+    ];
+    const items = buildChatItems(createProps({ messages }));
+    expect(pendingSessionsYield(messages)).toEqual(pendingHandoff);
+    expect(items).toContainEqual(silentBoundary);
+    expect(groupTexts(items)).toEqual([expect.stringContaining(JSON.stringify(acknowledgment))]);
+  });
+
+  it.each([
+    { name: "malformed primary object", output: '{"status":"yielded",}\n{"status":"yielded"}' },
+    { name: "unterminated primary object", output: '{"status":"yielded"\n{"status":"yielded"}' },
+    { name: "nonleading object", output: 'Example receipt: {"status":"yielded"}' },
+    { name: "array wrapper", output: '[{"status":"yielded"}]' },
+    { name: "deferred primary receipt", output: '{"status":"deferred"}\n{"status":"yielded"}' },
+    { name: "error-flagged receipt", output: '{"status":"yielded"}', isError: true },
+    {
+      name: "structured conflict",
+      output: '{"status":"yielded"}',
+      details: { status: "deferred" },
+    },
+    { name: "explicit empty status", output: '{"status":"yielded"}', details: { status: null } },
+  ])("does not confirm a $name", ({ output, details, isError }) => {
+    const messages = [
+      separateHistory[0],
+      { ...separateHistory[1], content: [{ type: "text", text: output }], details, isError },
+    ];
+    expect(pendingSessionsYield(messages)).toBeNull();
+    expect(buildChatItems(createProps({ messages, showToolCalls: false }))).toEqual([]);
+  });
+
+  it("uses only the selected structured receipt's public acknowledgment", () => {
+    const messages = [
+      separateHistory[0],
+      {
+        ...separateHistory[1],
+        details: {
+          status: "yielded",
+          acknowledgment: "Waiting for the review.",
+          message: "PRIVATE",
+        },
+        content: [{ type: "text", text: '{"status":"error","acknowledgment":"Not selected"}' }],
+      },
+    ];
+    expect(pendingSessionsYield(messages)).toEqual(pendingHandoff);
+    const items = buildChatItems(createProps({ messages }));
+    expect(groupTexts(items)).toEqual([expect.stringContaining("Waiting for the review.")]);
+    expect(JSON.stringify(items)).not.toMatch(/PRIVATE|Not selected/);
   });
 
   describe("a run that resumed the handoff", () => {
@@ -182,7 +245,7 @@ describe("sessions_yield transcript projection", () => {
       });
     });
 
-    it.each([2])("counts each run once after %s handoffs", (handoffCount) => {
+    it.each([1, 2])("counts each run once after %s handoffs", (handoffCount) => {
       const runIds = ["parent-run", "second-run"].slice(0, handoffCount);
       const runId = runIds.at(-1)!;
       const messages = [

@@ -151,6 +151,7 @@ function scenarioData(scenario: Scenario, now: number) {
           arguments: { acknowledgment, message: PRIVATE },
         },
       ],
+      stopReason: "toolUse",
       timestamp: yieldedAt - 1_000,
       __openclaw: { id: "yield-call", seq: 20, runId },
     },
@@ -158,7 +159,10 @@ function scenarioData(scenario: Scenario, now: number) {
       role: "toolResult",
       toolCallId: "handoff",
       toolName: "sessions_yield",
-      content: textContent(JSON.stringify({ status: "yielded", acknowledgment })),
+      content: [
+        ...textContent(JSON.stringify({ status: "yielded", acknowledgment })),
+        ...(resumed ? textContent("The session will resume when its children finish.") : []),
+      ],
       timestamp: yieldedAt,
       __openclaw: { id: "yield-result", seq: 21, runId },
     },
@@ -280,11 +284,12 @@ suite.define(() => {
     });
   });
 
-  it("keeps the acknowledgment after resume and folds the wait into a rule", async () => {
+  it("keeps an annotated yield acknowledgment after resume and folds the wait into a rule", async () => {
     await suite.withPage({ viewport: { width: 1280, height: 900 } }, async ({ page }) => {
       const { pane, thread, prompt } = await openScenario(page, "resumed");
       const answer = thread.getByText("The docs update is ready to merge", { exact: false });
       await answer.waitFor();
+      expect(await thread.getByText("Interrupted", { exact: true }).count()).toBe(0);
       const rule = thread.locator(".chat-handoff-resume");
       const toggle = rule.locator("button[aria-expanded]");
       // Closed after resume; it opens to the sessions the handoff waited on.
