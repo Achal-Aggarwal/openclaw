@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { registerAgentWorkspaceAccess } from "openclaw/plugin-sdk/agent-workspace-runtime";
+import { withEngineStoreAdmission } from "openclaw/plugin-sdk/database-engine-worker-runtime";
 import { createDeferred } from "openclaw/plugin-sdk/extension-shared";
 import type { GatewayRequestHandlerOptions } from "openclaw/plugin-sdk/gateway-runtime";
 import {
@@ -13,7 +14,8 @@ import {
 } from "openclaw/plugin-sdk/memory-core-host-engine-storage";
 import { readAgentMemoryFile } from "openclaw/plugin-sdk/memory-core-host-runtime-files";
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk/plugin-entry";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { openOpenClawStateDatabase } from "openclaw/plugin-sdk/plugin-state-test-runtime";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { registerMemoryIndexGatewayMethod } from "../index-gateway.js";
 import { indexMemoryOnGateway } from "../index-gateway.runtime.js";
 import {
@@ -30,6 +32,11 @@ const managers = await import("./index.js");
 
 describe("Gateway index over Harness workspace files", () => {
   const fixture = createManagerIndexFixture(managers);
+  beforeEach(() => {
+    // Gateway maintenance runs after shared-state boot, unlike status-only inspection.
+    const env = { OPENCLAW_STATE_DIR: fixture.paths.stateDir };
+    withEngineStoreAdmission(() => openOpenClawStateDatabase({ env }));
+  });
   const createConfig = (overrides: Parameters<typeof fixture.createConfig>[0] = {}) =>
     fixture.createConfig({
       provider: "none",
