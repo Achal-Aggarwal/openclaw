@@ -21,6 +21,8 @@ function fixture() {
     { path: storePath, paths: new Map([[storePath, 0]]), ownerAgentIds: agents },
     false,
     () => context,
+    false,
+    true,
   );
   const row = (key: string, entry: SessionEntry): SelectionRow => ({
     ...createRow({ key, agentId: "main", storeTarget: { agentId: "main", storePath } }, entry),

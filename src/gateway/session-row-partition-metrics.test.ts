@@ -20,7 +20,7 @@ it("attributes retained hits and misses separately from winner revisions and vie
     configuredAgentIds: agents,
     ownerAgentIds: agents,
   };
-  const selection = createSessionRowSelection(cfg, scope, false, () => context);
+  const selection = createSessionRowSelection(cfg, scope, false, () => context, false, true);
   const makeRow = (suffix: string, updatedAt: number) => {
     const key = `agent:main:${suffix}`;
     const entry = { sessionId: key, updatedAt };

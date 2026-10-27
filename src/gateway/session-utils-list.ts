@@ -308,6 +308,8 @@ export function prepareSessionRowSelection(
       selectedScope,
       activeOnly,
       () => projection.state.rowContext,
+      false,
+      retained,
     );
     for (const row of rows!) {
       selection.add(selectionRow(row)!);
@@ -341,7 +343,7 @@ export function prepareSessionRowSelection(
     now,
     modelCatalog,
     entries,
-    partitions: retained ? selected.partitions : undefined,
+    partitions: selected.partitions,
     configuredAgentIds: selected.configuredAgentIds,
     involvementKeys: selected.involvementKeys,
     candidateKeys(identities: Iterable<string>) {

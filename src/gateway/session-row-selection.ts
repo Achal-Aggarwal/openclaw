@@ -30,6 +30,7 @@ export function createSessionRowSelection(
   activeOnly: boolean,
   getContext: () => SessionListRowContext,
   indexCreators = false,
+  retainPartitions = false,
 ) {
   // Singleton rows live only in winners; retain physical competitors only when needed.
   const groups = new Map<string, Map<string, IndexedTarget>>();
@@ -345,7 +346,7 @@ export function createSessionRowSelection(
       residentOrder?: Iterable<Pick<SelectionTarget, "key" | "agentId" | "storeTarget">>,
     ) {
       assertCanonical();
-      if (!candidates && !partitions) {
+      if (retainPartitions && !candidates && !partitions) {
         partitions = Array.from({ length: 64 }, () => ({
           revision: {},
           entries: new Map<string, SessionEntryPair>(),
