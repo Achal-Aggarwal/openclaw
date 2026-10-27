@@ -43,6 +43,10 @@
 // pass can use --gateway-preload scripts/perf/plugin-access-authority-census.mjs.
 // --gateway-preload <file> imports benchmark instrumentation after tsx for source or dist entries;
 // result.json records its resolved path and SHA-256. Use the same instrumentation on both arms.
+// --turn-start-phases --sandbox-image <image> --cold-session-rounds 1
+// --precreate-cold-sessions creates fresh managed sessions sequentially before each cold burst.
+// The measured chat.send burst still prepares cold sandbox projections, but excludes session
+// and canonical worktree creation. Use the same mode on both arms to isolate sandbox admission.
 // --chat-active-after-tool with --chat-active-hold-ms waits for the first text delta
 // after a committed tool result before sending queued/steering inputs. Requires --runs 1;
 // the stream continues during admission and holds completion for the requested interval.
@@ -180,6 +184,7 @@ const { values } = parseArgs({
     "attempt-setup-image": { type: "string" },
     "sandbox-image": { type: "string" },
     "cold-session-rounds": { type: "string", default: "0" },
+    "precreate-cold-sessions": { type: "boolean", default: false },
     "turn-start-phases": { type: "boolean", default: false },
     "turn-start-advance-origin": { type: "boolean", default: false },
     "git-trace": { type: "boolean", default: false },
@@ -632,6 +637,11 @@ if (
 }
 const rounds = integer(values.rounds, "--rounds");
 const coldSessionRounds = integer(values["cold-session-rounds"], "--cold-session-rounds", 0);
+if (values["precreate-cold-sessions"] && (!values["turn-start-phases"] || !coldSessionRounds)) {
+  throw new Error(
+    "--precreate-cold-sessions requires --turn-start-phases and --cold-session-rounds",
+  );
+}
 if (
   (coldSessionRounds || values["attempt-setup-image"]) &&
   (scenario !== "chat.send" ||
@@ -4381,6 +4391,7 @@ async function runRound(
           }
         } else if (
           values["turn-start-phases"] &&
+          !values["precreate-cold-sessions"] &&
           measuredRound !== undefined &&
           measuredRound < coldSessionRounds
         ) {
@@ -6178,10 +6189,11 @@ try {
     if (scenario === "chat.send" && round < coldSessionRounds) {
       for (const [index, previous] of keys.entries()) {
         const key = `agent:main:transcript-broadcast-cold-${port}-${round}-${index}`;
-        if (!values["turn-start-phases"]) {
+        if (!values["turn-start-phases"] || values["precreate-cold-sessions"]) {
           await rpc(sender, "sessions.create", {
             key,
             ...(stressWorktree ? { cwd: stressWorktree } : {}),
+            ...(values["precreate-cold-sessions"] ? { worktree: true } : {}),
             ...(values["attempt-setup-image"]
               ? { worktree: true, worktreeBaseRef: coldBaseRefs[round * runCount + index] }
               : {}),
@@ -7720,6 +7732,7 @@ try {
           attemptSetupImage: values["attempt-setup-image"],
           attemptSetupCatalog: [...attemptSetupCatalog].toSorted(),
           coldSessionRounds,
+          precreateColdSessions: values["precreate-cold-sessions"],
           firstModelRequest: {
             "cold-session": latencySummary(
               samples

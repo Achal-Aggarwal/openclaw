@@ -4,7 +4,12 @@ import {
   resolveLocalWorkspaceOwner,
   withLocalWorkspaceProjection,
 } from "../../gateway/worker-environments/local-workspace-projection.js";
-import { withWorktreeAllocationLease } from "../worktrees/allocation.js";
+import {
+  waitForWorktreeCapacity,
+  withWorktreeMutationLease,
+  WORKTREE_CREATE_LEASE_WAIT_MS,
+} from "../worktrees/allocation.js";
+import { WorktreeCapacityContentionError } from "../worktrees/capacity.js";
 import {
   markManagedWorktreePreparation,
   setWorktreePreparationTemplate,
@@ -104,22 +109,33 @@ export async function prepareLocalSandboxWorkspace(params: {
       workspaceDir = await withLocalWorkspaceProjection(executionOwner, (state) => state.prepare());
     } else {
       const allocated = startWorktreePreparationPhase("allocate");
+      const custody = {
+        env: owner.env ?? process.env,
+        id: owner.worktree.id,
+        signal: params.signal,
+        commitGuard: assertCurrent,
+        workerAuthority: executionOwner.workerAuthority,
+        waitBudget: { remainingMs: WORKTREE_CREATE_LEASE_WAIT_MS },
+      };
       try {
-        workspaceDir = await withWorktreeAllocationLease(
-          {
-            env: owner.env ?? process.env,
-            signal: params.signal,
-            commitGuard: assertCurrent,
-            workerAuthority: executionOwner.workerAuthority,
-          },
-          (allocation) => {
-            allocated();
-            return withLocalWorkspaceProjection(
-              { ...executionOwner, workerAuthority: allocation.workerAuthority },
-              (state) => state.prepare({ sandbox: params.sandbox, allocation }),
-            );
-          },
-        );
+        for (;;) {
+          try {
+            workspaceDir = await withWorktreeMutationLease(custody, (allocation) => {
+              allocated();
+              return withLocalWorkspaceProjection(
+                { ...executionOwner, workerAuthority: allocation.workerAuthority },
+                (state) => state.prepare({ sandbox: params.sandbox, allocation }),
+              );
+            });
+            break;
+          } catch (error) {
+            if (!(error instanceof WorktreeCapacityContentionError)) {
+              throw error;
+            }
+            // Release checkout and projection custody so the reservation holder can settle.
+            await waitForWorktreeCapacity(error, custody);
+          }
+        }
       } finally {
         allocated();
       }
