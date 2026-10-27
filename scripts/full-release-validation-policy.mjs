@@ -2236,7 +2236,27 @@ function releaseStateChildEvidence(child) {
   });
 }
 
-function verifyStateStructure(state, executionPlan, label) {
+function effectiveStateGates(executionPlan, expected) {
+  if (expected.effectiveGates === undefined) {
+    return executionPlan.gates;
+  }
+  const effectiveGates = Array.isArray(expected.effectiveGates)
+    ? expected.effectiveGates.map(normalizedGate)
+    : [];
+  if (
+    effectiveGates.length !== executionPlan.gates.length ||
+    effectiveGates.some(
+      (gate, index) =>
+        gate.name !== executionPlan.gates[index]?.name ||
+        gate.required !== executionPlan.gates[index]?.required,
+    )
+  ) {
+    throw new Error("effective release gates differ from the immutable execution plan");
+  }
+  return effectiveGates;
+}
+
+function verifyStateStructure(state, executionPlan, label, effectiveGates) {
   const selected = executionPlan.children.filter((entry) => entry.selected);
   const expectedKeys = selected.map((child) => child.key).toSorted();
   if (JSON.stringify(Object.keys(state.children).toSorted()) !== JSON.stringify(expectedKeys)) {
@@ -2331,7 +2351,7 @@ function verifyStateStructure(state, executionPlan, label) {
     children: snapshots,
     extraBlockers: executionPlan.blockers,
     extraErrors: executionPlan.errors,
-    localFailures: releasePlanGateFailures(executionPlan.gates),
+    localFailures: releasePlanGateFailures(effectiveGates),
     targetVersion: executionPlan.targetVersion,
   });
   if (!isDeepStrictEqual(state.waivers, baseline.waivers)) {
@@ -2466,8 +2486,9 @@ function verifyReleaseStatePair(planPayload, decisionPayload, drainPayload, expe
   ) {
     throw new Error("release decision and diagnostic drain execution plans differ");
   }
-  verifyStateStructure(decision, executionPlan, "release decision");
-  verifyStateStructure(drain, executionPlan, "diagnostic drain");
+  const effectiveGates = effectiveStateGates(executionPlan, expected);
+  verifyStateStructure(decision, executionPlan, "release decision", effectiveGates);
+  verifyStateStructure(drain, executionPlan, "diagnostic drain", effectiveGates);
   verifyStateTransition(decision, drain, executionPlan);
   return {
     decision,

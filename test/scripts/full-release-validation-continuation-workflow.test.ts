@@ -390,6 +390,12 @@ else console.log(JSON.stringify({id:202,workflow_id:88,head_branch:'main',event:
         ]),
       );
     }
+    expect(workflow.jobs.summary?.env).toMatchObject({
+      NPM_PREPARATION_RESULT: "${{ needs.prepare_npm_package.result }}",
+      NPM_QUALIFICATION_RESULT: "${{ needs.qualify_npm_package.result }}",
+      PLUGIN_NPM_PREPARATION_RESULT: "${{ needs.prepare_plugin_npm.result }}",
+      DOCKER_PREPARATION_RESULT: "${{ needs.prepare_docker_release.result }}",
+    });
     expect(source).not.toContain("continuationSource");
     expect(source).not.toContain("continuation_plan_json");
   });

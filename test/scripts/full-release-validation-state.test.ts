@@ -1836,6 +1836,41 @@ describe("release state artifacts", () => {
     );
   }
 
+  it("carries recovered parent gate outcomes through selection and final verification", () => {
+    const base = executionPlan({ rerunGroup: "ci" });
+    const sealedPlan = {
+      ...base,
+      gates: base.gates.map((gate: Record<string, any>) =>
+        gate.name === "Qualify release npm artifacts"
+          ? { ...gate, required: true, result: "failure" }
+          : gate,
+      ),
+    };
+    sealedPlan.sha256 = releaseExecutionPlanSha256(sealedPlan);
+    const effectiveGates = sealedPlan.gates.map((gate: Record<string, any>) =>
+      gate.name === "Qualify release npm artifacts" ? { ...gate, result: "success" } : gate,
+    );
+    const decision = collectorArtifact("decision", 2, sealedPlan);
+    const drain = collectorArtifact("drain", 2, sealedPlan);
+    const expected = { ...stateExpected(), effectiveGates };
+
+    expect(() => selectPair(sealedPlan, decision, drain)).toThrow(
+      "release decision omits baseline blockers",
+    );
+    expect(
+      selectReleaseStateArtifacts(
+        sealedPlan,
+        [{ name: "full-release-decision-77-2", payload: decision }],
+        [{ name: "full-release-diagnostics-77-2", payload: drain }],
+        expected,
+      ),
+    ).toMatchObject({ decision: { state: "passed" }, drain: { state: "passed" } });
+    expect(verifyReleaseStateArtifacts(sealedPlan, decision, drain, expected)).toMatchObject({
+      decision: { state: "passed" },
+      drain: { state: "passed" },
+    });
+  });
+
   it("uses one policy for decision, drain, and final verification", () => {
     expect(
       verifyReleaseStateArtifacts(
