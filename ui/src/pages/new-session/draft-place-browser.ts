@@ -1,3 +1,4 @@
+import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
 import type {
   ProjectRecord,
   ProjectRecent,
@@ -14,7 +15,6 @@ import type {
 import type { DraftProjectPicker } from "./draft-project-picker.ts";
 import { isKnownWorkspacePath } from "./path.ts";
 import type { DraftRemoteProject } from "./project-chip.ts";
-import { recentPlaces, type RecentPlaceSource } from "./recent-places.ts";
 
 type DraftPickerKind = "where" | "project" | "checkout";
 
@@ -73,7 +73,11 @@ export class DraftPlaceBrowser {
   }
 
   resolveProjectRecents(params: {
-    sessions: readonly RecentPlaceSource[];
+    sessions: readonly {
+      execCwd?: unknown;
+      execNode?: unknown;
+      worktree?: { repoRoot?: unknown } | null;
+    }[];
     workspace: string;
     workspaceRoots: readonly string[];
     isAdmin: boolean;
@@ -85,17 +89,27 @@ export class DraftPlaceBrowser {
         ? this.projects.some((project) => project.id === recent.projectId)
         : recent.kind === "repository" || (!recent.execNode && allowGatewayFolder(recent.folder)),
     );
-    return (
-      serverRecents ??
-      recentPlaces(params.sessions, {
-        workspace: params.workspace,
-        allowGatewayFolder,
-      }).map<ProjectRecent>((recent) => ({
-        kind: "folder",
-        folder: recent.folder,
-        displayName: pathDisplayName(recent.folder),
-      }))
-    );
+    if (serverRecents !== undefined) {
+      return serverRecents;
+    }
+    const folders = new Set<string>();
+    for (const row of params.sessions) {
+      const folder =
+        normalizeOptionalString(row.execCwd) ?? normalizeOptionalString(row.worktree?.repoRoot);
+      const execNode = normalizeOptionalString(row.execNode);
+      if (!folder || execNode || folder === params.workspace || !allowGatewayFolder(folder)) {
+        continue;
+      }
+      folders.add(folder);
+      if (folders.size >= 4) {
+        break;
+      }
+    }
+    return Array.from(folders, (folder): ProjectRecent => ({
+      kind: "folder",
+      folder,
+      displayName: pathDisplayName(folder),
+    }));
   }
 
   get githubHost(): string | undefined {
