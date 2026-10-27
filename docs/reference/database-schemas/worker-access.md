@@ -5940,6 +5940,12 @@ including unchanged projection revisions, and returns only matching messages.
 Cold archive decoding and restoration retain the existing archive worker and
 host generation/commit authorization; transcript read fences still bind the
 subsequent read. No validation cache or new restoration owner is introduced.
+Concurrent ordinary readers of the same session and archive share one in-flight
+restore; guarded turns and locked writers keep their individual effect checks.
+Every reader checks its own authority before accepting completion. A failed
+shared restore rejects its waiting readers and is removed so a later open can
+retry. Existing FIFO admission, streaming archive decoding, and atomic commit
+checks remain unchanged.
 The archive FIFO retains one idle worker after successful scopes and can hand it
 to the next scope using the same captured state directory. Each request closes
 its native handles before handoff; the new scope supplies its own authority.

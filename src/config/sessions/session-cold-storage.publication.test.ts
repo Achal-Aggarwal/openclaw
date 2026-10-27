@@ -125,9 +125,11 @@ const result: SessionColdMutationResult = {
 const changes = vi.fn();
 const factChanges = vi.fn();
 let subscriptions: (() => void)[];
+let expectedReleases: number;
 
 beforeEach(() => {
   vi.resetAllMocks();
+  expectedReleases = 1;
   observed.claimCurrent = true;
   observed.native.mockImplementation(() => {
     throw new Error("Restore publication executed SQLite on the calling thread");
@@ -137,7 +139,7 @@ beforeEach(() => {
 afterEach(() => {
   subscriptions.forEach((unsubscribe) => unsubscribe());
   expect(observed.native).not.toHaveBeenCalled();
-  expect(observed.release).toHaveBeenCalledOnce();
+  expect(observed.release).toHaveBeenCalledTimes(expectedReleases);
 });
 
 function restore(signal?: AbortSignal) {
@@ -201,49 +203,131 @@ it("cancels restoration queued at writer admission when its host callback expire
   }
 });
 
-it("cancels a queued restoration without releasing its admitted predecessor", async ({
-  signal,
-}) => {
-  const { entered, finished } = holdWorker();
-  const first = restore();
-  await awaitGateBeforeSettlement(entered.promise, first, "First restore was not admitted");
-  const controller = new AbortController();
-  const second = restore(controller.signal);
-  const outcome = Promise.allSettled([second]);
-  try {
-    const expired = new Error("queued restore host deadline expired");
-    controller.abort(expired);
-    expect(await withinTest(outcome, signal)).toEqual([{ status: "rejected", reason: expired }]);
+it.for(["abort", "authority"])(
+  "refuses a joined caller after %s without canceling its owner",
+  async (failure, { signal }) => {
+    const { entered, finished } = holdWorker();
+    const first = restore();
+    await awaitGateBeforeSettlement(entered.promise, first, "First restore was not admitted");
+    const controller = new AbortController();
+    const caller = vi.fn();
+    const second = restoreSessionColdTranscript(
+      preparation.target,
+      caller,
+      preparation,
+      undefined,
+      controller.signal,
+    );
+    const outcome = Promise.allSettled([second]);
+    const refused = new Error("joined reader retired");
+    try {
+      await Promise.resolve();
+      if (failure === "abort") {
+        controller.abort(refused);
+        await withinTest(outcome, signal);
+        expect(observed.release).not.toHaveBeenCalled();
+      } else {
+        caller.mockImplementation(() => {
+          throw refused;
+        });
+      }
+    } finally {
+      finished.resolve([{ result }]);
+      await Promise.allSettled([first, second]);
+    }
+    await expect(first).resolves.toBeUndefined();
+    expect(await outcome).toEqual([{ status: "rejected", reason: refused }]);
     expect(observed.worker).toHaveBeenCalledOnce();
-    expect(observed.release).not.toHaveBeenCalled();
-  } finally {
-    finished.resolve([{ result }]);
-    await Promise.allSettled([first, second]);
-  }
-  expect(observed.worker).toHaveBeenCalledOnce();
-});
+  },
+);
 
-it("publishes the committed key exactly once after the worker settles, without host SQLite", async () => {
+it("shares one restoration and publishes exact receipts once after concurrent opens settle", async () => {
   const { entered, finished } = holdWorker();
-  const pending = restore();
+  let cold = true;
+  const readMetadata = vi.fn(async () => (cold ? preparation.readMetadata("initial") : undefined));
+  const open = () =>
+    restoreSessionColdTranscript(preparation.target, observed.caller, {
+      ...preparation,
+      readMetadata,
+    });
+  const first = open();
+  await awaitGateBeforeSettlement(entered.promise, first, "Restore worker was not dispatched");
+  const followers = Array.from({ length: 7 }, open);
   try {
-    await awaitGateBeforeSettlement(entered.promise, pending, "Restore worker was not dispatched");
+    // Each caller captures its own initial archive identity before joining.
+    await Promise.resolve();
     expect(changes).not.toHaveBeenCalled();
     expect(observed.release).not.toHaveBeenCalled();
+    cold = false;
   } finally {
     finished.resolve([{ result }]);
-    await pending;
+    await Promise.all([first, ...followers]);
   }
+  expect(observed.worker).toHaveBeenCalledOnce();
+  expect(readMetadata).toHaveBeenCalledTimes(9);
   const change = {
     storePath: preparation.target.path,
     sessionKey: "agent:main:committed-window",
     scope: "transcript",
   };
   expect(changes).toHaveBeenCalledExactlyOnceWith(change);
-  expect(factChanges).toHaveBeenCalledExactlyOnceWith({
-    ...change,
-    facts: { kind: "unchanged" },
-  });
+  expect(factChanges).toHaveBeenCalledExactlyOnceWith({ ...change, facts: { kind: "unchanged" } });
+});
+
+it.each(["generation", "digest", "guard"])(
+  "does not join a restoration with a different %s",
+  async (difference) => {
+    expectedReleases = 2;
+    const { entered, finished } = holdWorker();
+    const first = restore();
+    await awaitGateBeforeSettlement(entered.promise, first, "Restore worker was not dispatched");
+    const archive = (await preparation.readMetadata("initial"))!;
+    const second = restoreSessionColdTranscript(
+      preparation.target,
+      observed.caller,
+      {
+        ...preparation,
+        readMetadata: async () => ({
+          ...archive,
+          ...(difference === "generation" ? { generation: "successor-generation" } : {}),
+          ...(difference === "digest" ? { archive_sha256: "1".repeat(64) } : {}),
+        }),
+      },
+      difference === "guard"
+        ? {
+            kind: "turn",
+            agentId: "main",
+            sessionKey: "agent:main:committed-window",
+            options: { expectedSessionId: preparation.target.sessionId },
+          }
+        : undefined,
+    );
+    await Promise.resolve();
+    finished.resolve([{ result }]);
+    await Promise.all([first, second]);
+    expect(observed.worker).toHaveBeenCalledTimes(2);
+  },
+);
+
+it("evicts a failed shared restoration so a later open can retry", async () => {
+  const { entered, finished } = holdWorker();
+  const first = restore();
+  await awaitGateBeforeSettlement(entered.promise, first, "Restore worker was not dispatched");
+  const second = restore();
+  const outcome = Promise.allSettled([first, second]);
+  const failure = new Error("archive unavailable");
+  await Promise.resolve();
+  finished.reject(failure);
+  expect(await outcome).toEqual([
+    { status: "rejected", reason: failure },
+    { status: "rejected", reason: failure },
+  ]);
+  expect(observed.worker).toHaveBeenCalledOnce();
+  expect(observed.release).toHaveBeenCalledOnce();
+  expectedReleases = 2;
+  observed.worker.mockResolvedValue([{ result }]);
+  await expect(restore()).resolves.toBeUndefined();
+  expect(observed.worker).toHaveBeenCalledTimes(2);
 });
 
 it.each(["cleanup incomplete", "database", "caller", "request"])(

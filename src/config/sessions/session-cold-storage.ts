@@ -1,5 +1,6 @@
 import { statSync } from "node:fs";
 import path from "node:path";
+import { racePromiseWithAbortSignal } from "../../infra/abort-signal.js";
 import { iterateProjectedAgentRunSessionKeys } from "../../infra/agent-run-projection.js";
 import { buildProjectedAgentRunIndex } from "../../infra/agent-run-registry.js";
 import { hasErrnoCode } from "../../infra/errno.js";
@@ -70,6 +71,7 @@ import { resolveMaintenanceConfigFromInput } from "./store-maintenance.js";
 import { captureSessionTranscriptStorageEnvironment } from "./transcript-target-binding.js";
 
 const operations = new Map<string, StoreWriterQueue>();
+const restorations = new Map<string, Promise<void>>();
 const log = createSubsystemLogger("session-cold-storage");
 const oversizedUntil = new Map<string, number>();
 let nextStore = 0;
@@ -498,7 +500,17 @@ export async function restoreSessionColdTranscript(
   if (!initial) {
     return;
   }
-  await runQueuedStoreWrite({
+  // Turn and locked restores carry distinct effect guards; only ordinary readers
+  // share a flight. The entry lives until settlement, including failed restoration.
+  const restoreKey = guard ? undefined : JSON.stringify([storePath, options.agentId, initial]);
+  const existing = restoreKey ? restorations.get(restoreKey) : undefined;
+  if (existing) {
+    await racePromiseWithAbortSignal(existing, signal, (aborted) => aborted.reason);
+    signal?.throwIfAborted();
+    assertCurrent?.();
+    return;
+  }
+  const restoration = runQueuedStoreWrite({
     queues: operations,
     storePath,
     label: "session.cold.restore",
@@ -548,6 +560,16 @@ export async function restoreSessionColdTranscript(
       restoredUntil.set(key, now + RESTORE_COOLDOWN_MS);
     },
   });
+  if (restoreKey) {
+    restorations.set(restoreKey, restoration);
+  }
+  try {
+    await restoration;
+  } finally {
+    if (restoreKey) {
+      restorations.delete(restoreKey);
+    }
+  }
 }
 
 export async function runSessionColdStorageMaintenance(params: {
