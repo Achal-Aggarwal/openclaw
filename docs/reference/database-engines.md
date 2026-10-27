@@ -295,3 +295,5 @@ SQL normalization, and event construction.
 See [Database schemas](/reference/database-schemas) for store ownership and schema
 contracts, and [Configuration reference](/gateway/configuration-reference) for
 the rest of the Gateway configuration.
+
+Session-state pruning compares integer sequence watermarks on both engines; PostgreSQL bound watermark batches are explicitly cast to bigint without schema or retention changes.

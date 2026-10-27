@@ -9,7 +9,7 @@ import type { OutboundMessageProgressInput } from "../../audit/audit-event-types
 import { recordOutboundMessageProgressInDatabase } from "../../audit/message-delivery-progress-store.js";
 import { isMissingPluginStateTableError } from "../../plugin-state/plugin-state-store.database.js";
 import { DebugProxyCaptureKernel } from "../../proxy-capture/store.kernel.js";
-import { recordSessionStateEventInDatabase } from "../../sessions/session-state-events.kernel.js";
+import { pruneSessionStateEventsInDatabase, recordSessionStateEventInDatabase } from "../../sessions/session-state-events.kernel.js";
 import {
   readAgentProvenanceBatchInDatabase,
   recordAgentProvenanceInDatabase,
@@ -156,6 +156,15 @@ it.skipIf(!connection)(
         expect(
           remote.query("SELECT last_sequence, updated_at FROM session_state_heads").rows,
         ).toEqual([{ last_sequence: 1, updated_at: 100 }]);
+
+        const recent = runSqliteImmediateTransactionSync(db, () => recordSessionStateEventInDatabase(db, { ...input, dedupeKey: "recent", summary: "Recent" }, 500));
+        runSqliteImmediateTransactionSync(db, () => recordSessionStateEventInDatabase(db, { ...input, sessionKey: "agent:other:conformance", agentId: "other", dedupeKey: "other" }, 400));
+        runSqliteImmediateTransactionSync(db, () => pruneSessionStateEventsInDatabase(db, 450 + 30 * 24 * 60 * 60_000));
+        expect(remote.query("SELECT agent_id, pruned_max_sequence FROM session_state_heads ORDER BY agent_id").rows).toEqual([
+          { agent_id: "main", pruned_max_sequence: first.row.sequence },
+          { agent_id: "other", pruned_max_sequence: recent.row.sequence + 1 },
+        ]);
+        expect(remote.query("SELECT sequence FROM session_state_events ORDER BY sequence").rows).toEqual([{ sequence: recent.row.sequence }]);
 
         for (const agentId of ["alpha", "beta"]) {
           recordAgentProvenanceInDatabase(db, {
