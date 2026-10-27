@@ -12,10 +12,11 @@ export function extractTranscriptRange(
   retainedRowKeys: readonly (string | null)[],
   rows: readonly TranscriptRow[],
 ): number[] {
-  // Dynamic rows need neighboring measurements for native resize anchoring.
-  // Completed fragments use the bounded preparation owner instead.
+  // Measure one completed neighbor before it enters the viewport. Otherwise
+  // its first correction can mount another cold row in the same scroll frame.
   const indexes = defaultRangeExtractor(range).filter(
-    (index) => !rows[index]!.retainDom || (index >= range.startIndex && index <= range.endIndex),
+    (index) =>
+      !rows[index]!.retainDom || (index >= range.startIndex - 1 && index <= range.endIndex + 1),
   );
   for (const key of retainedRowKeys) {
     const index = key === null ? undefined : rowIndexesByKey.get(key);
