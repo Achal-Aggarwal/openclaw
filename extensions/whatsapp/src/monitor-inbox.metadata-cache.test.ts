@@ -125,10 +125,11 @@ describe("web monitor inbox metadata cache", () => {
       await listener.sendMessage("123@g.us", "ping @+15551234567");
 
       expect(sock.groupMetadata).not.toHaveBeenCalled();
-      expect(sock.sendMessage).toHaveBeenCalledWith("123@g.us", {
-        text: "ping @277038292303944",
-        mentions: [participantLid],
-      });
+      expect(sock.sendMessage).toHaveBeenCalledWith(
+        "123@g.us",
+        { text: "ping @277038292303944", mentions: [participantLid] },
+        expect.objectContaining({ messageId: expect.any(String) }),
+      );
     } finally {
       await listener.close();
     }
