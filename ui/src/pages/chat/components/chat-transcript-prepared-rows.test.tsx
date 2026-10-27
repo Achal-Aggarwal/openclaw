@@ -427,11 +427,11 @@ it.each([true, "toolCall"] as const)(
     const second = `idle-frame-${index}-second`;
     const parsesFor = (text: string) =>
       parse.mock.calls.filter(([input]) => input.includes(text)).length;
-    // Initial range settling may already have cached this row's HTML. Count
-    // both cold sanitization and cached fragment restoration in the idle slice.
+    // Initial settling can retain the pristine fragment too, so a ready row
+    // needs no work. A cold row still prepares at most one message per slice.
     const preparationsFor = (text: string) =>
       parsesFor(text) + html.mock.calls.filter(([input]) => input.includes(text)).length;
-    expect(preparationsFor(first) + preparationsFor(second)).toBe(1);
+    expect(preparationsFor(first) + preparationsFor(second)).toBeLessThanOrEqual(1);
     expect(view.container.querySelector(`[data-virtual-row-key="${warmed.key}"]`)).toBeNull();
     expect(view.container.querySelectorAll(".chat-virtual-row")).toHaveLength(elements);
 

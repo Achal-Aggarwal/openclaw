@@ -41,7 +41,7 @@ const MARKDOWN_CACHE_MAX_CHARS = 50_000;
 type MarkdownCacheEntry = { html: string; highlighting?: boolean };
 const markdownCache = new Map<string, MarkdownCacheEntry>();
 let markdownCacheChars = 0;
-// Carry recent idle work into its first mount; the larger cache remains HTML-only.
+// Reconciler callers clone these pristine trees; retain recent preparation across mounts.
 const preparedFragments = new Map<MarkdownCacheEntry, DocumentFragment>();
 const PREPARED_FRAGMENT_LIMIT = 32;
 export type MarkdownPrewarmMode = "html" | "idle-html" | "cold-fragment" | "fragment";
@@ -339,7 +339,7 @@ function prepareSanitizedMarkdown(
     if (mode !== "fragment" || preparedFragments.has(cached)) {
       return false;
     }
-    // The cache owns sanitized HTML. Rebuild its consumed DOM ahead of a return
+    // The cache owns sanitized HTML. Rebuild its evicted DOM ahead of a return
     // scroll, without reparsing Markdown or rerunning the sanitizer.
     const template = document.createElement("template");
     template.innerHTML = cached.html;
@@ -348,9 +348,13 @@ function prepareSanitizedMarkdown(
   } else if (returnFragment) {
     const fragment = preparedFragments.get(cached);
     if (fragment) {
-      preparedFragments.delete(cached);
       content = { html: cached.html, fragment };
     }
+  }
+  if (returnFragment && content && typeof content !== "string") {
+    preparedFragments.delete(cached);
+    preparedFragments.set(cached, content.fragment);
+    pruneMapToMaxSize(preparedFragments, PREPARED_FRAGMENT_LIMIT);
   }
   const previous = markdownCache.get(cacheKey);
   if (previous) {

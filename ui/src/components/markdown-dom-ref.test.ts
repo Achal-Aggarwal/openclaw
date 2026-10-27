@@ -13,7 +13,7 @@ import {
   toSanitizedMarkdownHtml,
 } from "./markdown.ts";
 
-it("hands idle-prepared DOM to the first visible caller without parsing it again", () => {
+it("reuses pristine idle-prepared DOM across visible mounts without parsing it again", () => {
   const source = 'idle-cache-paragraph <img src="x" onerror="alert(1)">';
   const html = Object.getOwnPropertyDescriptor(Element.prototype, "innerHTML")!;
   let parses = 0;
@@ -31,7 +31,6 @@ it("hands idle-prepared DOM to the first visible caller without parsing it again
   });
   expect(prewarmSanitizedMarkdown(source, {})).toBe(true);
   expect(prewarmSanitizedMarkdown(source, {})).toBe(false);
-  const cachedHtml = toSanitizedMarkdownHtml(source);
   const cached = toSanitizedMarkdownContent(source);
   expect(typeof cached).not.toBe("string");
   const view = renderSolidRef(() => createMarkdownRef(() => ({ content: cached })), {
@@ -40,16 +39,15 @@ it("hands idle-prepared DOM to the first visible caller without parsing it again
   expect(view.container.querySelector("[onerror]")).toBeNull();
   expect(parses).toBe(0);
   const reused = toSanitizedMarkdownContent(source);
-  expect(reused).toBe(cachedHtml);
+  expect(reused).toEqual(cached);
   const second = renderSolidRef(() => createMarkdownRef(() => ({ content: reused })), {
     targetElement: document.createElement("div"),
   });
   expect(second.container.innerHTML).toBe(view.container.innerHTML);
-  expect(parses).toBe(1);
-  // A return scroll can prepare DOM from the retained sanitized HTML before
-  // its next mount. Ordinary idle warming must still finish after one pass.
+  expect(parses).toBe(0);
+  // Returning to a retained fragment needs no repeated preparation.
   expect(prewarmSanitizedMarkdown(source, {})).toBe(false);
-  expect(prewarmSanitizedMarkdown(source, {}, "fragment")).toBe(true);
+  expect(prewarmSanitizedMarkdown(source, {}, "fragment")).toBe(false);
   expect(prewarmSanitizedMarkdown(source, {}, "fragment")).toBe(false);
   const preparedParses = parses;
   const rewarmed = toSanitizedMarkdownContent(source);
@@ -71,7 +69,7 @@ it("bounds prepared DOM while keeping evicted HTML reusable", () => {
   }
   expect(typeof toSanitizedMarkdownContent(source(0))).toBe("string");
   expect(typeof toSanitizedMarkdownContent(source(32))).not.toBe("string");
-  expect(typeof toSanitizedMarkdownContent(source(32))).toBe("string");
+  expect(typeof toSanitizedMarkdownContent(source(32))).not.toBe("string");
   for (let index = 0; index < 33; index++) {
     toSanitizedMarkdownContent(source(index));
     expect(prewarmSanitizedMarkdown(source(index), {}, "fragment")).toBe(true);
@@ -82,7 +80,7 @@ it("bounds prepared DOM while keeping evicted HTML reusable", () => {
     prewarmSanitizedMarkdown(`near-first-${index}`, {}, index < 8 ? "cold-fragment" : "html");
   }
   expect(typeof toSanitizedMarkdownContent("near-first-0")).not.toBe("string");
-  expect(typeof toSanitizedMarkdownContent("near-first-0")).toBe("string");
+  expect(typeof toSanitizedMarkdownContent("near-first-0")).not.toBe("string");
   expect(typeof toSanitizedMarkdownContent("near-first-63")).toBe("string");
 });
 
@@ -105,7 +103,7 @@ it("stops distant idle admission at the character budget without evicting nearby
   expect(parse.mock.calls.length).toBeGreaterThan(0);
 });
 
-it("mounts fresh chat Markdown without reparsing and keeps only HTML in its cache", () => {
+it("retains fresh chat Markdown for another mount without reparsing", () => {
   const marker = "chat-sanitized-fragment-first-mount";
   const source = `### ${marker}\n\n| State |\n| --- |\n| Ready |\n\n<img src="x" onerror="alert(1)"><script>alert(2)</script>`;
   const html = Object.getOwnPropertyDescriptor(Element.prototype, "innerHTML")!;
@@ -140,13 +138,13 @@ it("mounts fresh chat Markdown without reparsing and keeps only HTML in its cach
   expect(parses).toBe(0);
 
   const cached = prepare();
-  expect(typeof cached).toBe("string");
+  expect(cached).toEqual(fresh);
   const second = renderSolidRef(() => createMarkdownRef(() => ({ content: cached })), {
     targetElement: document.createElement("div"),
   });
   expect(second.container.innerHTML).toBe(first.container.innerHTML);
-  expect(parses).toBe(1);
-  expect(toSanitizedMarkdownHtml(source)).toBe(cached);
+  expect(parses).toBe(0);
+  expect(toSanitizedMarkdownHtml(source)).toBe(typeof fresh === "string" ? fresh : fresh.html);
 });
 
 it("isolates ordinary and progress policies for fragment and HTML callers", () => {
@@ -171,8 +169,8 @@ it("isolates ordinary and progress policies for fragment and HTML callers", () =
   expect(ordinaryHtml).not.toContain("<progress");
   expect(typeof progressHtml).toBe("string");
   expect(progressHtml).toContain('<progress value="2" max="5">');
-  expect(toSanitizedMarkdownContent(source)).toBe(ordinary.html);
-  expect(toSanitizedMarkdownContent(source, { progressBars: true })).toBe(progress.html);
+  expect(toSanitizedMarkdownContent(source)).toEqual(ordinary);
+  expect(toSanitizedMarkdownContent(source, { progressBars: true })).toEqual(progress);
 });
 
 it("mounts settled Markdown from one parse and preserves encoded carriage returns", () => {
