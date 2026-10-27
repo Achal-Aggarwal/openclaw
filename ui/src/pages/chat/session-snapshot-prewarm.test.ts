@@ -85,15 +85,19 @@ describe("routed transcript prewarm", () => {
 
   it("starts before consumption and reuses the matching read only once", async () => {
     const { open, reader } = await prewarm();
-    await vi.dynamicImportSettled();
+    expect(reader.readReady(key)).toBeUndefined();
+    const ready = await snapshots.readPrewarmedChatSnapshot(key);
     expect(open).toHaveBeenCalledOnce();
-    expect(await reader.read(key)).toEqual(stored);
+    expect(reader.readReady(otherKey)).toBeUndefined();
+    expect(reader.readReady(key)).toBe(ready);
+    expect(ready).toEqual(stored);
+    expect(reader.readReady(key)).toBeUndefined();
     expect(open).toHaveBeenCalledOnce();
     expect(await reader.read(key)).toEqual(stored);
     expect(open).toHaveBeenCalledTimes(2);
   });
 
-  it("publishes the complete validated prewarm before presenting its board", async () => {
+  it("returns the complete validated prewarm synchronously with its board", async () => {
     const retained: ChatSessionSnapshot = {
       ...stored,
       progressCard: null,
@@ -110,12 +114,9 @@ describe("routed transcript prewarm", () => {
     await prewarmChatSnapshot(key);
     const prepared = await snapshots.readPrewarmedChatSnapshot(key);
 
-    const ready = vi.fn();
-    const presentBoard = vi.fn();
-    const reading = new snapshots.SessionSnapshotStore().read(key, presentBoard, ready);
-    expect(ready).toHaveBeenCalledExactlyOnceWith(retained);
-    expect(presentBoard).toHaveBeenCalledExactlyOnceWith(retained.board);
-    expect(await reading).toBe(prepared);
+    const ready = new snapshots.SessionSnapshotStore().readReady(key);
+    expect(ready).toBe(prepared);
+    expect(ready).toEqual(retained);
     expect(open).toHaveBeenCalledOnce();
   });
 

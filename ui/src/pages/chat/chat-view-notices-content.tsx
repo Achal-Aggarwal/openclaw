@@ -16,6 +16,7 @@ import { formatBytes } from "../../lib/agents/display.ts";
 import { findChatSubmissionMessage } from "../../lib/chat/history-message-identity.ts";
 import { clampText } from "../../lib/format.ts";
 import { registerEnglishCatalog, t } from "../../lib/reactive/i18n.ts";
+import { isChatSendReconnecting } from "./chat-send-presentation.ts";
 import type { ChatComposerNoticesProps, ChatViewNoticesProps } from "./chat-view-notices.tsx";
 import { ChatGPTUsageLimit } from "./chatgpt-usage-limit.tsx";
 import { ChatConversationMobile } from "./components/chat-conversation-presentation.ts";
@@ -352,7 +353,12 @@ export function ChatPlacementStartupNotice(props: {
   return (
     <>
       <Show
-        when={props.status?.phase !== "failed" && !hasInlineTurn() && props.status?.initialTurn}
+        when={
+          props.status?.phase !== "failed" &&
+          !hasInlineTurn() &&
+          isChatSendReconnecting(props.status?.initialTurn?.sendState, props.connected) &&
+          props.status?.initialTurn
+        }
       >
         {(turn) => (
           <div class="chat-composer-neighbor-card chat-composer-neighbor-card--info" role="status">
@@ -363,7 +369,7 @@ export function ChatPlacementStartupNotice(props: {
               <ChatSendStatus
                 status={{
                   id: turn().id,
-                  state: turn().sendState === "waiting-reconnect" ? "waiting-reconnect" : "sending",
+                  state: "waiting-reconnect",
                   error: turn().sendError,
                 }}
                 actions={{

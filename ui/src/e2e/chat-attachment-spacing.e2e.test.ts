@@ -100,12 +100,12 @@ async function gap(above: Locator, below: Locator) {
   const lowerElement = await below.elementHandle();
   try {
     // Lazy media can move the transcript between browser calls; sample both boxes together.
-    return await above.evaluate((upperElement, lowerElement) => {
-      if (!upperElement.isConnected || !lowerElement.isConnected) {
+    return await above.evaluate((upperElement, lowerNode) => {
+      if (!upperElement.isConnected || !lowerNode.isConnected) {
         throw new Error("Spacing elements detached before measurement.");
       }
       const upper = upperElement.getBoundingClientRect();
-      const lower = lowerElement.getBoundingClientRect();
+      const lower = lowerNode.getBoundingClientRect();
       return lower.y - upper.y - upper.height;
     }, lowerElement);
   } finally {

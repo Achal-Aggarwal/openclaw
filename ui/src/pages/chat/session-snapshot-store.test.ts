@@ -346,44 +346,35 @@ describe("persistent chat session snapshots", () => {
     { transcriptMetadata: null },
     { messageReactions: { message: [{}] } },
     { progressCard: {} },
-  ])(
-    "rejects malformed optional payloads before publishing a retained board: %j",
-    async (payload) => {
-      const value = boardSnapshot(sessionKey, "retained board");
-      await seed(value);
-      await putRawRecord({
-        ...envelope(sessionKey, value),
-        snapshot: { ...value, ...payload },
-      });
-      const presentBoard = vi.fn();
-      expect(await new SessionSnapshotStore().read(sessionKey, presentBoard)).toBeNull();
-      expect(presentBoard).not.toHaveBeenCalled();
-    },
-  );
+  ])("rejects malformed optional payloads alongside a retained board: %j", async (payload) => {
+    const value = boardSnapshot(sessionKey, "retained board");
+    await seed(value);
+    await putRawRecord({
+      ...envelope(sessionKey, value),
+      snapshot: { ...value, ...payload },
+    });
+    expect(await new SessionSnapshotStore().read(sessionKey)).toBeNull();
+  });
 
-  it("presents a validated board before rejecting malformed persisted history", async () => {
+  it("rejects malformed persisted history alongside a valid board", async () => {
     const value = boardSnapshot(sessionKey, "retained board");
     await seed(value);
     await putRawRecord({
       ...envelope(sessionKey, value),
       snapshot: { ...value, historyState: { stateRevision: "invalid" } },
     });
-    const presentBoard = vi.fn();
-    expect(await new SessionSnapshotStore().read(sessionKey, presentBoard)).toBeNull();
-    expect(presentBoard).toHaveBeenCalledExactlyOnceWith(value.board);
+    expect(await new SessionSnapshotStore().read(sessionKey)).toBeNull();
   });
 
-  it("does not present a cached board after its pending read is invalidated", async () => {
+  it("does not return a cached board after its pending read is invalidated", async () => {
     await seed({
       ...boardSnapshot(sessionKey, "retired conversation"),
       historyState: { stateRevision: {}, commands: [] },
     });
     const reader = new SessionSnapshotStore();
-    const presentBoard = vi.fn();
-    const reading = reader.read(sessionKey, presentBoard);
+    const reading = reader.read(sessionKey);
     reader.forget(sessionKey);
     expect(await reading).toBeNull();
-    expect(presentBoard).not.toHaveBeenCalled();
   });
 
   it("persists board removal before any transcript is in memory", async () => {
@@ -635,11 +626,7 @@ describe("persistent chat session snapshots", () => {
     if (corruption !== "metadata") {
       expect(reader.readSavedAt(valid)).not.toBeNull();
       expect(reader.readSavedAt(corrupt)).not.toBeNull();
-      const presentBoard = vi.fn();
-      expect(await reader.read(corrupt, presentBoard)).toBeNull();
-      if (corruption === "board") {
-        expect(presentBoard).not.toHaveBeenCalled();
-      }
+      expect(await reader.read(corrupt)).toBeNull();
     } else {
       expect(reader.readSavedAt(corrupt)).toBeNull();
     }

@@ -127,7 +127,7 @@ async function persistBoard(
 }
 
 it.each([false, true])(
-  "paints saved rows before connect while board restoration waits (route pending: %s)",
+  "paints saved rows and board while the socket cannot open (route pending: %s)",
   async (routePending) => {
     const sessionKey = "agent:main:dispatch-cached-board";
     const { pane, request, snapshot, cleanup } = createGatewayBoardPane(sessionKey);
@@ -153,11 +153,7 @@ it.each([false, true])(
     await expectDefined(reading.mock.results[0], "snapshot read").value;
     await vi.advanceTimersByTimeAsync(0);
     expect(pane.state.chatMessages).toEqual(transcript.messages);
-    expect(provider.hasLoadedSnapshot).toBe(false);
-    dispatch.resolve();
-    await dispatch.promise;
     expect(provider.hasLoadedSnapshot).toBe(true);
-    expect(pane.state.chatMessages).toEqual(transcript.messages);
     await vi.runAllTimersAsync();
     await hydration.promise;
     expect(pane.state.chatMessages).toEqual(transcript.messages);

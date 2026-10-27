@@ -76,8 +76,10 @@ it.each([
 
 it("waits for startup progress rather than claiming preparation before the first status", async () => {
   const container = renderChatView({ runActive: true, stream: "" });
-  await waitForSolid(() => expect(workingStatus(container)).toContain("Waiting for turn to start"));
-  expect(workingStatus(container)).not.toContain("…");
+  await waitForSolid(() => expect(workingStatus(container)).toContain("Working…"));
+  expect(
+    container.querySelector(".chat-working-indicator__status > span:first-child")?.className,
+  ).toContain("sr-only");
 });
 
 it.each(["submitting", "sending", "waiting-model"] as const)(
@@ -91,9 +93,7 @@ it.each(["submitting", "sending", "waiting-model"] as const)(
         { id: "pending-send", sessionKey: "main", text: "Continue", createdAt: 1, sendState },
       ],
     });
-    await waitForSolid(() =>
-      expect(workingStatus(container)).toContain("Waiting for turn to start"),
-    );
+    await waitForSolid(() => expect(workingStatus(container)).toContain("Working…"));
     expect(container.querySelector(".chat-send-btn--stop")).toBeNull();
   },
 );
