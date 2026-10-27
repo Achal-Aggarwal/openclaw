@@ -39,8 +39,9 @@ Send `Accept: application/json` and an identifying User-Agent, e.g.
    work. Continue pinned-main, sibling-release, P0/P1, and authorized security
    discovery. Prior assessments and automation suggestions are evidence, not
    completeness or applicability proof for this baseline.
-3. **Assess/select:** deduplicate by `sourceUnitKey` and source refs; record the
-   smallest complete fix/group, impact, eligibility, dependencies, and evidence.
+3. **Assess/select:** deduplicate by canonical main commit `sourceUnitKey` and
+   source refs; record the smallest complete fix/group, impact, eligibility,
+   dependencies, and evidence.
    Upsert its target-release assessment at the assessed SHA. Keep existing
    selection authority; eligibility or clean application is not approval.
 4. **Apply/verify:** follow the approved backport flow; record destination commits
@@ -48,6 +49,43 @@ Send `Accept: application/json` and an identifying User-Agent, e.g.
    merely replacing their SHA. Keep deferred/blocked work for the next owner.
 5. **Handoff:** link the release ID, assessed SHA, scan/selection evidence, and any
    unsynced decisions. Archive inactive releases rather than deleting history.
+
+## Manager opportunity intake
+
+When the release manager receives a backport opportunity, persist it before
+routing it. Prefer the full merged `main` commit SHA as the canonical identity
+and a `commit:<sha>` source unit key. Keep the PR URL/number as human-friendly
+metadata and evidence, not the identity: direct-to-main and private advisory
+commits may have no PR. Use an explicit release-commit fallback only when no
+canonical main commit can be established; do not guess lineage from titles.
+
+1. Read current ledger records and deduplicate the commit or complete dependent
+   fix group. Create or revision-check the shared hotfix record with impact,
+   urgency, scope, dependencies, and evidence.
+2. Enumerate active releases and the manager's current owner/session map. For
+   each plausibly affected active branch, freeze its observed head and upsert an
+   assessment. Use `unknown` when the release owner still needs to determine
+   applicability or handling; do not manufacture certainty from PR-number
+   absence or a clean cherry-pick.
+3. After the ledger write succeeds, notify the corresponding ongoing release
+   session with the hotfix ID, canonical SHA, optional PR, impact, target release
+   and assessed head, requested disposition, timing, and authority. Ledger-first
+   ordering ensures an owner can always recover the opportunity from durable
+   state if messaging fails.
+4. Treat routing as at-least-once delivery. Deduplicate the manager's send by
+   `(hotfixId, releaseId, assessedSha)` and record delivery/acknowledgment in the
+   compact manager session record. The current ledger has no notification outbox;
+   do not put ephemeral session keys or delivery receipts in assessment notes.
+5. Reconcile the owner's response into the assessment: included applications get
+   destination commit refs and proof; queued, deferred, not-affected, blocked,
+   covered, or rejected outcomes keep the reason and evidence. Refresh
+   `assessedSha` only after the branch is actually reassessed.
+
+If no ongoing owner session exists, the durable assessment is the handoff for the
+next owner; do not create a release session solely to deliver a notification. A
+notification requests assessment or conveys already-granted inclusion scope. It
+does not approve a backport, reopen frozen intake, mutate a release branch, or
+authorize publication.
 
 ### Per-release assessment fields
 
