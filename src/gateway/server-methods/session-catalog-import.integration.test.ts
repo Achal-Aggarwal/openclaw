@@ -463,7 +463,7 @@ describe("sessions.catalog.import with durable Gateway owners", () => {
       const literal =
         'Conversation info: ⟦openclaw:ctx⟧\n```json\n{"sender":"literal"}\n```\n\n[OpenClaw exec completion] explain this quote';
       fixture.source.push(
-        ...["literal-1", "literal-2"].map((id) => ({
+        ...["literal-1", "literal-2"].map<SessionCatalogTranscriptItem>((id) => ({
           id,
           type: "userMessage",
           text: literal,
