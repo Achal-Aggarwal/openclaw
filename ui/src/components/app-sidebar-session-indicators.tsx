@@ -154,7 +154,9 @@ export function renderSidebarSessionIndicators(
         "sidebar-session-indicator",
         {
           "sidebar-session-indicator--state-only":
-            !team() && !hasContent() && ownerRepeatedByFilter(),
+            !team() &&
+            !hasContent() &&
+            (ownerRepeatedByFilter() || (!readSession().isChild && ownerRepeatedBySection())),
         },
       ]}
     >
