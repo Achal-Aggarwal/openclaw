@@ -15,11 +15,35 @@ import type { DeliveryContext } from "../../utils/delivery-context.shared.js";
 import { buildMainSessionRecoverySettlementPatch } from "./main-session-recovery-clear.js";
 import type { MainSessionRecoveryObservation } from "./main-session-recovery-state.js";
 import { commitMainSessionRecovery } from "./main-session-recovery-store.js";
+import type { readMainSessionRecoveryCheckpoint } from "./main-session-restart-recovery-checkpoint.js";
 import { resolveRestartRecoveryDeliveryContext } from "./main-session-restart-recovery-delivery.js";
 import {
   mainSessionRecoveryLog,
   resolveRestartRecoveryTerminalClientRunId,
 } from "./main-session-restart-recovery-shared.js";
+
+/** Whether recovery must re-prove delegated sender authority before resuming. */
+export function requiresDelegatedRecoverySource(
+  entry: SessionEntry,
+  source: Awaited<ReturnType<typeof readMainSessionRecoveryCheckpoint>>["source"],
+): boolean {
+  // Steering is context, not a new admission. A non-browser operator can have
+  // internal ingress too; its durable source goes through the Gateway's exact
+  // claim and current-policy restoration before any recovery turn executes.
+  if (
+    entry.restartRecoveryDeliverySourceRunId &&
+    (entry.restartRecoveryOperatorSource ||
+      entry.restartRecoverySourceIngress === "control-ui" ||
+      entry.restartRecoverySourceIngress === "channel")
+  ) {
+    return false;
+  }
+  return (
+    source === "inter_session" ||
+    (entry.restartRecoverySourceIngress === "internal" &&
+      (source === undefined || source === "internal_system" || source === "harness_completion"))
+  );
+}
 
 /** Publish one local interruption notice and retire the exact input without replay or delivery. */
 async function settleInterruptedRestartRecovery(
