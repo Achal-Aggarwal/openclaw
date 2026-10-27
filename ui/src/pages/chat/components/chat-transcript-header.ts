@@ -22,3 +22,22 @@ export function reconcileTranscriptHeaderMargin(
   }
   return headerHeight;
 }
+
+/** Update row keys and their header margin in one virtualizer adjustment. */
+export function setTranscriptRowKeys(
+  virtualizer: Virtualizer<HTMLDivElement, HTMLElement>,
+  keys: readonly string[],
+  headerHeight: number,
+  appliedHeaderHeight: number,
+  rangeExtractor: Virtualizer<HTMLDivElement, HTMLElement>["options"]["rangeExtractor"],
+): number {
+  // Prepending rows and removing their header must share one edge-key re-anchor.
+  virtualizer.setOptions({
+    ...virtualizer.options,
+    count: keys.length,
+    getItemKey: (index) => keys[index]!,
+    rangeExtractor,
+    scrollMargin: virtualizer.options.scrollMargin + headerHeight - appliedHeaderHeight,
+  });
+  return headerHeight;
+}

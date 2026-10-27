@@ -14,7 +14,11 @@ import type {
   ComposerActivityLayout,
   TranscriptLayoutOwner,
 } from "./chat-transcript-layout-owner.ts";
-import type { TranscriptContent, TranscriptRow } from "./chat-transcript-layout.ts";
+import type {
+  TranscriptContent,
+  TranscriptPreparationRequest,
+  TranscriptRow,
+} from "./chat-transcript-layout.ts";
 import type { TranscriptMessageElements } from "./chat-transcript-message-elements.ts";
 
 /** A reader-position restoration that is waiting for measurable transcript geometry. */
@@ -69,6 +73,7 @@ export type ChatTranscriptSession = {
     header?: TranscriptHeader | null,
     presented?: PresentationValue,
     applicationContext?: ApplicationContext,
+    preparation?: TranscriptPreparationRequest,
   ): HTMLDivElement;
   syncMessageRows(
     messageRowKeysById: ReadonlyMap<string, string>,

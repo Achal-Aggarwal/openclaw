@@ -2,6 +2,9 @@ import { readSessionMessageIdentity } from "@openclaw/gateway-client/browser";
 import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import type { QuestionDraft } from "../../../app/question-prompt.ts";
 import type { AsyncQuestions } from "./chat-async-question.types.ts";
+import type { StreamGroupOptions } from "./chat-message-stream-view.tsx";
+import type { ChatThreadProps } from "./chat-thread-interactions.ts";
+import { createTranscriptMemo } from "./chat-transcript-memo.ts";
 
 function boundedText(value: unknown, limit: number): value is string {
   return typeof value === "string" && value.length <= limit && value.trim().length > 0;
@@ -93,4 +96,13 @@ export function quoteQuestion(title: string): string {
     quote += character;
   }
   return `> ${quote.replace(/[\r\n]/g, " ")}`;
+}
+
+const questionIndexes = createTranscriptMemo<NonNullable<StreamGroupOptions["questionPrompts"]>>();
+const emptyQuestions: NonNullable<StreamGroupOptions["questionPrompts"]> = new Map();
+
+export function indexQuestionPrompts(prompts: ChatThreadProps["questionPrompts"]) {
+  return prompts
+    ? questionIndexes(prompts, [], () => new Map(prompts.map((prompt) => [prompt.id, prompt])))
+    : emptyQuestions;
 }

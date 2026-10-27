@@ -13,6 +13,13 @@ export type TranscriptRow<T = unknown> =
   | { kind: "item"; key: string; item: T; revision?: string }
   | { kind: "content"; key: string; content: TranscriptContent };
 
+export type TranscriptPreparationRequest = {
+  /** Renderer module set, not session data or request authority. */
+  key: number;
+  ready(): boolean;
+  load(): Promise<void>;
+};
+
 export type TranscriptLayoutProps = {
   applicationContext?: ApplicationContext;
   messageElements: TranscriptMessageElements;

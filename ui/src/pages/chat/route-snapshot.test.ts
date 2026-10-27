@@ -3,6 +3,8 @@ import { IDBFactory } from "fake-indexeddb";
 import { afterEach, beforeEach, expect, it, onTestFinished, vi } from "vitest";
 import { createDeferred } from "../../../../test/helpers/promise.js";
 import { createApplicationRouter, startApplicationRouter } from "../../app-routes.ts";
+import { makeUiSettings } from "../../test-helpers/settings-node.ts";
+import * as transcriptPrewarm from "./chat-transcript-prewarm.ts";
 import { loadChatRoute } from "./route-loader.ts";
 import {
   createSessionRouteContext,
@@ -16,6 +18,8 @@ import { clearStoredChatSnapshots } from "./session-snapshot-invalidation.ts";
 import { prewarmChatSnapshot } from "./session-snapshot-prewarm.ts";
 import { readPrewarmedChatSnapshot, SessionSnapshotStore } from "./session-snapshot-store.ts";
 import { writeSnapshotFixture } from "./session-snapshot.test-support.ts";
+
+vi.mock("./chat-transcript-prewarm.ts", () => ({ prepareCachedTranscript: vi.fn() }));
 
 const prefix = 'scope:["ws://snapshot.example","account-a"]\u0000';
 const snapshot = {
@@ -37,6 +41,10 @@ async function setup(key = sessionRouteKey, storedPrefix = prefix) {
   await store.flush();
   void prewarmChatSnapshot(storedPrefix + key);
   const fixture = createSessionRouteContext();
+  Object.assign(fixture.context, {
+    theme: { settings: makeUiSettings("ws://snapshot.example") },
+    config: { current: { chatBubblesEnabled: false } },
+  });
   Object.defineProperty(fixture.context.gateway, "connection", {
     value: { gatewayUrl: "ws://snapshot.example" },
   });
@@ -227,5 +235,43 @@ it.each([false, true])(
       deleted ? { kind: "missing-session" } : { kind: "session", sessionKey: sessionRouteKey },
     );
     expect(request).toHaveBeenCalledOnce();
+  },
+);
+
+it.each([false, true])(
+  "prepares cached row factories before publication and keeps failed imports retryable (failure: %s)",
+  async (failure) => {
+    const { context } = await setup();
+    const entered = createDeferred<void>();
+    const ready = createDeferred<void>();
+    vi.spyOn(transcriptPrewarm, "prepareCachedTranscript").mockImplementation(() => {
+      entered.resolve();
+      return ready.promise;
+    });
+    const router = createApplicationRouter();
+    context.router = router;
+    onTestFinished(() => router.stop());
+    vi.spyOn(router.getRoute("chat")!, "component").mockResolvedValue({ renderSolid: () => null });
+    const location = { pathname: `/chat/roboclaw/${sessionRouteUuid}`, search: "", hash: "" };
+    let published = false;
+    const startup = startApplicationRouter(
+      router,
+      {
+        location: () => location,
+        push: () => {},
+        replace: () => {},
+        listen: () => () => {},
+      },
+      "",
+      context,
+    ).then(() => {
+      published = true;
+    });
+    await entered.promise;
+    expect(published).toBe(false);
+    if (failure) ready.reject(new Error("Renderer download failed"));
+    else ready.resolve();
+    await startup;
+    expect(new SessionSnapshotStore().readReady(prefix + sessionRouteKey)).toEqual(snapshot);
   },
 );

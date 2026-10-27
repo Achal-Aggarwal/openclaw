@@ -17,12 +17,26 @@ import {
   TranscriptRowKeyContext,
   type TranscriptContent,
   type TranscriptLayoutProps,
+  type TranscriptPreparationRequest,
+  type TranscriptRow,
 } from "./chat-transcript-layout.ts";
 import { TranscriptMediaDisconnect } from "./chat-transcript-media-lifecycle.ts";
 import { transcriptArraysEqual } from "./chat-transcript-memo.ts";
 import { TranscriptMessageElementsContext } from "./chat-transcript-message-elements.ts";
+import { prepareTranscriptRows } from "./chat-transcript-preparation.ts";
 import { GuardedTranscriptItem } from "./chat-transcript-render-guard.ts";
 import { nativeRows, type NativeTranscriptView } from "./chat-transcript-rows.ts";
+
+export type TranscriptPreparation = {
+  key: number;
+  completion: Promise<void>;
+  retry: () => void;
+};
+
+function PreparationCompletion(props: { completion: Promise<void> }) {
+  const completed = createMemo(() => props.completion.then(() => null));
+  return <>{completed()}</>;
+}
 
 function NativeRow(props: { value: NativeTranscriptView }): JSX.Element {
   const Row = dynamic(() => nativeRows[props.value.kind]);
@@ -146,6 +160,8 @@ export class ChatTranscriptRenderer {
   private element?: HTMLDivElement;
   private column?: HTMLDivElement;
   private accepted?: TranscriptLayoutProps;
+  private preparation?: TranscriptPreparation;
+  private placeholder = false;
   private committed?: TranscriptLayoutProps;
   private lifecycle?: SolidRenderLifecycle<TranscriptLayoutProps>;
   private publishPresentation?: () => void;
@@ -157,6 +173,44 @@ export class ChatTranscriptRenderer {
   private readonly mediaDisconnect = new Set<() => void>();
   private publish?: () => void;
   private readonly presentationChanged = () => this.publishPresentation?.();
+
+  constructor(private readonly invalidate: () => void) {}
+
+  get preparing(): boolean {
+    return this.preparation !== undefined;
+  }
+
+  retirePreparation(): void {
+    this.preparation = undefined;
+  }
+
+  prepare<T>(rows: readonly TranscriptRow<T>[], request?: TranscriptPreparationRequest): boolean {
+    request ??= prepareTranscriptRows(rows.filter((row) => row.kind === "content"));
+    if (!request || request.ready()) {
+      this.preparation = undefined;
+      return true;
+    }
+    if (this.preparation?.key !== request.key) {
+      const pending: TranscriptPreparation = {
+        key: request.key,
+        completion: request.load(),
+        retry: () => {
+          if (this.preparation !== pending) return;
+          this.preparation = undefined;
+          this.invalidate();
+        },
+      };
+      this.preparation = pending;
+      void pending.completion.then(
+        () => {
+          // Re-read current rows on settlement; never publish this request's old snapshot.
+          if (this.preparation === pending) this.invalidate();
+        },
+        () => {},
+      ); // The retained root's error slot owns visible retry/reload.
+    }
+    return false;
+  }
 
   get columnElement(): HTMLDivElement | undefined {
     return this.column;
@@ -227,7 +281,12 @@ export class ChatTranscriptRenderer {
   }
 
   commit(): void {
-    if (!this.lifecycle || this.commitQueued || this.accepted === this.committed) {
+    if (
+      this.placeholder ||
+      !this.lifecycle ||
+      this.commitQueued ||
+      this.accepted === this.committed
+    ) {
       return;
     }
     this.commitQueued = true;
@@ -256,7 +315,7 @@ export class ChatTranscriptRenderer {
   }
 
   render(next: TranscriptLayoutProps): HTMLDivElement {
-    this.accepted = next;
+    const preparation = this.preparation;
     const binding = typeof next.presented === "boolean" ? undefined : next.presented;
     if (binding?.owner !== this.binding?.owner) {
       this.stopPresentation?.();
@@ -265,6 +324,27 @@ export class ChatTranscriptRenderer {
         : undefined;
     }
     this.binding = binding;
+    if (preparation && this.element && this.accepted) {
+      // Module readiness holds rows, never the pane's current visibility.
+      this.accepted = { ...this.accepted, presented: next.presented };
+      this.publishPresentation?.();
+      this.publish?.();
+      return this.element;
+    }
+    this.placeholder = preparation !== undefined;
+    if (preparation) {
+      // A first import has a visible status, but no admitted rows, maps or geometry.
+      next = {
+        ...next,
+        rows: [],
+        getContent: () => null,
+        overlay: null,
+        header: null,
+        headerHeight: 0,
+        initialPositionPending: () => false,
+      };
+    }
+    this.accepted = next;
     if (!this.element) {
       const element = document.createElement("div");
       element.className = "chat-thread-inner chat-thread-inner--virtual";
@@ -281,22 +361,49 @@ export class ChatTranscriptRenderer {
             if (!owner.accepted) {
               throw new Error("Transcript render snapshot was read after disposal");
             }
-            return owner.accepted;
+            return { accepted: owner.accepted, preparation: owner.preparation };
           });
           const lifecycle = createSolidRenderLifecycle({
             host: this,
             // The plain owner state also fences callbacks before the signal flushes.
             presented: active,
-            read: source.read,
+            read: () => source.read().accepted,
           });
           this.lifecycle = lifecycle;
           const snapshot = createMemo(lifecycle.snapshot);
+          const preparation = () => source.read().preparation;
           const capture = (event: Event) => snapshot().captureInteractionResize(event);
           onSettled(() => listen(element, "click", capture, true));
           const content = () => (
             <TranscriptMessageElementsContext value={next.messageElements}>
               <TranscriptMediaDisconnect value={this.mediaDisconnect}>
                 <ContentPresentation value={active}>
+                  <Show when={preparation()} keyed>
+                    {(pending) => (
+                      <div
+                        style={{
+                          position: "absolute",
+                          top: "0",
+                          left: "0",
+                          right: "0",
+                          "z-index": "1",
+                        }}
+                      >
+                        <ChatLazyBoundary
+                          onRetry={() => pending.retry()}
+                          fallback={
+                            this.placeholder ? (
+                              <div class="chat-group" role="status">
+                                {t("common.loading")}
+                              </div>
+                            ) : undefined
+                          }
+                        >
+                          <PreparationCompletion completion={pending.completion} />
+                        </ChatLazyBoundary>
+                      </div>
+                    )}
+                  </Show>
                   <TranscriptRows
                     snapshot={snapshot()}
                     measureRowRefFor={next.measureRowRefFor}
@@ -336,6 +443,8 @@ export class ChatTranscriptRenderer {
     this.publishPresentation = undefined;
     this.lifecycle = undefined;
     this.accepted = undefined;
+    this.preparation = undefined;
+    this.placeholder = false;
     this.committed = undefined;
     this.commitQueued = false;
     this.layoutEffects.clear();

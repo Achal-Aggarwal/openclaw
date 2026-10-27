@@ -1,6 +1,7 @@
 import type { Virtualizer } from "@tanstack/virtual-core";
 import { CHAT_TRANSCRIPT_END_THRESHOLD_PX } from "../scroll.ts";
 import { maxTranscriptScrollOffset } from "./chat-transcript-geometry.ts";
+import type { TranscriptOffsetState } from "./chat-transcript-offset-observer.ts";
 import {
   CHAT_TRANSCRIPT_SCROLL_RESTORE_STABLE_FRAMES,
   CHAT_TRANSCRIPT_ZERO_MAX_SETTLE_FRAMES,
@@ -108,4 +109,27 @@ function settlePendingScroll(owner: TranscriptScrollRestoreHost, scrollTop: numb
   });
   // Publish the restored reader before queued hydration/resize follow runs.
   owner.onReaderScroll();
+}
+
+/** Cancel a pending restore and replace a smooth journey with its current native offset. */
+export function cancelTranscriptScroll(
+  owner: TranscriptScrollRestoreHost,
+  state: TranscriptOffsetState,
+  measureSkippedRows: () => void,
+): void {
+  if (state.scrollCommand === null && !state.pendingScrollOffset) return;
+  const skippedRows = state.scrollCommand?.behavior === "smooth";
+  state.scrollCommand = null;
+  state.pendingScrollOffset = null;
+  if (owner.pendingScrollFrame !== null) {
+    cancelAnimationFrame(owner.pendingScrollFrame);
+    owner.pendingScrollFrame = null;
+  }
+  // The smooth journey may already be automatic when its skipped sizes settle.
+  if (skippedRows) measureSkippedRows();
+  const element = owner.getScrollElement();
+  if (element) {
+    // Cancellation is one instant replacement, never a multi-frame restoration.
+    owner.virtualizer.scrollToOffset(element.scrollTop, { behavior: "instant" });
+  }
 }

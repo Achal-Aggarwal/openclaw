@@ -26,7 +26,6 @@ import { ContentPresentation } from "../../../lib/solid/presentation.ts";
 import { assistantMessageIsInterrupted } from "../chat-assistant-reply.ts";
 import "../../../components/solid/person-reference.tsx";
 import { usePanePresentation } from "../chat-pane-presentation.ts";
-import { AsyncQuestionSummary } from "./chat-async-question-summary.tsx";
 import { ChatBubbleActivity } from "./chat-bubble-activity-view.tsx";
 import { ChatLazyBoundary } from "./chat-lazy-boundary.tsx";
 import { OmittedMedia, PairingQrNotices } from "./chat-message-attachment-status-solid.tsx";
@@ -61,7 +60,10 @@ import { MarkdownText, MessageJson, MessageMarkdown } from "./chat-message-text-
 import { ReplyLineView } from "./chat-reply-attribution.tsx";
 import type { SidebarContent } from "./chat-sidebar-content-types.ts";
 import { TranscriptMessageElementsContext } from "./chat-transcript-message-elements.ts";
-import { WorkspaceConflictTranscriptMessage } from "./chat-workspace-conflict.tsx";
+import {
+  AsyncQuestionSummary,
+  WorkspaceConflictTranscriptMessage,
+} from "./chat-transcript-specialized.ts";
 
 registerEnglishCatalog(registerChatToolLabelsEnglish);
 

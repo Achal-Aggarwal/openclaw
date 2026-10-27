@@ -46,6 +46,8 @@ import {
   type SessionRoutePresentation,
 } from "./route-loader-short-resolve.ts";
 import type { ChatRouteData } from "./session-route-data.ts";
+import { resolveChatSnapshotKey } from "./session-snapshot-key.ts";
+import { peekPrewarmedChatSnapshot } from "./session-snapshot-prewarm.ts";
 
 export type { ChatRouteData, SessionChatRouteData } from "./session-route-data.ts";
 
@@ -637,6 +639,48 @@ export async function loadSessionPage(
       ? { sessionKey: data?.kind === "session" ? data.sessionKey : undefined }
       : undefined,
   );
+  if ("kind" in result && result.kind === "session") {
+    const entry = peekPrewarmedChatSnapshot();
+    const scopeKey = () =>
+      resolveChatSnapshotKey(
+        {
+          settings: context.gateway.connection,
+          client: context.gateway.snapshot.client,
+          agentsList: context.agents.state.agentsList,
+          hello: context.gateway.snapshot.hello,
+        },
+        { sessionKey: result.sessionKey },
+      );
+    if (entry && entry.cacheKey === scopeKey()) {
+      const revision = context.gateway.connectionRevision;
+      const current = () =>
+        !entry.cancelled &&
+        peekPrewarmedChatSnapshot() === entry &&
+        context.gateway.connectionRevision === revision &&
+        scopeKey() === entry.cacheKey;
+      const { readPrewarmedChatSnapshot } = await import("./session-snapshot-store.ts");
+      const snapshot = await readPrewarmedChatSnapshot(entry.cacheKey);
+      signal.throwIfAborted();
+      if (snapshot && current()) {
+        try {
+          const { prepareCachedTranscript } = await import("./chat-transcript-prewarm.ts");
+          signal.throwIfAborted();
+          if (current()) {
+            await prepareCachedTranscript(
+              snapshot,
+              result.sessionKey,
+              context.theme.settings,
+              context.config.current.chatBubblesEnabled === true,
+              configuredMainKey(context),
+            );
+          }
+        } catch {
+          // The mounted transcript owns visible import errors and retry.
+        }
+        signal.throwIfAborted();
+      }
+    }
+  }
   const creation = context.chatSubmissions.creation;
   if ("kind" in result && result.kind === "session") {
     if (creation?.sessionKey === result.sessionKey) {

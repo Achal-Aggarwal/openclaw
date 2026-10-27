@@ -33,6 +33,15 @@ const chatInteractionEntries = new Set([
   // Image viewers and provider-review dialogs load only when their own UI is needed.
 ]);
 
+// Rich cached rows and ordinary live turns must not wait for another network round trip.
+// Module preloads fetch and compile these factories without evaluating their renderers.
+const chatTranscriptEntries = new Set([
+  "ui/src/pages/chat/components/chat-message-activity-view.tsx",
+  "ui/src/pages/chat/components/chat-work-group-summary.tsx",
+  "ui/src/pages/chat/components/chat-turn-recap-view.tsx",
+  "ui/src/pages/chat/components/chat-notice-view.tsx",
+]);
+
 export function collectControlUiStaticAssets(
   bundle: NonNullable<IndexHtmlTransformContext["bundle"]>,
   file: string,
@@ -114,6 +123,13 @@ export function collectControlUiBootAssets(
           // Placement belongs to the first New Session action, never Chat boot.
           if (key === "ui/src/app/session-placement-startup.runtime.ts") {
             return route === "new";
+          }
+          // Prepare cached rows before publication; common factories fetch beside the route.
+          if (
+            key === "ui/src/pages/chat/chat-transcript-prewarm.ts" ||
+            chatTranscriptEntries.has(key)
+          ) {
+            return route === "chat";
           }
           const owner = controlUiBootEntryRoute(id);
           return owner === "shared" || owner === route;

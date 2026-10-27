@@ -3,6 +3,7 @@ import type { JSX } from "@solidjs/web";
 import { Show } from "solid-js";
 import { onTestFinished, vi } from "vitest";
 import { registerMcpAppUnmountTarget } from "../../../components/mcp-app-unmount.ts";
+import type { PresentationValue } from "../../../lib/presentation.ts";
 import { mountSolid } from "../../../test-helpers/solid-render.tsx";
 import { flush } from "../../../test-helpers/solid-settle.ts";
 import { createTestTranscript } from "../chat-view.test-helpers.ts";
@@ -12,7 +13,10 @@ import {
 } from "../components/chat-thread-interactions.ts";
 import { ChatThread } from "../components/chat-thread-view.tsx";
 import type { ChatTranscript } from "../components/chat-transcript-controller.ts";
-import type { TranscriptRow } from "../components/chat-transcript-layout.ts";
+import type {
+  TranscriptPreparationRequest,
+  TranscriptRow,
+} from "../components/chat-transcript-layout.ts";
 import { TranscriptSearch } from "../components/chat-transcript-search.tsx";
 import type { ChatTranscriptSession } from "../components/chat-transcript-session.ts";
 import {
@@ -141,6 +145,7 @@ export async function mountTestTranscript(
   paneId: string,
   initialRows: readonly TestContentRow[],
   transcript: ChatTranscript = createTestTranscript(paneId),
+  initialPreparation?: TranscriptPreparationRequest,
 ) {
   const container = document.body.appendChild(document.createElement("div"));
   Object.defineProperties(container, {
@@ -160,15 +165,36 @@ export async function mountTestTranscript(
     }
   };
   let currentRows = initialRows;
+  let currentPreparation = initialPreparation;
+  let currentPresented: PresentationValue = true;
   let renderQueued = false;
   let active = true;
   let currentSession: ChatTranscriptSession;
   container.addEventListener("focusin", (event) => currentSession.handleFocusIn(event));
   container.addEventListener("focusout", (event) => currentSession.handleFocusOut(event));
-  const renderRows = (rows: readonly TestContentRow[]) => {
+  const renderRows = (
+    rows: readonly TestContentRow[],
+    preparation?: TranscriptPreparationRequest,
+    presented: PresentationValue = currentPresented,
+  ) => {
     currentRows = rows;
+    currentPreparation = preparation;
+    currentPresented = presented;
     currentSession = transcript.renderSession(`agent:main:${paneId}`, (session) => session);
-    render(currentSession.render(rows, rowContent, null, false), container);
+    render(
+      currentSession.render(
+        rows,
+        rowContent,
+        null,
+        false,
+        null,
+        null,
+        presented,
+        undefined,
+        preparation,
+      ),
+      container,
+    );
     transcript.update();
     flush();
   };
@@ -178,7 +204,7 @@ export async function mountTestTranscript(
       queueMicrotask(() => {
         renderQueued = false;
         if (active) {
-          renderRows(currentRows);
+          renderRows(currentRows, currentPreparation);
         }
       });
     }
@@ -188,7 +214,7 @@ export async function mountTestTranscript(
     unsubscribe();
   });
   transcript.start();
-  renderRows(initialRows);
+  renderRows(initialRows, currentPreparation);
   await flushDeferredRowPrune();
   return {
     container,

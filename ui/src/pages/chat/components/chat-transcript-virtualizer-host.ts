@@ -22,7 +22,7 @@ import {
   isTranscriptRangeCommitted,
   createPositionRailGutter,
 } from "./chat-transcript-geometry.ts";
-import { reconcileTranscriptHeaderMargin } from "./chat-transcript-header.ts";
+import { reconcileTranscriptHeaderMargin, setTranscriptRowKeys } from "./chat-transcript-header.ts";
 import { TranscriptInitialRange } from "./chat-transcript-initial-range.ts";
 import {
   reconcileChatTranscriptInteractionResize,
@@ -30,7 +30,12 @@ import {
 } from "./chat-transcript-interaction-anchor.ts";
 import { TranscriptLayoutOwner } from "./chat-transcript-layout-owner.ts";
 import { ChatTranscriptRenderer } from "./chat-transcript-layout-solid.tsx";
-import type { TranscriptContent, TranscriptRow } from "./chat-transcript-layout.ts";
+import type {
+  TranscriptContent,
+  TranscriptLayoutProps,
+  TranscriptPreparationRequest,
+  TranscriptRow,
+} from "./chat-transcript-layout.ts";
 import { createTranscriptMessageElements } from "./chat-transcript-message-elements.ts";
 import {
   isTranscriptMaintenanceScroll,
@@ -50,6 +55,7 @@ import {
 import { TranscriptRowRefs } from "./chat-transcript-row-refs.ts";
 import {
   applyPendingScrollOffset,
+  cancelTranscriptScroll,
   type TranscriptScrollRestoreHost,
 } from "./chat-transcript-scroll-restore.ts";
 import {
@@ -64,7 +70,9 @@ import {
 import { TranscriptViewportRect } from "./chat-transcript-viewport-rect.ts";
 
 export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
-  private readonly renderer = new ChatTranscriptRenderer();
+  private readonly renderer = new ChatTranscriptRenderer(() => {
+    if (this.connected) this.invalidate();
+  });
   private readonly offsetState = new TranscriptOffsetState();
   readonly entryAnimations = new ChatMessageEntryAnimations();
   readonly messageElements = createTranscriptMessageElements(this.entryAnimations.refFor);
@@ -269,7 +277,7 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
       offsetState: this.offsetState,
       virtualizer: this.virtualizer,
       getScrollElement: () => this.scrollElement,
-      isContentReady: () => this.layout.ready,
+      isContentReady: () => !this.renderer.preparing && this.layout.ready,
       getRowCount: () => this.rowKeys.length,
       isConnected: () => this.connected,
       pendingScrollFrame: null,
@@ -381,6 +389,7 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
   };
 
   disconnect(): void {
+    this.renderer.retirePreparation();
     this.initialRange.disconnect();
     this.renderer.disconnect(() => this.connected);
     this.layout.disconnect();
@@ -436,6 +445,7 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
     header: TranscriptHeader | null = null,
     presented: PresentationValue = true,
     applicationContext?: ApplicationContext,
+    preparation?: TranscriptPreparationRequest,
   ): HTMLDivElement {
     this.offsetState.renderedTouchActive = this.offsetState.touchActive;
     // Keep old geometry during the gesture, while still virtualizing that old
@@ -449,22 +459,48 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
     ) {
       return this.renderPreviousRows();
     }
-    return this.renderCommittedRows(
-      {
-        rows,
-        renderRow,
-        announcement,
-        announce,
-        overlay,
-        header,
-        messageRows: this.candidateMessageRowKeysById,
-        renderKeyRows: this.candidateMessageRowsByKey,
-        entryKeys: this.entryAnimations.projectedKeys,
-        presented,
-        applicationContext,
-      },
-      true,
-    );
+    const snapshot: TranscriptRenderSnapshot<T> = {
+      rows,
+      renderRow,
+      announcement,
+      announce,
+      overlay,
+      header,
+      messageRows: this.candidateMessageRowKeysById,
+      renderKeyRows: this.candidateMessageRowsByKey,
+      entryKeys: this.entryAnimations.projectedKeys,
+      presented,
+      applicationContext,
+    };
+    if (!this.renderer.prepare(rows, preparation)) {
+      return this.renderer.render(this.layoutProps(snapshot));
+    }
+    return this.renderCommittedRows(snapshot, true);
+  }
+
+  private layoutProps<T>(snapshot: TranscriptRenderSnapshot<T>): TranscriptLayoutProps {
+    return {
+      applicationContext: snapshot.applicationContext,
+      messageElements: this.messageElements,
+      layout: this.layout,
+      headerHeight: this.headerHeight,
+      presented: snapshot.presented,
+      initialPositionPending: () => this.initialRange.pending,
+      onCommit: () => this.connected && this.didCommit(),
+      rows: snapshot.rows,
+      getContent: (index) => snapshot.renderRow(snapshot.rows[index]!),
+      virtualizer: this.virtualizer,
+      overlay: snapshot.overlay,
+      header: snapshot.header?.content ?? null,
+      scrollElementRef: this.scrollElementRef,
+      captureInteractionResize: this.captureInteractionResize,
+      measureRowRefFor: (key) => this.rowRefs.forKey(key),
+      measureRows:
+        this.initialRange.measuring ||
+        this.prependAnchor.messageKey !== null ||
+        this.offsetState.scrollCommand?.target === "message" ||
+        this.offsetState.scrollCommand?.target === "index",
+    };
   }
 
   /** Render one selected projection without admitting a held history insertion. */
@@ -472,8 +508,7 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
     snapshot: TranscriptRenderSnapshot<T>,
     capturePrepend: boolean,
   ): HTMLDivElement {
-    const { rows, renderRow, announcement, announce, overlay, header, messageRows, renderKeyRows } =
-      snapshot;
+    const { rows, announcement, announce, header, messageRows, renderKeyRows } = snapshot;
     const rowModelChanged =
       rows.length !== this.rowKeys.length ||
       rows.some((row, index) => row.key !== this.rowKeys[index]);
@@ -524,29 +559,7 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
           );
         }
         this.announcement.sync(announcement, announce);
-        return this.renderer.render({
-          applicationContext: snapshot.applicationContext,
-          messageElements: this.messageElements,
-          layout: this.layout,
-          headerHeight: this.headerHeight,
-          presented: snapshot.presented,
-          initialPositionPending: () => this.initialRange.pending,
-          onCommit: () => this.connected && this.didCommit(),
-          rows,
-          getContent: (index) => renderRow(rows[index]!),
-          virtualizer,
-          overlay,
-          header: header?.content ?? null,
-          scrollElementRef: this.scrollElementRef,
-          captureInteractionResize: this.captureInteractionResize,
-          measureRowRefFor: (key) => this.rowRefs.forKey(key),
-          measureRows:
-            // The first correction reveals new rows; their real sizes must land before retiring the anchor.
-            this.initialRange.measuring ||
-            this.prependAnchor.messageKey !== null ||
-            this.offsetState.scrollCommand?.target === "message" ||
-            this.offsetState.scrollCommand?.target === "index",
-        });
+        return this.renderer.render(this.layoutProps(snapshot));
       },
       () =>
         leavingTranscriptMcpAppRows(this.threadInnerElement, () =>
@@ -575,7 +588,12 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
   }
 
   get isPositionSettled(): boolean {
-    return this.layout.ready && !this.initialRange.pending && !this.offsetState.pendingScrollOffset;
+    return (
+      !this.renderer.preparing &&
+      this.layout.ready &&
+      !this.initialRange.pending &&
+      !this.offsetState.pendingScrollOffset
+    );
   }
 
   private canAutoFollow(): boolean {
@@ -610,26 +628,9 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
   cancelScroll(): void {
     this.endAnchor.clear();
     this.prependAnchor.clear();
-    if (this.offsetState.scrollCommand === null && !this.offsetState.pendingScrollOffset) {
-      return;
-    }
-    const measureSkippedRows = this.offsetState.scrollCommand?.behavior === "smooth";
-    this.offsetState.scrollCommand = null;
-    this.offsetState.pendingScrollOffset = null;
-    if (this.scrollRestoreHost.pendingScrollFrame !== null) {
-      cancelAnimationFrame(this.scrollRestoreHost.pendingScrollFrame);
-      this.scrollRestoreHost.pendingScrollFrame = null;
-    }
-    // The smooth journey may already be automatic when its skipped sizes settle.
-    if (measureSkippedRows) {
-      this.presentation.measureRowsWithoutScrollAdjustment();
-    }
-    const element = this.scrollElement;
-    if (element) {
-      // Cancellation is one instant target replacement, never the multi-frame
-      // restoration API.
-      this.virtualizer.scrollToOffset(element.scrollTop, { behavior: "instant" });
-    }
+    cancelTranscriptScroll(this.scrollRestoreHost, this.offsetState, () =>
+      this.presentation.measureRowsWithoutScrollAdjustment(),
+    );
   }
 
   syncMessageRows(
@@ -711,19 +712,13 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
   private syncRows(nextKeys: readonly string[]): void {
     this.rowKeys = nextKeys;
     this.rowIndexesByKey = new Map(this.rowKeys.map((key, index) => [key, index]));
-    // The header margin must land in the same setOptions as the key change:
-    // the edge-key re-anchor uses absolute offsets, so a prepend that also
-    // removes the header (exhausted history) compensates in one adjustment.
-    const scrollMargin =
-      this.virtualizer.options.scrollMargin + this.headerHeight - this.appliedHeaderHeight;
-    this.appliedHeaderHeight = this.headerHeight;
-    this.virtualizer.setOptions({
-      ...this.virtualizer.options,
-      count: nextKeys.length,
-      getItemKey: (index) => nextKeys[index]!,
-      rangeExtractor: (range) => this.initialRange.extract(range),
-      scrollMargin,
-    });
+    this.appliedHeaderHeight = setTranscriptRowKeys(
+      this.virtualizer,
+      nextKeys,
+      this.headerHeight,
+      this.appliedHeaderHeight,
+      (range) => this.initialRange.extract(range),
+    );
   }
 
   private queueLayout(): void {

@@ -20,7 +20,7 @@ import {
   setExpansionState,
   syncToolCardExpansionState,
 } from "../chat-thread.ts";
-import { readAsyncQuestions } from "./chat-async-question-content.ts";
+import { indexQuestionPrompts, readAsyncQuestions } from "./chat-async-question-content.ts";
 import { buildChatArchiveNotice } from "./chat-divider.ts";
 import type { NativeMessageGroupOptions } from "./chat-message-group-frame.ts";
 import { assistantMediaPolicyKey } from "./chat-message-media.ts";
@@ -34,7 +34,6 @@ import {
   resolveTranscriptAvatarPlacement,
   resolveTranscriptParticipants,
 } from "./chat-transcript-identity.ts";
-import { createTranscriptMemo } from "./chat-transcript-memo.ts";
 import {
   expandReplyTargetWork,
   projectTranscriptChain,
@@ -42,6 +41,7 @@ import {
   projectTranscriptRows,
   type PlacedContentRow,
 } from "./chat-transcript-message-index.ts";
+import { prepareTranscriptRows } from "./chat-transcript-preparation.ts";
 import { projectTranscriptRecovery } from "./chat-transcript-recovery.ts";
 import {
   GuardedTranscriptItem,
@@ -54,9 +54,6 @@ import type { ChatTranscriptSession, TranscriptHeader } from "./chat-transcript-
 import { createTranscriptStreamSource } from "./chat-transcript-stream-source.ts";
 import { projectTranscriptWorkPreviews } from "./chat-transcript-work-previews.ts";
 import { resolveAssistantDisplayAvatar } from "./chat-welcome.ts";
-
-const questionIndexes = createTranscriptMemo<NonNullable<StreamGroupOptions["questionPrompts"]>>();
-const emptyQuestions: NonNullable<StreamGroupOptions["questionPrompts"]> = new Map();
 
 export function projectChatTranscript(
   props: ChatThreadProps,
@@ -186,13 +183,7 @@ export function projectChatTranscript(
     latestBrowserTabs: props.latestBrowserTabs,
     bubbleMode: props.chatBubbleMode,
   });
-  const questionPrompts = props.questionPrompts
-    ? questionIndexes(
-        props.questionPrompts,
-        [],
-        () => new Map(props.questionPrompts!.map((prompt) => [prompt.id, prompt])),
-      )
-    : emptyQuestions;
+  const questionPrompts = indexQuestionPrompts(props.questionPrompts);
   const toggleToolCardExpanded = (toolCardId: string, expanded?: boolean) => {
     setExpansionState(
       expandedToolCards,
@@ -653,6 +644,12 @@ export function projectChatTranscript(
     });
   }
   const transcriptRows = projectTranscriptRows(rows, workPreviews, contentRows);
+  const preparation = prepareTranscriptRows(transcriptRows, {
+    bubbleMode: props.chatBubbleMode === true && !searchFiltering,
+    recap: turnRecap !== null,
+    asyncQuestions: Boolean(asyncQuestions?.submit),
+    getAssistantMessageExpansion: expandedAssistantMessages.size > 0 ? recovery.get : undefined,
+  });
   state.transcriptRenderContext.turnVideoMessages = snapshot.turnVideoMessages;
   state.transcriptRenderContext.onSetReply = props.onSetReply;
   state.transcriptRenderContext.onOpenReply = (replyToId) => {
@@ -723,6 +720,7 @@ export function projectChatTranscript(
         header,
         props.transcriptVisible ?? true,
         props.applicationContext,
+        preparation,
       ),
   };
 }

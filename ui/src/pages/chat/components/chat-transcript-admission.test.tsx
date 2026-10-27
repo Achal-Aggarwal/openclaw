@@ -1,0 +1,147 @@
+/* @vitest-environment jsdom */
+
+import { useContext } from "solid-js";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { ContentPresentation } from "../../../lib/solid/presentation.ts";
+import { waitForSolid } from "../../../test-helpers/solid-settle.ts";
+import { mountTestTranscript } from "../test-helpers/chat-transcript-native.tsx";
+import type { TranscriptPreparationRequest } from "./chat-transcript-layout.ts";
+import {
+  installTranscriptDomMocks,
+  resetTranscriptTestDom,
+} from "./chat-transcript.test-support.ts";
+
+beforeEach(installTranscriptDomMocks);
+afterEach(resetTranscriptTestDom);
+
+function heldPreparation(key = 1) {
+  let ready = false;
+  let resolve!: () => void;
+  let reject!: (reason: Error) => void;
+  let completion = new Promise<void>((yes, no) => {
+    resolve = yes;
+    reject = no;
+  });
+  const request: TranscriptPreparationRequest = {
+    key,
+    ready: () => ready,
+    load: vi.fn(() => completion),
+  };
+  return {
+    request,
+    resolve() {
+      ready = true;
+      resolve();
+    },
+    reject,
+    retry() {
+      completion = new Promise<void>((yes, no) => {
+        resolve = yes;
+        reject = no;
+      });
+    },
+  };
+}
+const rows = (text: string, key = "row") => [
+  { kind: "content" as const, key, content: <p>{text}</p> },
+];
+
+it("retains accepted rows and geometry until a whole replacement batch is available", async () => {
+  const held = heldPreparation();
+  const view = await mountTestTranscript("admission-retain", rows("Accepted"));
+  try {
+    const original = view.container.querySelector(".chat-virtual-row");
+    const height = view.container.querySelector<HTMLElement>(".chat-thread-inner")!.style.height;
+    view.renderRows([...rows("Replacement"), ...rows("Second", "row-2")], held.request);
+    expect(view.container.textContent).toContain("Accepted");
+    expect(view.container.textContent).not.toContain("Replacement");
+    expect(view.container.querySelector(".chat-virtual-row")).toBe(original);
+    expect(view.container.querySelector<HTMLElement>(".chat-thread-inner")!.style.height).toBe(
+      height,
+    );
+    expect(held.request.load).toHaveBeenCalledOnce();
+    held.resolve();
+    await waitForSolid(() => expect(view.container.textContent).toContain("Replacement"));
+    expect(view.container.querySelector(".chat-virtual-row")).toBe(original);
+  } finally {
+    view.transcript.dispose();
+  }
+});
+
+it("keeps first-load rows uncommitted and ignores a superseded preparation", async () => {
+  const held = heldPreparation();
+  const view = await mountTestTranscript("admission-first", rows("Stale"), undefined, held.request);
+  try {
+    expect(view.container.querySelector(".chat-virtual-row")).toBeNull();
+    view.renderRows(rows("Current"));
+    held.resolve();
+    await waitForSolid(() => expect(view.container.textContent).toContain("Current"));
+    expect(view.container.textContent).not.toContain("Stale");
+  } finally {
+    view.transcript.dispose();
+  }
+});
+
+it("shows import failure beside retained content and retries the current batch", async () => {
+  const held = heldPreparation();
+  const view = await mountTestTranscript("admission-retry", rows("Accepted"));
+  try {
+    const original = view.container.querySelector(".chat-virtual-row");
+    view.renderRows(rows("Replacement"), held.request);
+    held.reject(new Error("Renderer preparation failed"));
+    await waitForSolid(() => expect(view.container.querySelector("[role=alert]")).not.toBeNull());
+    expect(view.container.querySelector(".chat-virtual-row")).toBe(original);
+    expect(view.container.textContent).toContain("Accepted");
+    held.retry();
+    view.container.querySelector<HTMLButtonElement>(".lazy-view-error__action")!.click();
+    await waitForSolid(() => expect(held.request.load).toHaveBeenCalledTimes(2));
+    held.resolve();
+    await waitForSolid(() => expect(view.container.textContent).toContain("Replacement"));
+    expect(view.container.querySelector("[role=alert]")).toBeNull();
+    expect(view.container.querySelector(".chat-virtual-row")).toBe(original);
+  } finally {
+    view.transcript.dispose();
+  }
+});
+
+it("does not reload resident factories and cannot publish after disposal", async () => {
+  const held = heldPreparation();
+  held.resolve();
+  const view = await mountTestTranscript(
+    "admission-resident",
+    rows("Resident"),
+    undefined,
+    held.request,
+  );
+  expect(view.container.textContent).toContain("Resident");
+  expect(held.request.load).not.toHaveBeenCalled();
+  const late = heldPreparation(2);
+  view.renderRows(rows("Disposed"), late.request);
+  view.transcript.dispose();
+  late.resolve();
+  await Promise.resolve();
+  expect(view.container.textContent).not.toContain("Disposed");
+});
+
+it("retires presentation while an import holds accepted rows", async () => {
+  function PresentedControl() {
+    const presented = useContext(ContentPresentation);
+    return <button disabled={!presented()}>Accepted action</button>;
+  }
+  const held = heldPreparation();
+  const accepted = [{ kind: "content" as const, key: "row", content: () => <PresentedControl /> }];
+  const view = await mountTestTranscript("admission-presentation", accepted);
+  try {
+    const button = view.container.querySelector<HTMLButtonElement>("button")!;
+    expect(button.disabled).toBe(false);
+    view.renderRows(rows("Replacement"), held.request, false);
+    await waitForSolid(() => expect(button.disabled).toBe(true));
+    expect(view.container.querySelector("button")).toBe(button);
+    expect(view.container.textContent).not.toContain("Replacement");
+    view.renderRows(rows("Replacement"), held.request, true);
+    await waitForSolid(() => expect(button.disabled).toBe(false));
+  } finally {
+    view.transcript.dispose();
+    held.resolve();
+  }
+});

@@ -79,6 +79,25 @@ export function controlUiStableChunkName(id: string): string | undefined {
   const normalized = normalizeModuleId(id);
 
   switch (controlUiBootManifestKey(id)) {
+    case "ui/src/pages/chat/components/chat-async-question-summary.tsx":
+      return "chat-transcript-async-questions";
+    case "ui/src/pages/chat/components/chat-workspace-conflict.tsx":
+      return "chat-transcript-workspace-conflict";
+    case "ui/src/pages/chat/components/chat-message-activity-view.tsx":
+    case "ui/src/pages/chat/components/chat-activity-headline.solid.tsx":
+    case "ui/src/pages/chat/components/chat-activity-headline-selection.ts":
+    case "ui/src/pages/chat/components/chat-work-group-summary.tsx":
+    case "ui/src/pages/chat/components/chat-turn-recap-view.tsx":
+    case "ui/src/pages/chat/components/chat-notice-view.tsx":
+    case "ui/src/pages/chat/components/chat-run-failure-notice.tsx":
+      // Common factories download together; Rolldown keeps their lazy initializers separate.
+      return "chat-transcript-content";
+    case "ui/src/pages/chat/components/chat-realtime-controls.tsx":
+      return "chat-transcript-realtime";
+    case "ui/src/pages/chat/components/chat-forwarded-attribution.tsx":
+      return "chat-transcript-forwarded";
+    case "ui/src/pages/chat/components/chat-session-activity.solid.tsx":
+      return "chat-transcript-session-activity";
     case "ui/src/components/modal-dialog.tsx":
     case "ui/src/components/solid/modal-dialog.tsx":
     case "ui/src/components/solid/modal-dialog.css":

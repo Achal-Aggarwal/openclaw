@@ -41,7 +41,7 @@ import {
 } from "./chat-message-stream-view.tsx";
 import { resolveGroupReplyLine } from "./chat-reply-attribution.ts";
 import { selectWorkGroupBrowserTabPreviews } from "./chat-tool-cards.ts";
-import { WorkGroupSummary } from "./chat-work-group-summary.tsx";
+import { WorkGroupSummary } from "./chat-transcript-specialized.ts";
 import "../../../styles/chat/source-previews.css";
 
 const ChatSourcePreviews = lazy(() => import("./chat-source-previews.tsx"), {
