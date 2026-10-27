@@ -278,14 +278,23 @@ describe("CLI runtime admission", () => {
       onTestFinished(() => lifetime.cleanup());
       await lifetime.run(async () => {
         const root = lifetime.createTempDir("plugin-build-direct-");
+        const workerCompiler = createControlledWorkerCompiler(
+          root,
+          testRunnerFixtureEnv(),
+          process.versions.bun ? "bun" : "node",
+        );
         const preload = path.join(root, "preload.mjs");
         fs.writeFileSync(
           preload,
           `import cp from 'node:child_process';
 import { syncFixtureBuiltinExports } from ${JSON.stringify(new URL("./fixtures/ci-fixture-runtime.cjs", import.meta.url).href)};
 const spawn = cp.spawn;
-cp.spawn = (bin, args, options) => spawn(process.execPath, ['-e',
-  args.includes('scripts/prepare-vitest-runtime.mjs') ? 'process.exit(91)' : ''], options);
+cp.spawn = (bin, args, options) => {
+  if (args.includes('scripts/prepare-vitest-runtime.mjs')) return spawn(process.execPath, ['-e', 'process.exit(91)'], options);
+  if (args.some((arg) => arg === 'vitest' || arg.endsWith('/vitest.mjs'))) return spawn(process.execPath, ['-e', ''], options);
+  // Worker artifact preparation is independent of the forbidden runtime build.
+  return spawn(bin, args, options);
+};
 syncFixtureBuiltinExports();\n`,
         );
         const defaultConfigArgs =
@@ -295,7 +304,7 @@ syncFixtureBuiltinExports();\n`,
           runCliCommand({
             bin: process.execPath,
             args: ["--import", preload, "scripts/run-vitest.mts", ...defaultConfigArgs, ...args],
-            env: testRunnerFixtureEnv(),
+            env: workerCompiler.env,
             stdio: "ignore",
             signal,
             requireProcessTreeExit: true,
