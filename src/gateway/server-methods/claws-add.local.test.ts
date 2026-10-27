@@ -13,7 +13,22 @@ import {
   resolveLeastPrivilegeOperatorScopesForMethod,
 } from "../method-scopes.js";
 import { clawsAddHandlers } from "./claws-add.js";
-import type { GatewayRequestContext, RespondFn } from "./types.js";
+import type { RespondFn } from "./types.js";
+
+// No Gateway config reloader runs here; confirm each Add config write as applied.
+vi.mock("../../config/runtime-write-application.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../config/runtime-write-application.js")>();
+  return {
+    ...actual,
+    createRuntimeConfigWriteApplication: (
+      ...args: Parameters<typeof actual.createRuntimeConfigWriteApplication>
+    ) => {
+      const application = actual.createRuntimeConfigWriteApplication(...args);
+      application.claim()?.settle("applied");
+      return application;
+    },
+  };
+});
 
 const enabled = { gateway: { controlUi: { experimental: { claws: true } } } };
 const cleanups: Array<() => Promise<void>> = [];
@@ -66,7 +81,12 @@ async function request(
     context: {
       getRuntimeConfig: () => enabled,
       localEmbedded: true,
-    } as GatewayRequestContext,
+      cron: {
+        list: async () => [],
+        removeAgentJobsTransactional: async (_agentId: string, run: () => Promise<void>) =>
+          await run(),
+      },
+    } as never,
     client: null,
     hasCurrentClientAuthority,
     isWebchatConnect: () => false,

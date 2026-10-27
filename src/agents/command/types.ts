@@ -28,6 +28,7 @@ import type { CronCreatorAuthorityCapability } from "../cron-creator-authority-c
 import type { RuntimeContextFragment } from "../internal-runtime-context.js";
 import type { MainSessionRecoveryOwnerLease } from "../main-session-recovery/main-session-recovery-store.js";
 import type { ReplyExpectation } from "../reply-completion.js";
+import type { RequesterOrigin } from "../requester-origin.js";
 import type { ScheduledToolPolicyContext } from "../scheduled-tool-policy.js";
 import type { TrustedSubagentCompletionHandoff } from "../subagents/announce/subagent-announce-handoff.js";
 import type {
@@ -118,6 +119,8 @@ export type AgentCommandOpts = {
   execApprovalContinuationTranscriptPromptRange?: ExecApprovalContinuationPromptRange;
   /** Trusted sender identity bit for command/channel-action auth; defaults true for local CLI calls. */
   senderIsOwner?: boolean;
+  /** Host-verified current requester for Git credit only; never accepted from public ingress. */
+  gitContributorProfileId?: string;
   /** Whether this caller is authorized to use provider/model per-run overrides. */
   allowModelOverride?: boolean;
   /** Optional runtime tool allow-list; when set, only these tools are exposed for this run. */
@@ -147,6 +150,8 @@ export type AgentCommandOpts = {
   assertSourceCurrent?: import("../../auto-reply/command-owner-authority.js").CommandOwnerAssertion;
   /** Original operator restriction; host-only and never accepted from public ingress. */
   operatorAuthority?: import("../admitted-run-context.js").AdmittedRunOperatorAuthority;
+  /** Host-captured requester identity for policy resolution across internal continuations. */
+  requesterOrigin?: RequesterOrigin;
   lane?: string;
   swarmExecutionLane?: CommandLaneConfiguration;
   runId?: string;
@@ -155,6 +160,8 @@ export type AgentCommandOpts = {
   /** Startup awaits returned work; incidental synchronous return values are ignored. */
   onExecutionStarted?: () => unknown;
   extraSystemPrompt?: string;
+  /** Internal conversation-producer annotation, not accepted from public ingress. */
+  extraSystemPromptTurnContext?: { start: number; text: string };
   /** Conversation preparation owns silence guidance; required-reply enforcement is separate. */
   silentReplyPromptMode?: SilentReplyPromptMode;
   bootstrapContextMode?: "full" | "lightweight";
@@ -183,9 +190,6 @@ export type AgentCommandOpts = {
   forceCodeModeTools?: boolean;
   /** Invocation-owned Code Mode activation; limits still come from config. */
   codeModeOverride?: boolean | "auto";
-  /** Host-owned exact media set for a scoped automatic recovery delivery. */
-  internalDeliveryMediaUrls?: string[];
-  internalDeliverySuppressText?: boolean;
   /** Host-owned: deliver only authored output; runtime error payloads stay out of the chat. */
   internalDeliverySuppressErrors?: boolean;
   /** Gateway ingress that already persisted visible activity can skip the duplicate pre-run touch. */
@@ -206,6 +210,8 @@ export type AgentCommandOpts = {
   cleanupCliLiveSessionOnRunEnd?: boolean;
   /** Mark explicit one-shot local CLI runs so plugin tools can release resources promptly. */
   oneShotCliRun?: boolean;
+  /** Record a root session this run creates as a direct chat with its local operator. */
+  operatorDirectRoot?: boolean;
   /** Gateway-owned runs can late-bind plugin subagent and node runtime helpers. */
   allowGatewaySubagentBinding?: boolean;
   /** Opaque foreground fence transferred by Gateway after atomic session admission. */
@@ -265,13 +271,14 @@ export type AgentCommandOpts = {
 };
 
 /** Public ingress clears the same host-owned fields its option type excludes. */
-export const AGENT_COMMAND_PUBLIC_INGRESS_DEFAULTS = Object.freeze({
+export const AGENT_COMMAND_PUBLIC_INGRESS_DEFAULTS = {
   clientCaps: undefined,
   gatewayUiCommandTarget: undefined,
   toolBindings: undefined,
   taskSuggestionDeliveryMode: undefined,
   runtimeContextFragments: undefined,
   senderIsOwner: false,
+  gitContributorProfileId: undefined,
   mainRestartRecoveryOwnerLease: undefined,
   mainRestartRecoveryAdmitted: undefined,
   mainRestartRecoveryAttempt: undefined,
@@ -280,7 +287,9 @@ export const AGENT_COMMAND_PUBLIC_INGRESS_DEFAULTS = Object.freeze({
   operationalRunInstance: undefined,
   assertSourceCurrent: undefined,
   operatorAuthority: undefined,
+  requesterOrigin: undefined,
   privateCompletion: undefined,
+  extraSystemPromptTurnContext: undefined,
   replyExpectation: undefined,
   skillLibraryAuthoring: undefined,
   cronCreatorAuthorityCapability: undefined,
@@ -290,7 +299,8 @@ export const AGENT_COMMAND_PUBLIC_INGRESS_DEFAULTS = Object.freeze({
   isTerminalOutcomeObserved: undefined,
   prepareAssistantTranscriptMessage: undefined,
   internalDeliverySuppressErrors: undefined,
-} satisfies Partial<AgentCommandOpts>);
+  operatorDirectRoot: undefined,
+} as const satisfies Partial<AgentCommandOpts>;
 
 type AgentCommandGatewayOnlyKey = Exclude<
   keyof typeof AGENT_COMMAND_PUBLIC_INGRESS_DEFAULTS,

@@ -7,20 +7,16 @@ import type { ClawLifecyclePlanResult } from "../../packages/gateway-protocol/sr
 import { awaitGateBeforeSettlement, withinTest } from "../../test/helpers/promise.js";
 import { runQaGatewayFixture } from "../../test/helpers/qa-gateway-cleanup.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
-import {
-  loadOrCreateDeviceIdentity,
-  publicKeyRawBase64UrlFromPem,
-} from "../infra/device-identity.js";
-import { approveDevicePairing } from "../infra/device-pairing-approval.js";
-import { rotateDeviceToken } from "../infra/device-pairing-tokens.js";
-import { requestDevicePairing } from "../infra/device-pairing.js";
+import { clawHubSecurityResponse } from "../plugins/clawhub.test-fixtures.js";
 import { createClawHubArchiveFactory } from "../plugins/clawhub.test-support.js";
 import { readPersistedInstalledPluginIndexInstallRecordsAsync } from "../plugins/installed-plugin-index-records.js";
 import { clearPluginMetadataLifecycleCaches } from "../plugins/plugin-metadata-lifecycle.js";
 import { createDeferredCore } from "../shared/deferred.js";
 import { createOpenClawTestState } from "../test-utils/openclaw-test-state.js";
 import { GatewayClient, type GatewayClientOptions } from "./client.js";
+import { pairOperatorDeviceFixture } from "./paired-device.test-support.js";
 import { startGatewayServerCore } from "./server-start.js";
+import { KERNEL_TEST_ENV } from "./test-helpers.env.js";
 import { acquireGatewayE2ePortBlock, startClaimedGateway } from "./test-helpers.listener.js";
 
 const token = "claw-add-authority-test-token";
@@ -105,7 +101,17 @@ async function makeFixture(
         ? [{ kind: "plugin", source: "clawhub", ref: pluginName, version }]
         : [],
       mcpServers: {},
-      cronJobs: [],
+      cronJobs:
+        label === "allowed"
+          ? [
+              {
+                id: "daily-probe",
+                schedule: { cron: "0 8 * * *", timezone: "UTC" },
+                session: "isolated",
+                message: "Report the synthetic probe status.",
+              },
+            ]
+          : [],
     }),
   };
   const clawArchive = await createArchive(clawFiles);
@@ -200,7 +206,9 @@ function setClawHubFixtures(fixtures: Fixture[]) {
   clawhub.security.mockImplementation(async ({ name }: { name: string }) => {
     const { fixture, kind } = lookup(name);
     return {
+      ...clawHubSecurityResponse(name, version, { moderationState: "approved" }),
       package: { name, displayName: name, family: kind === "claw" ? "claw" : "code-plugin" },
+      securityAuditUrl: `https://clawhub.ai/${kind}s/${name}/security-audit`,
       release:
         kind === "claw"
           ? {
@@ -210,17 +218,6 @@ function setClawHubFixtures(fixtures: Fixture[]) {
               npmIntegrity: "sha512-test-fixture",
             }
           : { version },
-      overview: "Synthetic clean fixture",
-      verdict: "clean",
-      securityAuditUrl: `https://clawhub.ai/${kind}s/${name}/security-audit`,
-      trust: {
-        scanStatus: "clean",
-        moderationState: "approved",
-        blockedFromDownload: false,
-        reasons: [],
-        pending: false,
-        stale: false,
-      },
     };
   });
   clawhub.download.mockImplementation(async ({ name }: { name: string }) => {
@@ -244,22 +241,18 @@ describe("Claw Add dependency consent authority (real Gateway RPC)", () => {
     const state = await createOpenClawTestState({
       label: "claw-add-authority",
       env: {
-        OPENCLAW_GATEWAY_TOKEN: undefined,
-        OPENCLAW_GATEWAY_PASSWORD: undefined,
+        ...KERNEL_TEST_ENV,
         OPENCLAW_CLAWHUB_URL: undefined,
         CLAWHUB_URL: undefined,
         OPENCLAW_TEST_MINIMAL_GATEWAY: "0",
-        OPENCLAW_SKIP_BROWSER_CONTROL_SERVER: "1",
-        OPENCLAW_SKIP_CANVAS_HOST: "1",
-        OPENCLAW_SKIP_CHANNELS: "1",
-        OPENCLAW_SKIP_CRON: "1",
-        OPENCLAW_SKIP_GMAIL_WATCHER: "1",
-        OPENCLAW_SKIP_PROVIDERS: "1",
         OPENCLAW_DISABLE_BUNDLED_PLUGINS: "1",
       },
     });
     const clients: GatewayClient[] = [];
     const release = createDeferredCore();
+    const recoveryRestart = vi.fn(() => {
+      throw new Error("Claw Add must hot-apply without a recovery restart");
+    });
     let server: Awaited<ReturnType<typeof startGatewayServerCore>> | undefined;
     try {
       const [allowedFixture, localFixture, revokedFixture] = await Promise.all([
@@ -284,7 +277,10 @@ describe("Claw Add dependency consent authority (real Gateway RPC)", () => {
         agents: { defaults: { workspace: state.workspaceDir } },
       });
       server = await startClaimedGateway(claim, () =>
-        startGatewayServerCore(port, { controlUiEnabled: false }),
+        startGatewayServerCore(port, {
+          controlUiEnabled: false,
+          hotReloadRecovery: recoveryRestart,
+        }),
       );
       await server.startupSettled;
 
@@ -354,6 +350,13 @@ describe("Claw Add dependency consent authority (real Gateway RPC)", () => {
           extension: Boolean(extension),
         };
       };
+      const expectNotInstalled = async (fixture: Fixture) => {
+        expect(await installed(fixture)).toEqual({
+          agent: undefined,
+          plugin: undefined,
+          extension: false,
+        });
+      };
 
       const allowedPlan = await plan(reader.client, allowedFixture);
       expect(allowedPlan.pluginReviews).toHaveLength(1);
@@ -361,17 +364,24 @@ describe("Claw Add dependency consent authority (real Gateway RPC)", () => {
       await expect(
         reader.client.request("claws.add.apply", applyParams(allowedFixture, allowedPlan)),
       ).rejects.toThrow("missing scope: operator.admin");
-      expect(await installed(allowedFixture)).toEqual({
-        agent: undefined,
-        plugin: undefined,
-        extension: false,
-      });
+      await expectNotInstalled(allowedFixture);
 
       const allowed = await admin.client.request<{ status: string }>(
         "claws.add.apply",
         applyParams(allowedFixture, allowedPlan),
       );
-      expect(allowed.status, JSON.stringify(allowed)).toBe("complete");
+      expect(allowed, JSON.stringify(allowed)).toMatchObject({ status: "complete" });
+      const schedules = await admin.client.request<{
+        jobs: Array<{ agentId: string; declarationKey: string }>;
+      }>("cron.list", { includeDisabled: true });
+      expect(schedules.jobs).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            agentId: allowedFixture.agentId,
+            declarationKey: "claw:allowed-claw:daily-probe",
+          }),
+        ]),
+      );
       expect(await installed(allowedFixture)).toMatchObject({
         agent: expect.objectContaining({}),
         plugin: { source: "clawhub" },
@@ -410,22 +420,13 @@ describe("Claw Add dependency consent authority (real Gateway RPC)", () => {
       const revokedPlan = await plan(admin.client, revokedFixture);
       expect(revokedPlan.pluginReviews).toHaveLength(1);
       expect(revokedPlan.blockers).toEqual([]);
-      const identity = loadOrCreateDeviceIdentity({ path: state.path("revoked-identity.sqlite") });
-      const pendingPairing = await requestDevicePairing({
-        deviceId: identity.deviceId,
-        publicKey: publicKeyRawBase64UrlFromPem(identity.publicKeyPem),
+      const { identity, issued } = await pairOperatorDeviceFixture({
+        identityPath: state.path("revoked-identity", "client", "credentials.sqlite"),
+        scopes: ["operator.read", "operator.admin"],
+        tokenScopes: ["operator.read", "operator.admin"],
         clientId: "test",
         clientMode: "test",
-        role: "operator",
-        scopes: ["operator.read", "operator.admin"],
-      });
-      await approveDevicePairing(pendingPairing.request.requestId, {
         callerScopes: ["operator.admin"],
-      });
-      const issued = await rotateDeviceToken({
-        deviceId: identity.deviceId,
-        role: "operator",
-        scopes: ["operator.read", "operator.admin"],
       });
       if (!issued.ok) {
         throw new Error("Could not issue synthetic device token");
@@ -455,11 +456,8 @@ describe("Claw Add dependency consent authority (real Gateway RPC)", () => {
         reply,
         "Claw Add settled before final effect",
       );
-      expect(await installed(revokedFixture)).toEqual({
-        agent: undefined,
-        plugin: undefined,
-        extension: false,
-      });
+      await expectNotInstalled(revokedFixture);
+      expect(recoveryRestart).not.toHaveBeenCalled();
       await admin.client.request("device.token.revoke", {
         deviceId: identity.deviceId,
         role: "operator",
@@ -468,11 +466,7 @@ describe("Claw Add dependency consent authority (real Gateway RPC)", () => {
       release.resolve();
       expect(await withinTest(settled.promise, signal)).toBeDefined();
       await reply;
-      expect(await installed(revokedFixture)).toEqual({
-        agent: undefined,
-        plugin: undefined,
-        extension: false,
-      });
+      await expectNotInstalled(revokedFixture);
     } finally {
       release.resolve();
       clawhub.pauseBeforeEffect = async () => {};

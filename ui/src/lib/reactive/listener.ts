@@ -10,7 +10,21 @@ type NativeEventMap<T> = (T extends Window | typeof globalThis
           ? VisualViewportEventMap
           : T extends ServiceWorkerContainer
             ? ServiceWorkerContainerEventMap
-            : Record<string, Event>) &
+            : T extends MessagePort
+              ? MessagePortEventMap
+              : T extends WebSocket
+                ? WebSocketEventMap
+                : T extends Worker
+                  ? WorkerEventMap
+                  : T extends RTCDataChannel
+                    ? RTCDataChannelEventMap
+                    : T extends RTCPeerConnection
+                      ? RTCPeerConnectionEventMap
+                      : T extends MediaStreamTrack
+                        ? MediaStreamTrackEventMap
+                        : T extends FileReader
+                          ? FileReaderEventMap
+                          : Record<string, Event>) &
   Record<string, Event>;
 
 export function listen<T extends EventTarget, K extends string>(

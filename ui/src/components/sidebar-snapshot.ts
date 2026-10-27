@@ -1,5 +1,7 @@
 import { gatewayCredentialScope } from "@openclaw/gateway-client/browser";
 import type { ApplicationGateway } from "../app/gateway.ts";
+import { listen } from "../lib/reactive/listener.ts";
+import { CHAT_TRANSCRIPT_LOADING_CHANGED_EVENT } from "../pages/chat/chat-history-events.ts";
 import {
   sidebarSnapshotInvalidationMatches,
   subscribeSnapshotInvalidation,
@@ -13,11 +15,12 @@ import {
 import { SessionSnapshotStore } from "../pages/chat/session-snapshot-store.ts";
 import { parseSidebarSnapshot, type SidebarSnapshotModel } from "./sidebar-snapshot-model.ts";
 
-type SidebarSnapshotHost = {
+export function createSidebarSnapshot(host: {
   sidebarSnapshot: SidebarSnapshotModel | null;
   readonly sessionDataContext?: {
     gateway: ApplicationGateway;
     agentSelection: { readonly state: { readonly scopeId: string | null } };
+    connectionBootstrap: { readonly foregroundReady: boolean };
   };
   expandedAgentId(): string;
   captureSidebarSnapshot(): SidebarSnapshotModel | null;
@@ -25,10 +28,8 @@ type SidebarSnapshotHost = {
   restoreSidebarSnapshot(model: SidebarSnapshotModel): void;
   releaseSidebarSnapshot(): void;
   clearSidebarSnapshot(): void;
-};
-
-export function createSidebarSnapshot(host: SidebarSnapshotHost) {
-  const listeners = new Set<() => void>();
+}) {
+  let publish: (() => void) | undefined;
   let pending = false;
   let saved = false;
   const store = new SessionSnapshotStore();
@@ -41,21 +42,39 @@ export function createSidebarSnapshot(host: SidebarSnapshotHost) {
   let cleanup: Array<() => void> = [];
   let stopGateway: (() => void) | undefined;
   let retiredHello: ApplicationGateway["snapshot"]["hello"] | undefined;
+  let cancelCapture: (() => void) | undefined;
+  let handoffTimer: ReturnType<typeof setTimeout> | undefined;
+  let handoffIdle: number | undefined;
+  let handoffReady = false;
+  let handoffExpired = false;
 
   function subscribe(listener: () => void): () => void {
-    listeners.add(listener);
-    return () => listeners.delete(listener);
+    publish = listener;
+    return () => {
+      publish = undefined;
+    };
   }
 
   function notify(): void {
-    for (const listener of listeners) {
-      listener();
-    }
+    publish?.();
   }
 
   function connect(): void {
     store.connect();
     cleanup = [
+      listen(window, "pagehide", flushCapture),
+      listen(document, CHAT_TRANSCRIPT_LOADING_CHANGED_EVENT, () => {
+        // The loading edge precedes the foreground pane's committed update.
+        queueMicrotask(() => {
+          synchronize();
+          notify();
+        });
+      }),
+      listen(document, "visibilitychange", () => {
+        if (document.visibilityState === "hidden") {
+          flushCapture();
+        }
+      }),
       subscribeSnapshotInvalidation((event) => {
         if (scope && sidebarSnapshotInvalidationMatches(sidebarSnapshotScopeKey(scope), event)) {
           clearDisplay();
@@ -103,6 +122,7 @@ export function createSidebarSnapshot(host: SidebarSnapshotHost) {
             notify();
           });
         }
+        // Connection receipts retire stale snapshot capture and restore the new scope.
         stopGateway = gateway.subscribe(() => {
           synchronize();
           notify();
@@ -136,14 +156,40 @@ export function createSidebarSnapshot(host: SidebarSnapshotHost) {
         ? {
             gatewayScope: gatewayCredentialScope(gateway.connection.gatewayUrl),
             recoveryScope,
-            profileId: snapshot.selfUser?.id ?? null,
+            // Unresolved hello identity does not retire an admitted boot profile.
+            profileId:
+              snapshot.selfUser === undefined
+                ? (scope?.profileId ?? null)
+                : (snapshot.selfUser?.id ?? null),
           }
         : null;
       if (JSON.stringify(next) !== JSON.stringify(scope)) {
         replaceScope(next);
       }
     }
-    if (host.sidebarSnapshot && host.sidebarSnapshotSettled()) {
+    if (snapshot.phase !== "connected") {
+      cancelHandoff();
+    } else if (host.sidebarSnapshot) {
+      handoffTimer ??= setTimeout(() => {
+        handoffExpired = true;
+        releaseWhenReady();
+      }, 3000);
+      if (!handoffExpired && !host.sidebarSnapshotSettled()) {
+        return;
+      }
+      if (!handoffReady) {
+        if (host.sessionDataContext?.connectionBootstrap.foregroundReady) {
+          if (typeof requestIdleCallback === "function") {
+            handoffIdle ??= requestIdleCallback(releaseWhenReady, { timeout: 1800 });
+          } else {
+            handoffReady = true;
+          }
+        }
+      }
+      if (!handoffReady) {
+        return;
+      }
+      cancelHandoff();
       // Release before rendering so a failed refresh cannot leave cached controls painted.
       host.releaseSidebarSnapshot();
       saved = false;
@@ -151,11 +197,49 @@ export function createSidebarSnapshot(host: SidebarSnapshotHost) {
     }
   }
 
+  function releaseWhenReady(): void {
+    handoffReady = true;
+    synchronize();
+    notify();
+  }
+
+  function cancelHandoff(): void {
+    clearTimeout(handoffTimer);
+    if (handoffIdle !== undefined) {
+      cancelIdleCallback(handoffIdle);
+    }
+    handoffTimer = handoffIdle = undefined;
+    handoffReady = false;
+    handoffExpired = false;
+  }
+
   function capture(): void {
+    if (!cleanup.length || cancelCapture) {
+      return;
+    }
+    // Coalesce live events before building the projection, not just before the IDB write.
+    const timer = globalThis.setTimeout(() => {
+      if (typeof globalThis.requestIdleCallback === "function") {
+        const idle = globalThis.requestIdleCallback(flushCapture, { timeout: 1000 });
+        cancelCapture = () => globalThis.cancelIdleCallback(idle);
+      } else {
+        flushCapture();
+      }
+    }, 500);
+    cancelCapture = () => globalThis.clearTimeout(timer);
+  }
+
+  function flushCapture(): void {
+    if (!cancelCapture) {
+      return;
+    }
+    cancelCapture();
+    cancelCapture = undefined;
     if (
       !cleanup.length ||
       pending ||
       !scope ||
+      (scope.profileId !== null && gateway?.snapshot.selfUser === undefined) ||
       host.sidebarSnapshot ||
       !host.sidebarSnapshotSettled()
     ) {
@@ -225,6 +309,9 @@ export function createSidebarSnapshot(host: SidebarSnapshotHost) {
   }
 
   function clearDisplay(): void {
+    cancelHandoff();
+    cancelCapture?.();
+    cancelCapture = undefined;
     generation += 1;
     pending = saved = false;
     serialized = null;

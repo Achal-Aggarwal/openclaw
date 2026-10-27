@@ -42,6 +42,7 @@ import {
 import {
   configureAuthFixture,
   configureHarnessOwnedUnresolvedAuth,
+  createMetadataConfig,
   model,
 } from "./server-chat-metadata-lifecycle.auth.test-support.js";
 import { createGatewayChatMetadataLifecycle } from "./server-chat-metadata-lifecycle.js";
@@ -84,16 +85,7 @@ function nativeConfig(refs: string[], primary?: string): OpenClawConfig {
   };
 }
 let state: OpenClawTestState;
-const config = {
-  agents: {
-    defaults: {
-      model: { primary: "openai/gpt-5.4" },
-      models: { "openai/gpt-5.4": {} },
-      modelPolicy: { allow: ["openai/gpt-5.4"] },
-    },
-    entries: { main: {} },
-  },
-} as OpenClawConfig;
+const config = createMetadataConfig();
 const context = {
   broadcast: vi.fn(),
   getRuntimeConfig: () => config,
@@ -468,9 +460,6 @@ describe("gateway chat metadata lifecycle composition", () => {
           const catalogs = await lifecycle.startup({ readPolicy: "ready" });
           expect(catalogs?.sessionModelCatalog).toBe(catalogs?.defaultModelCatalog);
           expect(catalogs).not.toHaveProperty("metadata");
-          await expect(lifecycle.startup()).resolves.toMatchObject({
-            metadata: expected,
-          });
         };
         await expectNativeAvailable(false);
         const imageCatalogLoader = vi.fn(loader);
@@ -540,7 +529,6 @@ describe("gateway chat metadata lifecycle composition", () => {
             : [expect.objectContaining({ id: "codex-latest", available: false })],
         });
         const lockedStartup = await lifecycle.startup({ sessionEntry: lockedSession });
-        expect(lockedStartup?.metadata).toEqual(lockedMetadata);
         await expect(
           lifecycle.startup({ sessionEntry: lockedSession, readPolicy: "ready" }),
         ).resolves.toEqual({

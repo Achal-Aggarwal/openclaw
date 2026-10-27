@@ -1,3 +1,4 @@
+import { isStringArray } from "@openclaw/normalization-core/record-coerce";
 import type {
   DurableComposerDraft,
   DurableComposerDraftAttachment,
@@ -50,8 +51,7 @@ function isQuestionDraft(value: unknown): value is DurableQuestionDraft {
         answer &&
         typeof answer === "object" &&
         typeof answer.freeText === "string" &&
-        Array.isArray(answer.selected) &&
-        answer.selected.every((option) => typeof option === "string"),
+        isStringArray(answer.selected),
     )
   );
 }
@@ -91,7 +91,14 @@ export function parseStoredDraft(value: unknown): StoredDurableComposerDraft | n
       typeof selection.agentId !== "string" ||
       typeof selection.model !== "string" ||
       typeof selection.thinkingLevel !== "string" ||
-      (selection.agentRuntime !== undefined && typeof selection.agentRuntime !== "string"))
+      (selection.agentRuntime !== undefined && typeof selection.agentRuntime !== "string") ||
+      (selection.cyberAccessProgram !== undefined &&
+        selection.cyberAccessProgram !== "standard" &&
+        selection.cyberAccessProgram !== "daybreak_blue" &&
+        selection.cyberAccessProgram !== "daybreak_red") ||
+      (selection.daybreakAccessProgram !== undefined &&
+        selection.daybreakAccessProgram !== "daybreak_blue" &&
+        selection.daybreakAccessProgram !== "daybreak_red"))
   ) {
     record.modelSelection = undefined;
   }
