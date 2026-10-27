@@ -93,6 +93,15 @@ suite.define(() => {
             .evaluateAll((items) => items.map((item) => item.getAttribute("data-session-key"))),
         ).toEqual([key, releaseKey]);
       }
+      // Section menus reveal on header hover, like shared group menus.
+      await sidebar
+        .locator(".personal-session-groups__header", {
+          has: page.getByRole("button", {
+            name: "Options for " + noun + " This week",
+            exact: true,
+          }),
+        })
+        .hover();
       await sidebar
         .getByRole("button", { name: "Options for " + noun + " This week", exact: true })
         .click();
@@ -239,6 +248,14 @@ suite.define(() => {
               .locator("[data-personal-session-group]")
               .filter({ has: page.getByRole("list", { name: label, exact: true }) });
           const options = async (label: string, action: string) => {
+            await sidebar
+              .locator(".personal-session-groups__header", {
+                has: page.getByRole("button", {
+                  name: `Options for section ${label}`,
+                  exact: true,
+                }),
+              })
+              .hover();
             await sidebar
               .getByRole("button", { name: `Options for section ${label}`, exact: true })
               .click();
@@ -551,6 +568,11 @@ suite.define(() => {
           ],
         }),
       );
+      await page
+        .locator(".personal-session-groups__header", {
+          has: page.getByRole("button", { name: "Options for section Focus", exact: true }),
+        })
+        .hover();
       await page.getByRole("button", { name: "Options for section Focus", exact: true }).click();
       await page.getByRole("menuitem", { name: "Edit section", exact: true }).click();
       const dialog = page.getByRole("dialog", { name: "Edit section", exact: true });
@@ -572,6 +594,11 @@ suite.define(() => {
       const group = page.locator('[data-personal-session-group="shared-tab"]');
       await group.getByRole("link", { name: /Release checklist/ }).waitFor();
       expect(await group.getByRole("link", { name: /Reliability Tracker/ }).count()).toBe(0);
+      await page
+        .locator(".personal-session-groups__header", {
+          has: page.getByRole("button", { name: "Options for section Focus", exact: true }),
+        })
+        .hover();
       await page.getByRole("button", { name: "Options for section Focus", exact: true }).click();
       await page.getByRole("menuitem", { name: "Edit section", exact: true }).click();
       expect(

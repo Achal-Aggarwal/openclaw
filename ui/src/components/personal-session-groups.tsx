@@ -170,7 +170,7 @@ function PersonalGroups(props: { host: SidebarSessionListHost }) {
                   id={`personal-group-${group().id}`}
                   label={t("sessionsView.personalGroupOptions", { group: group().label })}
                   trigger={<Icon name="moreHorizontal" />}
-                  triggerClass="sidebar-session-toolbar__button"
+                  triggerClass="sidebar-session-group-actions"
                   panelClass="session-menu"
                   items={[
                     { id: "edit", label: t("sessionsView.personalGroupEditMenu") },

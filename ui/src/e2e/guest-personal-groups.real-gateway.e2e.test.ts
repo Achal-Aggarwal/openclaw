@@ -210,6 +210,14 @@ suite.define(() => {
             };
             const menu = async (label: string, action: string) => {
               await sidebar
+                .locator(".personal-session-groups__header", {
+                  has: page.getByRole("button", {
+                    name: `Options for section ${label}`,
+                    exact: true,
+                  }),
+                })
+                .hover();
+              await sidebar
                 .getByRole("button", { name: `Options for section ${label}`, exact: true })
                 .click();
               await page.getByRole("menuitem", { name: action, exact: true }).click();

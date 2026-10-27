@@ -1154,7 +1154,8 @@ html.openclaw-native-desktop .shell:not(.shell--mobile-nav) {
 .personal-session-groups__icon {
   display: inline-flex;
   flex: none;
-  margin-inline-end: 6px;
+  /* Sit closer to the label than the row's standard gap. */
+  margin-inline-end: -3px;
   color: var(--muted);
 }
 

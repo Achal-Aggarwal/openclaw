@@ -37,31 +37,24 @@ function SectionIllustration() {
         width="44"
         height="36"
         rx="9"
-        style="fill:var(--card);stroke:color-mix(in srgb, var(--accent) 45%, var(--border))"
+        style="fill:var(--card);stroke:var(--border-strong, var(--border))"
       />
       <g
         transform="translate(28 23) scale(0.42)"
-        style="fill:none;stroke:var(--accent)"
+        style="fill:none;stroke:var(--muted)"
         stroke-width="2.4"
       >
         <path d="m12 3 10 5-10 5L2 8Z" />
         <path d="m2 12 10 5 10-5M2 16l10 5 10-5" />
       </g>
-      <rect
-        x="40"
-        y="27"
-        width="18"
-        height="4"
-        rx="2"
-        style="fill:color-mix(in srgb, var(--accent) 35%, transparent)"
-      />
+      <rect x="40" y="27" width="18" height="4" rx="2" style={bar} />
       <rect
         x="28"
         y="36"
         width="27"
         height="4"
         rx="2"
-        style="fill:color-mix(in srgb, var(--accent) 60%, transparent)"
+        style="fill:color-mix(in srgb, var(--accent) 45%, transparent)"
       />
       <rect x="28" y="44" width="31" height="4" rx="2" style={bar} />
     </svg>
@@ -129,16 +122,14 @@ export function PersonalSessionGroupDialogView(props: {
       >
         <header class="personal-section-dialog__hero">
           <SectionIllustration />
-          <div class="personal-section-dialog__intro">
-            <div class="exec-approval-title">{title()}</div>
-            <span
-              class="chip personal-section-dialog__chip"
-              title={t("sessionsView.personalGroupHint")}
-            >
-              <Icon name="eye" />
-              {t("sessionsView.personalGroupChip")}
-            </span>
-          </div>
+          <div class="exec-approval-title">{title()}</div>
+          <span
+            class="chip personal-section-dialog__chip"
+            title={t("sessionsView.personalGroupHint")}
+          >
+            <Icon name="eye" />
+            {t("sessionsView.personalGroupChip")}
+          </span>
         </header>
         <div class="personal-section-dialog__body">
           <label class="field">
