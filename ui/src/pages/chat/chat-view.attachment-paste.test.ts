@@ -6,8 +6,10 @@ import type { GatewayBrowserClient } from "../../api/gateway.ts";
 import { createChatAttachmentHandoff } from "../../app/chat-attachment-handoff.ts";
 import { createApplicationConfigCapability } from "../../app/config.ts";
 import type { ChatAttachment } from "../../lib/chat/chat-types.ts";
+import { createComposerDraftSource } from "../../lib/chat/composer-draft-changes.ts";
 import * as toast from "../../lib/toast.ts";
 import { createApplicationGateway } from "../../test-helpers/application-context.ts";
+import { waitForSolid } from "../../test-helpers/solid-settle.ts";
 import { waitForFast } from "../../test-helpers/wait-for.ts";
 import {
   getChatAttachmentDataUrl,
@@ -222,6 +224,83 @@ describe("chat attachment paste", () => {
 });
 
 describe("chat attachment reading", () => {
+  it("keeps twelve asynchronously completed files in intake order through the composer draft source", async () => {
+    const readers = new Map<string, FileReader>();
+    vi.spyOn(FileReader.prototype, "readAsDataURL").mockImplementation(function (
+      this: FileReader,
+      file: Blob,
+    ) {
+      if (!(file instanceof File)) {
+        throw new Error("Expected an admitted File");
+      }
+      readers.set(file.name, this);
+    });
+    const container = createComposerContainer();
+    const draft = "Compare the attached images.";
+    let attachments: ChatAttachment[] = [];
+    const reads = new ChatAttachmentReadLifecycle(() => draftSource.publish());
+    const draftSource = createComposerDraftSource(() => ({
+      draft,
+      mentions: [],
+      attachments,
+      pendingAttachmentReads: reads.pendingReads,
+      attachmentReadRevision: reads.revision,
+    }));
+    onTestFinished(() => {
+      reads.abortReads();
+      releaseChatAttachmentPayloads(attachments);
+      disposeChatView(container);
+    });
+    renderChatPropsInto(
+      container,
+      createChatProps({
+        draft,
+        draftSource,
+        attachments,
+        getAttachments: () => attachments,
+        onAttachmentsChange: (next) => {
+          attachments = next;
+          draftSource.publish();
+        },
+        ...readingProps(reads),
+      }),
+    );
+    const names = Array.from({ length: 12 }, (_, index) => `sample-${index + 1}.png`);
+    const input = expectDefined(
+      container.querySelector<HTMLInputElement>(".agent-chat__file-input"),
+      "file input",
+    );
+    Object.defineProperty(input, "files", {
+      value: names.map((name) => new File(["image"], name, { type: "image/png" })),
+    });
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+    const labels = () =>
+      [...container.querySelectorAll(".chat-attachment-thumb .chat-attachment-remove")].map(
+        (button) => button.getAttribute("aria-label"),
+      );
+    await waitForSolid(() => {
+      expect(readers.size).toBe(12);
+      expect(container.querySelectorAll('.chat-attachment-thumb[aria-busy="true"]')).toHaveLength(
+        12,
+      );
+      expect(labels()).toEqual(names.map((name) => `Remove ${name}`));
+    });
+
+    const completed = new Set<string>();
+    for (const name of names.toReversed()) {
+      finishRead(expectDefined(readers.get(name), name), "data:image/png;base64,aGk=");
+      completed.add(name);
+      await waitForSolid(() => {
+        expect(attachments.map((attachment) => attachment.fileName)).toEqual(
+          names.filter((candidate) => completed.has(candidate)),
+        );
+        expect(labels()).toEqual(names.map((candidate) => `Remove ${candidate}`));
+      });
+    }
+    expect(reads.pendingReads).toBe(0);
+    expect(container.querySelectorAll('.chat-attachment-thumb[aria-busy="true"]')).toHaveLength(0);
+  });
+
   it.each(["uploads disabled", "session aborted"] as const)(
     "rejects an in-flight read after %s",
     async (outcome) => {

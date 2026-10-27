@@ -185,7 +185,7 @@ export async function drainPendingPrefs(
         let lastSeenAtDispatch: ServerUiPrefs = {};
         const profileAtDispatch = resolveProfileAppearancePrefs(gatewayScope, profileId);
         const result = useProfile
-          ? await import("./server-prefs-profile-runtime.ts").then(
+          ? await import("./server-prefs-profile-write.runtime.ts").then(
               ({ writeProfileAppearancePrefs }) =>
                 writeProfileAppearancePrefs(
                   writer.state.client,

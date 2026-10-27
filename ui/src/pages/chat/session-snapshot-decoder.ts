@@ -122,18 +122,19 @@ export async function parseSnapshotRecord(
     ...snapshot
   } = parsed.snapshot;
   const validators = prepareSnapshotPayloadValidators(parsed.snapshot);
-  const loaded =
-    validators.transcript || validators.board
-      ? await Promise.all([validators.transcript, validators.board])
-      : undefined;
-  const transcriptFields = loaded?.[0] ? loaded[0].parseSnapshotPayloads(parsed.snapshot) : {};
+  if (validators.pending) {
+    await validators.pending;
+  }
+  const transcriptFields = validators.loaded.transcript
+    ? validators.loaded.transcript(parsed.snapshot)
+    : {};
   if (!transcriptFields) {
     return null;
   }
   // Cached display data is validated before any synchronous provider sees it.
   // A malformed board never invalidates an otherwise usable transcript.
   const board =
-    storedBoard && loaded?.[1]?.isBoardSnapshot(storedBoard.snapshot)
+    storedBoard && validators.loaded.board?.(storedBoard.snapshot)
       ? { snapshot: storedBoard.snapshot, receivedAtMs: storedBoard.receivedAtMs }
       : storedBoard == null
         ? storedBoard

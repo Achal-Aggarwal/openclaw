@@ -49,11 +49,9 @@ const chatInteractionEntries = new Set([
   // Search, session actions, commands and viewers load on explicit demand.
 ]);
 
-// These existing first-screen alternatives keep the route's parallel head start,
-// but preparing their module graph waits for the rendered history to need them.
+// Rich alternatives keep the route's parallel head start, but preparing their
+// module graph waits for the rendered history to need them.
 const chatPresentationEntries = new Set([
-  "ui/src/pages/chat/components/chat-agent-run-frame.tsx",
-  "ui/src/pages/chat/components/chat-message-stream-view.tsx",
   "ui/src/pages/chat/components/chat-message-bubble-rich.tsx",
   "ui/src/pages/chat/components/chat-message-context-view.tsx",
   "ui/src/pages/chat/components/chat-workspace-conflict.tsx",

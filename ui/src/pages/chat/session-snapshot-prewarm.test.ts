@@ -78,6 +78,33 @@ describe("routed transcript prewarm", () => {
     expect(parse).toHaveBeenCalledOnce();
   });
 
+  it("presents a prewarmed board synchronously with loaded optional payloads", async () => {
+    const retained: ChatSessionSnapshot = {
+      ...stored,
+      progressCard: null,
+      historyState: { stateRevision: {} },
+      board: {
+        snapshot: { sessionKey: "agent:main:routed", revision: 1, tabs: [], widgets: [] },
+        receivedAtMs: 1,
+      },
+    };
+    const writer = new snapshots.SessionSnapshotStore();
+    writer.write(key, retained);
+    await writer.flush();
+    await prewarmChatSnapshot(key);
+
+    const record = await database.readStoredChatSnapshotRecord(key);
+    const presentBoard = vi.fn();
+    const parsing = decoder.parseSnapshotRecord(record, key, presentBoard);
+    expect(presentBoard).toHaveBeenCalledExactlyOnceWith(retained.board);
+    expect((await parsing)?.snapshot).toEqual(retained);
+
+    const ready = vi.fn();
+    const reading = new snapshots.SessionSnapshotStore().read(key, undefined, ready);
+    expect(ready).toHaveBeenCalledExactlyOnceWith(retained);
+    expect(await reading).toEqual(retained);
+  });
+
   it.each([
     { consumption: "before", cancelled: false },
     { consumption: "after", cancelled: false },

@@ -31,6 +31,7 @@ import type { MessageActionDetails } from "./chat-message-markdown.types.ts";
 import { GroupMessageReactions } from "./chat-message-reaction-chips-view.tsx";
 import { messageReactionOptions } from "./chat-message-reaction-model.ts";
 import { ChatSendStatus } from "./chat-message-send-status-view.tsx";
+import { StreamGroupParts } from "./chat-message-stream-view.tsx";
 import { MessageMeta } from "./chat-message-timestamp-view.tsx";
 import { PreparedMessage } from "./chat-prepared-message.tsx";
 import {
@@ -43,7 +44,7 @@ import type { ReplyConnectorElements } from "./chat-reply-connector.tsx";
 import { ChatSessionActivity } from "./chat-session-activity.solid.tsx";
 import { selectBrowserTabPreviews } from "./chat-tool-cards.ts";
 import { ChatToolFamilyBoundary, useChatToolReadiness } from "./chat-tool-family-boundary.tsx";
-import { StreamGroupParts, TurnRecapRow } from "./chat-transcript-row-entries.ts";
+import { TurnRecapRow } from "./chat-turn-recap-view.tsx";
 
 export function ActivityGroup(props: {
   groups: readonly MessageGroupData[];
@@ -466,23 +467,19 @@ function FramedMessageGroup(props: {
           when={Boolean(options().activeContinuation)}
           fallback={
             options().turnRecap ? (
-              <ChatLazyBoundary>
-                <TurnRecapRow
-                  recap={options().turnRecap!}
-                  presentation="continuation"
-                  hideDuration={options().hideTurnRecapDuration}
-                />
-              </ChatLazyBoundary>
+              <TurnRecapRow
+                recap={options().turnRecap!}
+                presentation="continuation"
+                hideDuration={options().hideTurnRecapDuration}
+              />
             ) : undefined
           }
         >
-          <ChatLazyBoundary>
-            <StreamGroupParts
-              parts={options().activeContinuation!.parts}
-              options={options().activeContinuation!.options}
-              presentation="continuation"
-            />
-          </ChatLazyBoundary>
+          <StreamGroupParts
+            parts={options().activeContinuation!.parts}
+            options={options().activeContinuation!.options}
+            presentation="continuation"
+          />
         </Show>
       </div>
       <Show when={!frame().isTurnBlock}>

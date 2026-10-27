@@ -76,20 +76,12 @@ export function controlUiStableChunkName(id: string): string | undefined {
       return "markdown-runtime";
     case "ui/src/components/app-sidebar-online.tsx":
       return "sidebar-online-runtime";
-    // These alternatives retain one unevaluated, normal-priority script preload.
+    // Rich alternatives retain one unevaluated, normal-priority script preload.
     case "ui/src/pages/chat/components/chat-message-bubble-rich.tsx":
     case "ui/src/pages/chat/components/chat-message-attachment-status-solid.tsx":
     case "ui/src/pages/chat/components/chat-async-question-summary.tsx":
     case "ui/src/pages/chat/components/chat-message-context-view.tsx":
     case "ui/src/pages/chat/components/chat-workspace-conflict.tsx":
-    case "ui/src/pages/chat/components/chat-agent-run-frame.tsx":
-    case "ui/src/pages/chat/components/chat-message-stream-view.tsx":
-    case "ui/src/pages/chat/components/chat-working-indicator.tsx":
-    case "ui/src/pages/chat/components/chat-working-indicator-branding.tsx":
-    case "ui/src/components/working-phrase-solid.tsx":
-    case "ui/src/pages/chat/components/chat-retry-status.tsx":
-    case "ui/src/pages/chat/components/chat-working-indicator-surprise.ts":
-    case "ui/src/pages/chat/components/chat-turn-recap-view.tsx":
       return "chat-presentation-runtime";
     case "ui/src/components/modal-dialog.tsx":
     case "ui/src/components/solid/modal-dialog.tsx":
@@ -554,6 +546,15 @@ export function createControlUiCodeSplitting(options: { includeBootGroups?: bool
                 // First-screen content must not evaluate unrelated action/tool modules.
                 // Keep snapshot decoding here too rather than adding another preload URL.
                 for (const module of [
+                  // Critical rows share Chat's first-screen evaluation, not the optional rich chunk.
+                  "ui/src/pages/chat/components/chat-agent-run-frame.tsx",
+                  "ui/src/pages/chat/components/chat-message-stream-view.tsx",
+                  "ui/src/pages/chat/components/chat-working-indicator.tsx",
+                  "ui/src/pages/chat/components/chat-working-indicator-branding.tsx",
+                  "ui/src/components/working-phrase-solid.tsx",
+                  "ui/src/pages/chat/components/chat-retry-status.tsx",
+                  "ui/src/pages/chat/components/chat-working-indicator-surprise.ts",
+                  "ui/src/pages/chat/components/chat-turn-recap-view.tsx",
                   // Visible Canvas labels share the first-screen download, not another request.
                   "ui/src/i18n/locales/en-board.ts",
                   "ui/src/pages/chat/components/chat-details-subagent-rows.tsx",

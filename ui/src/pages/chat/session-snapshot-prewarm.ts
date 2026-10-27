@@ -73,8 +73,7 @@ export async function prewarmChatSnapshot(cacheKey: string): Promise<void> {
           // Warm only the payload families present in this retained record.
           // The decoder still owns validation and the store owns publication.
           const validators = prepareSnapshotPayloadValidators(snapshot);
-          void validators.board?.catch(() => {});
-          void validators.transcript?.catch(() => {});
+          void validators.pending?.catch(() => {});
         }
         return record;
       }),

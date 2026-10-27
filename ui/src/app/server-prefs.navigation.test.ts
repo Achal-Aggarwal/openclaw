@@ -3,10 +3,8 @@ import { expect, it, vi } from "vitest";
 import { createDeferred } from "../../../test/helpers/promise.js";
 import { resolveServerUiPrefWriteStatus } from "./server-prefs-controls.ts";
 import { changedServerUiPrefs } from "./server-prefs-intent.ts";
-import {
-  readProfileAppearancePrefs,
-  writeProfileAppearancePrefs,
-} from "./server-prefs-profile-runtime.ts";
+import { readProfileAppearancePrefs } from "./server-prefs-profile-runtime.ts";
+import { writeProfileAppearancePrefs } from "./server-prefs-profile-write.runtime.ts";
 import { applyServerUiPrefs, refreshProfileAppearancePrefs } from "./server-prefs-reconcile.ts";
 import {
   createServerPrefsWriter,

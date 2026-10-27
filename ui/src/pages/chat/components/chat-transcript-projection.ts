@@ -50,7 +50,6 @@ import {
   trackTranscriptRenderDependencies,
   transcriptReplyDependencies,
 } from "./chat-transcript-render-guard.ts";
-import { NativeTranscriptRowDemand } from "./chat-transcript-row-entries.ts";
 import type { NativeTranscriptView } from "./chat-transcript-rows.ts";
 import type { ChatTranscriptSession, TranscriptHeader } from "./chat-transcript-session.ts";
 import { createTranscriptStreamSource } from "./chat-transcript-stream-source.ts";
@@ -183,7 +182,6 @@ export function projectChatTranscript(
     loadedReplySources,
     positionIndex,
     rows,
-    rowDemand: indexedRowDemand,
     liveItem,
   } = projectTranscriptIndex(transcriptChain, expandedToolCards, props);
   const workPreviews = projectTranscriptWorkPreviews(transcriptChain.workGroups, {
@@ -217,8 +215,7 @@ export function projectChatTranscript(
     !props.loading &&
     !hasLiveContent &&
     (!props.historyPagination?.hasMore || search.open);
-  // Row code may still be pending; the render slot commits readiness with its rows.
-  transcript.setContentReady(false);
+  transcript.setContentReady(!props.loading);
   const { isDirectThread, avatarPlacement } = resolveTranscriptAvatarPlacement(props, chatItems);
   const showLoadingSkeleton = props.loading && transcriptItems.length === 0 && !hasTypingActors;
   const presented =
@@ -623,7 +620,6 @@ export function projectChatTranscript(
   transcript.entryAnimations.project(chatItems);
   transcript.syncMessageRows(messageRowKeysById, transcriptMessageKeys);
   const contentRows: PlacedContentRow[] = [];
-  let rowDemand = indexedRowDemand;
   const appendContent = (key: string, content: NativeTranscriptView, after?: string | null) =>
     contentRows.push({
       kind: "content",
@@ -638,14 +634,10 @@ export function projectChatTranscript(
       afterMessageId ? messageRowKeysById.get(afterMessageId) : afterMessageId,
     );
   }
-  if (turnRecap !== null && !isEmpty && !showLoadingSkeleton) {
-    rowDemand |= NativeTranscriptRowDemand.recap;
-    if (!recapAttached) {
-      appendContent("turn-recap", { kind: "recap", recap: turnRecap });
-    }
+  if (turnRecap !== null && !recapAttached && !isEmpty && !showLoadingSkeleton) {
+    appendContent("turn-recap", { kind: "recap", recap: turnRecap });
   }
   if (subagents.wait && !subagents.placedWait && !searchFiltering) {
-    rowDemand |= NativeTranscriptRowDemand.stream;
     appendContent("waiting-subagents", {
       kind: "wait",
       sessionKey: props.sessionKey,
@@ -662,25 +654,20 @@ export function projectChatTranscript(
     });
   }
   const transcriptRows = projectTranscriptRows(rows, workPreviews, contentRows);
-  const commitContentReady = () => {
-    transcript.setContentReady(!props.loading);
-    state.transcriptRenderContext.turnVideoMessages = snapshot.turnVideoMessages;
-    state.transcriptRenderContext.onSetReply = props.onSetReply;
-    state.transcriptRenderContext.onOpenReply = createTranscriptReplyNavigation({
-      chain: transcriptChain,
-      loadedSources: loadedReplySources,
-      expanded: expandedToolCards,
-      props,
-      session: activeSession,
-      input: chatItemsInput,
-      search: state.search,
-      transcript,
-    });
-  };
+  state.transcriptRenderContext.turnVideoMessages = snapshot.turnVideoMessages;
+  state.transcriptRenderContext.onSetReply = props.onSetReply;
+  state.transcriptRenderContext.onOpenReply = createTranscriptReplyNavigation({
+    chain: transcriptChain,
+    loadedSources: loadedReplySources,
+    expanded: expandedToolCards,
+    props,
+    session: activeSession,
+    input: chatItemsInput,
+    search: state.search,
+    transcript,
+  });
   return {
     isDirectThread,
-    rowDemand,
-    commitContentReady,
     positionIndex: showLoadingSkeleton
       ? { markers: [], markerIdsByMessageId: new Map() }
       : {
@@ -693,9 +680,8 @@ export function projectChatTranscript(
     isEmpty,
     showLoadingSkeleton,
     searchOpen: search.open,
-    renderRows: (overlay: JSX.Element = null, header: TranscriptHeader | null = null) => {
-      commitContentReady();
-      return transcript.render(
+    renderRows: (overlay: JSX.Element = null, header: TranscriptHeader | null = null) =>
+      transcript.render(
         transcriptRows,
         (row) =>
           row.kind === "item"
@@ -707,7 +693,6 @@ export function projectChatTranscript(
         header,
         props.transcriptVisible ?? true,
         props.applicationContext,
-      );
-    },
+      ),
   };
 }

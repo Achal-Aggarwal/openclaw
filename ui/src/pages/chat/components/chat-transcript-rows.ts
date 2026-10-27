@@ -1,16 +1,13 @@
 import { lazy } from "solid-js";
 import "../../../styles/chat/skill-learned-notice.css";
 import { loadChatToolPresentation } from "../../../lib/chat/tool-family.ts";
+import { AgentRunFrame } from "./chat-agent-run-frame.tsx";
 import { ActivityGroup, MessageGroup } from "./chat-message-group-view.tsx";
+import { StreamGroup, UnplacedSubagentWait } from "./chat-message-stream-view.tsx";
 import { ChatNotice } from "./chat-notice-view.tsx";
 import { RealtimeTalkConversation } from "./chat-realtime-controls.tsx";
 import { TranscriptWorkPreviews } from "./chat-transcript-content.tsx";
-import {
-  AgentRunFrame,
-  StreamGroup,
-  TurnRecapRow,
-  UnplacedSubagentWait,
-} from "./chat-transcript-row-entries.ts";
+import { TurnRecapRow } from "./chat-turn-recap-view.tsx";
 
 export const nativeRows = {
   "system-events": lazy(() => import("./chat-system-events.tsx"), { export: "ChatSystemEvents" }),

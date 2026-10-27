@@ -37,7 +37,6 @@ import type { ChatThreadProps, ChatThreadState } from "./chat-thread-interaction
 import type { TranscriptRow } from "./chat-transcript-layout.ts";
 import { createTranscriptMemo } from "./chat-transcript-memo.ts";
 import { GuardedTranscriptItem } from "./chat-transcript-render-guard.ts";
-import { NativeTranscriptRowDemand } from "./chat-transcript-row-entries.ts";
 import type { NativeTranscriptView } from "./chat-transcript-rows.ts";
 import type { ChatTranscriptSession } from "./chat-transcript-session.ts";
 import type { projectTranscriptWorkPreviews } from "./chat-transcript-work-previews.ts";
@@ -61,7 +60,6 @@ type TranscriptIndex = Readonly<{
   loadedReplySources: ReadonlyMap<string, LoadedReplySource>;
   positionIndex: ChatPositionIndex;
   rows: readonly TranscriptRow<ChatRenderItem>[];
-  rowDemand: number;
   liveItem?: StreamOwner;
 }>;
 
@@ -269,18 +267,7 @@ export function projectTranscriptIndex(
     // New row keys measure expanded work immediately; existing keys keep their
     // cached height until ResizeObserver reports the changed layout.
     const rows: TranscriptRow<ChatRenderItem>[] = [];
-    let rowDemand = 0;
     for (const item of chain.transcriptItems) {
-      if (item.kind === "agent-run-frame") {
-        rowDemand |= NativeTranscriptRowDemand.frame;
-      }
-      if (
-        item.kind === "stream-run" ||
-        item.kind === "question" ||
-        chain.continuations.has(item.key)
-      ) {
-        rowDemand |= NativeTranscriptRowDemand.stream;
-      }
       rows.push({ kind: "item", key: item.key, item });
       if (item.kind === "work-group" && expandedToolCards.get(item.key)) {
         for (const group of item.groups) {
@@ -335,7 +322,6 @@ export function projectTranscriptIndex(
       loadedReplySources,
       positionIndex,
       rows,
-      rowDemand,
       liveItem: chain.live?.item,
     };
   });

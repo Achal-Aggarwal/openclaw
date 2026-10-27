@@ -62,7 +62,48 @@ suite.define(() => {
         });
         await expect.poll(() => rail.getAttribute("data-at-end")).toBe("true");
         const remove = thumbnails.last().getByRole("button", { name: "Remove sample-12.png" });
-        await remove.focus();
+        try {
+          await remove.focus();
+        } catch (error) {
+          const diagnostic = await thumbnails
+            .evaluateAll((elements) => {
+              const last = elements.at(-1);
+              return {
+                count: elements.length,
+                removeLabels: elements.map((element) =>
+                  element.querySelector(".chat-attachment-remove")?.getAttribute("aria-label"),
+                ),
+                last: last
+                  ? {
+                      imageAlt: last.querySelector("img")?.alt,
+                      hiddenAncestor: last.closest('[aria-hidden="true"], [hidden], [inert]')
+                        ?.tagName,
+                      buttons: [...last.querySelectorAll("button")].map((button) => {
+                        const style = getComputedStyle(button);
+                        const box = button.getBoundingClientRect();
+                        return {
+                          label: button.getAttribute("aria-label"),
+                          labelledBy: button.getAttribute("aria-labelledby"),
+                          hidden: button.hidden,
+                          ariaHidden: button.getAttribute("aria-hidden"),
+                          disabled: button.disabled,
+                          display: style.display,
+                          visibility: style.visibility,
+                          width: box.width,
+                          height: box.height,
+                        };
+                      }),
+                    }
+                  : null,
+              };
+            })
+            .catch(() => null);
+          console.error(
+            "[attachment-containment]",
+            JSON.stringify({ route, width, height, diagnostic }),
+          );
+          throw error;
+        }
         const target = await remove.evaluate(async (element) => {
           await Promise.all(element.getAnimations().map((animation) => animation.finished));
           const box = element.getBoundingClientRect();
