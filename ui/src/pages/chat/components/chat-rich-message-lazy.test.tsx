@@ -8,6 +8,7 @@ import { createAsyncQuestionPresentation } from "./chat-async-question.ts";
 import { GroupedMessage } from "./chat-message-bubble-view.tsx";
 import { prepareChatMessageRender } from "./chat-message-markdown-view.tsx";
 import { createToolResultMessage } from "./chat-message.test-support.ts";
+import { AsyncQuestionSummary } from "./chat-transcript-specialized.ts";
 
 it("keeps ordinary transcript text synchronous", () => {
   const view = mountSolid(() => (
@@ -21,7 +22,8 @@ it("keeps ordinary transcript text synchronous", () => {
   expect(view.container.querySelector(".chat-text")?.textContent?.trim()).toBe("Ready immediately");
 });
 
-it("renders rich history immediately and retires a superseded message", () => {
+it("renders rich history immediately and retires a superseded message", async () => {
+  await AsyncQuestionSummary.preload();
   const question = {
     role: "assistant",
     content: "Choose an audience.",

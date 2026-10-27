@@ -10,8 +10,10 @@ import {
   createTranscriptMessageElements,
   TranscriptMessageElementsContext,
 } from "./chat-transcript-message-elements.ts";
+import { WorkspaceConflictTranscriptMessage } from "./chat-transcript-specialized.ts";
 
 it("keeps conflict roots registered across updates and retires replaced roots", async () => {
+  await WorkspaceConflictTranscriptMessage.preload();
   const message = {
     role: "custom",
     customType: "cloud-workspace-conflict",

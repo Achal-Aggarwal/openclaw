@@ -13,6 +13,7 @@ import {
   createMessageGroup,
   createMessageEntry,
 } from "./chat-message.test-support.ts";
+import { TurnRecapRow, WorkspaceConflictTranscriptMessage } from "./chat-transcript-specialized.ts";
 
 const harness = createChatMessageHarness();
 const {
@@ -42,7 +43,8 @@ it.each([
     7,
   ],
   ["escaped terminal-control filenames", ["src/line\nbreak.ts"], "claim-control", undefined],
-] as const)("renders %s in durable history", (_label, paths, ref, totalCount) => {
+] as const)("renders %s in durable history", async (_label, paths, ref, totalCount) => {
+  await WorkspaceConflictTranscriptMessage.preload();
   const stagedResultRef = `refs/openclaw/worker-results/${ref}`;
   renderGroupedMessage(
     {
@@ -345,7 +347,8 @@ describe("grouped chat rendering", () => {
     expect(container.querySelector(".chat-group--reply")).not.toBeNull();
   });
 
-  it("morphs one assistant turn from working status to its terminal recap", () => {
+  it("morphs one assistant turn from working status to its terminal recap", async () => {
+    await TurnRecapRow.preload();
     const message = createAssistantMessage("First result is ready.", { timestamp: 1_000 });
 
     renderAssistantMessage(message, {

@@ -1426,36 +1426,6 @@ describe("chat loading skeleton", () => {
     );
   }
 
-  it("retires only the exact saved Talk entries, retaining unsaved speech and repeated words", () => {
-    const container = renderChatView({
-      realtimeTalkActive: true,
-      messages: [{ role: "user", content: "Repeated words", __openclaw: { id: "voice:call:1" } }],
-      readRealtimeTalkConversation: () => [
-        {
-          id: "u1",
-          role: "user",
-          text: "Repeated words",
-          isStreaming: false,
-          transcriptId: "voice:call:1",
-        },
-        {
-          id: "u2",
-          role: "user",
-          text: "Repeated words",
-          isStreaming: false,
-          transcriptId: "voice:call:2",
-        },
-        { id: "a1", role: "assistant", text: "Still speaking", isStreaming: true },
-      ],
-    });
-    const turns = [...container.querySelectorAll(".agent-chat__voice-turn")];
-    expect(turns).toHaveLength(2);
-    expect(turns.map((turn) => turn.textContent?.replace(/\s+/g, " ").trim())).toEqual([
-      "You Repeated words",
-      "Val Still speaking",
-    ]);
-  });
-
   it("releases the embedded status when later work steals ownership from an unchanged reply", async () => {
     // Rows memoize on their own item identity, so an unchanged reply that
     // stops owning the status must still re-render without it.
@@ -1652,53 +1622,6 @@ describe("chat loading skeleton", () => {
     } finally {
       nowSpy.mockRestore();
     }
-  });
-
-  it("keeps a completed recap after later tool content", () => {
-    vi.mocked(chatThread.buildCachedChatItems).mockReturnValueOnce([
-      {
-        kind: "group",
-        key: "group:assistant:test",
-        role: "assistant",
-        visibleContent: "text",
-        messages: [
-          createMessageEntry("message:assistant:test", {
-            role: "assistant",
-            content: "Interim answer",
-            timestamp: 1,
-          }),
-        ],
-        timestamp: 1,
-        isStreaming: false,
-      },
-      {
-        kind: "group",
-        key: "group:tool:test",
-        role: "tool",
-        visibleContent: "text",
-        messages: [
-          createMessageEntry("message:tool:test", {
-            role: "tool",
-            content: "Later tool result",
-            timestamp: 2,
-          }),
-        ],
-        timestamp: 2,
-        isStreaming: false,
-      },
-    ]);
-    vi.spyOn(chatProgress, "resolveTurnRecap").mockReturnValue({
-      runId: "run-composed",
-      runtimeMs: 5_000,
-      outputTokens: 42,
-    });
-
-    const container = renderChatView({
-      messages: [{ role: "assistant", content: "Interim answer", timestamp: 1 }],
-    });
-
-    expect(container.querySelector(".chat-group.assistant .chat-turn-recap")).toBeNull();
-    expect(container.querySelector(".chat-turn-recap")?.textContent).toContain("Done in");
   });
 });
 

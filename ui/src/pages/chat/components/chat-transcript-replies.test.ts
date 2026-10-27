@@ -14,6 +14,7 @@ import {
   renderTranscriptSearch,
 } from "../test-helpers/chat-transcript-native.tsx";
 import { toggleTranscriptSearch, type ChatThreadProps } from "./chat-thread-interactions.ts";
+import { ChatNotice } from "./chat-transcript-specialized.ts";
 import {
   flushDeferredRowPrune,
   installTranscriptDomMocks,
@@ -342,6 +343,9 @@ it.each<ReplyContext>([
 ])(
   "keeps cached reply attribution from the full conversation when %s",
   async (_name, messages, strips, session) => {
+    if (messages === systemReply) {
+      await ChatNotice.preload();
+    }
     const props = replyProps([...messages]);
     if (session) {
       props.transcriptMetadata = projectChatTranscriptMetadata({

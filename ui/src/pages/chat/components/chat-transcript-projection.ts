@@ -41,7 +41,7 @@ import {
   projectTranscriptRows,
   type PlacedContentRow,
 } from "./chat-transcript-message-index.ts";
-import { prepareTranscriptRows } from "./chat-transcript-preparation.ts";
+import { prepareProjectedTranscriptRows } from "./chat-transcript-preparation.ts";
 import { projectTranscriptRecovery } from "./chat-transcript-recovery.ts";
 import {
   GuardedTranscriptItem,
@@ -644,11 +644,11 @@ export function projectChatTranscript(
     });
   }
   const transcriptRows = projectTranscriptRows(rows, workPreviews, contentRows);
-  const preparation = prepareTranscriptRows(transcriptRows, {
-    bubbleMode: props.chatBubbleMode === true && !searchFiltering,
+  const preparation = prepareProjectedTranscriptRows(transcriptRows, sharedMessageRenderOptions, {
     recap: turnRecap !== null,
-    asyncQuestions: Boolean(asyncQuestions?.submit),
-    getAssistantMessageExpansion: expandedAssistantMessages.size > 0 ? recovery.get : undefined,
+    expandedAssistantMessages,
+    fullMessageAgentId: props.fullMessageAgentId,
+    recovery,
   });
   state.transcriptRenderContext.turnVideoMessages = snapshot.turnVideoMessages;
   state.transcriptRenderContext.onSetReply = props.onSetReply;

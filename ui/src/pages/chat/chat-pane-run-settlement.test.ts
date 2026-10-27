@@ -9,6 +9,7 @@ import type { ChatHistoryResult } from "./chat-history-snapshot.ts";
 import { getChatHistoryLoadState } from "./chat-history-state.ts";
 import { createMountedPanes, refreshPane } from "./chat-pane-mounted.test-support.ts";
 import { createTestTranscript, renderChatPropsInto } from "./chat-view.test-helpers.ts";
+import { TurnRecapRow } from "./components/chat-transcript-specialized.ts";
 import {
   flushDeferredRowPrune,
   installTranscriptDomMocks,
@@ -22,6 +23,7 @@ afterEach(resetTranscriptTestDom);
 
 describe("mounted pane run settlement", () => {
   it("retains the watched recap while a terminal descriptor outlives the status mask", async () => {
+    await TurnRecapRow.preload();
     const startedAt = Date.now();
     const runId = "managed-media-run";
     const running: GatewaySessionRow = {

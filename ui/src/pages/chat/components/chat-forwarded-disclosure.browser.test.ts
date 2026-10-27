@@ -2,6 +2,7 @@ import { afterEach, beforeEach, expect, it } from "vitest";
 import { resolveTypefaces, syncTypefaceStylesheets } from "../../../app/typography.ts";
 import type { MessageGroup } from "../../../lib/chat/chat-types.ts";
 import { createMessageGroupHarness } from "./chat-message-native.test-support.tsx";
+import { ForwardedAttribution } from "./chat-transcript-specialized.ts";
 import baseCss from "../../../styles/base.css?inline";
 import groupedCss from "../../../styles/chat/grouped.css?inline";
 import messageCss from "../../../styles/chat/message-layout.css?inline";
@@ -14,6 +15,7 @@ let stylesheet: HTMLStyleElement;
 
 // Match the app's default font before measuring the disclosure's inline baseline.
 beforeEach(async () => {
+  await ForwardedAttribution.preload();
   stylesheet = document.createElement("style");
   stylesheet.textContent = [
     baseCss,

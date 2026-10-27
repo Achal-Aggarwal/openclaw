@@ -4,6 +4,7 @@ import { page } from "vitest/browser";
 import type { MessageGroup as MessageGroupData } from "../../../lib/chat/chat-types.ts";
 import { mountSolid } from "../../../test-helpers/mount-solid.ts";
 import { MessageGroup } from "./chat-message-group-view.tsx";
+import { ForwardedAttribution } from "./chat-transcript-specialized.ts";
 import baseCss from "../../../styles/base.css?inline";
 import groupedCss from "../../../styles/chat/grouped.css?inline";
 import startupCss from "../../../styles/chat/startup-layout.css?inline";
@@ -29,6 +30,7 @@ it.each(
 )(
   "keeps forwarded identities and message alignment at $width px for $name",
   async ({ width, agentId, sessionKey }) => {
+    await ForwardedAttribution.preload();
     await page.viewport(width, 1000);
     container = document.body.appendChild(document.createElement("section"));
     const makeGroup = (key: string, count: number, forwarded: boolean): MessageGroupData => ({

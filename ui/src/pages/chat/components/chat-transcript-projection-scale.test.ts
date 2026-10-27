@@ -25,6 +25,7 @@ import { getTranscriptState, type ChatThreadProps } from "./chat-thread-interact
 import { ChatThread } from "./chat-thread-view.tsx";
 import * as transcriptIndex from "./chat-transcript-message-index.ts";
 import { projectChatTranscript } from "./chat-transcript-projection.ts";
+import { RealtimeTalkConversation } from "./chat-transcript-specialized.ts";
 import { ChatSessionVirtualizerHost } from "./chat-transcript-virtualizer-host.ts";
 import {
   installTranscriptDomMocks,
@@ -196,6 +197,7 @@ describe("transcript projection", () => {
   });
 
   it("updates and parks voice captions without projecting the transcript for each fragment", async () => {
+    await RealtimeTalkConversation.preload();
     const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
     const paneId = "voice-leaf-projection";
     const transcript = createTestTranscript(paneId);

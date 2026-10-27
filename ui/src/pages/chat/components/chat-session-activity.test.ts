@@ -11,6 +11,7 @@ import {
   projectTranscriptChain,
   projectTranscriptIndex,
 } from "./chat-transcript-message-index.ts";
+import { ChatSessionActivity } from "./chat-transcript-specialized.ts";
 
 const sessionKey = "agent:main:dashboard:activity-preview";
 const sourceKey = "agent:main:dashboard:icon-work";
@@ -63,7 +64,8 @@ function automation(id: string, jobId = "daily", source = sessionKey) {
 }
 
 describe("session activity", () => {
-  it("collapses recorded automation inputs and reveals their exact run from the shared disclosure", () => {
+  it("collapses recorded automation inputs and reveals their exact run from the shared disclosure", async () => {
+    await ChatSessionActivity.preload();
     const input = automation("execution");
     const projection = chain([input]);
     const group = projection.transcriptItems[0];
@@ -208,7 +210,8 @@ describe("session activity", () => {
     },
   );
 
-  it("expands the full original messages in one disclosure and retains source navigation", () => {
+  it("expands the full original messages in one disclosure and retains source navigation", async () => {
+    await ChatSessionActivity.preload();
     const group = chain([update("first"), update("second")]).transcriptItems[0];
     if (group?.kind !== "group") {
       throw new Error("expected activity group");
@@ -264,7 +267,8 @@ describe("session activity", () => {
     expect(container.textContent).not.toContain("Original receipt");
   });
 
-  it("retains a focused action while a same-key forwarded message refreshes", () => {
+  it("retains a focused action while a same-key forwarded message refreshes", async () => {
+    await ChatSessionActivity.preload();
     const message = update("retained");
     const onReply = vi.fn();
     const draw = (content: string) => {
@@ -299,7 +303,8 @@ describe("session activity", () => {
     }
   });
 
-  it("keeps reply-bearing receipts separate and preserves navigation to their original", () => {
+  it("keeps reply-bearing receipts separate and preserves navigation to their original", async () => {
+    await ChatSessionActivity.preload();
     const reply = update("reply");
     const messages = [
       update("first"),
@@ -344,7 +349,8 @@ describe("session activity", () => {
     expect(onOpenReply).toHaveBeenCalledWith("older");
   });
 
-  it("shows matching text immediately in transcript search", () => {
+  it("shows matching text immediately in transcript search", async () => {
+    await ChatSessionActivity.preload();
     const projection = chain([update("search")], true);
     const group = projection.transcriptItems[0];
     if (group?.kind !== "group") {

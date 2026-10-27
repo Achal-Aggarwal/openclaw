@@ -23,6 +23,7 @@ import {
   prepareHistoryGroups,
 } from "./chat-message.test-support.ts";
 import { settleToolBridges } from "./chat-tool-render.test-support.ts";
+import { ActivityGroupContent } from "./chat-transcript-specialized.ts";
 import { WorkGroupSummary } from "./chat-work-group-summary.tsx";
 
 type WorkProps = Parameters<typeof WorkGroupSummary>[0];
@@ -39,7 +40,8 @@ beforeEach(() => {
 });
 const visibleTools = { showToolCalls: true, showReasoning: true };
 
-it("commits a cached activity summary with its transcript row", () => {
+it("commits a cached activity summary with its transcript row", async () => {
+  await ActivityGroupContent.preload();
   const group = createToolGroup("cached", [
     createMessageEntry(
       "cached-tool",

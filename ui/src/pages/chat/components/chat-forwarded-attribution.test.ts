@@ -8,6 +8,7 @@ import { createTestTranscript } from "../chat-view.test-helpers.ts";
 import { ForwardedAttribution } from "./chat-forwarded-attribution.tsx";
 import { MessageGroup as MessageGroupView } from "./chat-message-group-view.tsx";
 import { ChatThread } from "./chat-thread-view.tsx";
+import { ForwardedAttribution as LazyForwardedAttribution } from "./chat-transcript-specialized.ts";
 import {
   installTranscriptDomMocks,
   resetTranscriptTestDom,
@@ -27,7 +28,8 @@ it.each([
   ["user", "agent:research:bench", "agent:research:bench", "Research Agent ·", false],
   ["assistant", "agent:main:subagent:audit", "agent:main:subagent:audit", null, false],
   ["user", "agent:research:subagent:audit", "agent:research:subagent:audit", null, false],
-] as const)("labels %s forwarding from %s", (role, key, chipText, prefix, titled) => {
+] as const)("labels %s forwarding from %s", async (role, key, chipText, prefix, titled) => {
+  await LazyForwardedAttribution.preload();
   container = document.createElement("div");
   const group: MessageGroup = {
     kind: "group",

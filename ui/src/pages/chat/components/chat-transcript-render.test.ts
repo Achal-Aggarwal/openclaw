@@ -30,6 +30,7 @@ import {
   type ChatThreadProps,
 } from "./chat-thread-interactions.ts";
 import { transcriptContainer } from "./chat-transcript-fixture.test-support.tsx";
+import { TurnRecapRow } from "./chat-transcript-specialized.ts";
 import {
   flushDeferredRowPrune,
   installTranscriptDomMocks,
@@ -383,6 +384,7 @@ describe("chat transcript rendering", () => {
   });
 
   it("keeps exact-run usage visible through final event batching and later corrections", async () => {
+    await TurnRecapRow.preload();
     const runId = "watched-run";
     const sessionKey = "global";
     const host = createHost({ sessionKey, chatRunId: runId });

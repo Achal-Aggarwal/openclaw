@@ -1,5 +1,8 @@
 import type { MessageGroup } from "../../../lib/chat/chat-types.ts";
-import { resolveSourceMessageId } from "../chat-message-recovery.ts";
+import {
+  resolveSourceMessageId,
+  type AssistantMessageExpansionState,
+} from "../chat-message-recovery.ts";
 import type { SystemEventRenderItem } from "../chat-system-event-grouping.ts";
 import { hasForwardedSource, isSessionActivityGroup } from "../chat-turn-boundary.ts";
 import { workspaceResultConflictFromTranscript } from "../workspace-conflict.ts";
@@ -9,6 +12,7 @@ import {
   type NativeMessageGroupOptions,
 } from "./chat-message-group-frame.ts";
 import type { TranscriptPreparationRequest, TranscriptRow } from "./chat-transcript-layout.ts";
+import { createTranscriptMemo } from "./chat-transcript-memo.ts";
 import { GuardedTranscriptItem } from "./chat-transcript-render-guard.ts";
 import type { NativeTranscriptView } from "./chat-transcript-rows.ts";
 import {
@@ -21,6 +25,43 @@ type MessageContentOptions = Pick<
   "bubbleMode" | "asyncQuestions" | "getAssistantMessageExpansion"
 >;
 type GroupOptions = (group: MessageGroup) => MessageContentOptions;
+
+const preparations = createTranscriptMemo<ReturnType<typeof prepareTranscriptRows>>();
+
+/** Stable projected rows skip the history scan until their presentation requirements change. */
+export function prepareProjectedTranscriptRows(
+  rows: readonly TranscriptRow<SystemEventRenderItem>[],
+  options: Pick<MessageContentOptions, "bubbleMode" | "asyncQuestions">,
+  context: {
+    recap: boolean;
+    expandedAssistantMessages: ReadonlyMap<string, AssistantMessageExpansionState>;
+    fullMessageAgentId?: string;
+    recovery: {
+      revision: number;
+      get: NonNullable<MessageContentOptions["getAssistantMessageExpansion"]>;
+    };
+  },
+) {
+  return preparations(
+    rows,
+    [
+      options.bubbleMode,
+      context.recap,
+      Boolean(options.asyncQuestions?.submit),
+      context.expandedAssistantMessages,
+      context.fullMessageAgentId,
+      context.recovery.revision,
+    ],
+    () =>
+      prepareTranscriptRows(rows, {
+        bubbleMode: options.bubbleMode,
+        recap: context.recap,
+        asyncQuestions: Boolean(options.asyncQuestions?.submit),
+        getAssistantMessageExpansion:
+          context.expandedAssistantMessages.size > 0 ? context.recovery.get : undefined,
+      }),
+  );
+}
 
 /** Inspect prepared row kinds; never prepare Markdown or normalize source messages here. */
 export function prepareTranscriptRows(

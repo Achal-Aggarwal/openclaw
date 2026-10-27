@@ -7,6 +7,7 @@ import { projectChatSystemNotice } from "../chat-system-notice.ts";
 import { renderChatComposerNotices } from "../chat-view-notices.tsx";
 import { ChatNotice } from "./chat-notice-view.tsx";
 import { nativeRows } from "./chat-transcript-rows.ts";
+import { ChatNotice as LazyChatNotice } from "./chat-transcript-specialized.ts";
 
 let container: HTMLDivElement;
 let noticeView: { update: (props: Parameters<typeof ChatNotice>[0]) => void } | undefined;
@@ -55,7 +56,8 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-it("commits a cached failure summary with its transcript row", () => {
+it("commits a cached failure summary with its transcript row", async () => {
+  await LazyChatNotice.preload();
   mountStatefulSolid(nativeRows.notice, { item: failure("Cached failure details") }, container);
   expect(container.querySelector('[data-chat-row-key="failure"]')).not.toBeNull();
   expect(container.querySelector(".chat-run-failure__summary")?.textContent).toBe(

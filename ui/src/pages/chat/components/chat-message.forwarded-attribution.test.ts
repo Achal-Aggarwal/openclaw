@@ -26,6 +26,7 @@ import { createAssistantMessage, createMessageGroup } from "./chat-message.test-
 import { createReplyPreviewResolver, type LoadedReplySource } from "./chat-reply-preview.ts";
 import { settleToolBridges } from "./chat-tool-render.test-support.ts";
 import { projectTranscriptChain, projectTranscriptIndex } from "./chat-transcript-message-index.ts";
+import { ChatSessionActivity, ForwardedAttribution } from "./chat-transcript-specialized.ts";
 
 let container: HTMLDivElement;
 let view: ReturnType<typeof createMessageGroupHarness>;
@@ -172,7 +173,8 @@ it.each([
   { collapsed: false, key: "click" },
   { collapsed: true, key: "Enter" },
   { collapsed: false, key: " " },
-])("resolves $key file links with collapsed=$collapsed", ({ collapsed, key }) => {
+])("resolves $key file links with collapsed=$collapsed", async ({ collapsed, key }) => {
+  await (collapsed ? ChatSessionActivity : ForwardedAttribution).preload();
   const group = createGroup(
     { sessionKey },
     { content: reportLink, ...(collapsed ? { provenance } : {}) },
