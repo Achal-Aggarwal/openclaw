@@ -24,7 +24,7 @@ export { resolveChatSnapshotKey } from "./session-snapshot-key.ts";
 
 // JSON code-unit weight bounds retained payloads without allocating another
 // UTF-8 buffer on the route-switch path.
-const MAX_CACHED_CHAT_SNAPSHOT_WEIGHT = 12 * 1024 * 1024;
+export const MAX_CACHED_CHAT_SNAPSHOT_WEIGHT = 12 * 1024 * 1024;
 export const MAX_CACHED_CHAT_WEIGHT = 24 * 1024 * 1024;
 // History reconciliation replaces changed messages and retains unchanged
 // objects, so serialization weight can follow the same immutable identity.
@@ -204,7 +204,7 @@ export function retireCachedPairingQr(cache: ChatMessageCache | undefined): void
 
 export type ChatCacheObserver = {
   delete: (sessionKey: string, reason?: SessionSnapshotInvalidationReason) => void | Promise<void>;
-  write: (sessionKey: string, snapshot: ChatSessionSnapshot) => void;
+  write: (sessionKey: string, snapshot: ChatSessionSnapshot, weight: number) => void;
 };
 
 const chatCacheObservers = new WeakMap<ChatMessageCache, ChatCacheObserver>();
@@ -350,7 +350,7 @@ export function appendChatMessageToCache(
     weight,
   });
   trimChatSessionSnapshotCache(cache);
-  chatCacheObservers.get(cache)?.write(cacheKey, snapshot);
+  chatCacheObservers.get(cache)?.write(cacheKey, snapshot, weight);
 }
 
 export function readChatMessagesFromCache(
@@ -440,7 +440,7 @@ export function cacheChatSessionSnapshot(
   }
   setSessionCacheValue(cache, cacheKey, bounded);
   trimChatSessionSnapshotCache(cache);
-  chatCacheObservers.get(cache)?.write(cacheKey, bounded.snapshot);
+  chatCacheObservers.get(cache)?.write(cacheKey, bounded.snapshot, bounded.weight);
 }
 
 export function readChatSessionSnapshot(

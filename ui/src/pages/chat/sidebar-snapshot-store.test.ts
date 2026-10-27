@@ -1,4 +1,3 @@
-/* @vitest-environment jsdom */
 import { IDBFactory, IDBObjectStore } from "fake-indexeddb";
 import { afterEach, assert, beforeEach, expect, it, vi } from "vitest";
 import { z } from "zod";
@@ -21,6 +20,8 @@ import {
   deleteStoredChatSnapshot,
 } from "./session-snapshot-invalidation.ts";
 import { SessionSnapshotStore } from "./session-snapshot-store.ts";
+/* @vitest-environment jsdom */
+import { writeSnapshotFixture } from "./session-snapshot.test-support.ts";
 
 const DB_NAME = "openclaw-chat-snapshots";
 const scope = {
@@ -148,7 +149,7 @@ it.each([1, 2, 3])(
       await store.writeSidebar(key(current), sidebarSnapshot, parseSidebarSnapshot);
     }
     const transcripts = new SessionSnapshotStore();
-    transcripts.write(sessionKey, transcript);
+    writeSnapshotFixture(transcripts, sessionKey, transcript);
     await transcripts.flush();
     const [parent, child] = snapshotSessions(
       ["parent", "child"].map((name) =>
@@ -191,8 +192,8 @@ it("prunes oldest records by count, UTF-8 bytes, and age", async () => {
 it("removes only the evicted transcript", async () => {
   const transcripts = new SessionSnapshotStore();
   const retained = `${sessionKey}-retained`;
-  transcripts.write(sessionKey, transcript);
-  transcripts.write(retained, transcript);
+  writeSnapshotFixture(transcripts, sessionKey, transcript);
+  writeSnapshotFixture(transcripts, retained, transcript);
   await transcripts.flush();
   await deleteStoredChatSnapshot(sessionKey, "cache-eviction");
   expect(await transcripts.read(sessionKey)).toBeNull();

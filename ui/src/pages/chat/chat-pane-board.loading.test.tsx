@@ -1,5 +1,3 @@
-/* @vitest-environment jsdom */
-
 import { expectDefined } from "@openclaw/normalization-core";
 import { IDBFactory } from "fake-indexeddb";
 import { expect, it, onTestFinished, vi } from "vitest";
@@ -28,6 +26,8 @@ import { clearStoredChatSnapshots } from "./session-snapshot-invalidation.ts";
 import { resolveChatSnapshotKey } from "./session-snapshot-key.ts";
 import { prewarmChatSnapshot } from "./session-snapshot-prewarm.ts";
 import { SessionSnapshotStore } from "./session-snapshot-store.ts";
+/* @vitest-environment jsdom */
+import { writeSnapshotFixture } from "./session-snapshot.test-support.ts";
 import { openSlot } from "./sidebar-layout.ts";
 import "../../components/board/board-view.tsx";
 
@@ -117,11 +117,15 @@ async function persistBoard(
   };
   const store = new SessionSnapshotStore(pane.state.chatMessagesBySession);
   pane.sessionSnapshotStore = store;
-  store.write(resolveChatSnapshotKey(pane.state, { sessionKey: pane.state.sessionKey }), {
-    ...transcript,
-    historyState,
-    board: { snapshot, receivedAtMs: Date.now() },
-  });
+  writeSnapshotFixture(
+    store,
+    resolveChatSnapshotKey(pane.state, { sessionKey: pane.state.sessionKey }),
+    {
+      ...transcript,
+      historyState,
+      board: { snapshot, receivedAtMs: Date.now() },
+    },
+  );
   await store.flush();
   return store;
 }
