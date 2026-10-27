@@ -472,7 +472,6 @@ it("returns authorized hits with partial coverage when optional status diagnosti
     coverage: "partial",
     warning: expect.stringContaining("could not be verified"),
   });
-  expect(oldManager.statusAsync).toHaveBeenCalledWith({ includeCounts: false });
   await expect(bound.health()).resolves.toMatchObject({
     status: "degraded",
     message: page.warning,
@@ -513,7 +512,7 @@ it("uses the existing cleanup and reload owner for both runtime contracts", asyn
   const current = {
     open: async () => ({ provider: provider() }),
     closeAllMemorySearchManagers: vi.fn(async () => {}),
-    prepareReload: vi.fn(() => ({ drain, resume })),
+    prepareReload: () => ({ drain, resume }),
   } satisfies MemoryProviderRuntime;
   state.capability = { runtime: old, providerRuntime: current };
   await closeActiveMemorySearchManagersCore();

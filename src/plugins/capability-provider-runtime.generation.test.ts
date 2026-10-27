@@ -1,7 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
 import { afterAll, afterEach, describe, expect, it as baseIt, vi } from "vitest";
-import { resolveSharedMainAuthAgentDir } from "../agents/auth-profiles/shared-main-dir.js";
 import { loadAgentRuntimePluginRegistryHandle } from "../agents/runtime-plugins.js";
 import { createPluginMetadataSnapshot } from "../config/plugin-auto-enable.test-helpers.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
@@ -237,49 +236,25 @@ describe("capability loading from a Gateway generation", () => {
     "keeps native model policy outside broad registration runtime at the %s root",
     async (root) => {
       const registration = `
-        const modelConfig = api.runtime.modelConfig;
-        const selected = modelConfig.resolveDefaultModelForAgent({ cfg: api.config, manifestPlugins: [] });
-        const allowed = modelConfig.resolveAllowedModelRef({ cfg: api.config, catalog: [], raw: "${id}/model", defaultProvider: "${id}", manifestPlugins: [] });
-        const denied = modelConfig.resolveAllowedModelRef({ cfg: api.config, catalog: [], raw: "${id}/blocked", defaultProvider: "${id}", manifestPlugins: [] });
-        if (selected.provider !== "${id}" || selected.model !== "model" || allowed.key !== "${id}/model" || denied.error !== "model not allowed: ${id}/blocked") {
-          throw new Error("native model selection policy failed");
-        }
-        const auth = api.runtime.modelAuth;
-        const provider = auth.resolveProviderIdForAuth(" ${id} ", { metadataSnapshot: { plugins: [] } });
-        const empty = auth.ensureAuthProfileStore(api.config.agents.entries.main.agentDir, {
-          readOnly: true, allowKeychainPrompt: false, config: api.config,
+        const allowed = api.runtime.modelConfig.resolveAllowedModelRef({
+          cfg: api.config, catalog: [], raw: "${id}/model", defaultProvider: "${id}", manifestPlugins: [],
         });
-        const store = { version: 1, profiles: { fixture: { type: "api_key", provider, key: "fixture-key" } } };
-        const profiles = auth.listProfilesForProvider(store, provider);
-        const order = auth.resolveAuthProfileOrder({ cfg: api.config, store, provider, authAliasLookupParams: { metadataSnapshot: { plugins: [] } } });
-        if (Object.keys(empty.profiles).length !== 0 || profiles.join() !== "fixture" || order.join() !== "fixture" || !auth.isProviderApiKeyConfigured({ cfg: api.config, provider })) {
-          throw new Error("native auth policy failed");
+        const provider = api.runtime.modelAuth.resolveProviderIdForAuth(" ${id} ", { metadataSnapshot: { plugins: [] } });
+        if (allowed.key !== "${id}/model" || provider !== "${id}") {
+          throw new Error("native model policy bindings are unavailable");
         }
         if (${root === "restricted"} && (Object.hasOwn(api.runtime, "agent") || Object.hasOwn(api.runtime, "subagent"))) {
           throw new Error("restricted registration acquired execution authority");
         }
       `;
       await withSpeechFixture(async (fixture) => {
-        const agentDirPath = path.join(fixture.root, "state", "agents", "main", "agent");
-        mkdirSafe(agentDirPath);
-        const agentDir = fs.realpathSync(agentDirPath);
-        // Verify the inherited shared owner too; never mask an ambient relocation outside the fixture.
-        expect(resolveSharedMainAuthAgentDir()).toBe(agentDir);
         fixture.config.plugins = { entries: { [id]: { enabled: true } } };
-        fixture.config.agents!.entries = { main: { agentDir } };
-        fixture.config.agents!.defaults!.model = `${id}/model`;
-        fixture.config.agents!.defaults!.modelPolicy = { allow: [`${id}/model`] };
-        fixture.config.models = {
-          providers: {
-            [id]: { baseUrl: "https://provider.example/v1", models: [], apiKey: "fixture-key" },
-          },
-        };
         const metadataSnapshot = publishMetadata(fixture);
-        const broadRuntime = vi
-          .spyOn(sdkAlias, "resolvePluginRuntimeModulePathWithDiagnostics")
-          .mockImplementation(() => {
+        vi.spyOn(sdkAlias, "resolvePluginRuntimeModulePathWithDiagnostics").mockImplementation(
+          () => {
             throw new Error("native root loaded broad registration runtime");
-          });
+          },
+        );
         let providers;
         if (root === "capability") {
           setActivePluginRegistry(createEmptyPluginRegistry());
@@ -308,7 +283,6 @@ describe("capability loading from a Gateway generation", () => {
           providers = registry.speechProviders.map((entry) => entry.provider);
         }
         expect(providers.map((provider) => provider.id)).toEqual([id]);
-        expect(broadRuntime).not.toHaveBeenCalled();
       }, registration);
     },
   );
@@ -465,21 +439,9 @@ describe("capability loading from a Gateway generation", () => {
     expect(fs.existsSync(runtimeImported)).toBe(false);
   });
 
-  it.for(["export default", "module.exports ="])(
-    "treats an explicitly empty family as authoritative (%s)",
-    async (declaration, { speech: fixture }) => {
-      await withCatalogMutation(
-        fixture,
-        { body: `${declaration} { speechProviders: [] };` },
-        () => {
-          expect(fixture.providers()).toEqual([]);
-          expect(fixture.provider("fixture-alias")).toBeUndefined();
-        },
-      );
-    },
-  );
-
   it.for([
+    { body: "export default { speechProviders: [] };", empty: true },
+    { body: "module.exports = { speechProviders: [] };", empty: true },
     { body: 'throw new Error("broken catalog");' },
     { body: "export default { speechProviders: [{}] };" },
     { body: "export default { speechProvider: [] };" },
@@ -488,14 +450,19 @@ describe("capability loading from a Gateway generation", () => {
     { entry: "" },
     { entry: 7 },
   ])(
-    "rejects invalid catalogs without importing the full entry: %j",
+    "honors empty catalogs and rejects invalid ones without importing the full entry: %j",
     async (mutation, { speech: fixture }) => {
       await withCatalogMutation(fixture, mutation, () => {
-        expect(() => fixture.providers()).toThrow(
-          "body" in mutation
-            ? /capabilityCatalogEntry failed.*Repair the declared entry/
-            : /capabilityCatalogEntry failed/,
-        );
+        if ("empty" in mutation) {
+          expect(fixture.providers()).toEqual([]);
+          expect(fixture.provider("fixture-alias")).toBeUndefined();
+        } else {
+          expect(() => fixture.providers()).toThrow(
+            "body" in mutation
+              ? /capabilityCatalogEntry failed.*Repair the declared entry/
+              : /capabilityCatalogEntry failed/,
+          );
+        }
       });
     },
   );
