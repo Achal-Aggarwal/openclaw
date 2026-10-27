@@ -1197,3 +1197,5 @@ Use the session transcript and recorded delivery outcome to verify completion.
 - Standalone embedded turns cannot take over a main session with pending
   restart recovery because they do not share the gateway's lifecycle owner.
   Run the turn through the gateway or reset it there with `/new` or `/reset`.
+
+A plain stop (SIGTERM or SIGINT) during an in-place restart drain turns that restart into a stop; managed update handoffs retain their own handling.
