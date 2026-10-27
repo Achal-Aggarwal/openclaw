@@ -140,7 +140,7 @@ export function SessionGlyph(props: {
             >
               <svg
                 class={["session-glyph__trace", { "session-glyph__trace--queued": props.queued }]}
-                viewBox="-17 -12 34 24"
+                viewBox="-16 -11 32 22"
                 role="img"
                 aria-label={label()}
               >
