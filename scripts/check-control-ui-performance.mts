@@ -69,8 +69,8 @@ const controlUiPerformanceBudgets = {
   // CLS reservation costs 266 B gzip over main while all measured reloads stay <=0.02.
   // The campaign permits this measured win; retain only 64 B of build variance.
   totalCssGzipBytes: 307_838,
-  // Bounded transcript rows: 1,597,910 B measured, retaining 220 B of raw headroom.
-  totalCssRawBytes: 1_598_130,
+  // Bounded transcript rows plus main's Logs windowing CSS; retain existing headroom.
+  totalCssRawBytes: 1_598_225,
 } satisfies Record<string, number>;
 export const CONTROL_UI_PERFORMANCE_BUDGETS = Object.freeze(controlUiPerformanceBudgets);
 

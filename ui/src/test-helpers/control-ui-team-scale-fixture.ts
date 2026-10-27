@@ -20,8 +20,8 @@ import {
 } from "./control-ui-team-scale-history-fixture.ts";
 import {
   createTeamScaleCronInventory,
+  createTeamScaleCounts,
   createTeamScaleSessionInventory,
-  TEAM_SCALE_COUNTS,
 } from "./control-ui-team-scale-inventory.ts";
 import {
   createTeamScalePeople,
@@ -84,14 +84,9 @@ type FixtureOptions = {
 /** One deterministic inventory shared by browser benchmarks and focused UI proofs. */
 export function createControlUiTeamScaleFixture(options: FixtureOptions = {}) {
   const counts = {
-    ...TEAM_SCALE_COUNTS,
-    inlineWidgets:
-      options.longSessionScenario === "single-run" || options.longSessionScenario === "direct-run"
-        ? 0
-        : TEAM_SCALE_COUNTS.inlineWidgets,
-    transcriptMessages:
-      options.transcriptMessages ??
-      (options.largeSnapshot ? 1_100 : TEAM_SCALE_COUNTS.transcriptMessages),
+    ...createTeamScaleCounts(options),
+    ...((options.longSessionScenario === "single-run" ||
+      options.longSessionScenario === "direct-run") && { inlineWidgets: 0 }),
   };
   const now = options.now ?? Date.now();
   const baseUrl = options.baseUrl ?? "http://127.0.0.1:19626/";
