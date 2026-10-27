@@ -258,17 +258,17 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
     // Initial placement owns compensation; an estimated end is not a native scroll target.
     this.virtualizer.shouldAdjustScrollPositionOnItemSizeChange = () => false;
     // A boot re-anchor can precede its native extent; only reader geometry may override it.
+    const beforeMeasure = () => this.initialRange.reading && this.offsetState.syncNativeOffset?.();
     this.presentation = createTranscriptPresentation(
       () => this.scrollElement,
       this.virtualizer,
       () => this.rowRefs.elements,
-      () => this.initialRange.reading && this.offsetState.syncNativeOffset?.(),
+      beforeMeasure,
       this.layout.measureRow,
     );
     this.rowRefs = new TranscriptRowRefs(this.virtualizer, {
       isCurrentRow: (element, key) =>
-        this.threadInnerElement?.contains(element) === true &&
-        this.initialRange.rowIndexes.has(key),
+        this.initialRange.rowIndexes.has(key) && this.contentElement?.contains(element) === true,
       beforeMeasure,
       onMount: () => this.queueLayout(),
     });

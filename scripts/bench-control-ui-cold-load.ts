@@ -2080,7 +2080,25 @@ try {
     if (values["long-session"]) {
       const selector = ".chat-pane-cache__pane--active .agent-chat__composer-combobox textarea";
       const composer = page.locator(selector);
-      await composer.waitFor({ state: "visible" });
+      try {
+        await composer.waitFor({ state: "visible" });
+      } catch (error) {
+        await writeFile(
+          path.join(artifactDir, `run-${run + 1}.open-failure.json`),
+          JSON.stringify(
+            {
+              errors,
+              consoleErrors,
+              documentNavigations,
+              text: await page.locator("body").textContent(),
+            },
+            null,
+            2,
+          ),
+        );
+        await page.screenshot({ path: path.join(artifactDir, `run-${run + 1}.open-failure.png`) });
+        throw error;
+      }
       await page.waitForFunction((targetSelector) => {
         const input = document.querySelector<HTMLTextAreaElement>(targetSelector);
         return input && !input.disabled && !input.readOnly;
