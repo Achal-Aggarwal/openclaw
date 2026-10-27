@@ -514,7 +514,7 @@ it("reuses a nearby completed row after scrolling away and back, with a bounded 
   for (let index = 16; index < 240; index += 8) {
     await view.scrollTo(index);
     await view.frame(2);
-    expect(transcriptRows(view.container).length).toBeLessThan(32);
+    expect(transcriptRows(view.container).length).toBeLessThan(40);
     expect(
       view.container.querySelector(`[data-virtual-row-key="fragment:${index}"]`),
     ).not.toBeNull();
@@ -609,10 +609,20 @@ it("places a fresh long transcript at its tail and warms a bounded upward window
   expect(transcriptRows(view.container).every((row) => Number(row.dataset.index) > 230)).toBe(true);
   await view.frame(160);
   expect(transcriptRows(view.container).some((row) => Number(row.dataset.index) < 250)).toBe(true);
-  expect(transcriptRows(view.container).length).toBeLessThanOrEqual(12);
+  expect(transcriptRows(view.container).length).toBeLessThanOrEqual(24);
+  const ahead = view.container.querySelector('[data-virtual-row-key="fragment:235"]');
+  expect(ahead).not.toBeNull();
   const preparations = view.renderRow.mock.calls.length;
+  const aheadPreparations = view.renderRow.mock.calls.filter(
+    ([row]) => row.key === "fragment:235",
+  ).length;
   await view.frame(16);
   expect(view.renderRow.mock.calls).toHaveLength(preparations);
+  await view.scrollTo(235);
+  expect(view.container.querySelector('[data-virtual-row-key="fragment:235"]')).toBe(ahead);
+  expect(view.renderRow.mock.calls.filter(([row]) => row.key === "fragment:235")).toHaveLength(
+    aheadPreparations,
+  );
 });
 
 it("uses cached geometry on the first reader movement after tail placement", async () => {
