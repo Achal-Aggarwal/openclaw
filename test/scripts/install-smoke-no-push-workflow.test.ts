@@ -769,12 +769,9 @@ install -d -m 0750 "$payload_dir"
   expect(seal.run).not.toContain('chmod 0777 "$payload_dir"');
   assertText(seal.run).contains(`install-smoke-candidate-payload.mts seal
 --harness-sha`);
-
   for (const consumerName of ["installer_smoke_update", "installer_smoke_nonroot"]) {
     const consumer = job(consumerName);
-    expect(consumer.steps?.find((candidate) => candidate.name === "Checkout candidate CLI")).toBe(
-      undefined,
-    );
+    expect(consumer.steps?.some(({ name }) => name === "Checkout candidate CLI")).toBe(false);
     const binding = step(consumer, "Validate candidate payload artifact binding");
     assertText(binding.run).contains(`verify-upload "Candidate payload"
 expected_artifact_name="install-smoke-candidate-payload-\${TARGET_SHA}-\${ARTIFACT_RUN_ID}-\${ARTIFACT_RUN_ATTEMPT}"`);
@@ -784,15 +781,12 @@ expected_artifact_name="install-smoke-candidate-payload-\${TARGET_SHA}-\${ARTIFA
       PRODUCER_RUN_ATTEMPT: reference(candidateScope, "artifact_run_attempt"),
       PRODUCER_RUN_ID: reference(candidateScope, "artifact_run_id"),
     });
-    assertText(verify.run).contains(`--run-id "$PRODUCER_RUN_ID"
---run-attempt "$PRODUCER_RUN_ATTEMPT"
---manifest-sha256
+    assertText(verify.run)
+      .contains(`--run-id "$PRODUCER_RUN_ID"\n--run-attempt "$PRODUCER_RUN_ATTEMPT"\n--manifest-sha256
 --source-archive-sha256`);
-    assertText(verify.run).excludes(`--run-id "$GITHUB_RUN_ID"
---run-attempt "$GITHUB_RUN_ATTEMPT"`);
+    expect(verify.run).not.toContain("$GITHUB_RUN_");
   }
 });
-
 it("drains every independent producer and consumer without sibling failure suppression", () => {
   const aggregate = job("installer_smoke");
   for (const group of ["update", "nonroot"]) {
