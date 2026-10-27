@@ -1,7 +1,7 @@
 import { Command } from "commander";
-import { createDeferred } from "openclaw/plugin-sdk/extension-shared";
 import { formatZonedTimestamp } from "openclaw/plugin-sdk/time-runtime";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createAsyncGate } from "../../test-support/async-gate.test-support.js";
 import { registerMatrixCli } from "./cli.js";
 import { mockCallArg } from "./cli.test-support.js";
 import type { CoreConfig } from "./types.js";
@@ -75,14 +75,12 @@ function jsonOutput(index = -1) {
 }
 
 function holdResult(mock: ReturnType<typeof vi.fn<() => Promise<unknown>>>, result: unknown) {
-  const entered = createDeferred<void>(),
-    retired = createDeferred<void>();
+  const gate = createAsyncGate();
   mock.mockImplementationOnce(async () => {
-    entered.resolve();
-    await retired.promise;
+    await gate.wait();
     return result;
   });
-  return { entered: entered.promise, release: () => retired.resolve() };
+  return gate;
 }
 
 function configureAccount(encryption = false) {
@@ -542,19 +540,15 @@ describe("matrix CLI verification commands", () => {
   });
 
   it("confirms, rejects, accepts, starts, and cancels Matrix verification requests", async () => {
-    setVerificationResult(mocks.accept, { id: "in-1" });
-    setVerificationResult(mocks.start, {
-      id: "in-1",
-      roomId: "!dm:example.org",
-      otherUserId: "@alice:example.org",
-    });
-    setVerificationResult(mocks.confirmSas, { id: "in-1", completed: true, pending: false });
-    setVerificationResult(mocks.mismatchSas, {
-      id: "in-1",
-      phaseName: "cancelled",
-      pending: false,
-    });
-    setVerificationResult(mocks.cancel, { id: "in-1", phaseName: "cancelled", pending: false });
+    for (const [mock, summary] of [
+      [mocks.accept, {}],
+      [mocks.start, { roomId: "!dm:example.org", otherUserId: "@alice:example.org" }],
+      [mocks.confirmSas, { completed: true, pending: false }],
+      [mocks.mismatchSas, { phaseName: "cancelled", pending: false }],
+      [mocks.cancel, { phaseName: "cancelled", pending: false }],
+    ] as const) {
+      setVerificationResult(mock, { id: "in-1", ...summary });
+    }
     await runMatrixCli("verify accept", "in-1");
     expectLogs("- Run openclaw matrix verify start -- txn-1 to start SAS verification.");
     await runMatrixCli("verify start in-1 --user-id @alice:example.org --room-id !dm:example.org");
@@ -661,18 +655,14 @@ describe("matrix CLI verification commands", () => {
   it("lists matrix devices", async () => {
     mocks.devices.mockResolvedValue([
       {
-        deviceId: "A7hWr\u001B[31mQ70ea",
+        ...matrixDevice("A7hWr\u001B[31mQ70ea", true),
         displayName: "OpenClaw\u001B[2J Gateway",
         lastSeenIp: "127.0.0.1\u009B2J",
         lastSeenTs: 1_741_507_200_000,
-        current: true,
       },
       {
-        deviceId: "BritdXC6iL",
-        displayName: "OpenClaw Gateway",
-        lastSeenIp: null,
+        ...matrixDevice("BritdXC6iL", false),
         lastSeenTs: 8_700_000_000_000_000,
-        current: false,
       },
     ]);
     await runMatrixCli("devices list", "--account", "poe");
