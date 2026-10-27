@@ -46,6 +46,7 @@ it("keeps the hover-only picker usable when the pointer enters its native popup"
     .querySelector("openclaw-message-reaction-picker")!
     .classList.add("chat-reaction-chip--add");
   const trigger = view.getByRole("button", { name: "Add reaction" });
+  expect(view.container.querySelector(".chat-reaction-picker")).toBeNull();
   await userEvent.hover(view.container.querySelector(".chat-group")!);
   await userEvent.click(trigger);
   const popup = view.container.querySelector<HTMLElement>(".chat-reaction-picker")!;
@@ -68,4 +69,20 @@ it("keeps the hover-only picker usable when the pointer enters its native popup"
   await userEvent.click(trigger);
   await expect.poll(() => popup.dataset.phase).toBe("open");
   expect(popup.classList.contains("custom")).toBe(false);
+});
+
+it("opens on first keyboard activation and returns focus after Escape", async () => {
+  const view = mountSolid(() => (
+    <MessageReactionPicker activeEmoji={new Set(["👍"])} placement="bottom-start" />
+  ));
+  const trigger = view.getByRole("button", { name: "Add reaction" });
+  expect(view.container.querySelector(".chat-reaction-picker")).toBeNull();
+  trigger.focus();
+  await userEvent.keyboard("{Enter}");
+  await expect.poll(() => document.activeElement).toBe(view.getByRole("button", { name: "👍" }));
+  await userEvent.keyboard("{Escape}");
+  await expect.poll(() => document.activeElement).toBe(trigger);
+  await expect
+    .poll(() => view.container.querySelector<HTMLElement>(".chat-reaction-picker")?.dataset.phase)
+    .toBe("hidden");
 });
