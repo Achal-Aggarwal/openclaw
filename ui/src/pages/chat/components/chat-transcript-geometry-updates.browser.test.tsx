@@ -404,7 +404,7 @@ it("reconciles the streaming end only when native row geometry changes", async (
   expect(viewport.scrollHeight - viewport.clientHeight - viewport.scrollTop).toBeLessThanOrEqual(1);
 });
 
-it("coalesces uncompensated reader measurements into the next frame", async () => {
+it("commits uncompensated extents while coalescing reader row updates", async () => {
   const { host, session, viewport, virtualizer } = await mountPane();
   scrollReader(viewport, 480);
   expect(virtualizer.isScrolling).toBe(true);
@@ -425,8 +425,8 @@ it("coalesces uncompensated reader measurements into the next frame", async () =
     [virtualizer, false],
     [virtualizer, false],
   ]);
-  expect(commit).not.toHaveBeenCalled();
-  expect(Number.parseFloat(inner.style.height)).toBe(height);
+  expect(commit).toHaveBeenCalledWith(inner, height + 150);
+  expect(Number.parseFloat(inner.style.height)).toBe(height + 150);
   expect(viewport.scrollTop).toBe(480);
 
   await new Promise<void>((resolve) => {
@@ -437,6 +437,46 @@ it("coalesces uncompensated reader measurements into the next frame", async () =
   expect(commit).toHaveBeenCalledWith(inner, height + 150);
   expect(Number.parseFloat(inner.style.height)).toBe(height + 150);
   expect(viewport.scrollTop).toBe(480);
+});
+
+it("commits rows before paint when an uncompensated extent shrink clamps the reader", async () => {
+  const { host, viewport, virtualizer } = await mountPane(false, 360, geometryMessages(6));
+  scrollReader(viewport, viewport.scrollHeight - viewport.clientHeight);
+  await settleLayout();
+  const last = requireElement(host, '.chat-virtual-row[data-index="5"]');
+  last.style.height = "120px";
+  virtualizer.resizeItem(5, 120);
+  await settleLayout();
+  scrollReader(viewport, viewport.scrollHeight - viewport.clientHeight - 200);
+  const inner = requireElement(host, ".chat-thread-inner");
+  const height = Number.parseFloat(inner.style.height);
+  const before = viewport.scrollTop;
+  const notification = vi.spyOn(virtualizer.options, "onChange");
+  const paint = vi.fn();
+  const frame = requestAnimationFrame(paint);
+  try {
+    requireElement(host, '.chat-virtual-row[data-index="4"]').style.height = "30px";
+    virtualizer.resizeItem(4, 30);
+    flush();
+    await Promise.resolve();
+    flush();
+
+    expect(notification).toHaveBeenCalledWith(virtualizer, false);
+    expect(Number.parseFloat(inner.style.height)).toBe(height - 330);
+    expect(viewport.scrollTop).toBeLessThan(before);
+    expect(viewport.scrollTop).toBe(viewport.scrollHeight - viewport.clientHeight);
+    const finalRow = expectDefined(virtualizer.getVirtualItems().find((row) => row.index === 5));
+    expect(
+      Math.abs(
+        last.getBoundingClientRect().top -
+          inner.getBoundingClientRect().top -
+          (finalRow.start - virtualizer.options.scrollMargin),
+      ),
+    ).toBeLessThanOrEqual(1);
+    expect(paint).not.toHaveBeenCalled();
+  } finally {
+    cancelAnimationFrame(frame);
+  }
 });
 
 it("commits reader compensation before paint after a deferred measurement", async () => {
@@ -452,7 +492,7 @@ it("commits reader compensation before paint after a deferred measurement", asyn
   try {
     requireElement(host, '.chat-virtual-row[data-index="6"]').style.height = "180px";
     virtualizer.resizeItem(6, 180);
-    expect(Number.parseFloat(inner.style.height)).toBe(height);
+    expect(Number.parseFloat(inner.style.height)).toBe(height + 60);
     const compensated = new Promise<void>((resolve) => {
       viewport.addEventListener("scroll", () => resolve(), { once: true });
     });

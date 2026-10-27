@@ -211,6 +211,10 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
         // Avoid repeated post-layout measurement/render passes in one scroll frame.
         // Initial placement and held history still reconcile before paint.
         view.options.useAnimationFrameWithResizeObserver = redraw;
+        // Read while measured layout is clean; a native clamp needs its rows now.
+        const { threadInnerElement: inner, headerHeight } = this;
+        const moved =
+          redraw && inner && this.layout.commitRange(inner, view.getTotalSize() + headerHeight);
         // An uncompensated measurement can share the next reader frame. Native
         // scroll compensation and OpenClaw's pending anchors must land together.
         this.presentation.commitChange(
@@ -218,7 +222,7 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
             (redraw ? (this.renderPreviousRows ?? invalidate) : invalidate)();
             this.scheduleEndReconcile(view.getTotalSize());
           },
-          redraw && !sync && !this.canAutoFollow() && !this.offsetState.hasPendingAnchor,
+          redraw && !sync && !moved && !this.canAutoFollow() && !this.offsetState.hasPendingAnchor,
         );
       },
       count: 0,
@@ -243,10 +247,8 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
             cancelScroll: () => this.cancelScroll(),
             onLayoutCorrection: this.recordEndLayoutCorrection,
             invalidate,
-            onOffset: (readerDelta) => {
-              // Nested or canceled input must not admit offscreen measurements.
-              return readerDelta ? this.initialRange.recordReaderMovement(readerDelta) : undefined;
-            },
+            // Nested or canceled input must not admit offscreen measurements.
+            onOffset: (delta) => void (delta && this.initialRange.recordReaderMovement(delta)),
             onComposerLayout: (changed) => this.commitComposerResize(changed),
             onReaderScroll: (towardEnd) => this.callbacks.onReaderScroll?.(towardEnd),
             onNativeScroll: callbacks.onNativeScroll,
