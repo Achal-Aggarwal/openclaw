@@ -544,7 +544,6 @@ export function createControlUiCodeSplitting(options: { includeBootGroups?: bool
               const modules = new Set(controlUiBootModules[route]);
               if (route === "chat") {
                 // First-screen content must not evaluate unrelated action/tool modules.
-                // Keep snapshot decoding here too rather than adding another preload URL.
                 for (const module of [
                   // Critical rows share Chat's first-screen evaluation, not the optional rich chunk.
                   "ui/src/pages/chat/components/chat-agent-run-frame.tsx",
@@ -564,7 +563,6 @@ export function createControlUiCodeSplitting(options: { includeBootGroups?: bool
                   "ui/src/pages/chat/components/chat-bubble-activity-view.tsx",
                   "ui/src/pages/chat/components/chat-session-activity.solid.tsx",
                   "ui/src/pages/chat/components/chat-forwarded-attribution.tsx",
-                  "ui/src/pages/chat/session-snapshot-decoder.ts",
                 ]) {
                   modules.add(module);
                 }

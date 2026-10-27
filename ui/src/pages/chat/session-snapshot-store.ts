@@ -2,6 +2,12 @@ import { readSessionMessageSequence } from "@openclaw/gateway-client/browser";
 import { asOptionalRecord } from "@openclaw/normalization-core/record-coerce";
 import { requestResult, transactionComplete } from "../../lib/chat/control-ui-database.runtime.ts";
 import { removePairingQrContent } from "../../lib/chat/pairing-qr.ts";
+import { isBoardSnapshot } from "../../lib/protocol-validators.generated/board.js";
+import {
+  isChatTranscriptMetadata,
+  isProgressCard,
+  isMessageReactionSummary,
+} from "../../lib/protocol-validators.generated/transcript.js";
 import { listen } from "../../lib/reactive/listener.ts";
 import * as json from "../../lib/snapshot-json.ts";
 import { projectChatMessageReactions } from "./chat-message-reactions-snapshot.ts";
@@ -30,7 +36,6 @@ import {
   readStoredChatSnapshotRecord,
   resetSessionSnapshotDatabase,
 } from "./session-snapshot-database.ts";
-import type { SessionSnapshotRecord } from "./session-snapshot-decoder.ts";
 import {
   snapshotStoreGeneration,
   sidebarSnapshotInvalidationMatches,
@@ -42,8 +47,10 @@ import { deleteStoredChatSnapshot } from "./session-snapshot-invalidation.ts";
 import {
   consumePrewarmedChatSnapshot,
   discardPrewarmedChatSnapshot,
-  loadSnapshotRecordParser,
+  loadChatHistoryStateValidator,
   peekPrewarmedChatSnapshot,
+  prewarmedHistoryStateValidator,
+  readSharedPrewarm,
 } from "./session-snapshot-prewarm.ts";
 const CHAT_SNAPSHOT_PROJECTION_VERSION = 5;
 const CHAT_SNAPSHOT_MESSAGE_LIMIT = 80;
@@ -52,11 +59,106 @@ const CHAT_SNAPSHOT_IDLE_TIMEOUT_MS = 1000;
 
 const nonnegative = json.refine(json.number, (value) => value >= 0);
 const sessionKeySchema = json.refine(json.text, (value) => value.length > 0);
-const metadataFields = {
-  savedAt: nonnegative,
-  sessionKey: sessionKeySchema,
+const completePaginationSchema = json.object(
+  {
+    completeSnapshot: json.optional(json.literal(true)),
+    hasMore: json.literal(false),
+    totalMessages: json.optional(nonnegative),
+  },
+  true,
+);
+const morePaginationSchema = json.object(
+  {
+    hasMore: json.literal(true),
+    nextOffset: nonnegative,
+    totalMessages: json.optional(nonnegative),
+  },
+  true,
+);
+const paginationSchema = {
+  parse(value: unknown) {
+    return asOptionalRecord(value)?.hasMore === true
+      ? morePaginationSchema.parse(value)
+      : completePaginationSchema.parse(value);
+  },
 };
-const metadataSchema = json.object({ ...metadataFields, weight: nonnegative }, true);
+const permissionModeSchema = json.enumeration(["read-only", "guarded", "workspace", "full"]);
+const snapshotSchema = json.object(
+  {
+    composer: json.optional(
+      json.nullable(
+        json.object({
+          id: json.text,
+          provider: json.text,
+          name: json.text,
+          reasoning: json.optional(json.boolean),
+          speed: json.optional(
+            json.object({
+              active: json.boolean,
+              currentOverride: json.enumeration(["", "on", "off", "auto", "ultrafast"]),
+              label: json.text,
+              supported: json.boolean,
+            }),
+          ),
+          thinkingLevel: json.optional(json.text),
+          thinkingDefault: json.optional(json.text),
+          thinkingLevels: json.optional(
+            json.array(json.object({ id: json.text, label: json.text }), 30),
+          ),
+          permissionMode: json.optional(permissionModeSchema),
+          defaultPermissionMode: json.optional(permissionModeSchema),
+        }),
+      ),
+    ),
+    board: json.optional(
+      json.nullable(json.object({ snapshot: json.unknown, receivedAtMs: nonnegative }, true)),
+    ),
+    widgetHeights: json.optional(
+      json.refine(
+        json.record(json.refine(json.number, (height) => height >= 48 && height <= 8000)),
+        (heights) => Object.keys(heights).length <= 100,
+      ),
+    ),
+    transcriptMetadata: json.optional(json.checked(isChatTranscriptMetadata)),
+    messageReactions: json.optional(
+      json.record(json.array(json.checked(isMessageReactionSummary))),
+    ),
+    progressCard: json.optional(json.nullable(json.checked(isProgressCard))),
+    deltaCursor: json.optional(json.text),
+    // Only persisted warm metadata needs its full validator; read admission loads it below.
+    historyState: json.optional(json.unknown),
+    displayedLeafEntryId: json.optional(json.nullable(json.text)),
+    // Message contents are opaque; only the array boundary needs validation.
+    messages: json.checked<unknown[]>(Array.isArray),
+    pagination: paginationSchema,
+    sessionId: json.nullable(json.text),
+  },
+  true,
+);
+const recordSchema = json.refine(
+  json.object(
+    {
+      projectionVersion: json.refine(
+        json.number,
+        (value) => Number.isSafeInteger(value) && value > 0,
+      ),
+      savedAt: nonnegative,
+      sessionId: json.nullable(json.text),
+      sessionKey: sessionKeySchema,
+      snapshot: snapshotSchema,
+    },
+    true,
+  ),
+  (record) => record.sessionId === record.snapshot.sessionId,
+);
+
+type SessionSnapshotRecord = Omit<json.SnapshotValue<typeof recordSchema>, "snapshot"> & {
+  snapshot: ChatSessionSnapshot;
+};
+const metadataSchema = json.object(
+  { savedAt: nonnegative, sessionKey: sessionKeySchema, weight: nonnegative },
+  true,
+);
 type SessionSnapshotMetadata = json.SnapshotValue<typeof metadataSchema>;
 type PreparedSnapshotRecord = {
   record: SessionSnapshotRecord;
@@ -71,37 +173,39 @@ type SnapshotReadScope = {
   dispose: () => void;
 };
 
-type PrewarmedSnapshot = NonNullable<ReturnType<typeof peekPrewarmedChatSnapshot>>;
-type PreparedSnapshotRead = NonNullable<PrewarmedSnapshot["prepared"]>["promise"];
-
 const activeStores = new Set<SessionSnapshotStore>();
 
-function readSharedPrewarm(
-  entry: PrewarmedSnapshot,
-  read: (onBoard: (board: ChatSessionSnapshot["board"]) => void) => PreparedSnapshotRead,
+async function parseSnapshotRecord(
+  value: unknown,
+  sessionKey?: string,
   onBoard?: (board: ChatSessionSnapshot["board"]) => void,
-  consumerIsCurrent?: () => boolean,
-) {
-  const prepared: NonNullable<PrewarmedSnapshot["prepared"]> = (entry.prepared ??= {
-    promise: read((board) => {
-      // Keep the early Board receipt with the same parse that supplies dispatch facts.
-      prepared.board = { value: board };
-      prepared.onBoard?.(board);
-    }).then((snapshot) => {
-      prepared.snapshot = snapshot;
-      return snapshot;
-    }),
-  });
-  if (consumerIsCurrent) {
-    prepared.consumerIsCurrent = consumerIsCurrent;
+): Promise<SessionSnapshotRecord | null> {
+  const parsed = json.parseSnapshot(recordSchema, value);
+  if (!parsed || (sessionKey && parsed.sessionKey !== sessionKey)) {
+    return null;
   }
-  if (onBoard) {
-    prepared.onBoard = onBoard;
-    if (prepared.board) {
-      onBoard(prepared.board.value);
+  const { board: storedBoard, ...snapshot } = parsed.snapshot;
+  // A malformed board does not invalidate otherwise usable transcript history.
+  const board =
+    storedBoard && isBoardSnapshot(storedBoard.snapshot)
+      ? { ...storedBoard, snapshot: storedBoard.snapshot }
+      : storedBoard == null
+        ? storedBoard
+        : undefined;
+  const historyState = parsed.snapshot.historyState;
+  if (historyState !== undefined) {
+    // Do not hold board restoration behind the lazy transcript validator.
+    onBoard?.(board);
+    const isChatHistoryState =
+      prewarmedHistoryStateValidator ?? (await loadChatHistoryStateValidator());
+    if (!isChatHistoryState(historyState)) {
+      return null;
     }
   }
-  return prepared;
+  return {
+    ...parsed,
+    snapshot: { ...snapshot, ...(board === undefined ? {} : { board }), historyState },
+  };
 }
 
 async function readSnapshotRecord(
@@ -109,7 +213,6 @@ async function readSnapshotRecord(
   value: unknown,
   isCurrent: () => boolean,
   onBoard?: (board: ChatSessionSnapshot["board"]) => void,
-  parseRecord?: typeof import("./session-snapshot-decoder.ts").parseSnapshotRecord,
 ): Promise<ChatSessionSnapshot | null> {
   if (
     value === undefined ||
@@ -117,10 +220,6 @@ async function readSnapshotRecord(
     !isPersistableChatSnapshotKey(sessionKey) ||
     asOptionalRecord(value)?.projectionVersion !== CHAT_SNAPSHOT_PROJECTION_VERSION
   ) {
-    return null;
-  }
-  const parseSnapshotRecord = parseRecord ?? (await loadSnapshotRecordParser());
-  if (!isCurrent()) {
     return null;
   }
   const record = await parseSnapshotRecord(value, sessionKey, onBoard);
@@ -141,12 +240,9 @@ export async function readPrewarmedChatSnapshot(
   if (entry?.cacheKey !== cacheKey) {
     return null;
   }
-  // Consumption transfers an in-flight parse to the pane's cancellable read.
   const isCurrent = () => !entry.cancelled && (entry.prepared?.consumerIsCurrent?.() ?? true);
-  const snapshot = await readSharedPrewarm(entry, (onBoard) =>
-    entry.promise.then((value) =>
-      readSnapshotRecord(entry.cacheKey, value, isCurrent, onBoard, entry.parseSnapshotRecord),
-    ),
+  const snapshot = await readSharedPrewarm(entry, () =>
+    entry.promise.then((value) => readSnapshotRecord(entry.cacheKey, value, isCurrent)),
   ).promise;
   return snapshot && !entry.cancelled && peekPrewarmedChatSnapshot() === entry ? snapshot : null;
 }
@@ -455,26 +551,14 @@ export class SessionSnapshotStore implements ChatCacheObserver {
     const scope = this.captureReadScope(sessionKey);
     try {
       const prewarm = consumePrewarmedChatSnapshot(sessionKey);
-      const presentBoard = (board: ChatSessionSnapshot["board"]) => {
-        if (scope.isCurrent()) {
-          onBoard?.(board);
-        }
-      };
-      const read = (receiveBoard = presentBoard) =>
+      const read = () =>
         (prewarm?.promise ?? readStoredChatSnapshotRecord(sessionKey)).then((value) =>
-          readSnapshotRecord(
-            sessionKey,
-            value,
-            scope.isCurrent,
-            receiveBoard,
-            prewarm?.parseSnapshotRecord,
-          ),
+          readSnapshotRecord(sessionKey, value, scope.isCurrent, onBoard),
         );
-      const prepared = prewarm
-        ? readSharedPrewarm(prewarm, read, presentBoard, scope.isCurrent)
-        : undefined;
+      const prepared = prewarm ? readSharedPrewarm(prewarm, read, scope.isCurrent) : undefined;
       if (prepared?.snapshot && scope.isCurrent() && !prewarm?.cancelled) {
         onReady?.(prepared.snapshot);
+        onBoard?.(prepared.snapshot.board);
       }
       const snapshot = await (prepared?.promise ?? read());
       if (!snapshot || !scope.isCurrent()) {
@@ -597,12 +681,9 @@ export class SessionSnapshotStore implements ChatCacheObserver {
   }
 
   private schedule(sessionKey: string, snapshot: ChatSessionSnapshot): void {
-    const pending = {
-      savedAt: Date.now(),
-      snapshot,
-    };
-    this.pending.set(sessionKey, pending);
-    this.savedAtBySession.set(sessionKey, pending.savedAt);
+    const savedAt = Date.now();
+    this.pending.set(sessionKey, { savedAt, snapshot });
+    this.savedAtBySession.set(sessionKey, savedAt);
     this.cancelScheduledWrite?.();
     this.cancelScheduledWrite = null;
     const timer = globalThis.setTimeout(() => {

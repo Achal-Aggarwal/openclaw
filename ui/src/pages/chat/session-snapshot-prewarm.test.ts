@@ -4,7 +4,6 @@ import { createDeferred } from "../../../../test/helpers/promise.js";
 import { createStorageMock } from "../../test-helpers/storage.ts";
 import type { ChatSessionSnapshot } from "./session-message-cache.ts";
 import * as database from "./session-snapshot-database.ts";
-import * as decoder from "./session-snapshot-decoder.ts";
 import {
   publishSnapshotInvalidation,
   subscribeSnapshotInvalidation,
@@ -67,18 +66,7 @@ describe("routed transcript prewarm", () => {
     expect(open).toHaveBeenCalledTimes(2);
   });
 
-  it("decodes before the pane consumes the prewarm and reuses the parsed snapshot", async () => {
-    await seed();
-    const parse = vi.spyOn(decoder, "parseSnapshotRecord");
-    await prewarmChatSnapshot(key);
-    expect(parse).toHaveBeenCalledOnce();
-    const prepared = await snapshots.readPrewarmedChatSnapshot(key);
-    expect(prepared).toEqual(stored);
-    expect(await new snapshots.SessionSnapshotStore().read(key)).toBe(prepared);
-    expect(parse).toHaveBeenCalledOnce();
-  });
-
-  it("presents a prewarmed board synchronously with loaded optional payloads", async () => {
+  it("publishes the complete validated prewarm before presenting its board", async () => {
     const retained: ChatSessionSnapshot = {
       ...stored,
       progressCard: null,
@@ -91,65 +79,18 @@ describe("routed transcript prewarm", () => {
     const writer = new snapshots.SessionSnapshotStore();
     writer.write(key, retained);
     await writer.flush();
+    const open = vi.spyOn(indexedDB, "open");
     await prewarmChatSnapshot(key);
-
-    const record = await database.readStoredChatSnapshotRecord(key);
-    const presentBoard = vi.fn();
-    const parsing = decoder.parseSnapshotRecord(record, key, presentBoard);
-    expect(presentBoard).toHaveBeenCalledExactlyOnceWith(retained.board);
-    expect((await parsing)?.snapshot).toEqual(retained);
+    const prepared = await snapshots.readPrewarmedChatSnapshot(key);
 
     const ready = vi.fn();
-    const reading = new snapshots.SessionSnapshotStore().read(key, undefined, ready);
+    const presentBoard = vi.fn();
+    const reading = new snapshots.SessionSnapshotStore().read(key, presentBoard, ready);
     expect(ready).toHaveBeenCalledExactlyOnceWith(retained);
-    expect(await reading).toEqual(retained);
+    expect(presentBoard).toHaveBeenCalledExactlyOnceWith(retained.board);
+    expect(await reading).toBe(prepared);
+    expect(open).toHaveBeenCalledOnce();
   });
-
-  it.each([
-    { consumption: "before", cancelled: false },
-    { consumption: "after", cancelled: false },
-    { consumption: "before", cancelled: true },
-  ])(
-    "delivers the early board receipt with $consumption consumption (cancelled: $cancelled)",
-    async ({ consumption, cancelled }) => {
-      await seed();
-      const board: ChatSessionSnapshot["board"] = {
-        snapshot: { sessionKey: "agent:main:routed", revision: 1, tabs: [], widgets: [] },
-        receivedAtMs: 1,
-      };
-      const parsing = createDeferred();
-      const publishBoard = createDeferred();
-      const history = createDeferred<Awaited<ReturnType<typeof decoder.parseSnapshotRecord>>>();
-      vi.spyOn(decoder, "parseSnapshotRecord").mockImplementation(async (_value, _key, onBoard) => {
-        parsing.resolve();
-        await publishBoard.promise;
-        onBoard?.(board);
-        return history.promise;
-      });
-      const warming = prewarmChatSnapshot(key);
-      await parsing.promise;
-      const reader = new snapshots.SessionSnapshotStore();
-      const presentBoard = vi.fn();
-      const earlyReading = consumption === "before" ? reader.read(key, presentBoard) : undefined;
-      if (cancelled) {
-        reader.forget(key);
-      }
-      publishBoard.resolve();
-      await publishBoard.promise;
-      const reading = earlyReading ?? reader.read(key, presentBoard);
-      if (cancelled) {
-        expect(presentBoard).not.toHaveBeenCalled();
-      } else {
-        expect(presentBoard).toHaveBeenCalledExactlyOnceWith(board);
-      }
-      history.resolve(null);
-      expect(await reading).toBeNull();
-      await warming;
-      if (cancelled) {
-        expect(await database.readStoredChatSnapshotRecord(otherKey)).toBeDefined();
-      }
-    },
-  );
 
   it("leaves the prewarm available when another session reads normally", async () => {
     const { open, reader } = await prewarm();

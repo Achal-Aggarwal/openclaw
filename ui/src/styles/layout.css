@@ -1797,13 +1797,8 @@ html.openclaw-native-desktop .shell:not(.shell--mobile-nav) {
   padding-inline-start: 6px;
 }
 
-/* Root-row actions overlay the link's trailing edge (on hover, or always on
-   the mobile drawer). Children already reserve their aside in flow. Keep the
-   overlay space on the root link; status has its own fixed row slot. */
-.shell:not(.shell--mobile-nav)
-  .sidebar-recent-session:not(.sidebar-recent-session--child):has(
-    > .sidebar-recent-session__link > .sidebar-session-indicator--state-only
-  ):is(:hover, :focus-within),
+/* Mobile root-row actions overlay the link's trailing edge. Children already
+   reserve their aside in flow; desktop titles reserve action space themselves. */
 .shell--mobile-nav
   .sidebar-recent-session:not(.sidebar-recent-session--child):has(
     > .sidebar-recent-session__link > .sidebar-session-indicator--state-only

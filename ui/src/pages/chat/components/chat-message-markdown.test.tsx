@@ -97,6 +97,7 @@ describe("message action projections", () => {
       container,
     );
     onTestFinished(view.dispose);
+    await vi.dynamicImportSettled();
     await waitForSolid(() =>
       expect(container.querySelector(".chat-tool-msg-summary__names")?.textContent).toBe("tool"),
     );

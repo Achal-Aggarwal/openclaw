@@ -1,18 +1,14 @@
-import { asOptionalRecord } from "@openclaw/normalization-core/record-coerce";
 import {
   sameBootRecordOwner,
   subscribeBootRecordChanges,
   type BootRecord,
 } from "../../app/boot-record.ts";
 import type { SidebarSnapshotModel } from "../../components/sidebar-snapshot-data.ts";
-import type { ChatSessionSnapshot } from "./session-message-cache.ts";
-import { readStoredChatSnapshotRecord } from "./session-snapshot-database.ts";
 import {
   sidebarSnapshotInvalidationMatches,
   snapshotStoreGeneration,
   subscribeSnapshotInvalidation,
 } from "./session-snapshot-invalidation-events.ts";
-import { prepareSnapshotPayloadValidators } from "./session-snapshot-payloads.ts";
 
 type PreparedSnapshotRead = ReturnType<
   typeof import("./session-snapshot-store.ts").readPrewarmedChatSnapshot
@@ -22,12 +18,9 @@ type PrewarmedSnapshot = {
   cacheKey: string;
   cancelled: boolean;
   promise: Promise<unknown>;
-  parseSnapshotRecord?: typeof import("./session-snapshot-decoder.ts").parseSnapshotRecord;
   prepared?: {
     promise: PreparedSnapshotRead;
     snapshot?: Awaited<PreparedSnapshotRead>;
-    board?: { value: ChatSessionSnapshot["board"] };
-    onBoard?: (board: ChatSessionSnapshot["board"]) => void;
     consumerIsCurrent?: () => boolean;
   };
 };
@@ -44,13 +37,25 @@ export async function loadChatHistoryStateValidator() {
   return isChatHistoryState;
 }
 
-export async function loadSnapshotRecordParser() {
-  const { parseSnapshotRecord } = await import("./session-snapshot-decoder.ts");
-  return parseSnapshotRecord;
-}
-
 export function peekPrewarmedChatSnapshot(): PrewarmedSnapshot | undefined {
   return pending;
+}
+
+export function readSharedPrewarm(
+  entry: PrewarmedSnapshot,
+  read: () => PreparedSnapshotRead,
+  consumerIsCurrent?: () => boolean,
+) {
+  const prepared: NonNullable<PrewarmedSnapshot["prepared"]> = (entry.prepared ??= {
+    promise: read().then((snapshot) => {
+      prepared.snapshot = snapshot;
+      return snapshot;
+    }),
+  });
+  if (consumerIsCurrent) {
+    prepared.consumerIsCurrent = consumerIsCurrent;
+  }
+  return prepared;
 }
 
 export function discardPrewarmedChatSnapshot(cacheKey?: string): void {
@@ -66,41 +71,23 @@ export async function prewarmChatSnapshot(cacheKey: string): Promise<void> {
   const entry: PrewarmedSnapshot = {
     cacheKey,
     cancelled: false,
-    promise: Promise.all([
-      readStoredChatSnapshotRecord(cacheKey).then((record) => {
-        const snapshot = asOptionalRecord(asOptionalRecord(record)?.snapshot);
-        if (snapshot) {
-          // Warm only the payload families present in this retained record.
-          // The decoder still owns validation and the store owns publication.
-          const validators = prepareSnapshotPayloadValidators(snapshot);
-          void validators.pending?.catch(() => {});
-        }
-        return record;
-      }),
-      loadSnapshotRecordParser(),
-    ])
-      .then(([record, parseSnapshotRecord]) => {
-        if (entry.cancelled || generation !== snapshotStoreGeneration) {
-          return undefined;
-        }
-        entry.parseSnapshotRecord = parseSnapshotRecord;
-        return record;
-      })
+    promise: import("./session-snapshot-database.ts")
+      .then(({ readStoredChatSnapshotRecord }) => readStoredChatSnapshotRecord(cacheKey))
+      .then((record) =>
+        entry.cancelled || generation !== snapshotStoreGeneration ? undefined : record,
+      )
       .catch(() => undefined),
   };
   pending = entry;
-  // Parse alongside the validator so the Board can restore before history is ready.
-  // Both paths share the prepared snapshot consumed by request dispatch.
+  // Validate once before mount; dispatch reads facts without adopting display rows.
   try {
-    await Promise.all([
-      (async () => {
-        const { readPrewarmedChatSnapshot } = await import("./session-snapshot-store.ts");
-        if (pending === entry) {
-          await readPrewarmedChatSnapshot(cacheKey);
-        }
-      })(),
+    const [{ readPrewarmedChatSnapshot }] = await Promise.all([
+      import("./session-snapshot-store.ts"),
       loadChatHistoryStateValidator(),
     ]);
+    if (pending === entry) {
+      await readPrewarmedChatSnapshot(cacheKey);
+    }
   } catch {}
 }
 

@@ -56,7 +56,10 @@ function rowLayout(locator: Locator) {
   });
 }
 
-function expectUnreadLayout(layout: Awaited<ReturnType<typeof rowLayout>>, nameLeft: number) {
+function expectStandaloneUnreadLayout(
+  layout: Awaited<ReturnType<typeof rowLayout>>,
+  nameLeft: number,
+) {
   const { unread, lead, name } = layout;
   expect(unread).toMatchObject({ width: 7, height: 7 });
   for (const [start, end] of [
@@ -67,7 +70,7 @@ function expectUnreadLayout(layout: Awaited<ReturnType<typeof rowLayout>>, nameL
     expect(unread[start]).toBeGreaterThanOrEqual(lead[start]);
     expect(unread[end]).toBeLessThanOrEqual(lead[end]);
   }
-  expect(lead.right).toBeLessThanOrEqual(name.left);
+  expect(name.right).toBeLessThanOrEqual(lead.left);
   expect(name.left).toBeCloseTo(nameLeft, 1);
 }
 
@@ -451,7 +454,7 @@ suite.define(() => {
     expect(badgeBox.y).toBeGreaterThanOrEqual(layout.name.bottom - 1);
     expect(layout.name.right).toBeGreaterThan(badgeBox.x);
     expect(badgeBox.y + badgeBox.height / 2).toBeCloseTo(subtitleBox.y + subtitleBox.height / 2, 1);
-    expectUnreadLayout(layout, plain.nameLeft);
+    expectStandaloneUnreadLayout(layout, plain.nameLeft);
     expect(await busyRow.locator(".session-row-state").count()).toBe(0);
     expect(layout.atoms).toHaveLength(1);
     for (const atom of layout.atoms) {
@@ -463,7 +466,7 @@ suite.define(() => {
       }
     }
 
-    // Long titles must not crush either the leading unread dot or trailing metadata.
+    // Long titles must not crush the standalone unread dot or trailing metadata.
     const longRow = sessionRow(page, longKey);
     const longLayout = await rowLayout(longRow);
     expect(longLayout.singleLine).toBe(true);
@@ -472,7 +475,7 @@ suite.define(() => {
     const intrinsicAtomWidth = longLayout.atoms.reduce((sum, atom) => sum + atom.width, 0);
     expect(intrinsicAtomWidth).toBeGreaterThan(0);
     expect(longLayout.endcap.width).toBeGreaterThanOrEqual(intrinsicAtomWidth);
-    expectUnreadLayout(longLayout, plain.nameLeft);
+    expectStandaloneUnreadLayout(longLayout, plain.nameLeft);
 
     const unreadRow = sessionRow(page, unreadKey);
     const unreadBadge = unreadRow.locator(
@@ -481,7 +484,12 @@ suite.define(() => {
     const unreadTitle = unreadRow.locator(".sidebar-recent-session__name");
     await unreadBadge.waitFor({ state: "visible" });
     const restingBadge = await unreadBadge.boundingBox();
-    const restingTitle = await unreadTitle.boundingBox();
+    const restingTitle = expectDefined(await unreadTitle.boundingBox(), "artwork row title");
+    const restingIndicator = expectDefined(
+      await unreadRow.locator(".sidebar-session-indicator").boundingBox(),
+      "artwork row indicator",
+    );
+    expect(restingIndicator.x + restingIndicator.width).toBeLessThanOrEqual(restingTitle.x);
     const restingWidth = await unreadTitle.evaluate((element) => element.clientWidth);
     await unreadRow.hover();
 

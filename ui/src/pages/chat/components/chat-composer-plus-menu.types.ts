@@ -58,3 +58,8 @@ export type ChatComposerPlusMenuBodyProps = {
   controls: MenuControls;
   renderItems: (items: () => readonly MenuEntry[]) => JSX.Element;
 };
+
+export type ChatComposerPlusMenuResolvedProps = Omit<ChatComposerPlusMenuBodyProps, "menu"> & {
+  menu: ChatComposerPlusMenuContentProps;
+  open: boolean;
+};

@@ -180,20 +180,24 @@ suite.define(() => {
 
       await page.addStyleTag({ content: ".session-glyph__ring { animation: none !important; }" });
       const glyph = row.locator(".sidebar-session-indicator .session-glyph");
-      const [restingNameBounds, restingGlyphBounds, restingStateBounds] = await Promise.all([
-        ui.bounds(row.locator(".sidebar-recent-session__name")),
-        ui.bounds(glyph),
-        ui.bounds(state),
-      ]);
+      const [restingRowBounds, restingNameBounds, restingGlyphBounds, restingStateBounds] =
+        await Promise.all([
+          ui.bounds(row),
+          ui.bounds(row.locator(".sidebar-recent-session__name")),
+          ui.bounds(glyph),
+          ui.bounds(state),
+        ]);
 
-      // A glyph-less row draws the compact 12px ring centered in its 20px lead
-      // slot; the title keeps its 8px distance from the slot, not from the ring.
+      // A glyph-less row keeps its compact ring in the trailing state slot.
+      // Artwork retains the separate leading slot.
+      expect(restingGlyphBounds.width).toBeCloseTo(20, 1);
       expect(restingStateBounds.width).toBeCloseTo(12, 1);
       expect(restingStateBounds.x + restingStateBounds.width / 2).toBeCloseTo(
         restingGlyphBounds.x + restingGlyphBounds.width / 2,
         1,
       );
-      expect(restingNameBounds.x - ui.right(restingGlyphBounds)).toBeCloseTo(8, 1);
+      expect(ui.right(restingNameBounds)).toBeLessThanOrEqual(restingGlyphBounds.x);
+      expect(ui.right(restingGlyphBounds)).toBeLessThanOrEqual(ui.right(restingRowBounds));
 
       await ui.forEachActionMode(page, row, [state, pin, menu], async () => {
         const [nameBounds, pinBounds, menuBounds] = await Promise.all([
