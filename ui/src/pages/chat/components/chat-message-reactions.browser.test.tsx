@@ -9,14 +9,16 @@ afterEach(cleanupSolid);
 it("reveals the footer reaction trigger at the same opacity as its sibling actions", async () => {
   const view = mountSolid(() => (
     <div class="chat-group user" style={{ margin: "80px", width: "320px" }}>
-      <div class="chat-group-footer-actions">
-        <button class="chat-copy-btn" type="button" aria-label="Copy" />
-        <MessageReactionPicker
-          class="chat-reaction-action"
-          activeEmoji={new Set()}
-          placement="bottom-start"
-          compact={false}
-        />
+      <div class="chat-group-footer">
+        <div class="chat-group-footer-actions">
+          <button class="chat-copy-btn" type="button" aria-label="Copy" />
+          <MessageReactionPicker
+            class="chat-reaction-action"
+            activeEmoji={new Set()}
+            placement="bottom-start"
+            compact={false}
+          />
+        </div>
       </div>
     </div>
   ));

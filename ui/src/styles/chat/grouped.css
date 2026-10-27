@@ -249,12 +249,6 @@
   margin-left: 0;
 }
 
-.chat-group.user.chat-group--peer
-  .chat-group-footer-actions
-  :is(.chat-copy-btn, .chat-reply-btn, .chat-read-aloud-btn, .chat-group-rewind):focus-visible {
-  opacity: 1;
-}
-
 .chat-message-actions-row {
   --chat-message-action-opacity: 0;
   --chat-message-action-pointer-events: none;
@@ -563,6 +557,7 @@
 .chat-message-footer {
   --chat-message-action-opacity: 0;
   --chat-message-action-pointer-events: none;
+  --chat-action-gap: calc(var(--chat-footer-offset) + var(--chat-message-gap));
 }
 
 /* Extend only the toolbar hitbox through its existing gap to the message. */
@@ -598,9 +593,12 @@
   --chat-footer-disclosure-pointer-events: auto;
 }
 
-/* The final toolbar belongs to the final bubble. A run frame has one answer
-   toolbar for its body. Keep :has() on the subject to bound invalidation, and
-   hover separate from focus/touch so the build hover guard preserves both. */
+/* A frame with only its closing toolbar is one message hit target; grouped
+   frames disclose each earlier row separately. Keep :has() on its subject to
+   bound invalidation, and hover separate from focus/touch for the build guard. */
+.chat-group:not(
+    :has(> .chat-group-messages > :is(.chat-message-actions-row, .chat-message-footer))
+  ):hover,
 .chat-group:has(
   > .chat-group-messages > .chat-bubble:last-child:hover,
   > .chat-group-messages > .chat-message--reply:last-child > .chat-bubble:hover,
@@ -610,6 +608,9 @@
   --chat-final-action-pointer-events: auto;
 }
 
+.chat-group:not(
+    :has(> .chat-group-messages > :is(.chat-message-actions-row, .chat-message-footer))
+  ):focus-within,
 .chat-group:has(
   > .chat-group-messages
     > .chat-bubble:last-child:is(:focus-within, .chat-bubble--actions-revealed),
