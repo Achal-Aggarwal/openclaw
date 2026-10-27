@@ -3,6 +3,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createDeferred } from "../../test/helpers/promise.js";
 import { setConfiguredMcpServer } from "../agents/mcp-config-mutation.js";
+import { resolveMcpTransportConfig } from "../agents/mcp-transport-config.js";
 import { withTempHome } from "../config/home-env.test-harness.js";
 import {
   cleanupMcpCliTestState,
@@ -37,6 +38,60 @@ async function writeMcpServers(home: string, servers: Record<string, unknown>): 
 }
 
 describe("mcp cli", () => {
+  it.each(["cert.pem", " cert.pem "])(
+    "preserves literal TLS client paths from add flags: %j",
+    async (name) => {
+      await withMcpHome(async (home, workspaceDir) => {
+        const clientCert = path.join(workspaceDir, name);
+        const clientKey = path.join(workspaceDir, name.replace("cert", "key"));
+        await runMcpCommand([
+          "mcp",
+          "add",
+          "literal-tls",
+          "--url",
+          "https://mcp.example.com/mcp",
+          "--client-cert",
+          clientCert,
+          "--client-key",
+          clientKey,
+          "--no-probe",
+        ]);
+        const saved = JSON.parse(
+          await fs.readFile(path.join(home, ".openclaw", "openclaw.json"), "utf8"),
+        );
+        expect(saved.mcp.servers["literal-tls"]).toEqual({
+          url: "https://mcp.example.com/mcp",
+          clientCert,
+          clientKey,
+        });
+        expect(
+          resolveMcpTransportConfig("literal-tls", saved.mcp.servers["literal-tls"]),
+        ).toMatchObject({ clientCert, clientKey });
+      });
+    },
+  );
+
+  it("does not persist blank TLS client path flags", async () => {
+    await withMcpHome(async (home) => {
+      await runMcpCommand([
+        "mcp",
+        "add",
+        "blank-tls",
+        "--url",
+        "https://mcp.example.com/mcp",
+        "--client-cert",
+        "   ",
+        "--client-key",
+        "",
+        "--no-probe",
+      ]);
+      const saved = JSON.parse(
+        await fs.readFile(path.join(home, ".openclaw", "openclaw.json"), "utf8"),
+      );
+      expect(saved.mcp.servers["blank-tls"]).toEqual({ url: "https://mcp.example.com/mcp" });
+    });
+  });
+
   beforeEach(() => {
     resetMcpCliTestState();
   });
@@ -1073,25 +1128,19 @@ describe("mcp cli", () => {
 
       await expect(runMcpCommand(["mcp", "doctor", "--json"])).rejects.toMatchObject({ code: 1 });
 
+      const issue = (message: string) => [{ level: "error", message }];
       expect(JSON.parse(lastLogLine())).toMatchObject({
         ok: false,
         servers: [
           {
             name: "explicit-dir",
             ok: false,
-            issues: [
-              {
-                level: "error",
-                message: `stdio command not found or not executable: ${serverDir}`,
-              },
-            ],
+            issues: issue(`stdio command not found or not executable: ${serverDir}`),
           },
           {
             name: "path-dir-only",
             ok: false,
-            issues: [
-              { level: "error", message: "stdio command not found or not executable: docs-mcp" },
-            ],
+            issues: issue("stdio command not found or not executable: docs-mcp"),
           },
           { name: "path-dir-then-file", ok: true, issues: [] },
         ],

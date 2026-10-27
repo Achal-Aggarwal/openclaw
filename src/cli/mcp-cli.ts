@@ -8,6 +8,7 @@ import {
 } from "@openclaw/normalization-core/number-coercion";
 import { asNullableRecord as asRecord } from "@openclaw/normalization-core/record-coerce";
 import {
+  readNonBlankString,
   normalizeLowercaseStringOrEmpty,
   normalizeStringifiedOptionalString,
   readNonBlankString,
@@ -229,8 +230,8 @@ function applyMcpTlsOptions(server: Record<string, unknown>, opts: McpServerCont
     }
     server.sslVerify = sslVerify === "true";
   }
-  setOptionalField(server, "clientCert", normalizeStringifiedOptionalString(opts.clientCert));
-  setOptionalField(server, "clientKey", normalizeStringifiedOptionalString(opts.clientKey));
+  setOptionalField(server, "clientCert", readNonBlankString(opts.clientCert));
+  setOptionalField(server, "clientKey", readNonBlankString(opts.clientKey));
 }
 
 /** Documented `mcp status --json` shape: legacy booleans stay additive to `state`. */

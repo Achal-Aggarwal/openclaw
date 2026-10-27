@@ -259,3 +259,5 @@ These examples save server definitions only. Run `openclaw mcp doctor --probe` a
 
   </Tab>
 </Tabs>
+
+Quoted --client-cert and --client-key values preserve leading and trailing whitespace in paths. Whitespace-only values are treated as absent.
