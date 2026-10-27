@@ -121,10 +121,11 @@ export function findTurnStartIndex(
 }
 
 export interface CompactionRetentionConstraints {
-  /** The run's source input; later internal updates do not replace its human ask. */
-  requestFromEntryId?: string;
-  /** An admitted, unprocessed user remains intact even before its budget is prepared. */
-  preserveFromEntryId?: string;
+  /** Identifies the active request and whether its unprocessed entry must remain verbatim. */
+  requestBoundary?: {
+    entryId: string;
+    preserve: boolean;
+  };
   /** Automatic callers supply the remaining foreground budget and its message estimator. */
   budget?: {
     maxTokens: number;
@@ -208,7 +209,11 @@ export function findCutPoint(
   for (let i = startIndex; i < endIndex; i++) {
     const entry = entries[i];
     const message = entry ? getMessageFromEntryForCompaction(entry) : undefined;
-    if (entry && entry.id === constraints?.preserveFromEntryId) {
+    if (
+      entry &&
+      constraints?.requestBoundary?.preserve &&
+      entry.id === constraints.requestBoundary.entryId
+    ) {
       lastAllowedCut = i;
     }
     if (message && isCutPointMessage(message)) {

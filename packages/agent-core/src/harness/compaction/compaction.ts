@@ -1,4 +1,4 @@
-import type { Model, StreamFn, Usage } from "@openclaw/llm-core";
+import type { Model, ModelRequestHeaders, StreamFn, Usage } from "@openclaw/llm-core";
 import {
   CHARS_PER_TOKEN_ESTIMATE,
   estimateStringChars,
@@ -23,6 +23,7 @@ import {
 import { runSummarizationCompletion } from "./summarization-completion.js";
 import { buildSummaryCheckpointPrompt } from "./summary-checkpoint-prompt.js";
 import {
+  clearCompactionPendingAskSection,
   computeFileLists,
   createFileOps,
   extractFileOpsFromMessage,
@@ -32,6 +33,7 @@ import {
   formatFileOperations,
   getCompactionContent,
   mergeSummaryFileOperations,
+  removeGeneratedCompactionSection,
 } from "./utils.js";
 
 export {
@@ -63,16 +65,12 @@ const LATEST_USER_REQUEST_TRUNCATED_MARKER = "\n[... latest user request truncat
 const MAX_REQUIRED_ASK_CONTEXT_CHARS = 2_000;
 const REQUIRED_ASK_CONTEXT_TRUNCATED_MARKER = "\n[... split-turn ask context truncated ...]\n";
 
-function latestUserText(messages: AgentMessage[]): string {
+function extractLatestUserRequest(messages: AgentMessage[]): string | undefined {
   const message = findLatestCompactionUserMessage(
     messages,
-    (m) => getCompactionContent(m.content).text,
+    (candidate) => getCompactionContent(candidate.content).text,
   );
-  return message ? getCompactionContent(message.content).text.trim() : "";
-}
-
-function extractLatestUserRequest(messages: AgentMessage[]): string | undefined {
-  const source = latestUserText(messages);
+  const source = message ? getCompactionContent(message.content).text.trim() : "";
   if (!source || source.length <= MAX_LATEST_USER_REQUEST_CHARS) {
     return source || undefined;
   }
@@ -309,7 +307,7 @@ export async function generateSummary(
   model: Model,
   reserveTokens: number,
   apiKey: string | undefined,
-  headers?: Record<string, string>,
+  headers?: ModelRequestHeaders,
   signal?: AbortSignal,
   customInstructions?: string,
   previousSummary?: string,
@@ -365,9 +363,9 @@ export interface CompactionPreparation {
   /** Prefix messages summarized separately when compaction splits a turn. */
   turnPrefixMessages: AgentMessage[];
   isSplitTurn: boolean;
-  /** Run-owner selection is authoritative, including an empty pending request. */
-  requestState?: "unresolved" | "none";
-  /** Bounded request that the run owner will resume after compaction. */
+  /** Run-owner selection; absent for legacy callers that infer from transcript history. */
+  requestSelection?: { state: "unresolved"; request: string } | { state: "none" };
+  /** Bounded unresolved request projected for existing extension consumers. */
   latestUnresolvedUserRequest?: string;
   tokensBefore: number;
   /** Previous compaction summary used for iterative updates. */
@@ -438,10 +436,8 @@ export function prepareCompaction(
   const boundaryEnd = effectiveEntries.length;
 
   const contextMessages = buildSessionContext(pathEntries).messages;
-  // An admitted request can have later internal updates. Without that identity,
-  // only the latest input is known to belong to this run; do not scan past an
-  // independent internal input and revive an older human task.
-  const requestEntryId = constraints?.requestFromEntryId ?? constraints?.preserveFromEntryId;
+  // Without an admitted ID, only the latest input belongs to this run; do not revive older work.
+  const requestEntryId = constraints?.requestBoundary?.entryId;
   const admittedIndex = requestEntryId
     ? pathEntries.findIndex((entry) => entry.id === requestEntryId)
     : -1;
@@ -465,9 +461,14 @@ export function prepareCompaction(
         ? [latestInput]
         : [];
   const hasRequestInput = requestMessages.some((message) => message.role === "user");
-  const latestUnresolvedUserRequest = requestState
+  const selectedRequest = requestState
     ? (extractLatestUserRequest(requestMessages) ??
       (hasRequestInput ? undefined : previousLatestUnresolvedUserRequest))
+    : undefined;
+  const requestSelection: CompactionPreparation["requestSelection"] = requestState
+    ? selectedRequest
+      ? { state: "unresolved", request: selectedRequest }
+      : { state: "none" }
     : undefined;
   const contextUsage = estimateContextTokens(contextMessages);
   const tokensBefore = contextUsage.tokens;
@@ -556,8 +557,8 @@ export function prepareCompaction(
     messagesToSummarize,
     turnPrefixMessages,
     isSplitTurn: cutPoint.isSplitTurn,
-    ...(requestState ? { requestState } : {}),
-    ...(latestUnresolvedUserRequest ? { latestUnresolvedUserRequest } : {}),
+    ...(requestSelection ? { requestSelection } : {}),
+    ...(selectedRequest ? { latestUnresolvedUserRequest: selectedRequest } : {}),
     tokensBefore,
     previousSummary,
     previousSummaryDetails,
@@ -587,7 +588,7 @@ export async function compact(
   preparation: CompactionPreparation,
   model: Model,
   apiKey: string | undefined,
-  headers?: Record<string, string>,
+  headers?: ModelRequestHeaders,
   customInstructions?: string,
   signal?: AbortSignal,
   thinkingLevel?: ThinkingLevel,
@@ -678,8 +679,7 @@ export function compactWithoutSummary(
         sourceLabel === "User" ? sourceText : `[${sourceLabel}]: ${sourceText}`,
       )
     : "";
-  // The notice and the already-bounded split-turn source ask are required; only the
-  // carried summary shrinks to fit.
+  // Keep the notice and bounded source ask; shrink only the carried summary.
   const requiredContext =
     `[${droppedCount} earlier message(s) were removed without a summary because summarization failed. The messages after this summary are verbatim; ask the user if older details matter.]\n\n` +
     (sourceAsk ? `## Original request of the current turn\n${JSON.stringify(sourceAsk)}\n\n` : "");
@@ -700,20 +700,20 @@ function previousSummaryWithoutFileOperations(
   const previousRequestSection = previousRequest
     ? `## Latest unresolved user request\n${JSON.stringify(previousRequest)}\n\n`
     : "";
-  const requestSelectionIsAuthoritative =
-    preparation.requestState !== undefined || preparation.latestUnresolvedUserRequest !== undefined;
   const summaryWithoutRequest =
-    requestSelectionIsAuthoritative &&
-    previousRequestSection &&
-    previousSummary?.includes(previousRequestSection)
-      ? previousSummary.replace(previousRequestSection, "")
+    preparation.requestSelection !== undefined && previousRequestSection
+      ? removeGeneratedCompactionSection(previousSummary, previousRequestSection)
       : previousSummary;
+  const reconciledSummary =
+    preparation.requestSelection?.state === "none" && summaryWithoutRequest
+      ? clearCompactionPendingAskSection(summaryWithoutRequest)
+      : summaryWithoutRequest;
   const previousFileOperations = previousSummaryDetails
     ? formatFileOperations(previousSummaryDetails.readFiles, previousSummaryDetails.modifiedFiles)
     : "";
-  return previousFileOperations && summaryWithoutRequest?.endsWith(previousFileOperations)
-    ? summaryWithoutRequest.slice(0, -previousFileOperations.length)
-    : summaryWithoutRequest;
+  return previousFileOperations && reconciledSummary?.endsWith(previousFileOperations)
+    ? reconciledSummary.slice(0, -previousFileOperations.length)
+    : reconciledSummary;
 }
 
 function finalizeCompaction(

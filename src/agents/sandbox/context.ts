@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import type { CapturedSessionEntryReadSource } from "../../config/sessions/session-entry-read-source.types.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import { observeDiagnosticsTimelinePhases } from "../../infra/diagnostics-timeline.js";
 import { createSubsystemLogger } from "../../logging/subsystem.js";
 import {
   ensureBrowserControlAuth,
@@ -39,7 +40,6 @@ import { SANDBOX_GITHUB_CONFIG_DIR } from "./constants.js";
 import { resolveSandboxDockerUser } from "./docker-user.js";
 import { createSandboxFsBridge } from "./fs-bridge.js";
 import { toSandboxProvisioningError } from "./provisioning-error.js";
-import { readRegisteredSandboxRuntimeIds } from "./registry.js";
 import {
   resolveSandboxRuntimeStatus,
   resolveSandboxRuntimeStatusAsync,
@@ -51,6 +51,7 @@ import { resolveSandboxWorkspaceLayoutPaths } from "./shared.js";
 import { captureSandboxStateOwner, SandboxStateOwnerRequiredError } from "./state-owner.js";
 import { bindStreamSandboxContext } from "./stream-context.js";
 import type { SandboxContext, SandboxWorkspaceInfo } from "./types.js";
+import { ensureReadOnlyWorkspaceSkillMountSources } from "./workspace-mounts.js";
 
 const sandboxLog = createSubsystemLogger("agent/sandbox");
 
@@ -71,6 +72,7 @@ async function ensureSandboxWorkspaceLayout(
   skillUsagePaths?: SkillUsagePath[];
   workspaceDir: string;
 }> {
+  using phases = observeDiagnosticsTimelinePhases("attempt.setup.sandbox.layout.workspace");
   const { rawSessionKey, runtime, localWorkspace } = selected;
   const assertCurrent = localWorkspace?.assertCurrent ?? params.assertCurrent;
   const cfg = localWorkspace ? { ...selected.cfg, workspaceAccess: "rw" as const } : selected.cfg;
@@ -108,6 +110,7 @@ async function ensureSandboxWorkspaceLayout(
     skillUsagePaths?: SkillUsagePath[];
   }> {
     try {
+      phases.mark("attempt.setup.sandbox.layout.skills_import");
       const [
         syncWorkspaceSkills,
         { getRemoteSkillEligibility },
@@ -118,8 +121,10 @@ async function ensureSandboxWorkspaceLayout(
         import("../exec-defaults.js"),
       ]);
       assertCurrent?.();
+      phases.mark("attempt.setup.sandbox.layout.remote_skills");
       await prepareRemoteSkillConnections();
       assertCurrent?.();
+      phases.mark("attempt.setup.sandbox.layout.skill_eligibility");
       const nodeSkills = await resolveNodeExecEligibilityAsync({
         cfg: config,
         sessionKey: rawSessionKey,
@@ -132,6 +137,7 @@ async function ensureSandboxWorkspaceLayout(
           advertiseExecNode: nodeSkills.canExec,
         }),
       };
+      phases.mark("attempt.setup.sandbox.layout.skills_sync");
       const skillUsagePaths = await syncWorkspaceSkills({
         sourceWorkspaceDir: agentWorkspaceDir,
         targetWorkspaceDir,
@@ -154,6 +160,22 @@ async function ensureSandboxWorkspaceLayout(
     }
   }
   const syncedSkills = await syncSandboxSkillsToWorkspace();
+  const createdSkillMountSources = await ensureReadOnlyWorkspaceSkillMountSources(
+    {
+      workspaceDir,
+      agentWorkspaceDir,
+      skillsWorkspaceDir,
+      workdir: cfg.docker.workdir,
+      workspaceAccess: cfg.workspaceAccess,
+    },
+    assertCurrent,
+  );
+  if (createdSkillMountSources && localWorkspace) {
+    // Finish producer-created layout before first use, so source admission does
+    // not mistake protected mount directories for unsaved guest work.
+    await localWorkspace.checkpoint();
+    assertCurrent?.();
+  }
 
   return {
     agentWorkspaceDir,
@@ -206,7 +228,6 @@ async function prepareSandboxWorkspaceSelection(
 ) {
   const { rawSessionKey, runtime } = resolved;
   params.assertCurrent?.();
-  operatorAuthority?.assertCurrent();
   const localWorkspace = params.config
     ? await (
         await import("./local-workspace.js")
@@ -220,12 +241,13 @@ async function prepareSandboxWorkspaceSelection(
         // Cleanup retains the workspace owner after execution authorization closes.
         assertCurrent: persistentExecution ? undefined : params.assertCurrent,
         assertHost: () => {
-          guard?.assertHost?.();
           if (persistentExecution) {
+            guard?.assertHost?.();
             return;
           }
           if (params.admittedRunContext) {
             operatorAuthority?.assertCurrent();
+            guard?.assertHost?.();
           } else {
             params.assertCurrent?.();
           }
@@ -283,6 +305,7 @@ async function resolveSandboxContextWithAuthority(
   operatorAuthority: AdmittedRunOperatorAuthority | undefined,
   persistentExecution: boolean,
 ): Promise<SandboxContext | null> {
+  using phases = observeDiagnosticsTimelinePhases("attempt.setup.sandbox.selection");
   const preparedRuntimeStatus =
     params.preparedRuntimeStatus ??
     (await resolveSandboxRuntimeStatusAsync({
@@ -294,10 +317,10 @@ async function resolveSandboxContextWithAuthority(
   if (!resolved) {
     return null;
   }
+  phases.mark("attempt.setup.sandbox.state_owner");
   const assertStateOwner = await captureSandboxStateOwner();
   const assertCallerCurrent = params.assertCurrent;
   const assertCurrent = () => {
-    assertStateOwner();
     assertCallerCurrent?.();
     operatorAuthority?.assertCurrent();
     assertStateOwner();
@@ -315,6 +338,7 @@ async function resolveSandboxContextWithAuthority(
           assertHost: assertStateOwner,
           beforeLegacyApply: assertCurrent,
         };
+        phases.mark("attempt.setup.sandbox.workspace_selection");
         const selected = await prepareSandboxWorkspaceSelection(
           ownedParams,
           resolved,
@@ -323,6 +347,7 @@ async function resolveSandboxContextWithAuthority(
           persistentExecution,
         );
         try {
+          phases.mark("attempt.setup.sandbox.github_identity");
           ownedParams.assertCurrent?.();
           const { rawSessionKey, runtime, cfg, localWorkspace } = selected;
           const config = ownedParams.config;
@@ -356,11 +381,13 @@ async function resolveSandboxContextWithAuthority(
               })()
             : undefined;
           if (cfg.prune.idleHours !== 0 || cfg.prune.maxAgeDays !== 0) {
+            phases.mark("attempt.setup.sandbox.prune");
             await (
               await import("./prune.js")
             ).maybePruneSandboxes(undefined, ownedParams.assertCurrent, guard?.assertHost);
           }
 
+          phases.mark("attempt.setup.sandbox.layout");
           const {
             agentWorkspaceDir,
             scopeKey,
@@ -373,6 +400,7 @@ async function resolveSandboxContextWithAuthority(
           );
           localWorkspace?.assertCurrent();
 
+          phases.mark("attempt.setup.sandbox.mounts");
           const docker = await resolveSandboxDockerUser({
             backend: cfg.backend,
             docker: cfg.docker,
@@ -419,17 +447,12 @@ async function resolveSandboxContextWithAuthority(
             (readOnlyResourceMounts ??= []).push(githubMount);
           }
 
-          const registeredRuntimeIds = await readRegisteredSandboxRuntimeIds({
-            backendId: resolvedCfg.backend,
-            scopeKey,
-          });
           const provisionBackend = () => {
             ownedParams.assertCurrent?.();
             return createSandboxBackend(
               {
                 sessionKey: rawSessionKey,
                 scopeKey,
-                ...(registeredRuntimeIds.length > 0 ? { registeredRuntimeIds } : {}),
                 workspaceDir,
                 ...(localWorkspace
                   ? {
@@ -454,11 +477,13 @@ async function resolveSandboxContextWithAuthority(
             );
           };
 
+          phases.mark("attempt.setup.sandbox.backend");
           const backend = await timeWorktreePreparationPhase("containerStart", () =>
             localWorkspace ? localWorkspace.provision(provisionBackend) : provisionBackend(),
           );
           ownedParams.assertCurrent?.();
 
+          phases.mark("attempt.setup.sandbox.browser");
           const resolvedBrowserConfig = resolvedCfg.browser.enabled
             ? resolveBrowserConfig(ownedParams.config?.browser, ownedParams.config)
             : undefined;
@@ -506,6 +531,7 @@ async function resolveSandboxContextWithAuthority(
                 })
               : null;
 
+          phases.mark("attempt.setup.sandbox.finalize");
           const sandboxContext: SandboxContext & { backend: typeof backend } = {
             ...(localWorkspace ? { [Symbol.dispose]: () => localWorkspace[Symbol.dispose]() } : {}),
             enabled: true,

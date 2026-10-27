@@ -7,7 +7,7 @@ import {
 } from "../../../packages/agent-core/src/harness/compaction/compaction.js";
 import { InvalidSummaryOutputError } from "../../../packages/agent-core/src/harness/types.js";
 import { withSessionTranscriptWriteAssertion } from "../../config/sessions/transcript-write-context.js";
-import type { AssistantMessage } from "../../llm/types.js";
+import type { AssistantMessage, ModelRequestHeaders } from "../../llm/types.js";
 import { MAX_OVERFLOW_COMPACTION_ATTEMPTS } from "../agent-compaction-constants.js";
 import { resolveCompactionInstructions } from "../agent-hooks/compaction-instructions.js";
 import { SAFETY_MARGIN } from "../compaction-planning.js";
@@ -137,6 +137,11 @@ export abstract class AgentSessionCompaction extends AgentSessionInspection {
   ): void {
     this.onContextReplaced = callback;
     this.assertContextReplacementActive = assertActive;
+  }
+
+  override dispose(): void {
+    this.onContextReplaced = undefined;
+    super.dispose();
   }
 
   /**
@@ -283,7 +288,7 @@ export abstract class AgentSessionCompaction extends AgentSessionInspection {
     const compactionThinkingLevel =
       this.resolveCompactionThinkingLevel?.(model, this.thinkingLevel) ?? this.thinkingLevel;
 
-    let auth: { apiKey?: string; headers?: Record<string, string> } = {};
+    let auth: { apiKey?: string; headers?: ModelRequestHeaders } = {};
     if (options.summaryOutputPolicy !== "deterministic") {
       try {
         auth = await this.getCompactionRequestAuth(model);
@@ -327,6 +332,7 @@ export abstract class AgentSessionCompaction extends AgentSessionInspection {
       requestBudget && retention
         ? requestBudget.fixedTokens + requestBudget.pendingTokens + retention.maxTokens
         : undefined;
+    const requestBoundaryEntryId = options.requestFromEntryId ?? pathEntries[pendingEntryIndex]?.id;
     let preparation: CompactionPreparation | undefined;
     if (isManual && !options.requestState && !requestBudget && pendingEntryIndex < 0) {
       const manualPreflight = preflightManualSessionCompaction(pathEntries, options.settings);
@@ -342,11 +348,16 @@ export abstract class AgentSessionCompaction extends AgentSessionInspection {
           // A queued input not in the transcript yet belongs to the prompt owner;
           // older history cannot stand in for that request.
           pendingUserIdempotencyKey && pendingEntryIndex < 0 ? undefined : options.requestState,
-          requestBudget || pendingEntryIndex >= 0 || options.requestFromEntryId
+          requestBudget || requestBoundaryEntryId
             ? {
-                requestFromEntryId:
-                  options.requestFromEntryId ?? pathEntries[pendingEntryIndex]?.id,
-                preserveFromEntryId: pathEntries[pendingEntryIndex]?.id,
+                ...(requestBoundaryEntryId
+                  ? {
+                      requestBoundary: {
+                        entryId: requestBoundaryEntryId,
+                        preserve: pathEntries[pendingEntryIndex]?.id === requestBoundaryEntryId,
+                      },
+                    }
+                  : {}),
                 ...(requestBudget && retention
                   ? {
                       budget: {

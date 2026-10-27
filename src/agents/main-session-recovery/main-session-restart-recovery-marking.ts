@@ -28,12 +28,15 @@ import {
   isAgentEventLifecycleGenerationCurrent,
 } from "../../infra/agent-events.js";
 import { hasLiveAgentRunContext, listAgentRunsForSession } from "../../infra/agent-run-registry.js";
+import { isAcpSessionKey, isCronSessionKey } from "../../routing/session-key.js";
 import {
   captureGatewaySessionControllerWork,
   captureSessionControllerSettlement,
   isSessionControllerWorkActive,
 } from "../../sessions/session-controller.lifecycle.js";
 import { resolveExplicitIncognitoAgentSqliteTarget } from "../../state/openclaw-agent-db.paths.js";
+import { resolveSubagentChildAuthority } from "../subagents/registry/subagent-child-owner-match.js";
+import { getLatestSubagentRunByChildSessionKey } from "../subagents/registry/subagent-registry-read.js";
 import {
   hasCompletedMainSessionRecoveryOutcome,
   isMainRestartRecoveryTerminalOnly,
@@ -87,7 +90,7 @@ async function markRecoveryStore(params: {
         throw new Error("Yielded requester continuation changed before recovery handoff");
       }
     },
-    update: (entries) => {
+    update: async (entries) => {
       const replacements: Array<{ sessionKey: string; entry: SessionEntry }> = [];
       const counts = { marked: 0, skipped: 0 };
       for (const { sessionKey, entry } of entries) {
@@ -95,7 +98,28 @@ async function markRecoveryStore(params: {
         if (!plan) {
           continue;
         }
-        if (!isMainRestartRecoveryCandidate(entry, sessionKey)) {
+        // Planning precedes the transaction. Registry custody belongs to an exact
+        // task, not to the child's lifetime; retain its initial accepted run too.
+        const childOwner = !isMainRestartRecoveryCandidate(entry, sessionKey)
+          ? await getLatestSubagentRunByChildSessionKey(sessionKey, params.agentId)
+          : undefined;
+        const registryOwnsTurn =
+          childOwner &&
+          childOwner.execution.endedAt === undefined &&
+          resolveSubagentChildAuthority(childOwner, entry).status === "verified" &&
+          ([
+            entry.lifecycleRunId,
+            entry.lastRunId,
+            entry.restartRecoveryDeliverySourceRunId,
+          ].includes(childOwner.runId) ||
+            (!entry.lifecycleRunId &&
+              !entry.lastRunId &&
+              !entry.restartRecoveryDeliverySourceRunId));
+        if (
+          isCronSessionKey(sessionKey) ||
+          isAcpSessionKey(sessionKey) ||
+          (!isMainRestartRecoveryCandidate(entry, sessionKey) && registryOwnsTurn)
+        ) {
           counts.skipped++;
           continue;
         }
@@ -295,9 +319,6 @@ export async function markRestartAbortedMainSessions(params: {
               recordSkip("yielded_continuation", sessionKey);
               return undefined;
             }
-            if (!isMainRestartRecoveryCandidate(entry, sessionKey)) {
-              recordSkip("not_main_session", sessionKey);
-            }
             const runs = normalizeMainSessionRecoveryRunFences([
               ...(entry.restartRecoveryRuns ?? []).filter(
                 (run) => run.lifecycleGeneration === currentLifecycleGeneration,
@@ -372,6 +393,7 @@ export async function markRestartAbortedMainSessions(params: {
 }
 
 type OrphanMarkParams = {
+  shouldRecoverAgent?: (agentId: string) => boolean;
   cfg?: OpenClawConfig;
   updatedBeforeMs?: number;
   lifecycleGeneration: string;
@@ -418,6 +440,13 @@ async function markOrphanedMainSessionStore(
         storePath: params.target.storePath,
       }),
     );
+  }
+  sessionKeys = sessionKeys.filter((sessionKey) => {
+    const requester = requesters.get(sessionKey);
+    return !requester || params.shouldRecoverAgent?.(requester.agentId) !== false;
+  });
+  if (sessionKeys.length === 0) {
+    return { marked: 0, skipped: 0 };
   }
   const orphanChecks: Array<() => boolean> = [];
   return await markRecoveryStore({
@@ -518,6 +547,7 @@ async function markOrphanedMainSessionStore(
       if (
         hasClaim &&
         !completed &&
+        isMainRestartRecoveryCandidate(entry, sessionKey) &&
         (entry.abortedLastRun === true ||
           (!entry.pendingFinalDelivery &&
             entry.status !== undefined &&
@@ -553,6 +583,7 @@ export async function markStartupOrphanedMainSessionsForRecovery(params: {
   agentIds?: ReadonlySet<string>;
   stateDir?: string;
   startupCheckedStorePaths?: Set<string>;
+  shouldRecoverAgent?: (agentId: string) => boolean;
   updatedBeforeMs?: number;
   onOwnerPending?: OrphanMarkParams["onOwnerPending"];
   assertCommitAllowed?: () => void;
@@ -568,15 +599,23 @@ export async function markStartupOrphanedMainSessionsForRecovery(params: {
       continue;
     }
     try {
+      let inputPending = false;
       const storeResult = await markOrphanedMainSessionStore({
         ...params,
         target,
         lifecycleGeneration,
+        shouldRecoverAgent: (agentId) => {
+          const ready = params.shouldRecoverAgent?.(agentId) !== false;
+          inputPending ||= !ready;
+          return ready;
+        },
       });
       assertAgentRunLifecycleGenerationCurrent(lifecycleGeneration);
       result.marked += storeResult.marked;
       result.skipped += storeResult.skipped;
-      params.startupCheckedStorePaths?.add(key);
+      if (!inputPending) {
+        params.startupCheckedStorePaths?.add(key);
+      }
       recordStartupRecoveryStoreResult({ target, outcome: { ok: true } });
     } catch (error) {
       assertAgentRunLifecycleGenerationCurrent(lifecycleGeneration);

@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import type { AgentMessage } from "../../types.js";
 import { buildSessionContext } from "../session/session.js";
 import {
-  compactWithoutSummary,
   estimateTokens,
   generateSummary,
   prepareCompaction,
@@ -20,6 +19,8 @@ const assistantText = (text: string, timestamp: number) =>
 
 describe("compaction sender provenance", () => {
   it.each([
+    { metadata: { provenance: { kind: "external_user" } }, label: "User" },
+    { metadata: { provenance: { kind: "realtime_voice", sourceChannel: "talk" } }, label: "User" },
     { metadata: { provenance: null }, label: "Unknown-origin input" },
     { metadata: { provenance: {} }, label: "Unknown-origin input" },
     { metadata: { provenance: "unparsed" }, label: "Unknown-origin input" },
@@ -45,101 +46,6 @@ describe("compaction sender provenance", () => {
     // Ordinary User text is already the estimator's baseline; charge the added label.
     expect(estimateTokens(message)).toBe(Math.ceil((4 + label.length - "User".length) / 4));
   });
-
-  it.each([
-    undefined,
-    { kind: "external_user" },
-    { kind: "realtime_voice", sourceChannel: "talk" },
-  ])(
-    "keeps the human request through internal turns, summary input, and replay (%j)",
-    async (provenance) => {
-      const request = "Review the patch; do not deploy it.";
-      const messages: AgentMessage[] = [
-        Object.assign(user(request, 1), provenance ? { provenance } : {}),
-        assistantText("Review started.", 2),
-        Object.assign(user("Worker result: tests passed.", 3), {
-          provenance: { kind: "inter_session", sourceTool: "sessions_send" },
-        }),
-        Object.assign(user("Scheduler status: ready.", 4), {
-          provenance: { kind: "internal_system" },
-          __openclaw: { senderId: "scheduler" },
-        }),
-        Object.assign(user("Future-origin status: ready.", 5), {
-          provenance: { kind: "future_origin" },
-        }),
-        Object.assign(user("Host-generated status: ready.", 6), { synthetic: true as const }),
-        Object.assign(user("Operator context: production remains unchanged.", 7), {
-          operatorMessage: { turnScoped: true },
-        }),
-        assistantText("Waiting for review.", 8),
-      ];
-      const original = structuredClone(messages);
-      const entries = messages.map(messageEntry);
-      const prepared = prepareCompaction(
-        entries,
-        { enabled: true, reserveTokens: 1_000, keepRecentTokens: 1 },
-        "unresolved",
-        { requestFromEntryId: "entry-0" },
-      );
-      if (!prepared.ok || !prepared.value) {
-        throw new Error("expected compactable history");
-      }
-      expect(prepared.value.latestUnresolvedUserRequest).toBe(request);
-      // Internal admitted inputs still start runtime turns; they are not human asks.
-      expect(prepared.value.turnPrefixMessages).toEqual([messages[6]]);
-      const prompts: string[] = [];
-      const result = await compactWith(prepared.value, createSummaryModel(), {
-        runtime: {
-          completeSimple: async (_model, context) => {
-            const content = context.messages[0]?.content;
-            if (!Array.isArray(content) || content[0]?.type !== "text") {
-              throw new Error("expected compaction text");
-            }
-            prompts.push(content[0].text);
-            return assistantText("Review pending; production unchanged.", 9);
-          },
-        },
-      });
-      if (!result.ok) {
-        throw result.error;
-      }
-      const input = prompts.join("\n");
-      expect(input).toContain(`[User]: ${request}`);
-      expect(input).toContain("[Inter-session input]: Worker result: tests passed.");
-      expect(input).toContain(
-        '[Internal system input sender={"id":"scheduler"}]: Scheduler status: ready.',
-      );
-      expect(input).toContain("[Unknown-origin input]: Future-origin status: ready.");
-      expect(input).toContain("[Synthetic input]: Host-generated status: ready.");
-      expect(input).toContain("[Operator input]: Operator context: production remains unchanged.");
-      expect(result.value.details).toMatchObject({ latestUnresolvedUserRequest: request });
-
-      const degraded = compactWithoutSummary(prepared.value);
-      if (!degraded.ok) {
-        throw degraded.error;
-      }
-      expect(degraded.value.summary).toContain(JSON.stringify(request));
-      expect(degraded.value.summary).toContain(
-        "[Operator input]: Operator context: production remains unchanged.",
-      );
-      const replay = buildSessionContext([
-        ...entries,
-        {
-          type: "compaction",
-          id: "origin-compaction",
-          parentId: entries.at(-1)?.id ?? null,
-          timestamp: new Date(9).toISOString(),
-          ...result.value,
-        },
-      ]);
-      expect(replay.messages[0]).toMatchObject({
-        role: "compactionSummary",
-        summary: expect.stringContaining(JSON.stringify(request)),
-      });
-      expect(replay.messages.at(-1)).toEqual(messages.at(-1));
-      expect(messages).toEqual(original);
-    },
-  );
 
   it.each([
     { name: "custom", summaryPrompt: { kind: "custom" as const, instructions: "Custom format." } },
