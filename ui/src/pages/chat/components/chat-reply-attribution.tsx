@@ -1,5 +1,6 @@
 import { Show } from "solid-js";
 import { Icon } from "../../../components/solid/icon.tsx";
+import { clampText } from "../../../lib/format.ts";
 import { t } from "../../../lib/reactive/i18n.ts";
 import { ChatAuthorAvatar } from "./chat-author-avatar.ts";
 import type { ReplyLine } from "./chat-reply-attribution.ts";
@@ -84,7 +85,9 @@ export function ReplyLineView(props: {
             </button>
           </Show>{" "}
           <Show when={named() && props.line.text}>
-            <span class="chat-reply-attribution__excerpt">{props.line.text}</span>
+            <span class="chat-reply-attribution__excerpt" title={props.line.text}>
+              {clampText(props.line.text ?? "", 60)}
+            </span>
           </Show>
           <Show when={!named()}>
             <span class="chat-reply-attribution__unavailable">
