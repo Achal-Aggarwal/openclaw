@@ -27,7 +27,9 @@ vi.mock("./worker-task-pool.js", async (importOriginal) => ({
     async run(request: UpdateCandidatePluginHashRequest) {
       return {
         type: "hashed",
-        sha256: hashFileMutationSnapshotSync(request.filePath, request.expected),
+        sha256: request.files.map(({ filePath, expected }) =>
+          hashFileMutationSnapshotSync(filePath, expected),
+        ),
       };
     }
     close() {
@@ -81,8 +83,12 @@ it.each([
   const expected = await fs.stat(file, { bigint: true });
   const digest = createHash("sha256").update(payload).digest("hex");
   await withUpdateCandidatePluginFileHashing(async (hash) => {
-    for (let index = 0; index < 1032; index++) {
-      expect(await hash(file, expected)).toBe(digest);
+    for (let index = 0; index < 1032; index += 32) {
+      const batch = Array.from({ length: Math.min(32, 1032 - index) }, () => ({
+        filePath: file,
+        expected,
+      }));
+      expect(await hash(batch)).toEqual(batch.map(() => digest));
     }
   });
   if (workers === 0) {

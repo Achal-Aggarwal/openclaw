@@ -151,7 +151,9 @@ if (parentPort) {
             if ("type" in request) {
               return {
                 type: "hashed",
-                sha256: hashFileMutationSnapshotSync(request.filePath, request.expected),
+                sha256: request.files.map(({ filePath, expected }) =>
+                  hashFileMutationSnapshotSync(filePath, expected),
+                ),
               };
             }
             assertDirectoryIdentitySync(request.privateRoot, request.rootIdentity);

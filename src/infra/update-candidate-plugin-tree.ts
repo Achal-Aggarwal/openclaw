@@ -12,6 +12,7 @@ import { hasNodeErrorCode, isPathInside, isPathStrictlyInside } from "./path-gua
 import type { UpdateCandidatePluginCodeLink } from "./update-candidate-plugin-code-links.js";
 import { copyUpdateCandidatePluginFiles } from "./update-candidate-plugin-file.js";
 import {
+  UPDATE_CANDIDATE_HASH_BATCH_SIZE,
   withUpdateCandidatePluginFileHashing,
   type UpdateCandidatePluginFileHasher,
 } from "./update-candidate-plugin-hash.js";
@@ -101,14 +102,14 @@ export async function prepareUpdateCandidatePluginTrees(params: {
   retainedDependencyRoot?: string;
   onProgress?: () => void | Promise<void>;
 }): Promise<UpdateCandidatePluginTreePlan> {
-  return await withUpdateCandidatePluginFileHashing((hashFile) =>
-    prepareUpdateCandidatePluginTreesWithHashing(params, hashFile),
+  return await withUpdateCandidatePluginFileHashing((hashFiles) =>
+    prepareUpdateCandidatePluginTreesWithHashing(params, hashFiles),
   );
 }
 
 async function prepareUpdateCandidatePluginTreesWithHashing(
   params: Parameters<typeof prepareUpdateCandidatePluginTrees>[0],
-  hashFile: UpdateCandidatePluginFileHasher,
+  hashFiles: UpdateCandidatePluginFileHasher,
 ): Promise<UpdateCandidatePluginTreePlan> {
   const roots = new Map(params.roots);
   const privateRoot = resolvePathViaExistingAncestorSync(path.resolve(params.targetStateDir));
@@ -174,51 +175,60 @@ async function prepareUpdateCandidatePluginTreesWithHashing(
     invalidateRoots();
     return true;
   }
-  async function readEntry(file: string): Promise<UpdateCandidatePluginEntry> {
-    const stat = await fs.lstat(file, { bigint: true });
-    const common = {
-      path: file,
-      size: Number(stat.size),
-      mode: Number(stat.mode & 0o7777n),
-      dev: stat.dev.toString(),
-      ino: stat.ino.toString(),
-    };
-    let entry: UpdateCandidatePluginEntry;
-    if (stat.isDirectory()) {
-      entry = { ...common, kind: "directory" };
-    } else if (stat.isFile()) {
-      entry = {
-        ...common,
-        kind: "file",
-        birthtimeNs: stat.birthtimeNs.toString(),
-        mtimeNs: stat.mtimeNs.toString(),
-        ctimeNs: stat.ctimeNs.toString(),
-        uid: stat.uid.toString(),
-        gid: stat.gid.toString(),
-        sha256: await hashFile(file, stat),
-      };
-    } else if (stat.isSymbolicLink()) {
-      const target =
-        process.platform === "win32"
-          ? await fs.stat(file).catch(ignoreUnresolvedPluginLink)
-          : undefined;
-      entry = {
-        ...common,
-        kind: "symlink",
-        link: await fs.readlink(file),
-        linkType: target?.isDirectory() ? "junction" : "file",
-      };
-    } else {
-      throw new Error(`Unsupported plugin snapshot entry: ${file}`);
+  async function readEntries(files: string[]): Promise<UpdateCandidatePluginEntry[]> {
+    const metadata = [];
+    for (const filePath of files) {
+      metadata.push({ filePath, expected: await fs.lstat(filePath, { bigint: true }) });
     }
-    return entry;
+    const hashes = await hashFiles(metadata.filter(({ expected }) => expected.isFile()));
+    let hashIndex = 0;
+    const entries: UpdateCandidatePluginEntry[] = [];
+    for (const { filePath: file, expected: stat } of metadata) {
+      const common = {
+        path: file,
+        size: Number(stat.size),
+        mode: Number(stat.mode & 0o7777n),
+        dev: stat.dev.toString(),
+        ino: stat.ino.toString(),
+      };
+      let entry: UpdateCandidatePluginEntry;
+      if (stat.isDirectory()) {
+        entry = { ...common, kind: "directory" };
+      } else if (stat.isFile()) {
+        entry = {
+          ...common,
+          kind: "file",
+          birthtimeNs: stat.birthtimeNs.toString(),
+          mtimeNs: stat.mtimeNs.toString(),
+          ctimeNs: stat.ctimeNs.toString(),
+          uid: stat.uid.toString(),
+          gid: stat.gid.toString(),
+          sha256: hashes[hashIndex++]!,
+        };
+      } else if (stat.isSymbolicLink()) {
+        const target =
+          process.platform === "win32"
+            ? await fs.stat(file).catch(ignoreUnresolvedPluginLink)
+            : undefined;
+        entry = {
+          ...common,
+          kind: "symlink",
+          link: await fs.readlink(file),
+          linkType: target?.isDirectory() ? "junction" : "file",
+        };
+      } else {
+        throw new Error(`Unsupported plugin snapshot entry: ${file}`);
+      }
+      entries.push(entry);
+    }
+    return entries;
   }
   async function recordEntry(entry: UpdateCandidatePluginEntry): Promise<void> {
     footprints.set(entry.path, entry);
     await params.onProgress?.();
   }
   async function measureEntry(file: string): Promise<UpdateCandidatePluginEntry> {
-    const entry = await readEntry(file);
+    const entry = (await readEntries([file]))[0]!;
     await recordEntry(entry);
     return entry;
   }
@@ -351,25 +361,32 @@ async function prepareUpdateCandidatePluginTreesWithHashing(
         }
       }
     }
-    const leaves = await runUpdateCandidatePluginTasks(
-      entries
-        .filter((entry) => {
-          const file = path.join(directory, entry.name);
-          return !entry.isDirectory() && !isRecoveryArtifact(file) && !isOwnedHostEdge(file);
-        })
-        .map((entry) => async () => {
-          const file = path.join(directory, entry.name);
-          const measured = await readEntry(file);
+    const leafPaths = entries
+      .filter((entry) => {
+        const file = path.join(directory, entry.name);
+        return !entry.isDirectory() && !isRecoveryArtifact(file) && !isOwnedHostEdge(file);
+      })
+      .map((entry) => path.join(directory, entry.name));
+    const batches = [];
+    for (let index = 0; index < leafPaths.length; index += UPDATE_CANDIDATE_HASH_BATCH_SIZE) {
+      const files = leafPaths.slice(index, index + UPDATE_CANDIDATE_HASH_BATCH_SIZE);
+      batches.push(async () => {
+        const leaves = [];
+        for (const measured of await readEntries(files)) {
           if (measured.kind !== "symlink") {
-            return { measured };
+            leaves.push({ measured });
+            continue;
           }
           const target = path.resolve(directory, measured.link);
           const real = await fs
-            .realpath(file)
+            .realpath(measured.path)
             .catch((error: unknown) => ignoreUnresolvedPluginLink(error) ?? target);
-          return { measured, edge: { target, real } };
-        }),
-    );
+          leaves.push({ measured, edge: { target, real } });
+        }
+        return leaves;
+      });
+    }
+    const leaves = (await runUpdateCandidatePluginTasks(batches)).flat();
     const observations = new Map(leaves.map((leaf) => [leaf.measured.path, leaf]));
     // Reads can overlap; graph discovery and progress callbacks retain listing order.
     for (const entry of entries) {

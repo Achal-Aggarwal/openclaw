@@ -518,7 +518,7 @@ it.each(["inventory", "bindings", "verification"] as const)(
     };
     const preparing = fixture(false, async (source) => {
       selectedDirectory = source;
-      for (let index = 0; index < 9; index += 1) {
+      for (let index = 0; index < (phase === "inventory" ? 129 : 9); index += 1) {
         const file = path.join(source, `read-${index}.txt`);
         if (phase === "bindings") {
           await fs.symlink("payload.txt", file);

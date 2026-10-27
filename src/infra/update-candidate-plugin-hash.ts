@@ -4,22 +4,27 @@ import { createUpdateCandidatePluginPool } from "./update-candidate-plugin-tasks
 import { resolveUpdateHashWorkerCount } from "./worker-pool-sizing.js";
 import type { WorkerTaskPool } from "./worker-task-pool.js";
 
-export type UpdateCandidatePluginHashRequest = {
-  type: "snapshot-hash";
+export const UPDATE_CANDIDATE_HASH_BATCH_SIZE = 32;
+
+type UpdateCandidatePluginHashFile = {
   filePath: string;
   expected: FileMutationMetadata;
 };
 
+export type UpdateCandidatePluginHashRequest = {
+  type: "snapshot-hash";
+  files: UpdateCandidatePluginHashFile[];
+};
+
 export type UpdateCandidatePluginHashReply =
-  | { type: "hashed"; sha256: string }
+  | { type: "hashed"; sha256: string[] }
   | Extract<UpdateCandidatePluginFileReply, { type: "failed" }>;
 
 export type UpdateCandidatePluginFileHasher = (
-  filePath: string,
-  expected: FileMutationMetadata,
-) => Promise<string>;
+  files: UpdateCandidatePluginHashFile[],
+) => Promise<string[]>;
 
-/** The inventory owner drains its four-file read window before retiring these workers. */
+/** The inventory owner drains its four-batch read window before retiring these workers. */
 export async function withUpdateCandidatePluginFileHashing<T>(
   operation: (hashFile: UpdateCandidatePluginFileHasher) => Promise<T>,
 ): Promise<T> {
@@ -29,15 +34,24 @@ export async function withUpdateCandidatePluginFileHashing<T>(
     | Promise<WorkerTaskPool<UpdateCandidatePluginHashRequest, UpdateCandidatePluginHashReply>>
     | undefined;
   try {
-    return await operation(async (filePath, expected) => {
-      // Keep small graphs in-process. Discovery still owns listing order and its
-      // existing four-file admission bound; workers do only the same pinned hash.
-      if (++files < 1024) {
-        return hashFileMutationSnapshotSync(filePath, expected);
+    return await operation(async (batch) => {
+      // Keep the first 1,023 files in-process, including a partial threshold batch.
+      const localCount = Math.min(batch.length, Math.max(0, 1023 - files));
+      files += batch.length;
+      const hashes = batch
+        .slice(0, localCount)
+        .map(({ filePath, expected }) => hashFileMutationSnapshotSync(filePath, expected));
+      const remaining = batch.slice(localCount);
+      if (remaining.length === 0) {
+        return hashes;
       }
       workers ??= resolveUpdateHashWorkerCount();
       if (workers === 0) {
-        return hashFileMutationSnapshotSync(filePath, expected);
+        return hashes.concat(
+          remaining.map(({ filePath, expected }) =>
+            hashFileMutationSnapshotSync(filePath, expected),
+          ),
+        );
       }
       pool ??= createUpdateCandidatePluginPool<
         UpdateCandidatePluginHashRequest,
@@ -49,18 +63,20 @@ export async function withUpdateCandidatePluginFileHashing<T>(
       ).run(
         {
           type: "snapshot-hash",
-          filePath,
-          expected: {
-            dev: expected.dev,
-            ino: expected.ino,
-            size: expected.size,
-            birthtimeNs: expected.birthtimeNs,
-            mtimeNs: expected.mtimeNs,
-            ctimeNs: expected.ctimeNs,
-            mode: expected.mode,
-            uid: expected.uid,
-            gid: expected.gid,
-          },
+          files: remaining.map(({ filePath, expected }) => ({
+            filePath,
+            expected: {
+              dev: expected.dev,
+              ino: expected.ino,
+              size: expected.size,
+              birthtimeNs: expected.birthtimeNs,
+              mtimeNs: expected.mtimeNs,
+              ctimeNs: expected.ctimeNs,
+              mode: expected.mode,
+              uid: expected.uid,
+              gid: expected.gid,
+            },
+          })),
         },
         {},
       );
@@ -71,7 +87,7 @@ export async function withUpdateCandidatePluginFileHashing<T>(
             ...(reply.details === undefined ? {} : { details: reply.details }),
           });
         case "hashed":
-          return reply.sha256;
+          return hashes.concat(reply.sha256);
         default:
           throw new Error("Unexpected update inventory hash worker reply");
       }

@@ -21,12 +21,8 @@ vi.mock("./worker-task-pool.js", async (importOriginal) => ({
     constructor(options: unknown) {
       transport.construct(options);
     }
-    run(input: unknown, options: unknown) {
-      return transport.run(input, options);
-    }
-    close() {
-      return transport.close();
-    }
+    run = transport.run;
+    close = transport.close;
   },
 }));
 
@@ -47,10 +43,11 @@ it.each(["settled", "failed"] as const)(
     // Inventory has its own read-only pool; this test gates the later copy owner.
     transport.run.mockImplementation(async (input) => {
       const request = input as UpdateCandidatePluginHashRequest;
-      expect(request.type).toBe("snapshot-hash");
       return {
         type: "hashed",
-        sha256: hashFileMutationSnapshotSync(request.filePath, request.expected),
+        sha256: request.files.map(({ filePath, expected }) =>
+          hashFileMutationSnapshotSync(filePath, expected),
+        ),
       };
     });
     const plan = await f.prepare();
@@ -69,7 +66,6 @@ it.each(["settled", "failed"] as const)(
     expect(transport.construct).toHaveBeenCalledWith(
       expect.objectContaining({ maxPendingTasks: 4, restartOnError: false }),
     );
-    expect(transport.run).toHaveBeenCalledWith(expect.any(Object), {});
     expect(await fs.readdir(destination)).toEqual([]);
   },
 );

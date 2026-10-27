@@ -76,19 +76,24 @@ it.each(["auto", "off"] as const)(
   async (nativeMode) => {
     vi.stubEnv("FS_SAFE_NATIVE_MODE", nativeMode);
     const dispatch = vi.spyOn(WorkerTaskPool.prototype, "run");
-    const f = await fixture(1032);
+    const f = await fixture(1152);
     if (process.versions.bun && process.platform === "linux") {
       expect(dispatch).not.toHaveBeenCalled();
     } else {
-      expect(dispatch).toHaveBeenCalledTimes(9);
+      expect(dispatch).toHaveBeenCalledTimes(5);
+      expect(
+        dispatch.mock.calls.every(
+          ([request]) => (request as UpdateCandidatePluginHashRequest).files.length <= 32,
+        ),
+      ).toBe(true);
       expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: "snapshot-hash" }), {});
     }
     await copyUpdateCandidatePluginTrees(f.plan, {
       targetStateDir: f.privateRoot,
       candidateRoot: f.candidateRoot,
     });
-    expect(await fs.readdir(f.destination)).toHaveLength(1032);
-    for (const index of [0, 511, 1031]) {
+    expect(await fs.readdir(f.destination)).toHaveLength(1152);
+    for (const index of [0, 511, 1151]) {
       const original = path.join(f.source, `${index}.txt`);
       const copied = path.join(f.destination, `${index}.txt`);
       expect(await fs.readFile(copied, "utf8")).toBe(`plugin payload ${index}`);
@@ -154,12 +159,11 @@ it.each(["file", "parent"] as const)(
     const entry = f.request.entry;
     const request: UpdateCandidatePluginHashRequest = {
       type: "snapshot-hash",
-      filePath: entry.path,
-      expected: await fs.lstat(entry.path, { bigint: true }),
+      files: [{ filePath: entry.path, expected: await fs.lstat(entry.path, { bigint: true }) }],
     };
     await withWorker<UpdateCandidatePluginHashRequest, UpdateCandidatePluginHashReply>(
       async (worker) => {
-        expect(await worker.run(request, {})).toEqual({ type: "hashed", sha256: entry.sha256 });
+        expect(await worker.run(request, {})).toEqual({ type: "hashed", sha256: [entry.sha256] });
         const original = await fs.readFile(entry.path);
         await fs.rename(
           replacement === "file" ? entry.path : f.source,

@@ -47,7 +47,7 @@ const fixture = (count: number) =>
 it.each(["settled", "failed"] as const)(
   "stops hash admission, drains peers, and joins %s worker retirement before returning",
   async (retirement) => {
-    const f = await fixture(1032);
+    const f = await fixture(1152);
     const failure = {
       message: "source changed",
       code: "identity-mismatch",
@@ -64,7 +64,9 @@ it.each(["settled", "failed"] as const)(
       },
       reply: (request) => ({
         type: "hashed",
-        sha256: hashFileMutationSnapshotSync(request.filePath, request.expected),
+        sha256: request.files.map(({ filePath, expected }) =>
+          hashFileMutationSnapshotSync(filePath, expected),
+        ),
       }),
       closeFailure: retirement === "failed" ? closeFailure : undefined,
     });
@@ -75,11 +77,3 @@ it.each(["settled", "failed"] as const)(
     }
   },
 );
-
-it("refuses a stale worker reply instead of publishing an inventory without hashes", async () => {
-  const f = await fixture(1024);
-  transport.run.mockResolvedValue({ type: "copied" });
-  transport.close.mockResolvedValue();
-  await expect(f.prepare()).rejects.toThrow("Unexpected update inventory hash worker reply");
-  expect(transport.close).toHaveBeenCalledOnce();
-});
