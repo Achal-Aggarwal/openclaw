@@ -869,6 +869,10 @@ export const dataBoardScenarios: readonly InteractionScenario[] = [
     },
   },
   boardLiveUpdateScenario("data-board-live-update", tabCount * widgetsPerTab),
+  {
+    ...boardLiveUpdateScenario("data-board-live-update-staged", tabCount * widgetsPerTab, true),
+    explicitOnly: true,
+  },
   // Current new-write cap; the existing 1,000-widget case is an over-cap stress fixture.
   boardLiveUpdateScenario("data-board-live-update-production", 48, true),
   boardLiveUpdateScenario(

@@ -560,11 +560,12 @@ export class GatewayBoardProvider implements BoardProvider {
         ) {
           // Report puts advance revision; layout operations do not. Retain the
           // saved data while applying every change to the surrounding envelope.
-          const fields = Object.entries(widget);
+          const fields = Object.keys(widget);
           if (
             fields.length === Object.keys(previous).length &&
             fields.every(
-              ([key, value]) => key === "props" || Object.is(value, Reflect.get(previous, key)),
+              (key) =>
+                key === "props" || Object.is(Reflect.get(widget, key), Reflect.get(previous, key)),
             )
           ) {
             return previous;
