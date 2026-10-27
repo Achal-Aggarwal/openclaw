@@ -948,9 +948,8 @@ function operation(node: ts.Node): string {
 /** Extend the existing worker-ratchet semantic snapshot; no second compiler or runtime guard. */
 export function inspectPersonalCredentialWriters(
   sources: readonly { file: string; source: ts.SourceFile }[],
-  session: NativeTypeScriptProject,
+  checker: NativeTypeScriptProject["project"]["checker"],
 ): string[] {
-  const { checker } = session.project;
   const approvedCallers = new Map([...callers, ...exclusiveMaintenanceCallers]);
   const protectedDeclarations = new Map<ts.Node, string>();
   const names = new Set(
@@ -997,8 +996,17 @@ export function inspectPersonalCredentialWriters(
     source.forEachChild(visit);
   }
   const importedBindings = new Map<Symbol, Symbol>();
+  // Compiler aliases are immutable; prepared binding overrides are applied separately.
+  const aliasTargets = new Map<Symbol, Symbol>();
   const resolveSymbol = (raw: Symbol | undefined): Symbol | undefined => {
-    const symbol = session.resolveAlias(raw);
+    let symbol = raw;
+    if (raw && raw.flags & SymbolFlags.Alias) {
+      symbol = aliasTargets.get(raw);
+      if (!symbol) {
+        symbol = checker.getAliasedSymbol(raw);
+        aliasTargets.set(raw, symbol);
+      }
+    }
     return symbol && (importedBindings.get(symbol) ?? symbol);
   };
   const resolved = new Map<Symbol, string[]>();
@@ -1157,7 +1165,6 @@ export function inspectPersonalCredentialWriters(
   }
   // Resolve namespace candidates after every dynamic binding has its prepared target.
   const bindingSymbols = bindingNames.length ? checker.getSymbolAtLocation(bindingNames) : [];
-  session.prepareAliases(bindingSymbols);
   for (const [index, binding] of bindingNames.entries()) {
     if (targets(bindingSymbols[index]).length) {
       names.add(binding.text);
@@ -1200,13 +1207,6 @@ export function inspectPersonalCredentialWriters(
       );
     };
     const references: ts.Node[] = [];
-    const commandExpressions: { node: ts.Node; initializer: ts.Expression }[] = [];
-    const checkCommand = (node: ts.Node, command: string) => {
-      const owner = credentialCommandOwners.get(command);
-      if (owner && key(file, operation(node)) !== owner) {
-        fail(node, `${command} credential writes require the host publication adapter`);
-      }
-    };
     const visit = (node: ts.Node) => {
       if (
         ts.isTypeNode(node) ||
@@ -1222,10 +1222,19 @@ export function inspectPersonalCredentialWriters(
       ) {
         const initializer = ts.isPropertyAssignment(node) ? node.initializer : node.name;
         // Literal command values are already exact; only expressions need semantic resolution.
-        if (ts.isStringLiteralLikeNode(initializer)) {
-          checkCommand(node, initializer.text);
-        } else {
-          commandExpressions.push({ node, initializer });
+        const type = ts.isStringLiteralLikeNode(initializer)
+          ? undefined
+          : checker.getTypeAtLocation(initializer);
+        const commands = ts.isStringLiteralLikeNode(initializer)
+          ? [initializer.text]
+          : (type?.isUnionType() ? type.getTypes() : type ? [type] : [])
+              .filter((value) => value.isStringLiteralType())
+              .map((value) => value.value);
+        for (const command of commands) {
+          const owner = credentialCommandOwners.get(command);
+          if (owner && key(file, operation(node)) !== owner) {
+            fail(node, `${command} credential writes require the host publication adapter`);
+          }
         }
       }
       if (
@@ -1351,21 +1360,7 @@ export function inspectPersonalCredentialWriters(
       node.forEachChild(visit);
     };
     source.forEachChild(visit);
-    // These immutable snapshot queries are independent. Batch the same locations
-    // so each file pays one compiler round trip, while every command keeps its owner check.
-    const commandTypes = commandExpressions.length
-      ? checker.getTypeAtLocation(commandExpressions.map(({ initializer }) => initializer))
-      : [];
-    for (const [index, { node }] of commandExpressions.entries()) {
-      const type = commandTypes[index]!;
-      for (const value of type.isUnionType() ? type.getTypes() : [type]) {
-        if (value.isStringLiteralType()) {
-          checkCommand(node, value.value);
-        }
-      }
-    }
     const symbols = references.length ? checker.getSymbolAtLocation(references) : [];
-    session.prepareAliases(symbols);
     for (const [index, node] of references.entries()) {
       const symbol = ts.isShorthandPropertyAssignment(node.parent)
         ? checker.getShorthandAssignmentValueSymbol(node.parent)

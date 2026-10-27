@@ -3891,8 +3891,13 @@ export function loadInventorySources(root = defaultRoot, ref = "", staged = fals
         ? ["ls-tree", "-r", "--name-only", "-z", ref, "--", ...roots]
         : ["ls-files", "-z", "--", ...roots]
       : [
+          // Match Git's hidden paths and portable keys without inheriting user config.
+          "--no-config",
           "--files",
           "--null",
+          "--hidden",
+          "--path-separator",
+          "/",
           "-g",
           "*.{ts,tsx,js,mjs,mts,cts,cjs}",
           ...roots.filter((dir) => fs.existsSync(path.join(root, dir))),
@@ -3909,7 +3914,8 @@ export function loadInventorySources(root = defaultRoot, ref = "", staged = fals
         /\.(?:ts|tsx|js|mjs|mts|cts|cjs)$/.test(file) &&
         !excluded.test(file) &&
         !testSuites.has(file),
-    );
+    )
+    .sort();
   return snapshot
     ? loadRatchetSources(root, sourceFiles, ref)
     : new Map(sourceFiles.map((file) => [file, fs.readFileSync(path.join(root, file), "utf8")]));

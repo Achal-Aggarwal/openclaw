@@ -1,5 +1,4 @@
 import path from "node:path";
-import * as ts from "typescript/ast";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   createNativeTypeScriptParser,
@@ -53,38 +52,12 @@ describe("native TypeScript semantic overlays", () => {
           compilerOptions: { noLib: true, strict: true, types: [], module: "nodenext" },
           files: ["consumer.ts"],
         }),
-        "consumer.ts":
-          'import { value as renamed } from "./dependency.js"; import * as dependency from "./dependency.js"; const count: number = renamed;',
+        "consumer.ts": 'import { value } from "./dependency.js"; const count: number = value;',
         "dependency.ts": 'export const value = "text";',
       },
     });
   });
   afterAll(() => session?.close());
-
-  it("shares exact alias targets without changing non-alias or missing symbols", () => {
-    const locations: ts.Node[] = [];
-    const visit = (node: ts.Node) => {
-      if (
-        ts.isImportSpecifier(node) ||
-        ts.isNamespaceImport(node) ||
-        ts.isVariableDeclaration(node)
-      ) {
-        locations.push(node.name);
-      }
-      node.forEachChild(visit);
-    };
-    session.project.program.getSourceFile(source)!.forEachChild(visit);
-    const symbols = session.project.checker.getSymbolAtLocation(locations);
-    session.prepareAliases([...symbols, undefined, symbols[0]]);
-    const resolved = symbols.map(session.resolveAlias);
-    expect(resolved[0]?.name).toBe("value");
-    expect(
-      session.project.checker.getExportsOfModule(resolved[1]!).map((symbol) => symbol.name),
-    ).toEqual(["value"]);
-    expect(resolved[2]).toBe(symbols[2]);
-    expect(session.resolveAlias(symbols[0])).toBe(resolved[0]);
-    expect(session.resolveAlias(undefined)).toBeUndefined();
-  });
 
   it("resolves virtual dependencies and reports real cross-file type errors", () => {
     expect(session.project.program.getSourceFileNames()).toContain(
