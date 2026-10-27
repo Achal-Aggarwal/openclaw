@@ -1,5 +1,6 @@
 import { createSignal, flush } from "solid-js";
 import { expect, it, onTestFinished, vi } from "vitest";
+import { MarkdownDomReconciler } from "../lib/markdown-dom-reconciler.ts";
 import { prepareMessageMarkdown } from "../pages/chat/components/chat-message-text-preparation.ts";
 import { mountSolid } from "../test-helpers/mount-solid.ts";
 import { renderSolidRef } from "../test-helpers/render-solid-ref.ts";
@@ -246,6 +247,32 @@ it("keeps reusable prepared Markdown isolated from mounted decorations", () => {
   expect(fragment.firstChild).toBe(paragraph);
   expect(fragment.lastChild).toBe(list);
   expect(paragraph.textContent).toBe("Prepared paragraph");
+});
+
+it("mounts prepared blocks without per-block templates and registers root and nested titles", () => {
+  const template = document.createElement("template");
+  template.innerHTML =
+    '<a class="markdown-session-link">Root title</a><p><a data-session-href="nested">Nested title</a></p><pre>Code</pre>';
+  const content = { html: template.innerHTML, fragment: template.content };
+  const create = vi.spyOn(document, "createElement");
+  const release = vi.fn();
+  const register = vi.fn((_target: HTMLElement, _label: HTMLElement) => release);
+  const target = document.createElement("div");
+  const reconciler = new MarkdownDomReconciler(target, register);
+  onTestFinished(() => reconciler.dispose());
+
+  reconciler.updateHtml(content);
+
+  // One private parse serves every opaque block; their insertion needs no template.
+  expect(create.mock.calls.filter(([tag]) => tag === "template")).toHaveLength(1);
+  expect(register.mock.calls.map(([element]) => element.textContent)).toEqual([
+    "Root title",
+    "Nested title",
+  ]);
+  expect(target.textContent).toBe("Root titleNested titleCode");
+  expect(content.fragment.textContent).toBe(target.textContent);
+  reconciler.dispose();
+  expect(release).toHaveBeenCalledTimes(2);
 });
 
 it.each([

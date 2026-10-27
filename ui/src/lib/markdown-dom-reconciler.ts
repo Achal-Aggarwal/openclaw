@@ -15,7 +15,7 @@ export type MarkdownDomMedia = {
 type MarkdownSessionTitleRegistration = (target: HTMLElement, label: HTMLElement) => () => void;
 
 type CanonicalNode = {
-  prepared?: Node;
+  prepared?: Element;
   key: string | number;
   canonical: string;
   tag?: string;
@@ -178,14 +178,15 @@ function parseCanonical(
           element.localName.includes("-")),
       );
       const descriptor: CanonicalNode = {
-        prepared: (prepared || !incremental) && opaque ? node : undefined,
+        prepared: (prepared || !incremental) && opaque ? element : undefined,
         key: key && counts.get(key) === 1 ? key : index,
         canonical: `${node.nodeType}:${element ? element.outerHTML : node.textContent}`,
         tag: element?.localName,
-        namespace: element?.namespaceURI ?? undefined,
-        attributes: element
-          ? Array.from(element.attributes, ({ name, value }) => [name, value])
-          : undefined,
+        namespace: !opaque ? (element?.namespaceURI ?? undefined) : undefined,
+        attributes:
+          element && !opaque
+            ? Array.from(element.attributes, ({ name, value }) => [name, value])
+            : undefined,
         children: element && !opaque ? children(element) : [],
         hasMedia,
         slot: slots.get(node),
@@ -613,24 +614,31 @@ export class MarkdownDomReconciler {
     } else {
       clearRenderedRange(node);
       if (source.tag) {
-        const template = document.createElement("template");
+        let content: Element | DocumentFragment;
         // Serializing parsed HTML restores literal CRs; encode them before another parse.
         if (source.prepared) {
           const prepared = source.prepared;
           // Consume the private parse once; remounts use pristine canonical HTML,
           // never a node that live highlighting or decorations may have changed.
           source.prepared = undefined;
-          template.content.append(prepared);
+          content = prepared;
         } else {
+          const template = document.createElement("template");
           template.innerHTML = source.canonical
             .slice(source.canonical.indexOf(":") + 1)
             .replaceAll("\r", "&#13;");
+          content = template.content;
         }
         const registerSessionTitle = this.registerSessionTitle;
         const targets = registerSessionTitle
-          ? [...template.content.querySelectorAll<HTMLElement>(SESSION_TITLE_TARGET_SELECTOR)]
+          ? [
+              ...(content instanceof HTMLElement && content.matches(SESSION_TITLE_TARGET_SELECTOR)
+                ? [content]
+                : []),
+              ...content.querySelectorAll<HTMLElement>(SESSION_TITLE_TARGET_SELECTOR),
+            ]
           : [];
-        node.end.before(template.content);
+        node.end.before(content);
         if (registerSessionTitle && targets.length) {
           const releases = targets.map((target) =>
             registerSessionTitle(target, document.createElement("span")),
