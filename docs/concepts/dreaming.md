@@ -375,3 +375,7 @@ Both sub-tabs show an enable hint instead when `memory-wiki` is off.
 - [Memory CLI](/cli/memory)
 - [Memory configuration reference](/reference/memory-config)
 - [Memory search](/concepts/memory-search)
+
+Managed dreaming reconciliation preserves jobs paused by the operator or auto-disabled
+by cron, including failure history, while repairing schedules and payloads.
+Use `openclaw cron enable <job-id>` to resume a stopped job.
