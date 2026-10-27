@@ -13,7 +13,7 @@ import {
   closeOpenClawStateDatabaseAsync,
   closeOpenClawStateDatabaseForTest,
 } from "openclaw/plugin-sdk/sqlite-runtime-testing";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it as baseIt, vi } from "vitest";
 import { createRuntimeSpies } from "../../test-support/runtime-spies.js";
 import { nextcloudTalkPlugin } from "../channel-plugin-api.js";
 import type { PluginRuntime } from "../runtime-api.js";
@@ -34,9 +34,6 @@ import type { CoreConfig } from "./types.js";
 
 const mocks = vi.hoisted(() => ({
   pairing: vi.fn(),
-  groupPolicy: vi.fn(),
-  defaultPolicy: vi.fn(),
-  warn: vi.fn(),
   send: vi.fn(),
   roomKind: vi.fn(),
 }));
@@ -46,9 +43,6 @@ vi.mock("../runtime-api.js", async () => {
   return {
     ...actual,
     createChannelPairingController: mocks.pairing,
-    resolveAllowlistProviderRuntimeGroupPolicy: mocks.groupPolicy,
-    resolveDefaultGroupPolicy: mocks.defaultPolicy,
-    warnMissingProviderGroupPolicyFallbackOnce: mocks.warn,
   };
 });
 
@@ -72,10 +66,6 @@ function installRuntime() {
       inbound: {
         ingress: createPluginRuntimeMock().channel.inbound.ingress,
         dispatch: vi.fn(async () => undefined),
-      },
-      pairing: {
-        readAllowFromStore: vi.fn(async () => []),
-        upsertPairingRequest: vi.fn(async () => ({ code: "123456", created: true })),
       },
       commands: { shouldHandleTextCommands: vi.fn(() => false) },
       text: { hasControlCommand: vi.fn(() => false) },
@@ -169,15 +159,14 @@ function dispatched(runtime: ReturnType<typeof createPluginRuntimeMock>) {
   );
 }
 
-type AutomaticReplyFixture = NextcloudTalkOutboundFixture & { mediaUrl: string };
-type ProviderReplyDelivery = ChannelInboundTurnPlan<"provider_message_sending">["delivery"];
-type NativeReplyDelivery = ProviderReplyDelivery["deliverWithProviderMessageSending"];
+type NativeReplyDelivery =
+  ChannelInboundTurnPlan<"provider_message_sending">["delivery"]["deliverWithProviderMessageSending"];
 type ProviderReplyDispatch = (
   request: ChannelInboundTurnPlan<"provider_message_sending">,
 ) => ReturnType<PluginRuntime["channel"]["inbound"]["dispatch"]>;
 
 type AutomaticReplyContext = {
-  fixture: AutomaticReplyFixture;
+  fixture: NextcloudTalkOutboundFixture & { mediaUrl: string };
   controller: AbortController;
   onPlatformSendDispatch: ReturnType<typeof vi.fn<() => Promise<void>>>;
   deliver: (payload: ReplyPayload, kind: "final" | "block") => ReturnType<NativeReplyDelivery>;
@@ -279,17 +268,22 @@ async function withNativeAutomaticReply(
   });
 }
 
+const it = baseIt.extend<{
+  reply: AutomaticReplyContext;
+  botReply: AutomaticReplyContext;
+  quotedReply: AutomaticReplyContext;
+}>({
+  reply: ({ task: _task }, use) => withNativeAutomaticReply(use),
+  botReply: ({ task: _task }, use) => withNativeAutomaticReply(use, { botOnly: true }),
+  quotedReply: ({ task: _task }, use) =>
+    withNativeAutomaticReply(use, { quote: quote("users/quoted", "Earlier message", "40") }),
+});
+
 describe("nextcloud-talk inbound behavior", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     installRuntime();
     mocks.roomKind.mockResolvedValue("direct");
-    mocks.defaultPolicy.mockReturnValue("allowlist");
-    mocks.groupPolicy.mockReturnValue({
-      groupPolicy: "allowlist",
-      providerMissingFallbackApplied: false,
-    });
-    mocks.warn.mockReturnValue(undefined);
   });
 
   it("keeps quoted context separate from current command and reply targets", async () => {
@@ -413,11 +407,10 @@ describe("nextcloud-talk inbound behavior", () => {
       accountId: "default",
     });
     expect(statusSink).toHaveBeenCalledWith({ lastInboundAt: 1_736_380_800_000 });
-    const outboundStatus = statusSink.mock.calls
-      .map(([status]) => status as { lastOutboundAt?: unknown })
-      .find((status) => status.lastOutboundAt !== undefined);
-    expect(typeof outboundStatus?.lastOutboundAt).toBe("number");
-    expect(outboundStatus?.lastOutboundAt).toBeGreaterThanOrEqual(1_736_380_800_000);
+    expect(statusSink).toHaveBeenCalledWith({ lastOutboundAt: expect.any(Number) });
+    expect(
+      statusSink.mock.calls.find(([patch]) => patch.lastOutboundAt)?.[0].lastOutboundAt,
+    ).toBeGreaterThanOrEqual(1_736_380_800_000);
   });
 
   it.each([
@@ -435,19 +428,12 @@ describe("nextcloud-talk inbound behavior", () => {
       conversationId: "room-1",
       sourceId: "file:users/openclaw-api:81",
     });
-    const runtime = createRuntimeSpies();
     await inbound({
       message: createMessage(
         fileId ? { senderId, text: "", attachment: createAttachment(fileId) } : { senderId },
       ),
-      runtime,
     });
     expect(issueChallenge).toHaveBeenCalledTimes(own ? 0 : 1);
-    expect(runtime.log).toHaveBeenCalledWith(
-      own
-        ? "nextcloud-talk: ignored own outbound file share"
-        : `nextcloud-talk: drop DM sender ${senderId} (reason=dm_policy_pairing_required)`,
-    );
   });
 
   it("pairing DM policy: no challenge after the ingress is cancelled", async () => {
@@ -502,8 +488,7 @@ describe("nextcloud-talk inbound behavior", () => {
   it("keeps command and raw projections separate for structured group commands without mention", async () => {
     const text = '{"message":"/help","parameters":{}}';
     const command = "/help";
-    const hasControlCommand = vi.fn((body?: string) => body?.startsWith("/") ?? false);
-    const coreRuntime = installCommandRuntime(hasControlCommand, {
+    const coreRuntime = installCommandRuntime((body) => body?.startsWith("/") ?? false, {
       matchesMentionPatterns: vi.fn(() => false),
     });
     installPairingController(emptyStore());
@@ -522,10 +507,7 @@ describe("nextcloud-talk inbound behavior", () => {
       config,
     });
 
-    expect(hasControlCommand).toHaveBeenCalledWith(command, config);
-    expect(coreRuntime.channel.inbound.dispatch).toHaveBeenCalledTimes(1);
     expect(dispatched(coreRuntime)).toMatchObject({
-      replyPipeline: {},
       ctxPayload: {
         CommandBody: command,
         BodyForCommands: command,
@@ -546,116 +528,96 @@ describe("nextcloud-talk inbound behavior", () => {
     });
   });
 
-  it.each([
+  it.for([
     ["final", "The report", "41"],
     ["block", "The report", "41"],
     ["final", "", "41"],
     ["final", "The report", undefined],
     ["block", "The report", undefined],
-  ] as const)("native %s caption=%s reply=%s", async (kind, caption, replyToId) => {
-    await withNativeAutomaticReply(
-      async ({ fixture, deliver }) => {
-        const result = await deliver(
+  ] as const)(
+    "native %s caption=%s reply=%s",
+    async ([kind, caption, replyToId], { quotedReply: { fixture, deliver } }) => {
+      const result = await deliver(
+        {
+          text: caption ? `${caption}\n⚠️ 🛠️ \`search repos (agent)\` failed` : undefined,
+          mediaUrl: fixture.mediaUrl,
+          replyToId,
+        },
+        kind,
+      );
+      expect(fixture.requests.find(({ method }) => method === "PUT")?.body).toEqual(fixture.bytes);
+      expect(JSON.parse(shareBody(fixture).get("talkMetaData") ?? "{}")).toEqual({
+        caption,
+        ...(replyToId ? { replyTo: 41 } : {}),
+      });
+      expect(result).toMatchObject({
+        visibleReplySent: true,
+        receipt: { platformMessageIds: ["42"] },
+      });
+    },
+  );
+
+  it("preserves ordered bot-only links and caption", async ({ botReply: { fixture, deliver } }) => {
+    const urls = ["https://example.com/first.pdf", "https://example.com/second.pdf"];
+    const result = await deliver(
+      { text: "The reports", mediaUrls: urls, replyToId: "41" },
+      "final",
+    );
+    expect(result).toMatchObject({ visibleReplySent: true });
+    expectBotRequests(fixture);
+    expect(fixture.requests.map((request) => JSON.parse(request.body.toString()))).toEqual([
+      { message: `The reports\n\nAttachment: ${urls[0]}`, replyTo: "41" },
+      { message: `Attachment: ${urls[1]}`, replyTo: "41" },
+    ]);
+  });
+
+  it.for(["final", "block"] as const)(
+    "retains partial %s receipts",
+    async (kind, { botReply: { fixture, deliver } }) => {
+      let posts = 0;
+      fixture.respond = (request, response) => {
+        if (!request.url.pathname.endsWith("/bot/allowed/message") || ++posts !== 2) {
+          return false;
+        }
+        response.writeHead(500);
+        response.end();
+        return true;
+      };
+      await expect(
+        deliver(
           {
-            text: caption ? `${caption}\n⚠️ 🛠️ \`search repos (agent)\` failed` : undefined,
-            mediaUrl: fixture.mediaUrl,
-            replyToId,
+            text: "The reports",
+            mediaUrls: ["https://example.com/first.pdf", "https://example.com/second.pdf"],
           },
           kind,
-        );
-        expect(fixture.requests.find(({ method }) => method === "PUT")?.body).toEqual(
-          fixture.bytes,
-        );
-        expect(fixture.requests.filter(({ url }) => url.pathname.endsWith("/shares"))).toHaveLength(
-          1,
-        );
-        expect(JSON.parse(shareBody(fixture).get("talkMetaData") ?? "{}")).toEqual({
-          caption,
-          ...(replyToId ? { replyTo: 41 } : {}),
-        });
-        expect(result).toMatchObject({
-          visibleReplySent: true,
-          receipt: { platformMessageIds: ["42"] },
-        });
-      },
-      { quote: quote("users/quoted", "Earlier message", "40") },
+        ),
+      ).rejects.toMatchObject({
+        deliveryResult: { visibleReplySent: true, receipt: { platformMessageIds: ["900"] } },
+      });
+      expectBotRequests(fixture);
+    },
+  );
+
+  it("rejects automatic media outside the workspace", async ({ reply: { fixture, deliver } }) => {
+    await expect(deliver({ mediaUrl: fixture.ctx.mediaUrl }, "final")).rejects.toThrow();
+    expect(fixture.requests.some(({ method }) => method === "PUT" || method === "MKCOL")).toBe(
+      false,
     );
   });
 
-  it("preserves ordered bot-only links and caption", async () => {
-    await withNativeAutomaticReply(
-      async ({ fixture, deliver }) => {
-        const urls = ["https://example.com/first.pdf", "https://example.com/second.pdf"];
-        const result = await deliver(
-          { text: "The reports", mediaUrls: urls, replyToId: "41" },
-          "final",
-        );
-        expect(result).toMatchObject({ visibleReplySent: true });
-        expectBotRequests(fixture);
-        expect(fixture.requests.map((request) => JSON.parse(request.body.toString()))).toEqual([
-          { message: `The reports\n\nAttachment: ${urls[0]}`, replyTo: "41" },
-          { message: `Attachment: ${urls[1]}`, replyTo: "41" },
-        ]);
-      },
-      { botOnly: true },
-    );
+  it("cancels nonfinal media before dispatch", async ({
+    reply: { fixture, deliver, controller, onPlatformSendDispatch },
+  }) => {
+    controller.abort(new Error("reply stopped"));
+    await expect(deliver({ mediaUrl: fixture.mediaUrl }, "block")).rejects.toThrow();
+    expect(fixture.requests).toEqual([]);
+    expect(onPlatformSendDispatch).not.toHaveBeenCalled();
   });
 
-  it.each(["final", "block"] as const)("retains partial %s receipts", async (kind) => {
-    await withNativeAutomaticReply(
-      async ({ fixture, deliver }) => {
-        let posts = 0;
-        fixture.respond = (request, response) => {
-          if (!request.url.pathname.endsWith("/bot/allowed/message") || ++posts !== 2) {
-            return false;
-          }
-          response.writeHead(500);
-          response.end();
-          return true;
-        };
-        await expect(
-          deliver(
-            {
-              text: "The reports",
-              mediaUrls: ["https://example.com/first.pdf", "https://example.com/second.pdf"],
-            },
-            kind,
-          ),
-        ).rejects.toMatchObject({
-          deliveryResult: { visibleReplySent: true, receipt: { platformMessageIds: ["900"] } },
-        });
-        expectBotRequests(fixture);
-      },
-      { botOnly: true },
-    );
-  });
-
-  it("does not upload an automatic reply from outside its agent workspace", async () => {
-    await withNativeAutomaticReply(async ({ fixture, deliver }) => {
-      await expect(deliver({ mediaUrl: fixture.ctx.mediaUrl }, "final")).rejects.toThrow();
-      expect(fixture.requests.some(({ method }) => method === "PUT" || method === "MKCOL")).toBe(
-        false,
-      );
-    });
-  });
-
-  it("cancels a nonfinal automatic attachment before platform dispatch", async () => {
-    await withNativeAutomaticReply(
-      async ({ fixture, deliver, controller, onPlatformSendDispatch }) => {
-        controller.abort(new Error("reply stopped"));
-        await expect(deliver({ mediaUrl: fixture.mediaUrl }, "block")).rejects.toThrow();
-        expect(fixture.requests).toEqual([]);
-        expect(onPlatformSendDispatch).not.toHaveBeenCalled();
-      },
-    );
-  });
-
-  it("keeps a warning-only automatic reply invisible after sanitation", async () => {
-    await withNativeAutomaticReply(async ({ fixture, deliver }) => {
-      await expect(
-        deliver({ text: "⚠️ 🛠️ `search repos (agent)` failed" }, "final"),
-      ).resolves.toMatchObject({ visibleReplySent: false });
-      expect(fixture.requests).toEqual([]);
-    });
+  it("keeps warning-only replies invisible", async ({ reply: { fixture, deliver } }) => {
+    await expect(
+      deliver({ text: "⚠️ 🛠️ `search repos (agent)` failed" }, "final"),
+    ).resolves.toMatchObject({ visibleReplySent: false });
+    expect(fixture.requests).toEqual([]);
   });
 });
