@@ -215,7 +215,21 @@ export const usageHandlers: GatewayRequestHandlers = {
       return;
     }
     const { startMs, endMs } = range;
-    const agentId = normalizeOptionalString(params?.agentId);
+    const requestedAgentId = params?.agentId;
+    const requestedAgentScope = params?.agentScope;
+    if (requestedAgentId !== undefined && typeof requestedAgentId !== "string") {
+      respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, "agentId must be a string"));
+      return;
+    }
+    if (requestedAgentScope !== undefined && requestedAgentScope !== "all") {
+      respond(
+        false,
+        undefined,
+        errorShape(ErrorCodes.INVALID_REQUEST, "agentScope must be 'all' when provided"),
+      );
+      return;
+    }
+    const agentId = normalizeOptionalString(requestedAgentId);
     if (params?.agentScope === "all" && agentId) {
       respond(
         false,
