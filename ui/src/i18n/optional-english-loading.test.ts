@@ -98,11 +98,17 @@ it("loads optional English copy at each view boundary while keeping shared label
   const { en, manager } = await loadI18n();
   const about = en.aboutPage;
   const dashboards = en.dashboardsPage;
+  const providerUsage = en.usage.providerUsage;
   expect(manager.t("aboutPage.artifactDetails")).toBe("Control UI build details");
   await manager.setLocale("de");
   for (const [key, copy, load] of [
     ["aboutPage.linkDocs", "Docs", () => import("../pages/about/view.tsx")],
     ["dashboardsPage.live", "Live", () => import("../pages/dashboards/view.tsx")],
+    [
+      "usage.providerUsage.balance",
+      "Balance",
+      () => import("../components/solid/provider-usage.tsx"),
+    ],
   ] as const) {
     expect(manager.t(key)).toBe(key);
     await load();
@@ -110,6 +116,7 @@ it("loads optional English copy at each view boundary while keeping shared label
     expect(manager.t("common.health")).toBe("Gesundheit");
     expect(en.aboutPage).toBe(about);
     expect(en.dashboardsPage).toBe(dashboards);
+    expect(en.usage.providerUsage).toBe(providerUsage);
   }
 });
 

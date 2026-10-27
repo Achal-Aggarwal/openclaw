@@ -66,6 +66,7 @@ import { registerPortalsEnglish } from "../../ui/src/i18n/locales/en-portals.ts"
 import { registerPreferencesEnglish } from "../../ui/src/i18n/locales/en-preferences.ts";
 import { registerProcessesEnglish } from "../../ui/src/i18n/locales/en-processes.ts";
 import { registerProfileEnglish } from "../../ui/src/i18n/locales/en-profile.ts";
+import { registerProviderUsageEnglish } from "../../ui/src/i18n/locales/en-provider-usage.ts";
 import { registerRouteSubtitlesEnglish } from "../../ui/src/i18n/locales/en-route-subtitles.ts";
 import { registerSecretsStoreEnglish } from "../../ui/src/i18n/locales/en-secrets-store.ts";
 import { registerSessionMachineEnglish } from "../../ui/src/i18n/locales/en-session-machine.ts";
@@ -164,6 +165,7 @@ const sourceFiles = [
   "en-model-controls.ts",
   "en-model-setup.ts",
   "en-personal-instructions.ts",
+  "en-provider-usage.ts",
   "en-session-machine.ts",
   "en-session-navigation.ts",
   "en-session-organization-shared.ts",
@@ -465,6 +467,7 @@ export function loadControlUiSourceCatalog(): TranslationMap {
     registerTerminalEnglish.catalog,
     registerUpdateActionsEnglish.catalog,
     registerTranscriptsEnglish.catalog,
+    registerProviderUsageEnglish.catalog,
     registerUsageEnglish.catalog,
     { publicReader: PUBLIC_SESSION_COPY },
     loadControlUiCoreHintCatalog(),

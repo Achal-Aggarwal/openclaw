@@ -131,6 +131,11 @@ export function resolveToolCardOutcome(
   if (card.toolOutput?.outcome === "unknown") {
     return isToolCardError(card) ? "failed" : "unknown";
   }
+  if (card.activity?.unpairedCall) {
+    return runActive === true && card.live === true && card.completed !== true
+      ? "running"
+      : "unrecorded";
+  }
   if (card.activity) {
     const { status, phase } = card.activity;
     if (status === "failed" || status === "blocked") {
@@ -154,7 +159,18 @@ export function resolveToolCardOutcome(
   if (card.completed === true || (card.live !== true && card.outputText !== undefined)) {
     return "succeeded";
   }
-  return "unknown";
+  return "unrecorded";
+}
+
+/** Preserve view incompleteness when adapting card outcomes to shared activity. */
+export function projectToolCardActivityOutcome(
+  outcome: ToolCardOutcome,
+): Pick<NonNullable<ToolCard["activity"]>, "status" | "unpairedCall"> {
+  return outcome === "unrecorded"
+    ? { unpairedCall: true }
+    : {
+        status: outcome === "succeeded" ? "completed" : outcome === "unknown" ? undefined : outcome,
+      };
 }
 
 function extractToolPresentation(

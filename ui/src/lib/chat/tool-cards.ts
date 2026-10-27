@@ -24,6 +24,13 @@ export function resolveToolCardOutcome(
   return readChatToolFamily().resolveToolCardOutcome(card, runActive);
 }
 
+/** Preserve view incompleteness when adapting card outcomes to shared activity. */
+export function projectToolCardActivityOutcome(
+  outcome: ToolCardOutcome,
+): Pick<NonNullable<ToolCard["activity"]>, "status" | "unpairedCall"> {
+  return readChatToolFamily().projectToolCardActivityOutcome(outcome);
+}
+
 export function resolveToolCardDisplay(card: ToolCard): ToolCard {
   return readChatToolFamily().resolveToolCardDisplay(card);
 }

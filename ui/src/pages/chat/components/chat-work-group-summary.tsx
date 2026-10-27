@@ -7,6 +7,7 @@ import { describeToolGroup } from "../../../lib/chat/tool-call-grouping.runtime.
 import { readPreparedActivity } from "../../../lib/chat/tool-call-grouping.ts";
 import {
   extractToolCardsCached,
+  projectToolCardActivityOutcome,
   resolveToolCardOutcome,
 } from "../../../lib/chat/tool-cards.runtime.ts";
 import { resolveToolDisplayIdentity } from "../../../lib/chat/tool-display-identity.ts";
@@ -64,7 +65,6 @@ function prepareWorkGroupSummary(item: WorkGroupSummaryItem) {
   );
   const activity = prepared.flatMap((entry) => entry.activity);
   for (const [index, card] of fallback.entries()) {
-    const outcome = resolveToolCardOutcome(card, false);
     const display = resolveToolDisplayIdentity(unwrapToolCallForDisplay(card).name);
     activity.push({
       itemId: `work-summary-raw:${index}`,
@@ -73,7 +73,7 @@ function prepareWorkGroupSummary(item: WorkGroupSummaryItem) {
       phase: "end",
       title: display.name,
       name: display.name,
-      status: outcome === "succeeded" ? "completed" : outcome === "unknown" ? undefined : outcome,
+      ...projectToolCardActivityOutcome(resolveToolCardOutcome(card, false)),
     });
   }
   const label = duration ? t("chat.workRun.workedFor", { duration }) : t("chat.workRun.worked");

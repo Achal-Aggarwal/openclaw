@@ -2,6 +2,7 @@ export {
   extractToolCardsCached,
   isToolCardError,
   resolveToolCardOutcome,
+  projectToolCardActivityOutcome,
   resolveToolCardDisplay,
 } from "../../lib/chat/tool-cards.runtime.ts";
 export { describeToolGroup } from "../../lib/chat/tool-call-grouping.runtime.ts";

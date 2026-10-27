@@ -117,7 +117,9 @@ export function readControlUiRootAsset(
     workerUrl: resolveRuntimeProcessEntrypointUrl("controlUiFile"),
     // Keep asset bursts on the warm reader instead of pinning a request to a cold second worker.
     workerClass: "singleton",
-    workerOptions: { resourceLimits: { maxOldGenerationSizeMb: 512 } },
+    workerOptions: {
+      resourceLimits: { maxOldGenerationSizeMb: 512, maxYoungGenerationSizeMb: 16 },
+    },
     // Reuse the bounded reader across UI visits several minutes apart.
     idleTimeoutMs: 10 * 60_000,
     maxPendingTasks: 2_048,

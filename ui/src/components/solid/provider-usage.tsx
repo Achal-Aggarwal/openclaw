@@ -7,12 +7,15 @@ import type {
   ProviderUsageSnapshot,
   UsageWindow,
 } from "../../../../src/infra/provider-usage.types.js";
+import { registerProviderUsageEnglish } from "../../i18n/locales/en-provider-usage.ts";
 import { formatUiExternalText } from "../../lib/format-error.ts";
 import { formatCompactTokenCount } from "../../lib/format.ts";
 import { formatRelativeTimestamp } from "../../lib/reactive/format.ts";
-import { t } from "../../lib/reactive/i18n.ts";
+import { registerEnglishCatalog, t } from "../../lib/reactive/i18n.ts";
 import "../../styles/provider-usage.css";
 import { Icon } from "./icon.tsx";
+
+registerEnglishCatalog(registerProviderUsageEnglish);
 
 export type ProviderUsageDetails = Pick<
   ProviderUsageSnapshot,
