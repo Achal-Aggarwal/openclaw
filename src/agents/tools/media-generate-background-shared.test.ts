@@ -544,7 +544,7 @@ describe("scheduleMediaGenerationTaskCompletion", () => {
     }
   });
 
-  it("stops pending handoff retries at the completion deadline", async () => {
+  it.each([-60000, 0, 60000])("stops pending handoff retries despite wall clock jump %i", async (jump) => {
     vi.useFakeTimers();
     try {
       const scheduled: Array<() => Promise<void>> = [];
@@ -569,7 +569,11 @@ describe("scheduleMediaGenerationTaskCompletion", () => {
       });
 
       const backgroundWork = scheduled[0]?.();
-      await vi.advanceTimersByTimeAsync(120_000);
+      await vi.advanceTimersByTimeAsync(0);
+      vi.setSystemTime(Date.now() + jump);
+      await vi.advanceTimersByTimeAsync(119_999);
+      expect(lifecycle.completeTaskRun).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
       await backgroundWork;
 
       expect(lifecycle.wakeTaskCompletion.mock.calls.length).toBeLessThan(70);
