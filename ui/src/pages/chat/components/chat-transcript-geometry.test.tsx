@@ -7,6 +7,7 @@ import {
   handleMarkdownCodeBlockClick,
   renderMarkdownCodeBlock,
 } from "../../../components/markdown-code-blocks.ts";
+import { parseMarkdownJson } from "../../../components/markdown-json-parser.runtime.ts";
 import { flush, waitForSolid } from "../../../test-helpers/solid-settle.ts";
 import { createInitializationContext } from "../chat-application-context.test-support.ts";
 import { createTestTranscript, stubAnimationFrames } from "../chat-view.test-helpers.ts";
@@ -160,6 +161,7 @@ it.each(["chat-bubble-activity", "", "code-block-expand", "code-block-wrap", "ra
           "ts",
           {
             codeBlockInteraction: "interactive",
+            jsonParser: parseMarkdownJson,
           },
           { highlight: false },
         )

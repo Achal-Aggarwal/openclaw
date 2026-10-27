@@ -1555,7 +1555,6 @@
   "ui/src/pages/chat/components/chat-attachment-viewport.ts",
   "ui/src/pages/chat/components/chat-attribution.css",
   "ui/src/pages/chat/components/chat-browser-tab-previews.tsx",
-  "ui/src/pages/chat/components/chat-child-attention.tsx",
   "ui/src/pages/chat/components/chat-comment-anchor.ts",
   "ui/src/pages/chat/components/chat-comment-controller.ts",
   "ui/src/pages/chat/components/chat-composer-context-model.ts",

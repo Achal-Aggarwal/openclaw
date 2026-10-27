@@ -70,6 +70,7 @@ it.each(["transferring", "installing"] as const)("shows %s worker progress", asy
       updatedAtMs: 2,
     },
   });
+  await vi.dynamicImportSettled();
   await waitForSolid(() =>
     expect(container.querySelector(".chat-worker-runtime-install-notice")).not.toBeNull(),
   );

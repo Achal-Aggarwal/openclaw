@@ -6,8 +6,6 @@ import type {
 import type { GuestWelcomeHandle } from "../../app/guest-welcome-handle.ts";
 import type { ApplicationPlacementStartupStatus } from "../../app/session-placement-startup.ts";
 import type { ChatProviderReviewOwner } from "./chat-provider-review-controller.tsx";
-import type { SubagentRoster, SubagentRowContext } from "./chat-spawned-subagent.ts";
-import { ChatChildAttention } from "./components/chat-child-attention.tsx";
 import { renderGuestWelcomeStatus } from "./components/chat-guest-welcome-status.tsx";
 import { ChatLazyBoundary } from "./components/chat-lazy-boundary.tsx";
 import type { ChatRunError } from "./run-lifecycle.ts";
@@ -43,22 +41,19 @@ export type ChatViewNoticesProps = {
   onDismissError?: () => void;
 };
 
-export type ChatComposerNoticesProps = ChatPlacementStartupNoticeProps &
-  SubagentRowContext &
-  Pick<SubagentRoster, "subagentSessionsRead"> & {
-    sessionKey?: string;
-    presented?: boolean;
-    onSessionSelect?: (key: string) => void;
-    connected?: boolean;
-    messages: readonly unknown[];
-    providerPolicyNotice?: ProviderPolicyNotice | null;
-    // Resolve after the first pane frame prepares the Solid owner's permission facts.
-    readProviderReview?: () => ChatProviderReviewOwner | undefined;
-    runError?: ChatRunError | null;
-    onRefresh?: () => void;
-    onDismissWorkspaceConflict?: () => void;
-    workspaceConflict?: WorkspaceResultConflict | null;
-  };
+export type ChatComposerNoticesProps = ChatPlacementStartupNoticeProps & {
+  sessionKey?: string;
+  presented?: boolean;
+  connected?: boolean;
+  messages: readonly unknown[];
+  providerPolicyNotice?: ProviderPolicyNotice | null;
+  // Resolve after the first pane frame prepares the Solid owner's permission facts.
+  readProviderReview?: () => ChatProviderReviewOwner | undefined;
+  runError?: ChatRunError | null;
+  onRefresh?: () => void;
+  onDismissWorkspaceConflict?: () => void;
+  workspaceConflict?: WorkspaceResultConflict | null;
+};
 
 export function renderChatTopbarNotices(props: ChatViewNoticesProps) {
   return (
@@ -81,15 +76,6 @@ export function renderChatTopbarNotices(props: ChatViewNoticesProps) {
 export function renderChatComposerNotices(props: ChatComposerNoticesProps) {
   return (
     <>
-      {/* Seeded rows can name children the gateway no longer links; wait for its child read. */}
-      <Show when={props.subagentParentKey && props.subagentSessionsRead}>
-        <ChatChildAttention
-          sessionKey={props.subagentParentKey ?? ""}
-          sessions={props.subagentSessions ?? []}
-          onOpenSubagent={props.onOpenSubagent}
-          onOpenSession={props.onSessionSelect}
-        />
-      </Show>
       <Show when={props.readProviderReview?.()}>
         {(owner) => (
           <Loading>

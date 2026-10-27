@@ -96,7 +96,7 @@ suite.define(() => {
             await captureFrame(suite.artifactDir, "sidebar.png", sidebar, [owner]);
           }
           const toolbarBox = await page.locator(".sidebar-session-toolbar").boundingBox();
-          const personalGroupsBox = await page
+          const groupsBox = await page
             .locator(".sidebar-sessions > .personal-session-groups")
             .boundingBox();
           const firstRowBox = await page
@@ -104,10 +104,10 @@ suite.define(() => {
             .first()
             .boundingBox();
           expect(toolbarBox).not.toBeNull();
-          expect(personalGroupsBox).not.toBeNull();
+          expect(groupsBox).not.toBeNull();
           expect(firstRowBox).not.toBeNull();
-          expect(personalGroupsBox!.y - toolbarBox!.y - toolbarBox!.height).toBe(4);
-          expect(firstRowBox!.y - personalGroupsBox!.y - personalGroupsBox!.height).toBe(8);
+          expect(groupsBox!.y - toolbarBox!.y - toolbarBox!.height).toBe(4);
+          expect(firstRowBox!.y - groupsBox!.y - groupsBox!.height).toBe(8);
         },
       );
     },

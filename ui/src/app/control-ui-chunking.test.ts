@@ -474,8 +474,9 @@ describe("Control UI build chunking", () => {
       Object.fromEntries(result.output.map((asset) => [asset.fileName, asset])),
     );
     expect(boot.presentationOnly.chat).toContain(richChunk.fileName);
-    expect(boot.chat).not.toContain(copyChunk.fileName);
-    expect(boot.new).not.toContain(copyChunk.fileName);
+    expect(copyChunk.fileName).toBe(sharedChunk.fileName);
+    expect(boot.chat).toContain(copyChunk.fileName);
+    expect(boot.new).toContain(copyChunk.fileName);
     expect(boot.chat).toContain(onlineChunk.fileName);
     expect(boot.new).toContain(onlineChunk.fileName);
     expect(boot.chat).toContain(liveChunk.fileName);
