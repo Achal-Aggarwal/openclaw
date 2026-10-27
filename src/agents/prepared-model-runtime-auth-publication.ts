@@ -25,6 +25,7 @@ export type PreparedModelRuntimeAuthMutation = {
   agentDir?: string;
   affectsInheritedStores: boolean;
   profileSetChanged: boolean;
+  availabilityOnly?: boolean;
 };
 
 type PreparedModelRuntimeAuthTransaction = {
@@ -399,6 +400,9 @@ export function invalidatePreparedModelRuntimeOwnersForAuthMutation(
   invalidatedOwners: PreparedModelRuntimeOwner[];
   invalidatedConfiguredAgentIds: Set<string>;
 } {
+  if (normalizedEvent.availabilityOnly) {
+    return { invalidatedOwners: [], invalidatedConfiguredAgentIds: new Set<string>() };
+  }
   const staleError = new Error("prepared model runtime owner is stale after auth mutation");
   const invalidatedOwners: PreparedModelRuntimeOwner[] = [];
   const invalidatedConfiguredAgentIds = new Set<string>();

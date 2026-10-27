@@ -591,7 +591,7 @@ describe("auth publication generation recovery", () => {
 });
 
 describe("prepared model auth publication", () => {
-  it("retains the prepared owner on bookkeeping and refreshes on auth availability changes", async () => {
+  it("retains the prepared owner on bookkeeping and availability, but refreshes on credentials", async () => {
     const snapshots = await vi.importActual<typeof import("./auth-profiles/runtime-snapshots.js")>(
       "./auth-profiles/runtime-snapshots.js",
     );
@@ -628,6 +628,18 @@ describe("prepared model auth publication", () => {
         {
           ...store,
           usageStats: { "test:primary": { cooldownUntil: Date.now() + 60_000 } },
+        },
+        agentDir,
+      );
+      expect(await prepareModelRuntimeSnapshot(input)).toBe(initial);
+      expect(events).not.toHaveBeenCalled();
+      expect(mocks.ensureOpenClawModelsJson).toHaveBeenCalledOnce();
+      snapshots.updateRuntimeAuthProfileStoreSnapshot(
+        {
+          ...store,
+          profiles: {
+            "test:primary": { type: "token", provider: "test", token: "rotated-synthetic-token" },
+          },
         },
         agentDir,
       );
