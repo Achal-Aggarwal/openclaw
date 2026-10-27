@@ -84,10 +84,9 @@ it.each(["followup", "collect"] as const)(
       await predecessor.dispose();
       expect(() => retiredHook()).toThrow(PluginInstanceUnavailableError);
       setActivePluginRegistry(current);
-      const claim = queued.controllerInput!.claim!;
       released.resolve();
-      await queued.controllerInput!.settlement.promise;
-      await claim.settlement.promise;
+      // 2026.10.10's queue owner settles the drained item by retiring its queue.
+      await vi.waitFor(() => expect(getExistingFollowupQueue(key)).toBeUndefined());
       expect(delivered).toHaveLength(1);
       expect(delivered[0]?.prompt).toContain("accepted before reload");
       expect(delivered[0]?.reply).toBe("current provider reply");
