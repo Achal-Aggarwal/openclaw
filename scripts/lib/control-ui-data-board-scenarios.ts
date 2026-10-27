@@ -881,6 +881,12 @@ export const dataBoardScenarios: readonly InteractionScenario[] = [
     false,
     100,
   ),
+  boardLiveUpdateScenario(
+    "data-board-live-update-staged-rpc-delay-100ms",
+    tabCount * widgetsPerTab,
+    true,
+    100,
+  ),
   boardLiveUpdateScenario("data-board-live-update-production-rpc-delay-100ms", 48, true, 100),
   {
     id: "data-board-scroll",
