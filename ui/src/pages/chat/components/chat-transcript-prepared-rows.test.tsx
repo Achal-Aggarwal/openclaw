@@ -331,13 +331,12 @@ it.each([true, "toolCall"] as const)(
 );
 
 it.each([1, -1])(
-  "warms the next ordinary viewport in direction %s without idle delivery",
+  "warms the next ordinary viewport before its frame in direction %s without idle delivery",
   async (direction) => {
     const view = await transcriptFixture(direction > 0 ? 0 : 24_000, true, false, true, 1_000);
     await view.scrollTo(direction > 0 ? 60 : 180);
     const rendered = view.renderRow.mock.calls.length;
     const elements = view.container.querySelectorAll(".chat-virtual-row").length;
-    await view.frame();
     expect(view.renderRow.mock.calls).toHaveLength(rendered);
     await view.task();
     const prepared = view.renderRow.mock.calls.slice(rendered);

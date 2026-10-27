@@ -343,13 +343,10 @@ export class TranscriptInitialRange {
       this.prewarmRow &&
       typeof requestIdleCallback === "function"
     ) {
-      // Idle delivery can starve during scrolling. Warm Markdown in a separate
-      // task; actual row mounting waits for idle or the visible range.
-      const frame = requestAnimationFrame(() => {
-        const task = setTimeout(() => prepare(performance.now() + 6, true, true), 0);
-        this.cancelPreparation = () => clearTimeout(task);
-      });
-      this.cancelPreparation = () => cancelAnimationFrame(frame);
+      // Warm before the next scroll frame consumes this predicted viewport.
+      // A separate task keeps parsing outside the current render's layout work.
+      const task = setTimeout(() => prepare(performance.now() + 6, true, true), 0);
+      this.cancelPreparation = () => clearTimeout(task);
     } else if (typeof requestIdleCallback === "function") {
       this.preparationIsIdle = true;
       const idleRequest = requestIdleCallback(

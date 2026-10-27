@@ -230,9 +230,13 @@ export class TranscriptLayoutOwner {
     const shrinking =
       element.parentElement === this.viewport && previous !== undefined && height < previous;
     const before = shrinking ? this.viewport?.scrollTop : undefined;
+    // The direct child's height alone keeps an interior viewport in range.
+    // Read before writing; only a possible native clamp needs a second layout.
+    const staysInRange =
+      before !== undefined && before >= 0 && height - this.viewport!.clientHeight > before + 1;
     this.rangeHeights.set(element, height);
     element.style.height = `${height}px`;
-    if (before !== undefined) {
+    if (before !== undefined && !staysInRange) {
       this.publishResize(before);
     }
   }

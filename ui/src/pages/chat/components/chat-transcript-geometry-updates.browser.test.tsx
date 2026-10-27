@@ -13,6 +13,7 @@ import type { ChatThreadProps } from "./chat-thread-interactions.ts";
 import { ChatThread } from "./chat-thread-view.tsx";
 import type { ChatTranscript } from "./chat-transcript-controller.ts";
 import { TranscriptEndAnchor } from "./chat-transcript-end-anchor.ts";
+import { TranscriptLayoutOwner } from "./chat-transcript-layout-owner.ts";
 import { subscribeTranscriptScroll } from "./chat-transcript-scroll-events.ts";
 import { ChatSessionVirtualizerHost } from "./chat-transcript-virtualizer-host.ts";
 import { requireElement, threadProps } from "./chat-transcript.test-support.ts";
@@ -147,6 +148,66 @@ async function mountPane(followEnd = false, rowHeight?: number, messages?: unkno
     virtualizer: session["virtualizer"],
   };
 }
+
+it.each([
+  { name: "interior", offset: 100, height: 1600, resize: false, expected: 100 },
+  { name: "clamped", offset: 1400, height: 1600, resize: true, expected: 1200 },
+  {
+    name: "undelivered native offset",
+    offset: 100,
+    nextOffset: 1400,
+    height: 1600,
+    resize: true,
+    expected: 1200,
+  },
+  { name: "fractional edge", offset: 1200, height: 1600.25, resize: true, expected: 1200 },
+])("measures a shrinking range only near the native end ($name)", (scenario) => {
+  const slot = document.body.appendChild(document.createElement("div"));
+  const viewport = slot.appendChild(document.createElement("div"));
+  viewport.style.cssText = "width: 600px; height: 400px; overflow: auto; overflow-anchor: none";
+  const content = viewport.appendChild(document.createElement("div"));
+  const changed = vi.fn();
+  const layout = new TranscriptLayoutOwner(changed);
+  layout.connect(viewport);
+  layout.commitRange(content, 2400);
+  viewport.scrollTop = scenario.offset;
+  layout.commitRange(content, 2200);
+  if (scenario.nextOffset !== undefined) {
+    viewport.scrollTop = scenario.nextOffset;
+  }
+  const before = viewport.scrollTop;
+  changed.mockClear();
+  const resized = vi.fn();
+  const stop = subscribeTranscriptScroll(viewport, (event) => {
+    if (event.type === "resize") {
+      resized(event);
+    }
+  });
+  const extentReads = vi.spyOn(viewport, "scrollHeight", "get");
+  try {
+    layout.commitRange(content, scenario.height);
+    expect(extentReads).toHaveBeenCalledTimes(scenario.resize ? 1 : 0);
+    expect(resized).toHaveBeenCalledTimes(scenario.resize ? 1 : 0);
+    const after = viewport.scrollTop;
+    expect(after).toBe(scenario.expected);
+    if (scenario.resize) {
+      expect(changed).toHaveBeenCalledExactlyOnceWith(before, after);
+      expect(resized).toHaveBeenCalledWith(
+        expect.objectContaining({
+          viewport: expect.objectContaining({ scrollTop: after }),
+          ...(after !== before ? { scrollCorrection: { before, after } } : {}),
+        }),
+      );
+    } else {
+      expect(changed).not.toHaveBeenCalled();
+    }
+  } finally {
+    extentReads.mockRestore();
+    stop();
+    layout.disconnect();
+    slot.remove();
+  }
+});
 
 it.each([120, 360, 1200])(
   "prepares only the tail window while initial %ipx rows settle",
