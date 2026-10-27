@@ -22,8 +22,7 @@ export function isWorkerGoalChatAdmission(
     placement.state !== "local" &&
     isDirectChatGoalSession({
       entry: current.entry,
-      allowAborted:
-        request.goalOperation?.action === "resume" && request.goalOperation.preserveBudget === true,
+      allowAborted: request.goalOperation.action === "resume",
       acpMeta,
       requestedSessionId: session.requestedSessionId,
       sessionKey: current.canonicalKey,

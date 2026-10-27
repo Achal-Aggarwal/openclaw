@@ -68,7 +68,7 @@ const log = createSubsystemLogger("gateway/restart-recovery");
 
 type RestartSafeChatRequest = {
   fingerprint: string;
-  goalReplacement?: true;
+  goalResume?: true;
 };
 
 type RestartSafeChatAdmission = {
@@ -138,7 +138,7 @@ export async function createRestartSafeChatRequest(params: {
     // Its receipt fingerprints attachments, routing, and every immutable run option.
     return {
       fingerprint: goal.requestFingerprint,
-      ...(goal.action === "resume" && goal.preserveBudget ? { goalReplacement: true } : {}),
+      ...(goal.action === "resume" ? { goalResume: true } : {}),
     };
   }
   if (!params.eligible || hasRestartUnsafeMessageSemantics(params.message, params.cfg)) {
@@ -408,7 +408,7 @@ export function resolveRestartSafeChatAdmission(
   if (
     !request ||
     !entry ||
-    !isDirectChatGoalSession({ ...params, entry, allowAborted: request.goalReplacement }) ||
+    !isDirectChatGoalSession({ ...params, entry, allowAborted: request.goalResume }) ||
     (entry.agentHarnessId !== undefined && entry.agentHarnessId !== OPENCLAW_AGENT_RUNTIME_ID)
   ) {
     return undefined;

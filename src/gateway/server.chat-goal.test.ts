@@ -428,6 +428,7 @@ describe("Goal chat admission and continuation", () => {
     expect(response.mock.calls[0]?.[2]).toMatchObject({
       code: "INVALID_REQUEST",
       message: expect.stringContaining("recoverable history"),
+      details: { reason: "goal-invalid" },
     });
     expect(loadSessionEntry(scope())).toBeUndefined();
     await expectNoDispatch();

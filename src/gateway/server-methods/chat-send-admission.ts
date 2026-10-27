@@ -5,6 +5,7 @@ import { readAcpSessionMetaForEntries } from "../../acp/runtime/session-meta-rea
 import { createAgentRunRestartAbortError } from "../../agents/run-termination.js";
 import { resolveQueueSettings } from "../../auto-reply/reply/queue/settings-runtime.js";
 import { resolveSessionWorkStartError } from "../../config/sessions.js";
+import { SessionGoalOperationError } from "../../config/sessions/goals-operations.js";
 import { SESSION_ROUTING_CHANGED_ERROR_REASON } from "../../config/sessions/main-session.js";
 import {
   hasRestartRecoveryTerminalRun,
@@ -396,7 +397,8 @@ export async function admitChatSend(params: ChatSendAdmissionParams) {
         });
         workerGoalAdmission = isWorkerGoalChatAdmission(params, latestSession, placement, acpMeta);
         if (request.goalOperation && !restartSafeAdmission && !workerGoalAdmission) {
-          throw new Error(
+          throw new SessionGoalOperationError(
+            "invalid",
             "Goal start or resume requires an idle built-in local session with recoverable history or a supported Codex cloud-worker session.",
           );
         }
