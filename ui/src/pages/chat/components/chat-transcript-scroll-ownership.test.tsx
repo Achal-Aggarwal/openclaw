@@ -17,6 +17,7 @@ import {
   renderReadyRows,
 } from "../test-helpers/chat-transcript-native.tsx";
 import { createChatTranscript as createTranscript } from "./chat-transcript-controller.ts";
+import { setTranscriptGeometry } from "./chat-transcript-fixture.test-support.tsx";
 import {
   publishTranscriptScroll,
   subscribeTranscriptScroll,
@@ -57,20 +58,6 @@ function resize(element: Element, height: number) {
     observer.emitTarget(element, 800, height);
   }
 }
-function viewport(
-  element: HTMLElement,
-  height: number | (() => number),
-  scrollHeight: number | (() => number),
-) {
-  const dimension = (value: number | (() => number)) => ({
-    configurable: true,
-    ...(typeof value === "number" ? { value } : { get: value }),
-  });
-  Object.defineProperties(element, {
-    clientHeight: dimension(height),
-    scrollHeight: dimension(scrollHeight),
-  });
-}
 function expectReader(policy: ReturnType<typeof makeChatHost>, locked: boolean) {
   expect([policy.chatFollowLocked, policy.chatReadingHistory]).toEqual([locked, locked]);
 }
@@ -110,7 +97,7 @@ async function mountRestoration(paneId: string, height: number) {
     makeTranscript(() => paneId),
   );
   const range = { height };
-  viewport(mounted.container, 600, () => range.height);
+  setTranscriptGeometry(mounted.container, { clientHeight: 600, scrollHeight: () => range.height });
   return {
     ...mounted,
     range,
@@ -144,7 +131,7 @@ it.each(["resize clamp", "native return"] as const)(
     transcriptDomState.measuredRowHeight = 1000;
     const container = document.body.appendChild(document.createElement("div"));
     let viewportHeight = 400;
-    viewport(container, () => viewportHeight, 1000);
+    setTranscriptGeometry(container, { clientHeight: () => viewportHeight, scrollHeight: 1000 });
     container.scrollTo = (options?: ScrollToOptions | number, y?: number) => {
       const offset = typeof options === "number" ? (y ?? 0) : (options?.top ?? 0);
       container.scrollTop = Math.min(offset, 1000 - viewportHeight);
@@ -227,7 +214,7 @@ it.each([
     const flushFrames = stubAnimationFrames();
     const { policy, transcript, mount } = createPolicyTranscript(`footer-${intent}`);
     const { container } = await mount();
-    viewport(container, 400, 2000);
+    setTranscriptGeometry(container, { clientHeight: 400, scrollHeight: 2000 });
     container.scrollTop = 1600;
     policy.chatLastScrollTop = 1600;
     connectPolicy(policy, transcript, container);
@@ -287,7 +274,10 @@ it("grows the native range before compensating fractional row growth above a rea
   const { policy, transcript, mount } = createPolicyTranscript("measurement-extent");
   const rows = numberedContentRows(12);
   const { container, renderRows } = await mount(rows);
-  viewport(container, 600, () => transcriptSize(container) + 84);
+  setTranscriptGeometry(container, {
+    clientHeight: 600,
+    scrollHeight: () => transcriptSize(container) + 84,
+  });
   container.scrollTo = (options?: ScrollToOptions | number) => {
     if (typeof options === "object") {
       container.scrollTop = Math.min(
@@ -326,7 +316,7 @@ it("preserves reader policy when row measurement clamps a positive adjustment to
   const { container, renderRows } = await mount(rows);
   const total = transcriptSize(container);
   let maxScrollTop = total + 84 - 600;
-  viewport(container, 600, () => maxScrollTop + 600);
+  setTranscriptGeometry(container, { clientHeight: 600, scrollHeight: () => maxScrollTop + 600 });
   container.scrollTo = (options?: ScrollToOptions | number) => {
     if (typeof options === "object") {
       container.scrollTop = Math.min(options.top ?? container.scrollTop, maxScrollTop);

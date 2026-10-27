@@ -653,7 +653,7 @@ export async function loadSessionPage(
       );
     if (entry && entry.cacheKey === scopeKey()) {
       const revision = context.gateway.connectionRevision;
-      const current = () =>
+      const snapshotCurrent = () =>
         !entry.cancelled &&
         peekPrewarmedChatSnapshot() === entry &&
         context.gateway.connectionRevision === revision &&
@@ -661,11 +661,11 @@ export async function loadSessionPage(
       const { readPrewarmedChatSnapshot } = await import("./session-snapshot-store.ts");
       const snapshot = await readPrewarmedChatSnapshot(entry.cacheKey);
       signal.throwIfAborted();
-      if (snapshot && current()) {
+      if (snapshot && snapshotCurrent()) {
         try {
           const { prepareCachedTranscript } = await import("./chat-transcript-prewarm.ts");
           signal.throwIfAborted();
-          if (current()) {
+          if (snapshotCurrent()) {
             await prepareCachedTranscript(
               snapshot,
               result.sessionKey,

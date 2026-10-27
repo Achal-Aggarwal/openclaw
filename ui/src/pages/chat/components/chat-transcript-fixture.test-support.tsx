@@ -23,14 +23,22 @@ export function emitTranscriptResize(target: Element, width: number, height: num
   }
 }
 
-export function setTranscriptViewport(container: HTMLElement, height: number | (() => number)) {
-  Object.defineProperties(container, {
-    clientHeight: { configurable: true, value: 600 },
-    scrollHeight: {
+export function setTranscriptGeometry(
+  element: Element,
+  values: Partial<
+    Record<"clientHeight" | "scrollHeight" | "offsetHeight", number | (() => number)>
+  >,
+) {
+  for (const [key, value] of Object.entries(values)) {
+    Object.defineProperty(element, key, {
       configurable: true,
-      ...(typeof height === "function" ? { get: height } : { value: height }),
-    },
-  });
+      ...(typeof value === "function" ? { get: value } : { value }),
+    });
+  }
+}
+
+export function setTranscriptViewport(container: HTMLElement, height: number | (() => number)) {
+  setTranscriptGeometry(container, { clientHeight: 600, scrollHeight: height });
 }
 
 export function threadFixture(props: ChatThreadProps) {

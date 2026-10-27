@@ -13,13 +13,14 @@ import { SIDEBAR_GEOMETRY_COMMIT_EVENT } from "../sidebar-layout.ts";
 import {
   render,
   renderChatThread,
-  mountTestTranscript as mountRows,
+  mountTestTranscript,
   numberedContentRows,
   mcpRangeRows,
   stubMcpAppLifecycle,
   TranscriptTestHost,
 } from "../test-helpers/chat-transcript-native.tsx";
 import { createChatTranscript } from "./chat-transcript-controller.ts";
+import { setTranscriptGeometry } from "./chat-transcript-fixture.test-support.tsx";
 import { projectChatTranscript } from "./chat-transcript-projection.ts";
 import {
   flushDeferredRowPrune,
@@ -39,12 +40,6 @@ customElements.define("scroll-restore-test-host", TranscriptTestHost);
 
 const cleanup: (() => void)[] = [];
 
-async function mountTestTranscript(...args: Parameters<typeof mountRows>) {
-  const view = await mountRows(...args);
-  cleanup.push(() => view.transcript.dispose());
-  return view;
-}
-
 function threadFixture(props: ReturnType<typeof threadProps>, transcript = createTestTranscript()) {
   const container = document.body.appendChild(document.createElement("div"));
   cleanup.push(() => transcript.dispose());
@@ -58,20 +53,6 @@ const messages = (length: number, prefix: string) =>
     content: `${prefix} ${index}`,
     timestamp: index + 1,
   }));
-
-function geometry(
-  element: Element,
-  values: Partial<
-    Record<"clientHeight" | "scrollHeight" | "offsetHeight", number | (() => number)>
-  >,
-) {
-  for (const [key, value] of Object.entries(values)) {
-    Object.defineProperty(element, key, {
-      configurable: true,
-      ...(typeof value === "function" ? { get: value } : { value }),
-    });
-  }
-}
 
 function emitSize(target: Element, height: number) {
   for (const observer of resizeObservers) {
@@ -188,7 +169,7 @@ it("updates the visible range on native scroll without a parent render", async (
   transcript.update();
   await flushDeferredRowPrune();
   const { scroller, rows } = expectObservedRows(container);
-  geometry(scroller, { clientHeight: 600, scrollHeight: 4_000 });
+  setTranscriptGeometry(scroller, { clientHeight: 600, scrollHeight: 4_000 });
   emitSize(scroller, 600);
   emitRowSizes(rows, 100);
   draw();
@@ -231,7 +212,7 @@ it("keeps retained MCP rows and the virtual row model atomic through teardown", 
   ]);
 
   // Old-tree resize must still address the old key model during teardown.
-  geometry(retainedRows[1]!, { offsetHeight: 40 });
+  setTranscriptGeometry(retainedRows[1]!, { offsetHeight: 40 });
   emitSize(retainedRows[1]!, 40);
   teardownPending.resolve();
   await teardownPending.promise;
@@ -314,7 +295,7 @@ it("reconciles an implicit end anchor when committed content has no scroll range
   flush();
   const scrollElement = container.querySelector<HTMLElement>(".chat-thread");
   expect(scrollElement).not.toBeNull();
-  geometry(scrollElement!, { clientHeight: 600, scrollHeight: 600 });
+  setTranscriptGeometry(scrollElement!, { clientHeight: 600, scrollHeight: 600 });
 
   transcript.start();
   transcript.scrollToEnd({ source: "auto" });
@@ -375,7 +356,7 @@ it.each([true, false])("settles a non-overflowing restore (initially loading=%s)
   };
   renderWindow(loading);
   if (!loading) {
-    geometry(container.querySelector(".chat-thread")!, { clientHeight: 600 });
+    setTranscriptGeometry(container.querySelector(".chat-thread")!, { clientHeight: 600 });
   }
   transcript.start();
   transcript.update();
@@ -419,7 +400,7 @@ it("retries a growing restore without pane commits and renders the settled reade
   }));
   const rows = numberedContentRows(40);
   let scrollHeight = 600;
-  geometry(container, { clientHeight: 600, scrollHeight: () => scrollHeight });
+  setTranscriptGeometry(container, { clientHeight: 600, scrollHeight: () => scrollHeight });
   container.scrollTo = (options?: ScrollToOptions | number) => applyScroll(container, options);
   host.renderTranscript = () => renderReadySession(transcript, "restore-retry", rows, readerStatus);
   document.body.append(host);
@@ -466,7 +447,7 @@ it.each(["measurable", "growing", "short"] as const)(
       rows,
     );
     let scrollHeight = range === "measurable" ? 2000 : 900;
-    geometry(container, { clientHeight: 600, scrollHeight: () => scrollHeight });
+    setTranscriptGeometry(container, { clientHeight: 600, scrollHeight: () => scrollHeight });
     const scrollTo = vi.fn((options?: ScrollToOptions | number) => applyScroll(container, options));
     container.scrollTo = scrollTo;
     const callsTo = (...tops: number[]) =>
@@ -537,7 +518,7 @@ it.each([
         container.scrollTop = options.top ?? container.scrollTop;
       }
     };
-    geometry(container, { clientHeight: 600, scrollHeight: 4000 });
+    setTranscriptGeometry(container, { clientHeight: 600, scrollHeight: 4000 });
     emitSize(container, 600);
     transcript.scrollToOffset(0);
     renderRows(rows);
@@ -549,7 +530,7 @@ it.each([
     const first = requireElement(container, '[data-index="0"]');
     const initialSize = transcriptSize(container);
     const resize = () => {
-      geometry(first, { offsetHeight: 200 });
+      setTranscriptGeometry(first, { offsetHeight: 200 });
       emitSize(first, 200);
     };
     transcript.scrollToEnd({ behavior });
@@ -604,7 +585,7 @@ it.each([0, 252])(
       transcript,
     );
     let extraExtent = 0;
-    geometry(container, {
+    setTranscriptGeometry(container, {
       clientHeight: 600,
       scrollHeight: () => transcriptSize(container) + extraExtent,
     });
@@ -612,7 +593,7 @@ it.each([0, 252])(
       container.scrollTop = typeof options === "number" ? (y ?? 0) : (options?.top ?? 0);
     });
     const typingRow = requireElement(container, '[data-virtual-row-key="presence:typing"]');
-    geometry(typingRow, { offsetHeight: 30 });
+    setTranscriptGeometry(typingRow, { offsetHeight: 30 });
     for (const observer of resizeObservers) {
       observer.emitTarget(container, 800, 600);
       observer.emitTarget(typingRow, 800, 30);
@@ -648,7 +629,7 @@ it("keeps smooth latest through settlement and idle until the target", async () 
   transcriptDomState.measuredRowHeight = 120;
   const rows = numberedContentRows(40);
   const { container, transcript } = await mountTestTranscript("idle-latest", rows);
-  geometry(container, { clientHeight: 600, scrollHeight: 4800 });
+  setTranscriptGeometry(container, { clientHeight: 600, scrollHeight: 4800 });
   const scrollTo = vi.fn();
   container.scrollTo = scrollTo;
   // Keep mount-time reconciliation on the same frame queue while faking native idle.
@@ -659,7 +640,7 @@ it("keeps smooth latest through settlement and idle until the target", async () 
   await Promise.resolve();
   expect(scrollTo).toHaveBeenLastCalledWith({ top: 4200, behavior: "smooth" });
   scroll(container, 1500);
-  geometry(container, { scrollHeight: 4900 });
+  setTranscriptGeometry(container, { scrollHeight: 4900 });
   flushFrames();
   expect(scrollTo).toHaveBeenLastCalledWith({ top: 4300, behavior: "smooth" });
   scrollTo.mockClear();
@@ -730,7 +711,7 @@ it("preserves saved reader restoration when initial rows include typing", async 
   ];
   const { container, renderRows } = await mountTestTranscript(paneId, rows);
   // Initial unmeasurable DOM and automatic typing follow must preserve the saved offset.
-  geometry(container, { clientHeight: 600, scrollHeight: 2000 });
+  setTranscriptGeometry(container, { clientHeight: 600, scrollHeight: 2000 });
   renderRows(rows);
   for (let frame = 0; frame < 3; frame += 1) {
     await Promise.resolve();

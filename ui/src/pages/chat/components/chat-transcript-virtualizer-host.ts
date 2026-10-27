@@ -22,7 +22,7 @@ import {
   isTranscriptRangeCommitted,
   createPositionRailGutter,
 } from "./chat-transcript-geometry.ts";
-import { reconcileTranscriptHeaderMargin, setTranscriptRowKeys } from "./chat-transcript-header.ts";
+import { reconcileTranscriptHeaderMargin } from "./chat-transcript-header.ts";
 import { TranscriptInitialRange } from "./chat-transcript-initial-range.ts";
 import {
   reconcileChatTranscriptInteractionResize,
@@ -70,9 +70,7 @@ import {
 import { TranscriptViewportRect } from "./chat-transcript-viewport-rect.ts";
 
 export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
-  private readonly renderer = new ChatTranscriptRenderer(() => {
-    if (this.connected) this.invalidate();
-  });
+  private readonly renderer = new ChatTranscriptRenderer(() => this.connected && this.invalidate());
   private readonly offsetState = new TranscriptOffsetState();
   readonly entryAnimations = new ChatMessageEntryAnimations();
   readonly messageElements = createTranscriptMessageElements(this.entryAnimations.refFor);
@@ -550,7 +548,18 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
         }
         this.headerHeight = header?.height ?? 0;
         if (rowModelChanged) {
-          this.syncRows(nextKeys);
+          this.rowKeys = nextKeys;
+          this.rowIndexesByKey = new Map(nextKeys.map((key, index) => [key, index]));
+          // Prepending rows and removing their header share one edge-key re-anchor.
+          virtualizer.setOptions({
+            ...virtualizer.options,
+            count: nextKeys.length,
+            getItemKey: (index) => nextKeys[index]!,
+            rangeExtractor: (range) => this.initialRange.extract(range),
+            scrollMargin:
+              virtualizer.options.scrollMargin + this.headerHeight - this.appliedHeaderHeight,
+          });
+          this.appliedHeaderHeight = this.headerHeight;
         } else {
           this.appliedHeaderHeight = reconcileTranscriptHeaderMargin(
             virtualizer,
@@ -707,18 +716,6 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
     ) {
       this.offsetState.pendingInteractionAnchor = null;
     }
-  }
-
-  private syncRows(nextKeys: readonly string[]): void {
-    this.rowKeys = nextKeys;
-    this.rowIndexesByKey = new Map(this.rowKeys.map((key, index) => [key, index]));
-    this.appliedHeaderHeight = setTranscriptRowKeys(
-      this.virtualizer,
-      nextKeys,
-      this.headerHeight,
-      this.appliedHeaderHeight,
-      (range) => this.initialRange.extract(range),
-    );
   }
 
   private queueLayout(): void {

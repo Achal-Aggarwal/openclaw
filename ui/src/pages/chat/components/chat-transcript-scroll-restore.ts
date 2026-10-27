@@ -117,7 +117,9 @@ export function cancelTranscriptScroll(
   state: TranscriptOffsetState,
   measureSkippedRows: () => void,
 ): void {
-  if (state.scrollCommand === null && !state.pendingScrollOffset) return;
+  if (state.scrollCommand === null && !state.pendingScrollOffset) {
+    return;
+  }
   const skippedRows = state.scrollCommand?.behavior === "smooth";
   state.scrollCommand = null;
   state.pendingScrollOffset = null;
@@ -126,7 +128,9 @@ export function cancelTranscriptScroll(
     owner.pendingScrollFrame = null;
   }
   // The smooth journey may already be automatic when its skipped sizes settle.
-  if (skippedRows) measureSkippedRows();
+  if (skippedRows) {
+    measureSkippedRows();
+  }
   const element = owner.getScrollElement();
   if (element) {
     // Cancellation is one instant replacement, never a multi-frame restoration.

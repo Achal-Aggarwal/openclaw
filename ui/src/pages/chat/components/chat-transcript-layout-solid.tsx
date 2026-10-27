@@ -225,8 +225,12 @@ export class ChatTranscriptRenderer {
     this.preparation = undefined;
   }
 
-  prepare<T>(rows: readonly TranscriptRow<T>[], request?: TranscriptPreparationRequest): boolean {
-    request ??= prepareTranscriptRows(rows.filter((row) => row.kind === "content"));
+  prepare<T>(
+    rows: readonly TranscriptRow<T>[],
+    suppliedRequest?: TranscriptPreparationRequest,
+  ): boolean {
+    const request =
+      suppliedRequest ?? prepareTranscriptRows(rows.filter((row) => row.kind === "content"));
     if (!request || request.ready()) {
       this.preparation = undefined;
       return true;
@@ -236,7 +240,9 @@ export class ChatTranscriptRenderer {
         key: request.key,
         completion: request.load(),
         retry: () => {
-          if (this.preparation !== pending) return;
+          if (this.preparation !== pending) {
+            return;
+          }
           this.preparation = undefined;
           this.invalidate();
         },
@@ -245,7 +251,9 @@ export class ChatTranscriptRenderer {
       void pending.completion.then(
         () => {
           // Re-read current rows on settlement; never publish this request's old snapshot.
-          if (this.preparation === pending) this.invalidate();
+          if (this.preparation === pending) {
+            this.invalidate();
+          }
         },
         () => {},
       ); // The retained root's error slot owns visible retry/reload.
@@ -355,8 +363,9 @@ export class ChatTranscriptRenderer {
     );
   }
 
-  render(next: TranscriptLayoutProps): HTMLDivElement {
-    const preparation = this.preparation;
+  render(candidate: TranscriptLayoutProps): HTMLDivElement {
+    let next = candidate;
+    const pendingPreparation = this.preparation;
     const binding = typeof next.presented === "boolean" ? undefined : next.presented;
     if (binding?.owner !== this.binding?.owner) {
       this.stopPresentation?.();
@@ -365,15 +374,15 @@ export class ChatTranscriptRenderer {
         : undefined;
     }
     this.binding = binding;
-    if (preparation && this.element && this.accepted) {
+    if (pendingPreparation && this.element && this.accepted) {
       // Module readiness holds rows, never the pane's current visibility.
       this.accepted = { ...this.accepted, presented: next.presented };
       this.publishPresentation?.();
       this.publish?.();
       return this.element;
     }
-    this.placeholder = preparation !== undefined;
-    if (preparation) {
+    this.placeholder = pendingPreparation !== undefined;
+    if (pendingPreparation) {
       // A first import has a visible status, but no admitted rows, maps or geometry.
       next = {
         ...next,

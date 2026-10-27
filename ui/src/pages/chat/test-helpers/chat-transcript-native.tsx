@@ -212,6 +212,7 @@ export async function mountTestTranscript(
   onTestFinished(() => {
     active = false;
     unsubscribe();
+    transcript.dispose();
   });
   transcript.start();
   renderRows(initialRows, currentPreparation);

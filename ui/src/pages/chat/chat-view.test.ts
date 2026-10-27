@@ -43,9 +43,7 @@ import { makeChatHost } from "./chat-host.test-support.ts";
 import { createChatHeaderState, renderModelControls } from "./chat-model-controls.test-support.ts";
 import { createChatModelSetupBanner } from "./chat-model-setup.ts";
 import { applyChatPendingInputs, getChatPendingInputs } from "./chat-pending-inputs.ts";
-import * as chatProgress from "./chat-progress.ts";
 import { switchChatModel, switchChatSetting } from "./chat-session.ts";
-import { groupMessages } from "./chat-thread-grouping.ts";
 import * as chatThread from "./chat-thread.ts";
 import { resetChatViewState } from "./chat-view-state.test-support.ts";
 import {
@@ -80,6 +78,7 @@ import {
 } from "./chat-view.test-helpers.ts";
 import type { ChatProps } from "./chat-view.tsx";
 import * as chatMessageConfirmation from "./components/chat-message-confirmation-view.tsx";
+import { createMessageEntry, createMessageGroup } from "./components/chat-message.test-support.ts";
 import { renderChatModelAccountControl } from "./components/chat-model-account-control.ts";
 import { expandModelProviders } from "./components/chat-model-picker.test-support.tsx";
 import { installChatComposerPickerDismissal } from "./components/chat-picker-overlay.ts";
@@ -113,24 +112,17 @@ function registerChatAttachmentPayload(
   return attachment;
 }
 
-function visibleContentForMessages(messages: unknown[]): MessageGroup["visibleContent"] {
-  const groups = groupMessages(
-    messages.map((message, index) => ({ kind: "message", key: `message:${index}`, message })),
-  );
-  if (groups.some((group) => group.kind === "group" && group.visibleContent === "non-text")) {
-    return "non-text";
-  }
-  return groups.some((group) => group.kind === "group" && group.visibleContent === "text")
-    ? "text"
-    : "none";
-}
-
-function createMessageEntry(key: string, message: unknown): MessageGroup["messages"][number] {
-  const [group] = groupMessages([{ kind: "message", key, message }]);
-  if (group?.kind !== "group") {
-    throw new Error("expected a prepared message group");
-  }
-  return expectDefined(group.messages[0], "Prepared message entry");
+function transcriptGroup(
+  id: string,
+  message: { role: string; [key: string]: unknown },
+  overrides: Omit<Partial<MessageGroup>, "messages"> & { messageKey?: string } = {},
+): MessageGroup {
+  const { messageKey = `message:${id}`, ...group } = overrides;
+  return createMessageGroup(message, group.role ?? message.role, {
+    key: `group:${id}`,
+    messages: [{ key: messageKey, message }],
+    ...group,
+  });
 }
 
 const buildChatItemsMock = vi.fn(
@@ -157,30 +149,29 @@ const buildChatItemsMock = vi.fn(
               testVirtualRole?: string;
             };
             const key = testMessage.testVirtualKey ?? String(index);
-            return {
-              kind: "group",
-              key: `group:${key}`,
-              role: testMessage.testVirtualRole ?? (index % 2 === 0 ? "user" : "assistant"),
-              messages: [createMessageEntry(`message:${key}`, message)],
-              visibleContent: visibleContentForMessages([message]),
-              timestamp: index + 1,
-              isStreaming: false,
-            };
+            return createMessageGroup(
+              message,
+              testMessage.testVirtualRole ?? (index % 2 === 0 ? "user" : "assistant"),
+              {
+                key: `group:${key}`,
+                messages: [{ key: `message:${key}`, message }],
+                timestamp: index + 1,
+              },
+            );
           }),
         );
       } else {
-        items.push({
-          kind: "group",
-          key: "group:assistant:test",
-          role: "assistant",
-          runId: (props.messages.at(-1) as { runId?: string } | undefined)?.runId,
-          messages: props.messages.map((message, index) =>
-            createMessageEntry(`message:${index}`, message),
-          ),
-          visibleContent: visibleContentForMessages(props.messages),
-          timestamp: 1,
-          isStreaming: false,
-        });
+        items.push(
+          createMessageGroup(props.messages[0], "assistant", {
+            key: "group:assistant:test",
+            runId: (props.messages.at(-1) as { runId?: string } | undefined)?.runId,
+            messages: props.messages.map((message, index) => ({
+              key: `message:${index}`,
+              message,
+            })),
+            timestamp: 1,
+          }),
+        );
       }
     }
     // Mirrors buildChatItems: streamed text renders as a stream item; an
@@ -864,16 +855,10 @@ describe("chat transcript rendering", () => {
     const message = { role: "assistant", content: "Reply target", timestamp: 1 };
     const messages = [message];
     const stableChatItems = [
-      {
-        kind: "group",
-        key: "group:assistant:reply-callback-cache",
-        role: "assistant",
-        visibleContent: "text",
-        messages: [createMessageEntry("message:reply-callback-cache", message)],
-        timestamp: 1,
-        isStreaming: false,
-      },
-    ] as ReturnType<typeof chatThread.buildCachedChatItems>;
+      transcriptGroup("assistant:reply-callback-cache", message, {
+        messageKey: "message:reply-callback-cache",
+      }),
+    ];
     buildChatItemsMock.mockReturnValue(stableChatItems);
     const container = createComposerContainer();
     const renderWithReply = (onSetReply: typeof firstReply) => {
@@ -938,173 +923,148 @@ describe("chat transcript rendering", () => {
     expect(container.querySelector(".chat-transcript-announcement")?.textContent).toBe("");
   });
 
-  it.each(["ordinary"])(
-    "announces named attachment failures within the cap in %s assistant rows",
-    (flow) => {
-      const transcript = createTestTranscript();
-      const container = createComposerContainer();
-      const existing = {
-        testVirtualRow: true,
-        testVirtualKey: "assistant-existing",
-        testVirtualRole: "assistant",
-        role: "assistant",
-        content: "Existing answer",
-      };
-      const renderMessages = (messages: unknown[]) =>
-        renderChatInto(container, { transcript, messages });
+  it("announces named attachment failures within the cap in ordinary assistant rows", () => {
+    const transcript = createTestTranscript();
+    const container = createComposerContainer();
+    const existing = {
+      testVirtualRow: true,
+      testVirtualKey: "assistant-existing",
+      testVirtualRole: "assistant",
+      role: "assistant",
+      content: "Existing answer",
+    };
+    const renderMessages = (messages: unknown[]) =>
+      renderChatInto(container, { transcript, messages });
 
-      renderMessages([existing]);
-      expect(container.querySelector(".chat-transcript-announcement")?.textContent).toBe("");
-      const attachmentOnly = {
-        testVirtualRow: true,
-        testVirtualKey: "assistant-missing-attachment",
-        testVirtualRole: "assistant",
-        role: "assistant",
-        content: [
-          {
-            type: "attachment_error",
-            attachment: { code: "file-not-found", kind: "document", label: "missing.pdf" },
+    renderMessages([existing]);
+    expect(container.querySelector(".chat-transcript-announcement")?.textContent).toBe("");
+    const attachmentOnly = {
+      testVirtualRow: true,
+      testVirtualKey: "assistant-missing-attachment",
+      testVirtualRole: "assistant",
+      role: "assistant",
+      content: [
+        {
+          type: "attachment_error",
+          attachment: { code: "file-not-found", kind: "document", label: "missing.pdf" },
+        },
+      ],
+    };
+    renderMessages([existing, attachmentOnly]);
+    expect(container.querySelector(".chat-transcript-announcement")?.textContent).toBe(
+      "missing.pdf: Not sent. File not found. Check the path and try again.",
+    );
+
+    const mixed = {
+      testVirtualRow: true,
+      testVirtualKey: "assistant-mixed-attachments",
+      testVirtualRole: "assistant",
+      role: "assistant",
+      content: [
+        { type: "text", text: "Partial result" },
+        {
+          type: "attachment_error",
+          attachment: {
+            code: "unsupported-format",
+            kind: "document",
+            label: "settings.toml",
           },
-        ],
-      };
-      renderMessages([existing, attachmentOnly]);
-      expect(container.querySelector(".chat-transcript-announcement")?.textContent).toBe(
-        "missing.pdf: Not sent. File not found. Check the path and try again.",
-      );
+        },
+      ],
+    };
+    renderMessages([existing, attachmentOnly, mixed]);
+    const mixedAnnouncement = container.querySelector(".chat-transcript-announcement")?.textContent;
 
-      const mixed = {
-        testVirtualRow: true,
-        testVirtualKey: "assistant-mixed-attachments",
-        testVirtualRole: "assistant",
+    const runBoundary = transcriptGroup(
+      "user:attachment-run",
+      {
+        role: "user",
+        content: "Send the attachment",
+        __openclaw: { id: "user:attachment-run", idempotencyKey: "attachment-run:user" },
+      },
+      { messageKey: "user:attachment-run", timestamp: 1 },
+    );
+    const completedFailure = transcriptGroup(
+      "assistant:attachment-run",
+      {
         role: "assistant",
-        content: [
-          { type: "text", text: "Partial result" },
-          {
-            type: "attachment_error",
-            attachment: {
-              code: "unsupported-format",
-              kind: "document",
-              label: "settings.toml",
-            },
-          },
-        ],
-      };
-      renderMessages([existing, attachmentOnly, mixed]);
-      const mixedAnnouncement = container.querySelector(
-        ".chat-transcript-announcement",
-      )?.textContent;
-
-      const runBoundary = {
-        kind: "group" as const,
-        key: "group:user:attachment-run",
-        role: "user" as const,
-        visibleContent: "text" as const,
-        messages: [
-          createMessageEntry("user:attachment-run", {
-            role: "user",
-            content: "Send the attachment",
-            __openclaw: {
-              id: "user:attachment-run",
-              idempotencyKey: "attachment-run:user",
-            },
-          }),
-        ],
-        timestamp: 1,
-        isStreaming: false,
-      };
-      const completedFailure = {
-        kind: "group" as const,
-        key: "group:assistant:attachment-run",
-        role: "assistant" as const,
-        visibleContent: "non-text" as const,
-        messages: [
-          createMessageEntry("assistant:attachment-run", {
-            role: "assistant",
-            content: attachmentOnly.content,
-            runId: "attachment-run",
-          }),
-        ],
+        content: attachmentOnly.content,
+        runId: "attachment-run",
+      },
+      {
+        messageKey: "assistant:attachment-run",
         timestamp: 2,
-        isStreaming: false,
+        visibleContent: "non-text",
+        runId: "attachment-run",
+      },
+    );
+    vi.mocked(chatThread.buildCachedChatItems).mockReturnValue([
+      runBoundary,
+      completedFailure,
+    ] as ReturnType<typeof chatThread.buildCachedChatItems>);
+    renderChatInto(container, {
+      transcript,
+      messages: [runBoundary, completedFailure],
+    });
+    expect(container.querySelector(".chat-transcript-announcement")?.textContent).toBe(
+      "missing.pdf: Not sent. File not found. Check the path and try again.",
+    );
+
+    for (const [index, prose] of [
+      "Here is the requested summary. ".repeat(25),
+      `${"x".repeat(430)}🦞${"y".repeat(100)}`,
+    ].entries()) {
+      const message = {
+        role: "assistant",
+        content: [{ type: "text", text: prose }, ...attachmentOnly.content],
         runId: "attachment-run",
       };
-      vi.mocked(chatThread.buildCachedChatItems).mockReturnValue([
-        runBoundary,
-        completedFailure,
-      ] as ReturnType<typeof chatThread.buildCachedChatItems>);
-      renderChatInto(container, {
-        transcript,
-        messages: [runBoundary, completedFailure],
-      });
-      expect(container.querySelector(".chat-transcript-announcement")?.textContent).toBe(
+      const reply = {
+        ...completedFailure,
+        key: `group:assistant:long-${index}`,
+        messages: [createMessageEntry(`assistant:long-${index}`, message)],
+        isStreaming: false,
+      };
+      const items = [reply];
+      vi.mocked(chatThread.buildCachedChatItems).mockReturnValue(items);
+      renderChatInto(container, { transcript, messages: items });
+      const announcement = expectDefined(
+        container.querySelector(".chat-transcript-announcement")?.textContent,
+        "attachment failure announcement",
+      );
+      expect(announcement).toContain(
         "missing.pdf: Not sent. File not found. Check the path and try again.",
       );
+      expect(announcement).toContain(prose.slice(0, 30));
+      expect(announcement.length).toBe(index === 0 ? 500 : 499);
+      expect(announcement).not.toMatch(/[\uD800-\uDFFF]/u);
 
-      for (const [index, prose] of [
-        "Here is the requested summary. ".repeat(25),
-        `${"x".repeat(430)}🦞${"y".repeat(100)}`,
-      ].entries()) {
-        const message = {
-          role: "assistant",
-          content: [{ type: "text", text: prose }, ...attachmentOnly.content],
-          runId: "attachment-run",
-        };
-        const reply = {
-          ...completedFailure,
-          key: `group:assistant:long-${index}`,
-          messages: [createMessageEntry(`assistant:long-${index}`, message)],
-          isStreaming: flow === "active",
-        };
-        const items = flow === "ordinary" ? [reply] : [runBoundary, reply];
-        vi.mocked(chatThread.buildCachedChatItems).mockReturnValue(items);
-        renderChatInto(container, { transcript, messages: items });
-        const announcement = expectDefined(
-          container.querySelector(".chat-transcript-announcement")?.textContent,
-          "attachment failure announcement",
-        );
-        expect(announcement).toContain(
-          "missing.pdf: Not sent. File not found. Check the path and try again.",
-        );
-        expect(announcement).toContain(prose.slice(0, 30));
-        expect(announcement.length).toBe(index === 0 ? 500 : 499);
-        expect(announcement).not.toMatch(/[\uD800-\uDFFF]/u);
-
-        vi.mocked(chatThread.buildCachedChatItems).mockReturnValue([
-          ...items.slice(0, -1),
-          { ...reply, messages: [createMessageEntry(`assistant:long-${index}`, mixed)] },
-        ]);
-        renderChatInto(container, { transcript, messages: [mixed] });
-        expect(container.querySelector(".chat-transcript-announcement")?.textContent).toBe(
-          announcement,
-        );
-      }
-      expect(mixedAnnouncement).toBe(
-        "settings.toml: Not sent. Rejected by the local attachment allowlist. Send a supported file type. Partial result",
+      vi.mocked(chatThread.buildCachedChatItems).mockReturnValue([
+        ...items.slice(0, -1),
+        { ...reply, messages: [createMessageEntry(`assistant:long-${index}`, mixed)] },
+      ]);
+      renderChatInto(container, { transcript, messages: [mixed] });
+      expect(container.querySelector(".chat-transcript-announcement")?.textContent).toBe(
+        announcement,
       );
-    },
-  );
+    }
+    expect(mixedAnnouncement).toBe(
+      "settings.toml: Not sent. Rejected by the local attachment allowlist. Send a supported file type. Partial result",
+    );
+  });
 
   it("announces a run preamble and its later terminal answer separately", () => {
     const transcript = createTestTranscript();
     const container = createComposerContainer();
-    const user = {
-      kind: "group",
-      key: "group:user:announcement",
-      role: "user",
-      visibleContent: "text",
-      messages: [
-        {
-          key: "message:user:announcement",
-          message: {
-            role: "user",
-            content: "Start",
-            __openclaw: { id: "user:announcement", idempotencyKey: "run-announcement:user" },
-          },
-        },
-      ],
-      timestamp: 1,
-      isStreaming: false,
-    };
+    const user = transcriptGroup(
+      "user:announcement",
+      {
+        role: "user",
+        content: "Start",
+        __openclaw: { id: "user:announcement", idempotencyKey: "run-announcement:user" },
+      },
+      { timestamp: 1 },
+    );
     const renderItems = (items: ReturnType<typeof chatThread.buildCachedChatItems>) => {
       vi.mocked(chatThread.buildCachedChatItems).mockReturnValue(items);
       renderChatInto(container, { transcript, messages: items });
@@ -1138,25 +1098,15 @@ describe("chat transcript rendering", () => {
 
     renderItems([
       user,
-      {
-        kind: "group",
-        key: "group:assistant:persisted-announcement",
-        role: "assistant",
-        visibleContent: "text",
-        messages: [
-          {
-            key: "assistant:persisted-announcement",
-            message: {
-              role: "assistant",
-              content: "Persisted narration while the run continues",
-              runId: "run-announcement",
-            },
-          },
-        ],
-        timestamp: 3,
-        isStreaming: false,
-        runId: "run-announcement",
-      },
+      transcriptGroup(
+        "assistant:persisted-announcement",
+        {
+          role: "assistant",
+          content: "Persisted narration while the run continues",
+          runId: "run-announcement",
+        },
+        { messageKey: "assistant:persisted-announcement", timestamp: 3, runId: "run-announcement" },
+      ),
       {
         kind: "reading-indicator",
         key: "reading:persisted-announcement",
@@ -1173,45 +1123,25 @@ describe("chat transcript rendering", () => {
     renderItems([
       user,
       { ...stream, isStreaming: false },
-      {
-        kind: "group",
-        key: "group:tool:announcement",
-        role: "tool",
-        visibleContent: "text",
-        messages: [
-          {
-            key: "tool:announcement",
-            message: {
-              role: "toolResult",
-              content: "Tool output",
-              runId: "run-announcement",
-            },
-          },
-        ],
-        timestamp: 3,
-        isStreaming: false,
-        runId: "run-announcement",
-      },
-      {
-        kind: "group",
-        key: "group:assistant:announcement",
-        role: "assistant",
-        visibleContent: "text",
-        messages: [
-          {
-            key: "assistant:announcement",
-            message: {
-              role: "assistant",
-              phase: "final_answer",
-              content: "Terminal answer",
-              runId: "run-announcement",
-            },
-          },
-        ],
-        timestamp: 4,
-        isStreaming: false,
-        runId: "run-announcement",
-      },
+      transcriptGroup(
+        "tool:announcement",
+        {
+          role: "toolResult",
+          content: "Tool output",
+          runId: "run-announcement",
+        },
+        { messageKey: "tool:announcement", role: "tool", timestamp: 3, runId: "run-announcement" },
+      ),
+      transcriptGroup(
+        "assistant:announcement",
+        {
+          role: "assistant",
+          phase: "final_answer",
+          content: "Terminal answer",
+          runId: "run-announcement",
+        },
+        { messageKey: "assistant:announcement", timestamp: 4, runId: "run-announcement" },
+      ),
     ] as ReturnType<typeof chatThread.buildCachedChatItems>);
 
     expect(container.querySelector(".chat-transcript-announcement")?.textContent).toBe(
@@ -1429,35 +1359,17 @@ describe("chat loading skeleton", () => {
   it("releases the embedded status when later work steals ownership from an unchanged reply", async () => {
     // Rows memoize on their own item identity, so an unchanged reply that
     // stops owning the status must still re-render without it.
-    const replyGroup = {
-      kind: "group",
-      key: "group:assistant:reply",
+    const replyGroup = transcriptGroup("assistant:reply", {
       role: "assistant",
-      visibleContent: "text",
-      messages: [
-        {
-          key: "message:assistant:reply",
-          message: { role: "assistant", content: "Interim answer", timestamp: 1 },
-        },
-      ],
+      content: "Interim answer",
       timestamp: 1,
-      isStreaming: false,
-    };
+    });
     const readingIndicator = { kind: "reading-indicator", key: "reading:test", startedAt: 1 };
-    const toolGroup = {
-      kind: "group",
-      key: "group:tool:later",
+    const toolGroup = transcriptGroup("tool:later", {
       role: "tool",
-      visibleContent: "text",
-      messages: [
-        {
-          key: "message:tool:later",
-          message: { role: "tool", content: "Later tool result", timestamp: 2 },
-        },
-      ],
+      content: "Later tool result",
       timestamp: 2,
-      isStreaming: false,
-    };
+    });
     const props = {
       canAbort: true,
       messages: [{ role: "assistant", content: "Interim answer", timestamp: 1 }],
@@ -4548,15 +4460,7 @@ describe("chat transcript rendering cache", () => {
         content: surface === "history" ? text : "Interim answer",
         timestamp: 1,
       };
-      const group: MessageGroup = {
-        kind: "group",
-        key: "group:assistant:media",
-        role: "assistant",
-        visibleContent: "text",
-        messages: [createMessageEntry("message:assistant:media", message)],
-        timestamp: 1,
-        isStreaming: false,
-      };
+      const group = transcriptGroup("assistant:media", message);
       const streamPart = {
         kind: "stream" as const,
         key: "stream:media:live",

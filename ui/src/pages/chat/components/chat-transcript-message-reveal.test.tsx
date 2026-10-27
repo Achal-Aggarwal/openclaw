@@ -96,7 +96,6 @@ it.each([
       [["projection", "none", "idle at end"].includes(interruption), interruption === "new reveal"],
     );
   } finally {
-    transcript.dispose();
     vi.useRealTimers();
   }
 });

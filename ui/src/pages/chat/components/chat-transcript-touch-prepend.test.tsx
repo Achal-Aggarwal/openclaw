@@ -79,7 +79,6 @@ it.each([
       renderRows(next);
       expectRows("older");
     } finally {
-      transcript.dispose();
       vi.useRealTimers();
     }
   },

@@ -13,7 +13,11 @@ import { adjustTextareaHeight } from "./chat-composer-dom.ts";
 import { ChatPositionRail } from "./chat-position-rail-solid.tsx";
 import { message, stubRailVisibility } from "./chat-position-rail.test-support.ts";
 import { getTranscriptState } from "./chat-thread-interactions.ts";
-import { contentRows, emitTranscriptResize } from "./chat-transcript-fixture.test-support.tsx";
+import {
+  contentRows,
+  emitTranscriptResize,
+  setTranscriptGeometry,
+} from "./chat-transcript-fixture.test-support.tsx";
 import { publishTranscriptScroll } from "./chat-transcript-scroll-events.ts";
 import {
   installTranscriptDomMocks,
@@ -116,15 +120,6 @@ function part(root: ParentNode, name: string) {
   return root.querySelector<HTMLElement>(`.chat-position-rail__${name}`);
 }
 
-function measure(element: Element, values: Record<string, number | (() => number)>) {
-  for (const [key, value] of Object.entries(values)) {
-    Object.defineProperty(element, key, {
-      configurable: true,
-      ...(typeof value === "function" ? { get: value } : { value }),
-    });
-  }
-}
-
 function markerAt(root: ParentNode, id: string | number) {
   return root.querySelector<HTMLButtonElement>(
     `[data-position-marker-id="${typeof id === "number" ? `message-${id}` : id}"]`,
@@ -169,7 +164,7 @@ describe("conversation position rail", () => {
       const { flushFrame, publishVisibility, activeMessage, root, marks } = railFixture(
         "agent:main:rail-publication",
       );
-      measure(marks, { clientHeight: 240 });
+      setTranscriptGeometry(marks, { clientHeight: 240 });
       emitTranscriptResize(marks, 44, 240);
       const marker = (id: string) => markerAt(marks, id);
       const current = () => marks.querySelector<HTMLButtonElement>('[aria-current="true"]');
@@ -317,8 +312,8 @@ describe("conversation position rail", () => {
       const scrollHeight = 8912;
       let marksHeight = 283;
       let railOffset = 0;
-      measure(root, { clientHeight: () => height, scrollHeight });
-      measure(marks, { clientHeight: () => marksHeight });
+      setTranscriptGeometry(root, { clientHeight: () => height, scrollHeight });
+      setTranscriptGeometry(marks, { clientHeight: () => marksHeight });
       Object.defineProperty(marks, "scrollTop", {
         configurable: true,
         get: () => railOffset,
@@ -399,7 +394,7 @@ describe("conversation position rail", () => {
         container.classList.add("chat");
         const textarea = container.appendChild(document.createElement("textarea"));
         textarea.value = "/goal";
-        measure(textarea, {
+        setTranscriptGeometry(textarea, {
           clientHeight: 32,
           scrollHeight: () => {
             // Measuring the replacement draft commits the expanded transcript.
@@ -478,33 +473,23 @@ describe("conversation position rail", () => {
   it("resolves distant reader positions before scroll notification and counts the header once", async () => {
     transcriptDomState.measuredRowHeight = 120;
     const rows = contentRows(40, "row-", "");
-    const { container, transcript, session, renderRows } = await mountTestTranscript(
-      "rail-offset",
-      rows,
-    );
-    try {
-      measure(container, { clientHeight: 600, scrollHeight: 4880 });
-      container.style.paddingTop = "80px";
-      emitTranscriptResize(container, 800, 600);
-      const ids = rows.map((row) => row.key);
-      session.syncMessageRows(
-        new Map(ids.map((id) => [id, id])),
-        new Map(ids.map((id) => [id, id])),
-      );
-      renderRows(rows);
-      // No scroll event or render between these queries: mounted rows are stale.
-      container.scrollTop = 100;
-      expect(session.activeMessageId(ids)).toBe("row-2");
-      container.scrollTop = 3000;
-      expect(session.activeMessageId(ids)).toBe("row-26");
-      measure(container, { clientHeight: 300 });
-      expect(session.activeMessageId(ids)).toBe("row-25");
-      container.scrollTop = 4580;
-      expect(session.activeMessageId(ids)).toBe("row-39");
-      expect(session.activeMessageId(["missing"])).toBeNull();
-    } finally {
-      transcript.dispose();
-    }
+    const { container, session, renderRows } = await mountTestTranscript("rail-offset", rows);
+    setTranscriptGeometry(container, { clientHeight: 600, scrollHeight: 4880 });
+    container.style.paddingTop = "80px";
+    emitTranscriptResize(container, 800, 600);
+    const ids = rows.map((row) => row.key);
+    session.syncMessageRows(new Map(ids.map((id) => [id, id])), new Map(ids.map((id) => [id, id])));
+    renderRows(rows);
+    // No scroll event or render between these queries: mounted rows are stale.
+    container.scrollTop = 100;
+    expect(session.activeMessageId(ids)).toBe("row-2");
+    container.scrollTop = 3000;
+    expect(session.activeMessageId(ids)).toBe("row-26");
+    setTranscriptGeometry(container, { clientHeight: 300 });
+    expect(session.activeMessageId(ids)).toBe("row-25");
+    container.scrollTop = 4580;
+    expect(session.activeMessageId(ids)).toBe("row-39");
+    expect(session.activeMessageId(["missing"])).toBeNull();
   });
 
   it("keeps focused previews after pointer exit and resets interaction when the session changes", async () => {
@@ -668,7 +653,7 @@ describe("conversation position rail", () => {
     )!;
     const root = query(".chat-thread")!;
     const marks = part(container, "marks")!;
-    measure(marks, { clientHeight: 600 });
+    setTranscriptGeometry(marks, { clientHeight: 600 });
     emitTranscriptResize(marks, 44, 600);
     await settleFrames();
     expect(observed.has(streamBubble)).toBe(true);

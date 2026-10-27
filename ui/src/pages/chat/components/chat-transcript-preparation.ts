@@ -75,8 +75,12 @@ export function prepareTranscriptRows(
 ): TranscriptPreparationRequest | undefined {
   let mask = options.recap ? Kind.recap : 0;
   const messageContent = (message: unknown, questions: boolean) => {
-    if (questions && readAsyncQuestions(message)) mask |= Kind.asyncQuestions;
-    if (workspaceResultConflictFromTranscript(message)) mask |= Kind.workspaceConflict;
+    if (questions && readAsyncQuestions(message)) {
+      mask |= Kind.asyncQuestions;
+    }
+    if (workspaceResultConflictFromTranscript(message)) {
+      mask |= Kind.workspaceConflict;
+    }
   };
   const groupContent = (value: MessageGroup, renderOptions?: MessageContentOptions) => {
     // A prewarmed snapshot has no live action context yet, so valid recorded
@@ -100,14 +104,20 @@ export function prepareTranscriptRows(
   const group = (value: MessageGroup, renderOptions?: MessageContentOptions) => {
     groupContent(value, renderOptions);
     const bubbleMode = renderOptions?.bubbleMode ?? options.bubbleMode;
-    if (isSessionActivityGroup(value)) mask |= Kind.sessionActivity | Kind.forwarded;
-    else if (isActivityMessageGroup(value, bubbleMode)) mask |= Kind.activity;
-    else if (hasForwardedSource(value)) mask |= Kind.forwarded;
+    if (isSessionActivityGroup(value)) {
+      mask |= Kind.sessionActivity | Kind.forwarded;
+    } else if (isActivityMessageGroup(value, bubbleMode)) {
+      mask |= Kind.activity;
+    } else if (hasForwardedSource(value)) {
+      mask |= Kind.forwarded;
+    }
   };
   const item = (value: SystemEventRenderItem, groupOptions?: GroupOptions): void => {
     switch (value.kind) {
       case "agent-run-frame":
-        for (const part of value.parts) item(part, groupOptions);
+        for (const part of value.parts) {
+          item(part, groupOptions);
+        }
         break;
       case "group":
         group(value, groupOptions?.(value));
@@ -115,17 +125,30 @@ export function prepareTranscriptRows(
       case "activity-run":
         if (value.groups.length > 1) {
           mask |= Kind.activity;
-          for (const valueGroup of value.groups)
+          for (const valueGroup of value.groups) {
             groupContent(valueGroup, groupOptions?.(valueGroup));
-        } else if (value.groups[0]) group(value.groups[0], groupOptions?.(value.groups[0]));
+          }
+        } else if (value.groups[0]) {
+          group(value.groups[0], groupOptions?.(value.groups[0]));
+        }
         break;
       case "work-group":
         mask |= Kind.work;
         // Expanded work uses the same message-group presentation rules.
-        for (const valueGroup of value.groups) group(valueGroup, groupOptions?.(valueGroup));
+        for (const valueGroup of value.groups) {
+          group(valueGroup, groupOptions?.(valueGroup));
+        }
         break;
       case "notice":
         mask |= Kind.notice;
+        break;
+      case "divider":
+      case "message":
+      case "question":
+      case "reading-indicator":
+      case "stream":
+      case "stream-run":
+      case "system-event-group":
         break;
     }
   };
@@ -133,18 +156,24 @@ export function prepareTranscriptRows(
     switch (value.kind) {
       case "group":
         group(value.group, value.options);
-        if (value.options.turnRecap) mask |= Kind.recap;
+        if (value.options.turnRecap) {
+          mask |= Kind.recap;
+        }
         break;
       case "activity":
         mask |= Kind.activity;
-        for (const valueGroup of value.groups) groupContent(valueGroup, value.options);
+        for (const valueGroup of value.groups) {
+          groupContent(valueGroup, value.options);
+        }
         break;
       case "work":
         mask |= Kind.work;
         break;
       case "frame":
         item(value.frame, value.options.renderGroupOptions);
-        if (value.options.turnRecap) mask |= Kind.recap;
+        if (value.options.turnRecap) {
+          mask |= Kind.recap;
+        }
         break;
       case "notice":
         mask |= Kind.notice;
@@ -155,12 +184,21 @@ export function prepareTranscriptRows(
       case "realtime":
         mask |= Kind.realtime;
         break;
+      case "divider":
+      case "stream":
+      case "system-events":
+      case "typing":
+      case "wait":
+      case "work-previews":
+        break;
     }
   };
   for (const row of rows) {
-    if (row.kind === "item") item(row.item);
-    else if (row.content instanceof GuardedTranscriptItem && row.content.native)
+    if (row.kind === "item") {
+      item(row.item);
+    } else if (row.content instanceof GuardedTranscriptItem && row.content.native) {
       native(row.content.native);
+    }
   }
   return prepareTranscriptSpecializations(mask);
 }

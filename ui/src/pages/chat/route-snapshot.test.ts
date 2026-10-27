@@ -19,6 +19,7 @@ import { prewarmChatSnapshot } from "./session-snapshot-prewarm.ts";
 import { readPrewarmedChatSnapshot, SessionSnapshotStore } from "./session-snapshot-store.ts";
 import { writeSnapshotFixture } from "./session-snapshot.test-support.ts";
 
+// mock-isolation: Keep transcript renderer imports out of route-only snapshot tests.
 vi.mock("./chat-transcript-prewarm.ts", () => ({ prepareCachedTranscript: vi.fn() }));
 
 const prefix = 'scope:["ws://snapshot.example","account-a"]\u0000';
@@ -52,6 +53,35 @@ async function setup(key = sessionRouteKey, storedPrefix = prefix) {
   return fixture;
 }
 
+function locationFor(id = sessionRouteUuid) {
+  return { pathname: `/chat/roboclaw/${id}`, search: "", hash: "" };
+}
+
+function loadRoute(
+  context: Parameters<typeof loadChatRoute>[0],
+  id = sessionRouteUuid,
+  options?: Parameters<typeof loadChatRoute>[4],
+) {
+  return loadChatRoute(context, locationFor(id), "chat", new AbortController().signal, options);
+}
+
+function startRoute(context: ReturnType<typeof createSessionRouteContext>["context"]) {
+  const location = locationFor();
+  const router = createApplicationRouter();
+  context.router = router;
+  onTestFinished(() => router.stop());
+  vi.spyOn(router.getRoute("chat")!, "component").mockResolvedValue({ renderSolid: () => null });
+  return {
+    router,
+    startup: startApplicationRouter(
+      router,
+      { location: () => location, push: () => {}, replace: () => {}, listen: () => () => {} },
+      "",
+      context,
+    ),
+  };
+}
+
 it("keeps cached roster admission ahead of a prewarmed full-UUID snapshot", async () => {
   const { context, request } = await setup();
   await context.sessions.whenCachedRosterSettled();
@@ -61,12 +91,7 @@ it("keeps cached roster admission ahead of a prewarmed full-UUID snapshot", asyn
   Object.defineProperty(context.sessions, "cachedRoutingDefaults", {
     value: { mainKey: "main", scope: "per-sender" },
   });
-  const result = await loadChatRoute(
-    context,
-    { pathname: `/chat/roboclaw/${sessionRouteUuid.replaceAll("-", "")}`, search: "", hash: "" },
-    "chat",
-    new AbortController().signal,
-  );
+  const result = await loadRoute(context, sessionRouteUuid.replaceAll("-", ""));
   expect(result).toMatchObject({
     kind: "session",
     sessionKey: sessionRouteKey,
@@ -84,15 +109,7 @@ it.each([sessionRouteUuid, sessionRouteUuid.replaceAll("-", "")])(
       resolving.resolve("waiting for resolve");
       return new Promise(() => {});
     });
-    const result = await Promise.race([
-      loadChatRoute(
-        context,
-        { pathname: `/chat/roboclaw/${id}`, search: "", hash: "" },
-        "chat",
-        new AbortController().signal,
-      ),
-      resolving.promise,
-    ]);
+    const result = await Promise.race([loadRoute(context, id), resolving.promise]);
     expect(result).toMatchObject({
       kind: "session",
       sessionKey: sessionRouteKey,
@@ -126,12 +143,7 @@ it.each([
 ])("waits for authority with %s", async (_name, key, storedPrefix, id) => {
   const { context, request } = await setup(key, storedPrefix);
   request.mockResolvedValue({ ok: false });
-  const result = await loadChatRoute(
-    context,
-    { pathname: `/chat/roboclaw/${id}`, search: "", hash: "" },
-    "chat",
-    new AbortController().signal,
-  );
+  const result = await loadRoute(context, id);
   expect(result).toMatchObject({ kind: "missing-session" });
   expect(request).toHaveBeenCalled();
 });
@@ -160,13 +172,10 @@ it.each([
   },
 ])("replaces cached admission with $response", async ({ response, expected }) => {
   const { context, request } = await setup();
-  const location = { pathname: `/chat/roboclaw/${sessionRouteUuid}`, search: "", hash: "" };
-  const initial = await loadChatRoute(context, location, "chat", new AbortController().signal);
+  const initial = await loadRoute(context);
   expect(initial).toMatchObject({ kind: "session", sessionKey: sessionRouteKey });
   request.mockResolvedValue(response);
-  const result = await loadChatRoute(context, location, "chat", new AbortController().signal, {
-    sessionKey: sessionRouteKey,
-  });
+  const result = await loadRoute(context, sessionRouteUuid, { sessionKey: sessionRouteKey });
   expect(result).toMatchObject(expected);
   expect(result).not.toHaveProperty("sessionResolutionFromCache");
 });
@@ -180,12 +189,7 @@ it.each(["reconnect", "account change"])(
     const { context, request } = await setup();
     let revision = 0;
     Object.defineProperty(context.gateway, "connectionRevision", { get: () => revision });
-    const loading = loadChatRoute(
-      context,
-      { pathname: `/chat/roboclaw/${sessionRouteUuid}`, search: "", hash: "" },
-      "chat",
-      new AbortController().signal,
-    );
+    const loading = loadRoute(context);
     await vi.dynamicImportSettled();
     if (change === "reconnect") {
       revision++;
@@ -206,22 +210,7 @@ it.each([false, true])(
     request.mockImplementation(() => {
       return answer.promise;
     });
-    const router = createApplicationRouter();
-    context.router = router;
-    onTestFinished(() => router.stop());
-    vi.spyOn(router.getRoute("chat")!, "component").mockResolvedValue({ renderSolid: () => null });
-    const location = { pathname: `/chat/roboclaw/${sessionRouteUuid}`, search: "", hash: "" };
-    const startup = startApplicationRouter(
-      router,
-      {
-        location: () => location,
-        push: () => {},
-        replace: () => {},
-        listen: () => () => {},
-      },
-      "",
-      context,
-    );
+    const { router, startup } = startRoute(context);
     await startup;
     await vi.dynamicImportSettled();
     expect(request).toHaveBeenCalledOnce();
@@ -242,35 +231,23 @@ it.each([false, true])(
   "prepares cached row factories before publication and keeps failed imports retryable (failure: %s)",
   async (failure) => {
     const { context } = await setup();
-    const entered = createDeferred<void>();
-    const ready = createDeferred<void>();
+    const entered = createDeferred();
+    const ready = createDeferred();
     vi.spyOn(transcriptPrewarm, "prepareCachedTranscript").mockImplementation(() => {
       entered.resolve();
       return ready.promise;
     });
-    const router = createApplicationRouter();
-    context.router = router;
-    onTestFinished(() => router.stop());
-    vi.spyOn(router.getRoute("chat")!, "component").mockResolvedValue({ renderSolid: () => null });
-    const location = { pathname: `/chat/roboclaw/${sessionRouteUuid}`, search: "", hash: "" };
     let published = false;
-    const startup = startApplicationRouter(
-      router,
-      {
-        location: () => location,
-        push: () => {},
-        replace: () => {},
-        listen: () => () => {},
-      },
-      "",
-      context,
-    ).then(() => {
+    const startup = startRoute(context).startup.then(() => {
       published = true;
     });
     await entered.promise;
     expect(published).toBe(false);
-    if (failure) ready.reject(new Error("Renderer download failed"));
-    else ready.resolve();
+    if (failure) {
+      ready.reject(new Error("Renderer download failed"));
+    } else {
+      ready.resolve();
+    }
     await startup;
     expect(new SessionSnapshotStore().readReady(prefix + sessionRouteKey)).toEqual(snapshot);
   },

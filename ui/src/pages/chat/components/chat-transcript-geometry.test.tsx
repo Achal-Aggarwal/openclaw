@@ -322,16 +322,12 @@ it("keeps fractional observer sizes as the sole skipped-row sizing input", async
     anchorToEnd: false,
   });
   const rows = contentRows(4, "fractional:", "row");
-  const { container, transcript, renderRows } = await mountTestTranscript("fractional-rows", rows);
-  try {
-    measureRows(container, 100.375);
-    renderRows(rows);
-    expect(transcriptSize(container)).toBe(401.5);
-    for (const row of transcriptRows(container)) {
-      expect(row.style.containIntrinsicBlockSize).toBe("100.375px");
-    }
-  } finally {
-    transcript.dispose();
+  const { container, renderRows } = await mountTestTranscript("fractional-rows", rows);
+  measureRows(container, 100.375);
+  renderRows(rows);
+  expect(transcriptSize(container)).toBe(401.5);
+  for (const row of transcriptRows(container)) {
+    expect(row.style.containIntrinsicBlockSize).toBe("100.375px");
   }
 });
 
@@ -342,45 +338,41 @@ it.each([false, true])(
     transcriptDomState.measuredRowHeight = 1200;
     const rows = contentRows(1, "reply", "Reply");
     const { container, transcript, renderRows } = await mountTestTranscript("coalesced-end", rows);
-    try {
-      setTranscriptViewport(container, 1200);
-      // Native scrolling clamps without invoking the JavaScript geometry getter under test.
-      container.scrollTo = (options?: ScrollToOptions | number) => {
-        if (typeof options === "object") {
-          container.scrollTop = Math.max(0, Math.min(options.top ?? container.scrollTop, 600));
-        }
-      };
-      container.scrollTop = 600;
-      // JSDOM does not emit the browser's scroll read-back that settles initial compensation.
-      container.dispatchEvent(new Event("scroll"));
-      flushFrames();
+    setTranscriptViewport(container, 1200);
+    // Native scrolling clamps without invoking the JavaScript geometry getter under test.
+    container.scrollTo = (options?: ScrollToOptions | number) => {
+      if (typeof options === "object") {
+        container.scrollTop = Math.max(0, Math.min(options.top ?? container.scrollTop, 600));
+      }
+    };
+    container.scrollTop = 600;
+    // JSDOM does not emit the browser's scroll read-back that settles initial compensation.
+    container.dispatchEvent(new Event("scroll"));
+    flushFrames();
+    renderRows(rows);
+    flushFrames();
+    const readHeight = vi.fn(() => 1200);
+    Object.defineProperty(container, "scrollHeight", {
+      configurable: true,
+      get: readHeight,
+    });
+    for (let index = 0; index < 4; index++) {
       renderRows(rows);
-      flushFrames();
-      const readHeight = vi.fn(() => 1200);
-      Object.defineProperty(container, "scrollHeight", {
-        configurable: true,
-        get: readHeight,
-      });
-      for (let index = 0; index < 4; index++) {
-        renderRows(rows);
-      }
-      flushFrames();
-      expect(readHeight).not.toHaveBeenCalled();
+    }
+    flushFrames();
+    expect(readHeight).not.toHaveBeenCalled();
 
-      const row = requireElement(container, ".chat-virtual-row");
-      for (let index = 0; index < 4; index++) {
-        emitTranscriptResize(row, 800, 1240 + index);
-        renderRows(rows);
-      }
-      expect(readHeight).not.toHaveBeenCalled();
-      if (disconnect) {
-        transcript.dispose();
-      }
-      flushFrames();
-      expect(readHeight).toHaveBeenCalledTimes(disconnect ? 0 : 1);
-    } finally {
+    const row = requireElement(container, ".chat-virtual-row");
+    for (let index = 0; index < 4; index++) {
+      emitTranscriptResize(row, 800, 1240 + index);
+      renderRows(rows);
+    }
+    expect(readHeight).not.toHaveBeenCalled();
+    if (disconnect) {
       transcript.dispose();
     }
+    flushFrames();
+    expect(readHeight).toHaveBeenCalledTimes(disconnect ? 0 : 1);
   },
 );
 

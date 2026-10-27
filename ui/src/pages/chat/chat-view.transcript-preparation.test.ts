@@ -5,7 +5,7 @@ import * as chatProgress from "./chat-progress.ts";
 import * as chatThread from "./chat-thread.ts";
 import { resetChatViewState } from "./chat-view-state.test-support.ts";
 import { renderChatView } from "./chat-view.test-helpers.ts";
-import { createMessageEntry } from "./components/chat-message.test-support.ts";
+import { createMessageGroup } from "./components/chat-message.test-support.ts";
 import {
   RealtimeTalkConversation,
   TurnRecapRow,
@@ -56,36 +56,11 @@ describe("chat loading skeleton", () => {
   it("keeps a completed recap after later tool content", async () => {
     await TurnRecapRow.preload();
     vi.spyOn(chatThread, "buildCachedChatItems").mockReturnValueOnce([
-      {
-        kind: "group",
-        key: "group:assistant:test",
-        role: "assistant",
-        visibleContent: "text",
-        messages: [
-          createMessageEntry("message:assistant:test", {
-            role: "assistant",
-            content: "Interim answer",
-            timestamp: 1,
-          }),
-        ],
-        timestamp: 1,
-        isStreaming: false,
-      },
-      {
-        kind: "group",
-        key: "group:tool:test",
-        role: "tool",
-        visibleContent: "text",
-        messages: [
-          createMessageEntry("message:tool:test", {
-            role: "tool",
-            content: "Later tool result",
-            timestamp: 2,
-          }),
-        ],
-        timestamp: 2,
-        isStreaming: false,
-      },
+      createMessageGroup(
+        { role: "assistant", content: "Interim answer", timestamp: 1 },
+        "assistant",
+      ),
+      createMessageGroup({ role: "tool", content: "Later tool result", timestamp: 2 }, "tool"),
     ]);
     vi.spyOn(chatProgress, "resolveTurnRecap").mockReturnValue({
       runId: "run-composed",

@@ -31,7 +31,6 @@ function mockScroll(container: HTMLElement) {
   }));
 }
 
-const mounted: ReturnType<typeof createChatTranscript>[] = [];
 async function mountFollow(
   id: string,
   count = 40,
@@ -41,12 +40,10 @@ async function mountFollow(
   const rows = contentRows(count);
   const transcript = createChatTranscript(() => ownerId, options);
   const fixture = await mountTestTranscript(id, rows, transcript);
-  mounted.push(fixture.transcript);
   return { ...fixture, rows };
 }
 beforeEach(installTranscriptDomMocks);
 afterEach(() => {
-  mounted.splice(0).forEach((transcript) => transcript.dispose());
   vi.useRealTimers();
   resetTranscriptTestDom();
 });

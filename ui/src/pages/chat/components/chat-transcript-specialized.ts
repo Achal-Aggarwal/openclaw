@@ -60,7 +60,9 @@ const preload = [
 ];
 
 export function prepareTranscriptSpecializations(mask: number) {
-  if (!mask) return undefined;
+  if (!mask) {
+    return undefined;
+  }
   const indexes = modules.flatMap((_, index) => (mask & (1 << index) ? [index] : []));
   return {
     key: mask,
