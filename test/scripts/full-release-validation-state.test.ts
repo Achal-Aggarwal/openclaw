@@ -1842,13 +1842,15 @@ describe("release state artifacts", () => {
       ...base,
       gates: base.gates.map((gate: Record<string, any>) =>
         gate.name === "Qualify release npm artifacts"
-          ? { ...gate, required: true, result: "failure" }
+          ? Object.assign({}, gate, { required: true, result: "failure" })
           : gate,
       ),
     };
     sealedPlan.sha256 = releaseExecutionPlanSha256(sealedPlan);
     const effectiveGates = sealedPlan.gates.map((gate: Record<string, any>) =>
-      gate.name === "Qualify release npm artifacts" ? { ...gate, result: "success" } : gate,
+      gate.name === "Qualify release npm artifacts"
+        ? Object.assign({}, gate, { result: "success" })
+        : gate,
     );
     const decision = collectorArtifact("decision", 2, sealedPlan);
     const drain = collectorArtifact("drain", 2, sealedPlan);
