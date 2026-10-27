@@ -124,6 +124,49 @@ it.each(["personal", "env-only", "bounded-store"] as const)(
   },
 );
 
+it.each(["shared", "second"])(
+  "captures concurrent inherited authorizations for %s",
+  async (peerProfile) => {
+    await withRoot(async (root) => {
+      if (peerProfile === "second") {
+        await writeProfile("second", "second-key");
+      }
+      const peerAgentDir = path.join(root.stateDir, "agents", "peer", "agent");
+      const results = await Promise.allSettled([
+        root.capture("shared", root.agentDir, true),
+        root.capture(peerProfile, peerAgentDir),
+      ]);
+      expect(results).toMatchObject([{ status: "fulfilled" }, { status: "fulfilled" }]);
+      const [owner, peer] = results.map((result) => {
+        if (result.status === "rejected") {
+          throw result.reason;
+        }
+        return result.value;
+      });
+      expect(owner!.assertCurrent).not.toThrow();
+      expect(peer!.assertCurrent).not.toThrow();
+      owner!.dispose();
+      expect(peer!.assertCurrent).not.toThrow();
+      await peer!.revalidate();
+    });
+  },
+);
+
+it("releases capture preparation after a missing-profile refusal", async () => {
+  await withRoot(async (root) => {
+    const results = await Promise.allSettled([
+      root.capture("missing", root.agentDir, true),
+      root.capture("shared"),
+    ]);
+    expect(results[0]).toMatchObject({ status: "rejected", reason: retiredCode });
+    expect(results[1]).toMatchObject({ status: "fulfilled" });
+    if (results[1]?.status === "fulfilled") {
+      expect(results[1].value.assertCurrent).not.toThrow();
+      await results[1].value.revalidate();
+    }
+  });
+});
+
 it("enrolls inherited owners through the generic API and preserves MCP capture across processes", async () => {
   await withRoot(async (root) => {
     const authority = await root.capture("shared", root.agentDir, true);
