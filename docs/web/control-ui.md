@@ -349,16 +349,23 @@ Open group rename and **New session defaults** dialogs close when the Gateway
 reconnects or you switch connections. Reopen the group’s menu to make changes
 using the current connection.
 
-**Personal groups** organize only your sidebar, including when you are a guest.
-Use **New personal group** to name a group and select available sessions, or drag
-an existing session into a personal group. **Edit group** renames it and changes
-its members. Drag group headers to reorder them, or use **Move up** and **Move down**
-in the group menu. **Remove personal group** removes only that personal collection;
-it never deletes sessions. Pins and shared groups are independent.
+**My collections** organize only your sidebar, for solo users, members, and guests.
+The section stays out of the way until you create a collection; deliberately empty
+collections remain visible. Choose **New collection** in **Filter & sort** even
+without selecting a session, or use a session's **Add to my collections** menu to
+add a reference to an existing collection or create one with that session selected.
+Only your sidebar changes. Sessions stay in their groups.
 
-Personal groups do not grant access. Unavailable saved sessions remain hidden,
-and members outside the loaded session list resolve through the normal access-checked
-session lookup. Groups are scoped to your profile and Gateway. Connections with
+**Edit collection** renames a collection and adds or removes references. Drag an
+existing session into a collection to add a reference. Drag collection headers to
+reorder them, or use **Move up** and **Move down** in the collection menu.
+**Remove collection** removes only that personal collection; it never deletes
+sessions. Pins and shared groups are independent, and **Move to group** still
+changes shared group membership.
+
+Collections do not grant access. Unavailable saved sessions remain hidden,
+and references outside the loaded session list resolve through the normal access-checked
+session lookup. Collections are scoped to your profile and Gateway. Connections with
 general Gateway write access sync them through personal preferences. Session-only,
 read-only, and profileless connections keep their edits in that browser, like personal pins.
 

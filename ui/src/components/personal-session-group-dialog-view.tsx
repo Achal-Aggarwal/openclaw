@@ -2,11 +2,12 @@ import "./personal-session-group-dialog.css";
 import { createMemo, createSignal, For, Show } from "solid-js";
 import { t } from "../lib/reactive/i18n.ts";
 import type { PersonalSessionGroup } from "../lib/sessions/personal-groups.ts";
-import type { SidebarRecentSession } from "./app-sidebar-session-types.ts";
+import type { PersonalSessionGroupCandidate } from "./personal-session-group-actions.ts";
 
 export type PersonalSessionGroupDialogOptions = {
   group?: PersonalSessionGroup;
-  candidates: SidebarRecentSession[];
+  candidates: readonly PersonalSessionGroupCandidate[];
+  selectedKey?: string;
   signal: AbortSignal;
   submit: (value: Pick<PersonalSessionGroup, "label" | "sessionKeys">) => string | null;
 };
@@ -18,7 +19,11 @@ export function PersonalSessionGroupDialogView(props: {
   const [label, setLabel] = createSignal(() => props.options.group?.label ?? "");
   const [query, setQuery] = createSignal("");
   const [selected, setSelected] = createSignal<ReadonlySet<string>>(
-    () => new Set(props.options.group?.sessionKeys),
+    () =>
+      new Set(
+        props.options.group?.sessionKeys ??
+          (props.options.selectedKey ? [props.options.selectedKey] : []),
+      ),
   );
   const [error, setError] = createSignal<string | null>(null);
   const rows = createMemo(() =>

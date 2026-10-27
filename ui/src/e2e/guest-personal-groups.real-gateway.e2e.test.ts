@@ -195,11 +195,13 @@ suite.define(() => {
                 .locator("[data-personal-session-group]")
                 .filter({ has: page.getByRole("list", { name: label, exact: true }) });
             const create = async (label: string, member?: string) => {
-              await sidebar
-                .getByRole("button", { name: "New personal group", exact: true })
+              await sidebar.getByRole("button", { name: /^Filter & sort/ }).click();
+              await page
+                .locator(".sidebar-session-sort-menu")
+                .getByRole("button", { name: "New collection", exact: true })
                 .click();
-              const dialog = page.getByRole("dialog", { name: "New personal group", exact: true });
-              await dialog.getByLabel("Group name", { exact: true }).fill(label);
+              const dialog = page.getByRole("dialog", { name: "New collection", exact: true });
+              await dialog.getByLabel("Collection name", { exact: true }).fill(label);
               if (member) {
                 await dialog.getByRole("checkbox", { name: member, exact: true }).check();
               }
@@ -208,7 +210,7 @@ suite.define(() => {
             };
             const menu = async (label: string, action: string) => {
               await sidebar
-                .getByRole("button", { name: `Options for personal group ${label}`, exact: true })
+                .getByRole("button", { name: `Options for collection ${label}`, exact: true })
                 .click();
               await page.getByRole("menuitem", { name: action, exact: true }).click();
             };
@@ -247,9 +249,9 @@ suite.define(() => {
                 .locator("[data-personal-session-group] .sidebar-session-group-toggle")
                 .allTextContents();
             await expect.poll(order).toEqual(["Later", "Focus"]);
-            await menu("Focus", "Edit group");
-            const dialog = page.getByRole("dialog", { name: "Edit personal group", exact: true });
-            await dialog.getByLabel("Group name", { exact: true }).fill("This week");
+            await menu("Focus", "Edit collection");
+            const dialog = page.getByRole("dialog", { name: "Edit collection", exact: true });
+            await dialog.getByLabel("Collection name", { exact: true }).fill("This week");
             await dialog.getByRole("button", { name: "Save", exact: true }).click();
             await dialog.waitFor({ state: "hidden" });
             await page.reload();
@@ -264,7 +266,7 @@ suite.define(() => {
             await waitForControlUiGatewayReady(fresh);
             expect(await fresh.locator("[data-personal-session-group]").count()).toBe(0);
             await suite.closeBrowserContext(freshContext);
-            await menu("This week", "Remove personal group");
+            await menu("This week", "Remove collection");
             await expect.poll(order).toEqual(["Later"]);
             expect(await sidebar.locator(`[data-session-key="${parentKey}"]`).count()).toBe(1);
             const forbidden = new Set([

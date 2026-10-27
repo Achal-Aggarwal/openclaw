@@ -8,6 +8,7 @@ import {
   controlUiSessionUrl,
   installMockGateway,
   sessionsListResponse,
+  waitForMobileSidebarDrawerOpen,
 } from "./session-management.test-support.ts";
 import { captureFrame } from "./sidebar-assertions.test-support.ts";
 
@@ -54,55 +55,55 @@ suite.define(() => {
           await page.goto(controlUiSessionUrl(suite.server.baseUrl, key));
           const sidebar = page.locator("openclaw-app-sidebar");
           await sidebar.locator(`.sidebar-recent-session[data-session-key="${key}"]`).waitFor();
-          const heading = sidebar.locator(".personal-session-groups__heading");
-          const addGroup = heading.getByRole("button", { name: "New personal group", exact: true });
-          await addGroup.hover();
+          expect(await sidebar.locator(".personal-session-groups").count()).toBe(0);
           if (artifacts) {
-            await captureFrame(
-              artifacts,
-              process.env.OPENCLAW_PERSONAL_GROUP_PROOF_STAGE === "before"
-                ? "before.png"
-                : "add-button-hover.png",
-              page.locator(".shell"),
-              [sidebar.locator(".sidebar-sessions")],
-            );
-            console.log("Personal groups add button proof: " + artifacts);
+            await captureFrame(artifacts, "after-unused.png", page.locator(".shell"), [
+              sidebar.locator(".sidebar-sessions"),
+            ]);
           }
-          // The add button stays at the trailing edge without a row or button hover fill.
-          await expect
-            .poll(() =>
-              heading.evaluate((element) => {
-                const button = element.querySelector("button")!;
-                return Math.round(
-                  element.getBoundingClientRect().right - button.getBoundingClientRect().right,
-                );
-              }),
-            )
-            .toBe(10);
-          await expect
-            .poll(() => heading.evaluate((element) => getComputedStyle(element).backgroundColor))
-            .toBe("rgba(0, 0, 0, 0)");
-          await expect
-            .poll(() => addGroup.evaluate((element) => getComputedStyle(element).backgroundColor))
-            .toBe("rgba(0, 0, 0, 0)");
-          const hoverColor = await addGroup.evaluate((element) => getComputedStyle(element).color);
-          await page.mouse.move(900, 600);
-          await expect
-            .poll(() => addGroup.evaluate((element) => getComputedStyle(element).color))
-            .not.toBe(hoverColor);
-          await addGroup.focus();
-          await page.keyboard.press("Tab");
-          await page.keyboard.press("Shift+Tab");
-          expect(await addGroup.evaluate((element) => element.matches(":focus-visible"))).toBe(
-            true,
-          );
+          const openCollections = async (sessionKey: string) => {
+            await sidebar
+              .locator('.sidebar-recent-session[data-session-key="' + sessionKey + '"]')
+              .first()
+              .click({ button: "right" });
+            const panel = page.locator(".session-menu__panel").first();
+            await panel.waitFor({ state: "visible" });
+            // Shared organization stays present with its original guest disabled policy.
+            const move = page.getByRole("menuitem", { name: "Move to group", exact: true });
+            expect(await move.isDisabled()).toBe(scope === "operator.sessions.read");
+            await page
+              .getByRole("menuitem", { name: "Add to my collections", exact: true })
+              .hover();
+            await page.getByRole("menuitem", { name: "New collection", exact: true }).waitFor();
+          };
+          // First collection is discoverable from the native session menu, without a section.
+          await openCollections(key);
+          if (artifacts) {
+            await captureFrame(artifacts, "native-discovery.png", page.locator(".shell"), [
+              sidebar.locator(".sidebar-sessions"),
+            ]);
+          }
+          await page.getByRole("menuitem", { name: "New collection", exact: true }).click();
+          const firstDialog = page.getByRole("dialog", { name: "New collection", exact: true });
           expect(
-            await addGroup.evaluate((element) => getComputedStyle(element).outlineStyle),
-          ).not.toBe("none");
+            await firstDialog
+              .getByRole("checkbox", { name: "Reliability Tracker", exact: true })
+              .isChecked(),
+          ).toBe(true);
+          await firstDialog.getByLabel("Collection name", { exact: true }).fill("Focus");
+          if (artifacts) {
+            await captureFrame(artifacts, "creation.png", page.locator(".shell"), [firstDialog]);
+          }
+          await firstDialog.getByRole("button", { name: "Save", exact: true }).click();
+          await firstDialog.waitFor({ state: "hidden" });
           const create = async (label: string, selected?: string) => {
-            await sidebar.getByRole("button", { name: "New personal group", exact: true }).click();
-            const dialog = page.getByRole("dialog", { name: "New personal group", exact: true });
-            await dialog.getByLabel("Group name", { exact: true }).fill(label);
+            await sidebar.getByRole("button", { name: /^Filter & sort/ }).click();
+            await page
+              .locator(".sidebar-session-sort-menu")
+              .getByRole("button", { name: "New collection", exact: true })
+              .click();
+            const dialog = page.getByRole("dialog", { name: "New collection", exact: true });
+            await dialog.getByLabel("Collection name", { exact: true }).fill(label);
             if (selected) {
               await dialog.getByRole("checkbox", { name: selected, exact: true }).check();
             }
@@ -115,17 +116,19 @@ suite.define(() => {
               .filter({ has: page.getByRole("list", { name: label, exact: true }) });
           const options = async (label: string, action: string) => {
             await sidebar
-              .getByRole("button", { name: `Options for personal group ${label}`, exact: true })
+              .getByRole("button", { name: `Options for collection ${label}`, exact: true })
               .click();
             await page.getByRole("menuitem", { name: action, exact: true }).click();
           };
-          const childToggle = sidebar.locator(`[data-child-session-toggle="${key}"]`);
+          const childToggle = sidebar
+            .locator('[data-session-section="category:Engineering"]')
+            .locator(`[data-child-session-toggle="${key}"]`);
           await childToggle.waitFor();
           if ((await childToggle.getAttribute("aria-expanded")) === "false") {
             await childToggle.click();
           }
-          await sidebar.locator(`[data-session-key="${childKey}"]`).waitFor();
-          await create("Focus", "Reliability Tracker");
+          await sidebar.locator(`[data-session-key="${childKey}"]`).first().waitFor();
+
           await group("Focus")
             .getByRole("link", { name: /Reliability Tracker/ })
             .waitFor();
@@ -141,16 +144,20 @@ suite.define(() => {
             .waitFor();
           expect(await sidebar.locator(`[data-session-key="${childKey}"]`).count()).toBe(2);
           await create("Later");
-          // A guest's ordinary session drag adds a personal reference, not a shared move.
-          await sidebar
-            .locator(`.sidebar-recent-session[data-session-key="${releaseKey}"]`)
-            .dragTo(group("Focus"));
+          expect(
+            await group("Later")
+              .getByText("Drag sessions here or choose Edit collection to add them.")
+              .isVisible(),
+          ).toBe(true);
+          // Adding an existing reference is not a shared move, including for read-only guests.
+          await openCollections(releaseKey);
+          await page.getByRole("menuitem", { name: "Focus", exact: true }).click();
           await group("Focus")
             .getByRole("link", { name: /Release checklist/ })
             .waitFor();
-          await options("Focus", "Edit group");
-          const editor = page.getByRole("dialog", { name: "Edit personal group", exact: true });
-          await editor.getByLabel("Group name", { exact: true }).fill("This week");
+          await options("Focus", "Edit collection");
+          const editor = page.getByRole("dialog", { name: "Edit collection", exact: true });
+          await editor.getByLabel("Collection name", { exact: true }).fill("This week");
           await editor
             .getByRole("checkbox", { name: "Reliability Tracker", exact: true })
             .uncheck();
@@ -174,13 +181,13 @@ suite.define(() => {
             .getByRole("link", { name: /Release checklist/ })
             .waitFor();
           if (artifacts && process.env.OPENCLAW_PERSONAL_GROUP_PROOF_STAGE !== "before") {
-            await addGroup.hover();
+            await sidebar.getByRole("button", { name: "New collection", exact: true }).hover();
             await captureFrame(artifacts, "after.png", page.locator(".shell"), [
               sidebar.locator(".sidebar-sessions"),
             ]);
             console.log("Personal groups after proof: " + artifacts);
           }
-          await options("This week", "Remove personal group");
+          await options("This week", "Remove collection");
           await expect.poll(order).toEqual(["Later"]);
           expect(
             await sidebar
@@ -190,6 +197,11 @@ suite.define(() => {
           expect(
             await sidebar.locator('[data-session-section="category:Engineering"]').count(),
           ).toBe(1);
+          await options("Later", "Remove collection");
+          expect(await sidebar.locator(".personal-session-groups").count()).toBe(0);
+          await create("Empty by choice");
+          expect(await group("Empty by choice").count()).toBe(1);
+          console.log("Collection UI proof: " + artifacts);
           for (const method of [
             "sessions.patch",
             "sessions.delete",
@@ -212,6 +224,53 @@ suite.define(() => {
       );
     },
   );
+
+  it("discovers collections without a selected session and keeps native compact Back", async () => {
+    await suite.withPage({ viewport: { width: 390, height: 844 } }, async ({ page }) => {
+      const gateway = await installMockGateway(page, {
+        sessionKey: key,
+        operatorScopes: ["operator.sessions.read"],
+        sessions: [
+          createControlUiSessionRow(key, "Reliability Tracker", Date.now(), {
+            category: "Engineering",
+          }),
+        ],
+      });
+      await page.goto(suite.server.baseUrl + "new");
+      await page.getByRole("button", { name: "Expand sidebar", exact: true }).click();
+      await waitForMobileSidebarDrawerOpen(page);
+      const sidebar = page.locator("openclaw-app-sidebar:visible");
+      expect(await sidebar.locator(".personal-session-groups").count()).toBe(0);
+      await sidebar.getByRole("button", { name: /^Filter & sort/ }).click();
+      await page
+        .locator(".sidebar-session-sort-menu")
+        .getByRole("button", { name: "New collection", exact: true })
+        .click();
+      const dialog = page.getByRole("dialog", { name: "New collection", exact: true });
+      await dialog.getByLabel("Collection name", { exact: true }).fill("Reading");
+      await dialog.getByRole("button", { name: "Save", exact: true }).click();
+      await dialog.waitFor({ state: "hidden" });
+      await sidebar.getByRole("link", { name: /Reliability Tracker/ }).click({ button: "right" });
+      await page.getByRole("menuitem", { name: "Add to my collections", exact: true }).click();
+      await page.getByRole("menuitem", { name: "Back", exact: true }).waitFor();
+      if (process.env.OPENCLAW_CAPTURE_UI_PROOF === "1") {
+        const artifacts = createControlUiE2eArtifactDir("personal-collections-narrow");
+        await captureFrame(artifacts, "narrow-menu.png", page.locator(".shell"), []);
+      }
+      await page.getByRole("menuitem", { name: "Back", exact: true }).click();
+      expect(
+        await page.getByRole("menuitem", { name: "Move to group", exact: true }).isDisabled(),
+      ).toBe(true);
+      await page.getByRole("menuitem", { name: "Add to my collections", exact: true }).click();
+      await page.getByRole("menuitem", { name: "Reading", exact: true }).click();
+      await sidebar
+        .locator("[data-personal-session-group]")
+        .getByRole("link", { name: /Reliability Tracker/ })
+        .waitFor();
+      expect(await gateway.getRequests("sessions.patch")).toEqual([]);
+      expect(await gateway.getRequests("sessions.groups.put")).toEqual([]);
+    });
+  });
 
   it("selects descriptor-only groups in visible order and batches each expanded member once", async () => {
     await suite.withPage({ viewport: { width: 1280, height: 900 } }, async ({ page }) => {
@@ -369,12 +428,10 @@ suite.define(() => {
           ],
         }),
       );
-      await page
-        .getByRole("button", { name: "Options for personal group Focus", exact: true })
-        .click();
-      await page.getByRole("menuitem", { name: "Edit group", exact: true }).click();
-      const dialog = page.getByRole("dialog", { name: "Edit personal group", exact: true });
-      await dialog.getByLabel("Group name", { exact: true }).fill("Renamed");
+      await page.getByRole("button", { name: "Options for collection Focus", exact: true }).click();
+      await page.getByRole("menuitem", { name: "Edit collection", exact: true }).click();
+      const dialog = page.getByRole("dialog", { name: "Edit collection", exact: true });
+      await dialog.getByLabel("Collection name", { exact: true }).fill("Renamed");
       // The preference owner receives a newer saved layout while this editor is open.
       await evaluateControlUiContext(page, ({ navigation }) =>
         navigation.update({
@@ -386,20 +443,18 @@ suite.define(() => {
       await dialog.getByRole("button", { name: "Save", exact: true }).click();
       await dialog
         .getByRole("alert")
-        .getByText("This group changed. Reopen it before saving your edits.", { exact: true })
+        .getByText("This collection changed. Reopen it before saving your edits.", { exact: true })
         .waitFor();
       await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
       const group = page.locator('[data-personal-session-group="shared-tab"]');
       await group.getByRole("link", { name: /Release checklist/ }).waitFor();
       expect(await group.getByRole("link", { name: /Reliability Tracker/ }).count()).toBe(0);
-      await page
-        .getByRole("button", { name: "Options for personal group Focus", exact: true })
-        .click();
-      await page.getByRole("menuitem", { name: "Edit group", exact: true }).click();
+      await page.getByRole("button", { name: "Options for collection Focus", exact: true }).click();
+      await page.getByRole("menuitem", { name: "Edit collection", exact: true }).click();
       expect(
         await dialog.getByRole("checkbox", { name: "Release checklist", exact: true }).isChecked(),
       ).toBe(true);
-      await dialog.getByLabel("Group name", { exact: true }).fill("Renamed");
+      await dialog.getByLabel("Collection name", { exact: true }).fill("Renamed");
       await dialog.getByRole("button", { name: "Save", exact: true }).click();
       await group.getByRole("list", { name: "Renamed", exact: true }).waitFor();
       await group.getByRole("link", { name: /Release checklist/ }).waitFor();
@@ -422,9 +477,16 @@ suite.define(() => {
         methodResponses: { "sessions.list": sessionsListResponse(rows) },
       });
       await page.goto(controlUiSessionUrl(suite.server.baseUrl, key));
-      await page.getByRole("button", { name: "New personal group", exact: true }).click();
-      const dialog = page.getByRole("dialog", { name: "New personal group", exact: true });
-      await dialog.getByLabel("Group name", { exact: true }).fill("Long list");
+      await page
+        .locator("openclaw-app-sidebar")
+        .getByRole("button", { name: /^Filter & sort/ })
+        .click();
+      await page
+        .locator(".sidebar-session-sort-menu")
+        .getByRole("button", { name: "New collection", exact: true })
+        .click();
+      const dialog = page.getByRole("dialog", { name: "New collection", exact: true });
+      await dialog.getByLabel("Collection name", { exact: true }).fill("Long list");
       const choices = dialog.getByRole("group", { name: "Sessions", exact: true });
       await expect
         .poll(() => choices.evaluate((element) => element.scrollHeight > element.clientHeight))
@@ -488,6 +550,38 @@ suite.define(() => {
       await group.getByRole("link", { name: /Release checklist/ }).waitFor();
       expect(await group.locator(".sidebar-recent-session").count()).toBe(1);
       expect(await group.textContent()).not.toContain("unavailable");
+      await evaluateControlUiContext(page, ({ navigation }) =>
+        navigation.update({
+          personalSessionGroups: [
+            ...(navigation.snapshot.personalSessionGroups ?? []),
+            { id: "later", label: "Later", sessionKeys: [] },
+          ],
+        }),
+      );
+      const openOffPageCollections = async () => {
+        await group.getByRole("link", { name: /Release checklist/ }).click({ button: "right" });
+        await page.getByRole("menuitem", { name: "Add to my collections", exact: true }).hover();
+        await page.getByRole("menuitem", { name: "New collection", exact: true }).waitFor();
+      };
+      await openOffPageCollections();
+      await page.getByRole("menuitem", { name: "Later", exact: true }).click();
+      await page
+        .locator('[data-personal-session-group="later"]')
+        .getByRole("link", { name: /Release checklist/ })
+        .waitFor();
+      await openOffPageCollections();
+      await page.getByRole("menuitem", { name: "New collection", exact: true }).click();
+      const dialog = page.getByRole("dialog", { name: "New collection", exact: true });
+      expect(
+        await dialog.getByRole("checkbox", { name: "Release checklist", exact: true }).isChecked(),
+      ).toBe(true);
+      await dialog.getByLabel("Collection name", { exact: true }).fill("Release work");
+      await dialog.getByRole("button", { name: "Save", exact: true }).click();
+      await dialog.waitFor({ state: "hidden" });
+      await page
+        .getByRole("list", { name: "Release work", exact: true })
+        .getByRole("link", { name: /Release checklist/ })
+        .waitFor();
       await page.reload();
       await group.getByRole("link", { name: /Release checklist/ }).waitFor();
       expect(await group.locator(".sidebar-recent-session").count()).toBe(1);
