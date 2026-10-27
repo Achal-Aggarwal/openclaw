@@ -404,6 +404,7 @@
 }
 
 .chat-sender-name.person-activity-link {
+  pointer-events: auto;
   color: color-mix(in srgb, var(--chat-sender-name-color, var(--muted)) 60%, var(--text));
 }
 
@@ -571,6 +572,8 @@
   --chat-footer-disclosure-pointer-events: auto;
 }
 
+.chat-group:not(.chat-group--peer).chat-group--meta-revealed
+  :is(.chat-message-actions-row, .chat-message-footer),
 .chat-group-messages
   > :is(.chat-bubble, .chat-message--reply):is(:focus-within, .chat-bubble--actions-revealed)
   + :is(.chat-message-actions-row, .chat-message-footer),
@@ -620,6 +623,7 @@
 .chat-group-footer:hover,
 .chat-session-activity__message:hover,
 .chat-message-reactions:hover {
+  --chat-footer-detail-position: static;
   --chat-message-action-opacity: 0.6;
   --chat-message-action-pointer-events: auto;
   --chat-footer-disclosure-opacity: 1;
@@ -629,6 +633,7 @@
 .chat-group-footer:focus-within,
 .chat-session-activity__message:focus-within,
 .chat-message-reactions:focus-within {
+  --chat-footer-detail-position: static;
   --chat-message-action-opacity: 0.6;
   --chat-message-action-pointer-events: auto;
   --chat-footer-disclosure-opacity: 1;

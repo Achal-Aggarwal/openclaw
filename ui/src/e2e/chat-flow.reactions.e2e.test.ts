@@ -11,6 +11,32 @@ import { createControlUiE2eContextOptions } from "./control-ui-e2e-suite.test-su
 const suite = createChatFlowE2eSuite();
 
 suite.define(() => {
+  it.each([560, 1024])("keeps earlier own actions reachable by touch at %ipx", async (width) => {
+    await suite.withPage(
+      {
+        ...createControlUiE2eContextOptions(),
+        viewport: { width, height: 900 },
+        hasTouch: true,
+        isMobile: true,
+      },
+      async ({ page }) => {
+        await installMockGateway(page, {
+          sessionKey: "agent:main:main",
+          historyMessages: ["First note.", "Second note."].map((text, index) =>
+            chatMessage("user", text, { __openclaw: { id: "touch-" + index, seq: index + 1 } }),
+          ),
+        });
+        await page.goto(suite.server.baseUrl + "chat");
+        await page.locator(".chat-bubble").filter({ hasText: "First note." }).tap();
+        const earlier = page.locator('[data-message-actions-for="msg:id:touch-0:0"]');
+        await earlier.getByRole("button", { name: "Reply to message", exact: true }).click();
+        await expect
+          .poll(() => page.locator(".chat-reply-preview__text").textContent())
+          .toBe("First note.");
+      },
+    );
+  });
+
   it("paints saved reactions with cached messages and reconciles changes made while away", async () => {
     await suite.withPage(createControlUiE2eContextOptions(), async ({ page }) => {
       const sessionKey = "agent:main:main";
@@ -70,6 +96,8 @@ suite.define(() => {
       const identity = { type: "profile", id: "profile-avery" } as const;
       const gateway = await installMockGateway(page, {
         sessionKey,
+        authMethod: "trusted-proxy",
+        authMode: "trusted-proxy",
         presenceUsers: [{ self: true, id: identity.id, identity, name: "Avery" }],
         sessions: [{ key: sessionKey, sessionId, visibility: "shared", sharingRole: "owner" }],
         historyMessages: [
@@ -93,6 +121,7 @@ suite.define(() => {
                 seq: index + 4,
                 senderName: "Riley",
                 senderId: "profile-riley",
+                senderIdentity: { type: "profile", id: "profile-riley" },
               },
             }),
           ),
@@ -196,6 +225,23 @@ suite.define(() => {
       });
       await chip("👀", false).waitFor();
       expect(await gateway.getRequests("session.reactions.list")).toHaveLength(listRequests);
+
+      await page.getByRole("textbox", { name: "Chat composer" }).focus();
+      await ownGroup.locator(".chat-bubble").filter({ hasText: "Last own note." }).hover();
+      const finalReply = ownGroup.locator(":scope > .chat-group-footer .chat-reply-btn");
+      const replyBounds = await finalReply.boundingBox();
+      await finalReply.hover();
+      expect(await finalReply.boundingBox()).toEqual(replyBounds);
+      await finalReply.click();
+      const replyPreview = page.locator(".chat-reply-preview");
+      await expect
+        .poll(() => replyPreview.locator(".chat-reply-preview__text").textContent())
+        .toBe("Last own note.");
+      await replyPreview.getByRole("button", { name: "Cancel reply" }).click();
+      await page.getByRole("textbox", { name: "Chat composer" }).focus();
+      await page.mouse.move(0, 0);
+      await message.getByRole("link", { name: "Riley", exact: true }).click();
+      await expect.poll(() => new URL(page.url()).pathname).toBe("/activity/profile-riley");
     });
   });
 });
