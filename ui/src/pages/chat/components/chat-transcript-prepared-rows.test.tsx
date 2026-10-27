@@ -350,9 +350,9 @@ it.each([1, -1])(
     const warmedKeys = new Set(prepared.map(([row]) => row.key));
     await view.scrollTo(120);
     const nextRows = transcriptRows(view.container);
-    expect(
-      nextRows.filter((row) => warmedKeys.has(row.dataset.virtualRowKey!)).length,
-    ).toBeGreaterThan(nextRows.length / 2);
+    // The renderer mounts overscan too; leaving its edge rows cold still parses
+    // Markdown in the next scroll frame even when the viewport is prepared.
+    expect(nextRows.every((row) => warmedKeys.has(row.dataset.virtualRowKey!))).toBe(true);
   },
 );
 

@@ -269,9 +269,12 @@ export class TranscriptInitialRange {
           searchDirection = -1;
         }
       }
+      // Ordinary rows mount with overscan. Warm those neighbours as well as
+      // the viewport so its first frame does not parse the cold edge rows.
+      const overscan = warmOnly && distance ? virtualizer.options.overscan : 0;
       const origin =
         distance && predicted
-          ? predicted.index - searchDirection
+          ? predicted.index - searchDirection * (1 + overscan)
           : direction > 0
             ? range.endIndex
             : range.startIndex;
@@ -286,7 +289,7 @@ export class TranscriptInitialRange {
         velocity || warmOnly ? 8 : Math.max(0, PREPARED_ROW_LIMIT - this.activeIndexes().length);
       const lookahead =
         opposite && predicted
-          ? Math.abs(opposite.index - predicted.index) + 1
+          ? Math.abs(opposite.index - predicted.index) + 1 + 2 * overscan
           : prewarm && !moving
             ? IDLE_PREWARM_ROW_LIMIT
             : domLookahead;
