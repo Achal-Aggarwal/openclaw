@@ -7,6 +7,7 @@ import {
 } from "./inference-context.js";
 import type { CodexTurn, CodexUserInput } from "./protocol.js";
 import { prepareCodexAttemptTurnRequest } from "./run-attempt-turn-request.js";
+import { isCodexTurnContextHandoff } from "./test-support.js";
 
 const inference = vi.hoisted(() => ({
   route: undefined as { context: ReturnType<typeof createCodexInferenceContext> } | undefined,
@@ -16,7 +17,8 @@ const references = vi.hoisted(() => ({
   delivered: false,
   accepted: vi.fn(),
 }));
-vi.mock("openclaw/plugin-sdk/agent-harness-runtime", () => ({
+vi.mock("openclaw/plugin-sdk/agent-harness-runtime", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("openclaw/plugin-sdk/agent-harness-runtime")>()),
   embeddedAgentLog: { debug: vi.fn(), warn: vi.fn() },
   formatErrorMessage: String,
 }));
@@ -37,11 +39,15 @@ vi.mock("./client-runtime.js", () => ({
     },
   }),
 }));
-vi.mock("./client.js", () => ({
+vi.mock("./client.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./client.js")>()),
   isCodexAppServerIndeterminateRequestCancellationError: () => false,
 }));
 vi.mock("./explicit-skill-input.js", () => ({ resolveCodexExplicitSkillInputs: async () => [] }));
-vi.mock("./inference-routing.js", () => ({ getCodexInferenceThread: () => inference.route }));
+vi.mock("./inference-routing.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./inference-routing.js")>()),
+  getCodexInferenceThread: () => inference.route,
+}));
 vi.mock("./protocol-validators.js", () => ({
   assertCodexTurnStartResponse: (response: unknown) => response,
 }));
@@ -141,6 +147,9 @@ async function prepare(
       options.assertCurrent?.();
       if (method === "thread/turns/list") {
         return { data: [native.latest] };
+      }
+      if (method === "thread/inject_items") {
+        return {};
       }
       if (method === "turn/start") {
         native.latest = { id: "new-turn", status: "inProgress", items: [] };
@@ -266,7 +275,14 @@ describe("native acknowledged turn requests", () => {
         return response;
       });
       await expect(attempt.prepared.startCodexTurn()).rejects.toThrow(/ownership changed/);
-      expect(attempt.request.mock.calls.map(([method]) => method)).toEqual(["thread/turns/list"]);
+      expect(
+        attempt.request.mock.calls
+          .filter(
+            ([method, payload]) =>
+              method !== "thread/inject_items" || !isCodexTurnContextHandoff(payload),
+          )
+          .map(([method]) => method),
+      ).toEqual(["thread/turns/list"]);
       expect(native.latest.status).toBe("failed");
       expect(host.acceptNativeTurn).not.toHaveBeenCalled();
       expect(references.accepted).not.toHaveBeenCalled();
@@ -354,16 +370,28 @@ describe("native acknowledged turn requests", () => {
 
   it("selects the replacement thread on a fresh ordinary retry", async () => {
     const attempt = await prepare(undefined, createNativeThread(), false);
-    attempt.request.mockRejectedValueOnce(new Error("context overflow"));
+    const request = attempt.request.getMockImplementation()!;
+    let rejectTurnStart = true;
+    attempt.request.mockImplementation(async (...args) => {
+      if (args[0] === "turn/start" && rejectTurnStart) {
+        rejectTurnStart = false;
+        throw new Error("context overflow");
+      }
+      return request(...args);
+    });
     await expect(attempt.prepared.startCodexTurn()).rejects.toThrow("context overflow");
     changeSelection(attempt, "thread");
     await expect(attempt.prepared.startCodexTurn()).resolves.toMatchObject({
       turn: { turn: { id: "new-turn" } },
     });
-    expect(attempt.request.mock.calls.map(([, payload]) => payload.threadId)).toEqual([
-      "same-thread",
-      "replacement-thread",
-    ]);
+    expect(
+      attempt.request.mock.calls
+        .filter(
+          ([method, payload]) =>
+            method !== "thread/inject_items" || !isCodexTurnContextHandoff(payload),
+        )
+        .map(([, payload]) => payload.threadId),
+    ).toEqual(["same-thread", "replacement-thread"]);
     expect(references.accepted).toHaveBeenCalledOnce();
     expect(cleanup.interrupt).not.toHaveBeenCalled();
   });
@@ -409,7 +437,14 @@ describe("native acknowledged turn requests", () => {
       await expect(second.prepared.startCodexTurn()).rejects.toThrow(
         "native provider review changed",
       );
-      expect(second.request.mock.calls.map(([method]) => method)).toEqual(["thread/turns/list"]);
+      expect(
+        second.request.mock.calls
+          .filter(
+            ([method, payload]) =>
+              method !== "thread/inject_items" || !isCodexTurnContextHandoff(payload),
+          )
+          .map(([method]) => method),
+      ).toEqual(["thread/turns/list"]);
       expect(freshHost.acceptNativeTurn).not.toHaveBeenCalled();
       expect(cleanup.interrupt).toHaveBeenCalledTimes(1);
     },

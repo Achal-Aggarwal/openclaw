@@ -67,3 +67,27 @@ finish its turn while that approval is still waiting.
 Set `codexDynamicToolsLoading: "direct"` only when connecting to a custom
 Codex app-server that cannot search deferred dynamic tools or when debugging
 the full tool payload.
+
+## Protected conversation continuity
+
+While native work protects a thread, OpenClaw retains its accepted tool declarations.
+Those declarations do not grant execution: current tools must still match the
+accepted description and canonical JSON schema after preparation. Registered
+fallback executors are not used to recover protected declarations.
+Changing object-key order is compatible; changing the declaration is not. Invalid
+saved catalog receipts stop reuse without replacing the thread or repairing its receipt.
+
+Inbound and private-completion producers identify their exact transient conversation
+context within `extraSystemPrompt`. Codex delivers the complete current snapshot,
+together with current tool bindings, through the existing parent-local inference
+relay. Managed inference receives it on every admitted parent request, including
+immediate post-compaction continuation.
+
+Without a parent-local inference relay, OpenClaw also keeps the initial conversation
+snapshot in creation policy. A protected thread refuses a changed creation snapshot
+instead of replacing or borrowing that thread. This baseline does not add a native
+per-turn developer handoff without the relay, so native compaction can discard
+conversation context before the host can refresh it. No new durable cache is added.
+Configured conversation policy, execution hints, and caller-added instructions
+remain part of persistent thread identity. Invalid or stale annotations leave the
+full prompt persistent. Other harnesses still receive the complete prompt unchanged.
