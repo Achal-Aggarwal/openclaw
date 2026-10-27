@@ -6,7 +6,7 @@ import "../../test-utils/prepare-compiled-subprocesses.js";
 import { SANDBOX_DOCKER_EXPLICIT_ENV_POLICY_EPOCH } from "./config-hash.js";
 import { SANDBOX_DOCKER_CREATE_ARGS_EPOCH } from "./constants.js";
 import { createSandboxContainerTestHarness } from "./docker.create.test-helpers.js";
-import { collectDockerFlagValues } from "./test-args.js";
+import { collectDockerFlagValues as flags } from "./test-args.js";
 import {
   ensureReadOnlyWorkspaceSkillMountSources,
   SANDBOX_MOUNT_FORMAT_VERSION,
@@ -21,20 +21,29 @@ describe("ensureSandboxContainer recreation and managed mounts", () => {
     usePodmanMachine,
     createSandboxConfig,
     computeTestSandboxHash,
-    ensureSandboxCreateCallForTest,
+    ensureSandboxCreateCallForTest: createContainer,
+    ensureSandboxContainer: ensure,
     resolveDockerSourceNamespace,
   } = harness;
 
-  const containerParams = (
-    cfg: Parameters<typeof harness.ensureSandboxContainer>[0]["cfg"],
-    workspaceDir = "/tmp/workspace",
-  ) => ({ scopeKey: "shared", workspaceDir, agentWorkspaceDir: workspaceDir, cfg });
-  const podmanParams = (cfg: Parameters<typeof containerParams>[0], workspaceDir?: string) => ({
+  type Config = Parameters<typeof ensure>[0]["cfg"];
+  const containerParams = (cfg: Config, workspaceDir = "/tmp/workspace") => ({
+    scopeKey: "shared",
+    workspaceDir,
+    agentWorkspaceDir: workspaceDir,
+    cfg,
+  });
+  const podmanParams = (cfg: Config, workspaceDir?: string) => ({
     ...containerParams(cfg, workspaceDir),
     engine: harness.PODMAN_SANDBOX_ENGINE,
   });
-  const createPodman = (cfg: Parameters<typeof containerParams>[0], workspaceDir: string) =>
-    ensureSandboxCreateCallForTest(podmanParams(cfg, workspaceDir));
+  const createPodman = (cfg: Config, workspaceDir: string) =>
+    createContainer(podmanParams(cfg, workspaceDir));
+  const workspace = () => {
+    const workspaceDir = tempDirs.make("openclaw-docker-mounts-");
+    const cfg = createSandboxConfig([], [`${workspaceDir}:/workspace:rw`]);
+    return { workspaceDir, cfg, params: containerParams(cfg, workspaceDir) };
+  };
   const calls = (operation: string) =>
     spawnState.calls.filter((call) => call.args[0] === operation);
   const mount = (Source: string, Destination: string, RW = true, Type = "bind") => ({
@@ -48,10 +57,7 @@ describe("ensureSandboxContainer recreation and managed mounts", () => {
       false,
     );
   };
-  const recordContainer = (
-    cfg: Parameters<typeof containerParams>[0],
-    entry: Record<string, unknown>,
-  ) =>
+  const recordContainer = (cfg: Config, entry: Record<string, unknown>) =>
     registryMocks.readRegistryEntry.mockResolvedValue({
       containerName: "oc-test-shared",
       sessionKey: "shared",
@@ -68,7 +74,7 @@ describe("ensureSandboxContainer recreation and managed mounts", () => {
     registryMocks.readRegistryEntry.mockResolvedValue(null);
   };
 
-  const hashInput = (cfg: Parameters<typeof containerParams>[0], workspaceDir: string) => ({
+  const hashInput = (cfg: Config, workspaceDir: string) => ({
     docker: cfg.docker,
     workspaceAccess: cfg.workspaceAccess,
     workspaceDir,
@@ -78,15 +84,9 @@ describe("ensureSandboxContainer recreation and managed mounts", () => {
   });
 
   it("serializes provisioning and inspects each admitted container once", async () => {
-    const workspaceDir = tempDirs.make("openclaw-docker-mounts-");
-    const cfg = createSandboxConfig([], [`${workspaceDir}:/workspace:rw`]);
+    const { params } = workspace();
     prepareCreation(true);
-
-    const params = containerParams(cfg, workspaceDir);
-    const [first, second] = await Promise.all([
-      harness.ensureSandboxContainer(params),
-      harness.ensureSandboxContainer(params),
-    ]);
+    const [first, second] = await Promise.all([ensure(params), ensure(params)]);
 
     expect(first).toMatchObject({
       containerName: "oc-test-shared",
@@ -164,7 +164,7 @@ describe("ensureSandboxContainer recreation and managed mounts", () => {
           spawnState.labelHash = "stale-hash";
 
           await expect(
-            harness.ensureSandboxContainer({
+            ensure({
               ...(backendId === "podman" ? { engine: harness.PODMAN_SANDBOX_ENGINE } : {}),
               ...containerParams(cfg, workspaceDir),
             }),
@@ -193,13 +193,12 @@ describe("ensureSandboxContainer recreation and managed mounts", () => {
   );
 
   it("uses the canonical non-shared scope for Docker names, labels, and registry identity", async () => {
-    const workspaceDir = tempDirs.make("openclaw-docker-mounts-");
-    const cfg = createSandboxConfig([], [`${workspaceDir}:/workspace:rw`]);
+    const { workspaceDir, cfg } = workspace();
     cfg.scope = "agent";
     prepareCreation(true);
     const scopeKey = `agent:poly:workspace:${"a".repeat(32)}`;
 
-    const createCall = await ensureSandboxCreateCallForTest({ cfg, workspaceDir, scopeKey });
+    const createCall = await createContainer({ cfg, workspaceDir, scopeKey });
 
     const containerName = createCall.args[createCall.args.indexOf("--name") + 1];
     expect(containerName).toMatch(/^oc-test-workspace-[a-f0-9]{32}$/);
@@ -211,20 +210,17 @@ describe("ensureSandboxContainer recreation and managed mounts", () => {
   });
 
   it("rejects a hot stale container when current config is required", async () => {
-    const workspaceDir = tempDirs.make("openclaw-docker-mounts-");
-    const cfg = createSandboxConfig([], [`${workspaceDir}:/workspace:rw`], "rw", {});
+    const { cfg, params } = workspace();
+    cfg.docker.env = {};
     spawnState.labelHash = "stale-hash";
     recordContainer(cfg, {
       lastUsedAtMs: Date.now(),
       configHash: "stale-hash",
     });
 
-    await expect(
-      harness.ensureSandboxContainer({
-        ...containerParams(cfg, workspaceDir),
-        requireCurrentConfig: true,
-      }),
-    ).rejects.toThrow("restricted dispatch requires the current container config");
+    await expect(ensure({ ...params, requireCurrentConfig: true })).rejects.toThrow(
+      "restricted dispatch requires the current container config",
+    );
     expectNoMutation();
     expect(registryMocks.updateRegistry).not.toHaveBeenCalled();
   });
@@ -247,14 +243,14 @@ describe("ensureSandboxContainer recreation and managed mounts", () => {
     spawnState.labelHash = oldHash;
     recordContainer(cfg, { configHash: oldHash });
 
-    const createCall = await ensureSandboxCreateCallForTest({ cfg, workspaceDir });
+    const createCall = await createContainer({ cfg, workspaceDir });
     expect(createCall.args).toContain(`openclaw.configHash=${newHash}`);
     expect(createCall.args).not.toContain("--env");
     expect(createCall.envFileContents).toContain("LANG=C.UTF-8\n");
     expect(createCall.envFileContents).toContain("GEMINI_API_KEY=dummy-gemini\n");
     expect(createCall.args.join(" ")).not.toContain("dummy-gemini");
     expect(createCall.envFileContents).toContain("OPENCLAW_CLI=1\n");
-    const envFile = collectDockerFlagValues(createCall.args, "--env-file")[0];
+    const envFile = flags(createCall.args, "--env-file")[0];
     expect(envFile).toBeDefined();
     expect(fs.existsSync(envFile!)).toBe(false);
 
@@ -271,9 +267,7 @@ describe("ensureSandboxContainer recreation and managed mounts", () => {
     spawnState.createError =
       'Error: lookup init binary: exec: "catatonit": executable file not found in $PATH\n';
 
-    const error = await harness
-      .ensureSandboxContainer(podmanParams(cfg, workspaceDir))
-      .catch((caught: unknown) => caught);
+    const error = await ensure(podmanParams(cfg, workspaceDir)).catch((caught: unknown) => caught);
 
     expect(error).toBeInstanceOf(Error);
     expect(error).toMatchObject({
@@ -287,9 +281,9 @@ describe("ensureSandboxContainer recreation and managed mounts", () => {
     expect(create.command).toBe("podman");
     expect(create.args.filter((arg) => arg === "--init")).toHaveLength(1);
     expect(create.args).toContain("--read-only");
-    expect(collectDockerFlagValues(create.args, "--network")).toEqual(["none"]);
-    expect(collectDockerFlagValues(create.args, "--cap-drop")).toEqual(["ALL"]);
-    expect(collectDockerFlagValues(create.args, "--security-opt")).toContain("no-new-privileges");
+    expect(flags(create.args, "--network")).toEqual(["none"]);
+    expect(flags(create.args, "--cap-drop")).toEqual(["ALL"]);
+    expect(flags(create.args, "--security-opt")).toContain("no-new-privileges");
     expect(
       spawnState.calls.some((call) => ["start", "exec", "rm"].includes(call.args[0] ?? "")),
     ).toBe(false);
@@ -298,7 +292,7 @@ describe("ensureSandboxContainer recreation and managed mounts", () => {
     );
     expect(registryMocks.completeSandboxRegistryReservation).not.toHaveBeenCalled();
     expect(registryMocks.removeRegistryEntry).not.toHaveBeenCalled();
-    const envFile = collectDockerFlagValues(create.args, "--env-file")[0];
+    const envFile = flags(create.args, "--env-file")[0];
     expect(envFile).toBeDefined();
     expect(fs.existsSync(envFile!)).toBe(false);
   });
@@ -312,17 +306,13 @@ describe("ensureSandboxContainer recreation and managed mounts", () => {
     const createCall = await createPodman(cfg, workspaceDir);
 
     expect(createCall.command).toBe("podman");
-    expect(collectDockerFlagValues(createCall.args, "--userns")).toEqual([
-      "keep-id:uid=1001,gid=1002",
-    ]);
-    expect(collectDockerFlagValues(createCall.args, "--user")).toEqual(["1001:1002"]);
+    expect(flags(createCall.args, "--userns")).toEqual(["keep-id:uid=1001,gid=1002"]);
+    expect(flags(createCall.args, "--user")).toEqual(["1001:1002"]);
     expect(createCall.args).toEqual(
       expect.arrayContaining(["--http-proxy=false", "--init", "--read-only-tmpfs=true"]),
     );
-    expect(collectDockerFlagValues(createCall.args, "--tmpfs")).toEqual(["/tmp", "/var/tmp"]);
-    expect(collectDockerFlagValues(createCall.args, "-v")).toContain(
-      `${workspaceDir}:/workspace:z`,
-    );
+    expect(flags(createCall.args, "--tmpfs")).toEqual(["/tmp", "/var/tmp"]);
+    expect(flags(createCall.args, "-v")).toContain(`${workspaceDir}:/workspace:z`);
     const update = registryMocks.updateRegistry.mock.calls.at(-1)?.[0];
     expect(update?.backendId).toBe("podman");
     expect(update?.backendTarget).toEqual({ key: "local", globalArgs: [] });
@@ -347,7 +337,7 @@ describe("ensureSandboxContainer recreation and managed mounts", () => {
       cfg.docker.gpus = gpus;
       spawnState.podmanInfo = `${rootless}\tfalse\t\t${version}\n`;
       prepareCreation();
-      await expect(harness.ensureSandboxContainer(podmanParams(cfg))).rejects.toThrow(error);
+      await expect(ensure(podmanParams(cfg))).rejects.toThrow(error);
       expect(spawnState.calls).not.toContainEqual(
         expect.objectContaining({ command: "podman", args: expect.arrayContaining(["create"]) }),
       );
@@ -381,7 +371,7 @@ describe("ensureSandboxContainer recreation and managed mounts", () => {
         backendTarget,
         lastUsedAtMs: 1,
       });
-      const operation = harness.ensureSandboxContainer(podmanParams(cfg));
+      const operation = ensure(podmanParams(cfg));
       const createCall = expect.objectContaining({
         command: "podman",
         globalArgs: [],
@@ -417,8 +407,7 @@ describe("ensureSandboxContainer recreation and managed mounts", () => {
   );
 
   it("invalidates a Podman container when the same tmpfs list becomes explicit", async () => {
-    const workspaceDir = tempDirs.make("openclaw-docker-mounts-");
-    const cfg = createSandboxConfig([], [`${workspaceDir}:/workspace:rw`]);
+    const { workspaceDir, cfg } = workspace();
     const genericHash = await computeTestSandboxHash({
       ...hashInput(cfg, workspaceDir),
       dockerEnvPolicyEpoch: harness.resolveDockerEnvPolicyEpoch(cfg.docker.env),
@@ -435,7 +424,7 @@ describe("ensureSandboxContainer recreation and managed mounts", () => {
     });
 
     await expect(
-      harness.ensureSandboxContainer({
+      ensure({
         ...podmanParams(cfg, workspaceDir),
         scopeKey: "agent:main:session-1",
       }),
@@ -474,11 +463,9 @@ describe("ensureSandboxContainer recreation and managed mounts", () => {
     ]);
     spawnState.containerExists = false;
     registryMocks.readRegistryEntry.mockResolvedValue(null);
-    await harness.ensureSandboxContainer(params);
+    await ensure(params);
     const firstHash = spawnState.labelHash;
-    spawnState.mounts = JSON.stringify([
-      { Type: "bind", Source: "/host/first", Destination: "/workspace", RW: true },
-    ]);
+    spawnState.mounts = JSON.stringify([mount("/host/first", "/workspace")]);
     registryMocks.readRegistryEntry.mockResolvedValue({
       containerName: "oc-test-shared",
       lastUsedAtMs: Date.now(),
@@ -488,18 +475,14 @@ describe("ensureSandboxContainer recreation and managed mounts", () => {
       { type: "bind", source: "/host/second", destination: workspaceDir, writable: true },
     ]);
     spawnState.calls.length = 0;
-    await expect(harness.ensureSandboxContainer(params)).rejects.toThrow(
-      "Recreate first: openclaw sandbox recreate --all",
-    );
+    await expect(ensure(params)).rejects.toThrow("Recreate first: openclaw sandbox recreate --all");
     expectNoMutation();
     expect(spawnState.labelHash).toBe(firstHash);
     spawnState.inspectRunning = false;
-    await harness.ensureSandboxContainer(params);
+    await ensure(params);
     expect(spawnState.calls.some((call) => call.args[0] === "rm")).toBe(true);
     expect(spawnState.labelHash).not.toBe(firstHash);
-    expect(collectDockerFlagValues(calls("create")[0]?.args ?? [], "-v")).toContain(
-      "/host/second:/workspace:z",
-    );
+    expect(flags(calls("create")[0]?.args ?? [], "-v")).toContain("/host/second:/workspace:z");
   });
 
   it.each([
@@ -529,7 +512,7 @@ describe("ensureSandboxContainer recreation and managed mounts", () => {
         ...(backendId === "podman" ? { engine: harness.PODMAN_SANDBOX_ENGINE } : {}),
       };
       prepareCreation(true);
-      await harness.ensureSandboxContainer(params);
+      await ensure(params);
       spawnState.mounts = JSON.stringify([
         mount(
           scenario === "user source change" ? `${workspaceDir}/previous` : workspaceDir,
@@ -568,7 +551,7 @@ describe("ensureSandboxContainer recreation and managed mounts", () => {
       spawnState.calls.length = 0;
       try {
         if (!replace) {
-          await expect(harness.ensureSandboxContainer(params)).rejects.toThrow(
+          await expect(ensure(params)).rejects.toThrow(
             scenario === "restricted dispatch"
               ? "restricted dispatch requires"
               : "Sandbox mounts changed",
@@ -576,7 +559,7 @@ describe("ensureSandboxContainer recreation and managed mounts", () => {
           expectNoMutation();
           return;
         }
-        await expect(harness.ensureSandboxContainer(params)).resolves.toMatchObject({
+        await expect(ensure(params)).resolves.toMatchObject({
           currentConfig: true,
         });
       } finally {
@@ -584,7 +567,7 @@ describe("ensureSandboxContainer recreation and managed mounts", () => {
         persistent?.mockRestore();
       }
       expect(calls("rm")).toHaveLength(1);
-      expect(collectDockerFlagValues(calls("create")[0]!.args, "-v")).toEqual(
+      expect(flags(calls("create")[0]!.args, "-v")).toEqual(
         expect.arrayContaining([
           `${workspaceDir}:/workspace:z`,
           `${workspaceDir}/skills:/workspace/skills:ro,z`,
@@ -603,24 +586,22 @@ describe("ensureSandboxContainer recreation and managed mounts", () => {
     const params = podmanParams(cfg, workspaceDir);
     spawnState.containerExists = false;
     registryMocks.readRegistryEntry.mockResolvedValue(null);
-    await harness.ensureSandboxContainer(params);
+    await ensure(params);
     const firstHash = spawnState.labelHash;
-    spawnState.mounts = JSON.stringify([
-      { Type: "bind", Source: workspaceDir, Destination: "/workspace", RW: true },
-    ]);
+    spawnState.mounts = JSON.stringify([mount(workspaceDir, "/workspace")]);
     spawnState.tmpfs = { "/workspace/cache": "rw,nosuid,nodev" };
     cfg.docker.env = { CHANGED: "1" };
-    await expect(harness.ensureSandboxContainer(params)).resolves.toBeDefined();
+    await expect(ensure(params)).resolves.toBeDefined();
     cfg.docker.tmpfs = [];
     spawnState.calls.length = 0;
-    await expect(harness.ensureSandboxContainer(params)).rejects.toThrow("Sandbox mounts changed");
+    await expect(ensure(params)).rejects.toThrow("Sandbox mounts changed");
     expectNoMutation();
     expect(spawnState.labelHash).toBe(firstHash);
     spawnState.inspectRunning = false;
-    await harness.ensureSandboxContainer(params);
+    await ensure(params);
     const create = calls("create")[0];
     expect(create).toBeDefined();
-    expect(collectDockerFlagValues(create!.args, "--tmpfs")).not.toContain("/workspace/cache:rw");
+    expect(flags(create!.args, "--tmpfs")).not.toContain("/workspace/cache:rw");
     expect(spawnState.labelHash).not.toBe(firstHash);
   });
 
@@ -635,7 +616,7 @@ describe("ensureSandboxContainer recreation and managed mounts", () => {
     cfg.docker.dangerouslyAllowExternalBindSources = true;
     prepareCreation();
     const createCall = await createPodman(cfg, workspaceDir);
-    const bindArgs = collectDockerFlagValues(createCall.args, "-v");
+    const bindArgs = flags(createCall.args, "-v");
     expect(createCall.command).toBe("podman");
     expect(bindArgs).not.toContain(customMount);
     expect(bindArgs).toContain(`${path.join(workspaceDir, "skills")}:/workspace/skills:ro,z`);
