@@ -3,11 +3,12 @@ import path from "node:path";
 import { expect, it } from "vitest";
 import { createControlUiE2eArtifactDir } from "../test-helpers/control-ui-e2e-artifacts.ts";
 import { defaultControlUiFeatureMethods } from "../test-helpers/control-ui-e2e.ts";
-import { createChatFlowE2eSuite, installMockGateway } from "./chat-flow.test-support.ts";
 import {
-  openProgressHomeDock,
-  waitForProgressScrollIdle as waitForHomeScrollIdle,
-} from "./session-progress-home.test-support.ts";
+  createChatFlowE2eSuite,
+  installMockGateway,
+  waitForTranscriptScrollIdle as waitForHomeScrollIdle,
+} from "./chat-flow.test-support.ts";
+import { openProgressHomeDock } from "./session-progress-home.test-support.ts";
 
 const captureUiProof = process.env.OPENCLAW_CAPTURE_UI_PROOF === "1";
 

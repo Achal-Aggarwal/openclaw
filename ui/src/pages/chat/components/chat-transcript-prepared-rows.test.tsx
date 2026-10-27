@@ -129,7 +129,6 @@ async function transcriptFixture(
       )
     : [];
   let presented = true;
-  let runActive = false;
   let queued = false;
   let disposed = false;
   let preparationCost = 0;
@@ -190,7 +189,6 @@ async function transcriptFixture(
     },
     initialOffset,
     undefined,
-    { isRunActive: () => runActive },
   );
   disposers.push(() => {
     disposed = true;
@@ -283,17 +281,11 @@ async function transcriptFixture(
       draw();
       await settle();
     },
-    async setRunActive(value: boolean) {
-      runActive = value;
-      draw();
-      await settle();
-    },
   };
 }
 
-it("warms active-run HTML and nearby geometry but defers distant DOM until completion", async () => {
+it("warms HTML and nearby geometry without distant DOM", async () => {
   const view = await transcriptFixture(0, true, false, "retained");
-  await view.setRunActive(true);
   const elements = view.container.querySelectorAll(".chat-virtual-row").length;
   await view.idle(0);
   for (let turn = 0; turn < 80; turn++) {
@@ -316,11 +308,6 @@ it("warms active-run HTML and nearby geometry but defers distant DOM until compl
     await view.idle();
   }
   expect(requestIdleCallback).toHaveBeenCalledTimes(idleRequests);
-
-  const prepared = view.renderRow.mock.calls.length;
-  await view.setRunActive(false);
-  await view.idle();
-  expect(view.renderRow.mock.calls.length).toBeGreaterThan(prepared);
 });
 
 it.each(["group", "frame"] as const)(
@@ -574,12 +561,13 @@ it("reuses a nearby completed row after scrolling away and back, with a bounded 
   expect(first?.isConnected).toBe(false);
 });
 
-it("fills the completed-row window across intervening non-retainable rows", async () => {
+it("keeps idle geometry nearby across intervening non-retainable rows", async () => {
   const view = await transcriptFixture(0, false, false, false, 600, false, 2);
   await view.frame(160);
-  const ahead = view.container.querySelector('[data-virtual-row-key="fragment:40"]');
+  const ahead = view.container.querySelector('[data-virtual-row-key="fragment:20"]');
   expect(ahead).not.toBeNull();
   expect(ahead!.getAttribute("data-prepared-row")).toBe("true");
+  expect(view.container.querySelector('[data-virtual-row-key="fragment:40"]')).toBeNull();
   expect(transcriptRows(view.container).length).toBeLessThan(40);
   const preparations = view.renderRow.mock.calls.length;
   await view.frame(16);
@@ -659,7 +647,7 @@ it("prepares ahead during scrolling and waits for measurement before admitting a
   expect(view.container.querySelectorAll("[data-preparing-row]")).toHaveLength(1);
 });
 
-it("warms idle geometry beyond its bounded upward DOM window", async () => {
+it("retains nearby geometry while scrolling back into the prepared window", async () => {
   const view = await transcriptFixture(null);
   await view.frame(32);
   expect(view.container.scrollTop).toBeGreaterThan(24_000);
@@ -677,7 +665,6 @@ it("warms idle geometry beyond its bounded upward DOM window", async () => {
   const ahead = view.container.querySelector('[data-virtual-row-key="fragment:235"]');
   expect(ahead).not.toBeNull();
   const preparations = view.renderRow.mock.calls.length;
-  expect(new Set(view.renderRow.mock.calls.map(([row]) => row.key)).size).toBe(256);
   expect(view.container.querySelector('[data-virtual-row-key="fragment:0"]')).toBeNull();
   const aheadPreparations = view.renderRow.mock.calls.filter(
     ([row]) => row.key === "fragment:235",
@@ -725,7 +712,6 @@ it("measures nearby rows before spending idle budgets on distant Markdown", asyn
 
 it("materializes one predicted row between scroll frames and uses the latest viewport", async () => {
   const view = await transcriptFixture(0, true, false, "retained");
-  await view.setRunActive(true);
   await view.scrollTo(3);
   const mounted = transcriptRows(view.container);
   await view.task();

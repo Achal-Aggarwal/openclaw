@@ -10,12 +10,10 @@ import {
   expectDefined,
   installMockGateway,
   chatMessage,
+  waitForTranscriptScrollIdle as waitForProgressThreadIdle,
 } from "./chat-flow.test-support.ts";
 import { createControlUiE2eContextOptions } from "./control-ui-e2e-suite.test-support.ts";
-import {
-  openProgressHomeDock,
-  waitForProgressScrollIdle as waitForProgressThreadIdle,
-} from "./session-progress-home.test-support.ts";
+import { openProgressHomeDock } from "./session-progress-home.test-support.ts";
 
 const suite = createChatFlowE2eSuite();
 const height = (card: Locator) => card.evaluate((el) => el.getBoundingClientRect().height);

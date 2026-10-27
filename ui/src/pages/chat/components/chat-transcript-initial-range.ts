@@ -45,7 +45,6 @@ export class TranscriptInitialRange {
       entry: ResizeObserverEntry | undefined,
     ) => number,
     private readonly prewarmRow?: (index: number, mode: MarkdownPrewarmMode) => boolean,
-    private readonly canSweepIdleGeometry?: () => boolean,
   ) {
     this.tailRows = initialOffset === null ? 1 : 0;
   }
@@ -295,7 +294,6 @@ export class TranscriptInitialRange {
     if (
       idleRange &&
       this.idleMeasureStep > PREPARED_ROW_LIMIT &&
-      this.canSweepIdleGeometry?.() === false &&
       performance.now() - this.scrollSample.time >= 100
     ) {
       const sampledDirection = this.scrollSample.direction;
@@ -305,7 +303,7 @@ export class TranscriptInitialRange {
       const direction = inward ? -sampledDirection : sampledDirection;
       const remaining =
         direction > 0 ? this.rows.length - 1 - idleRange.endIndex : idleRange.startIndex;
-      // Streaming commits must not re-arm callbacks after the permitted sweep.
+      // Commits must not re-arm callbacks after the permitted sweep.
       // Reader movement and structural changes reset the existing cursors.
       if (this.idleStep > Math.min(IDLE_PREWARM_ROW_LIMIT, remaining)) {
         return;
@@ -378,7 +376,6 @@ export class TranscriptInitialRange {
             ? range.endIndex
             : range.startIndex;
       const rendered = new Set(virtualizer.getVirtualItems().map((row) => row.key));
-      const sweepIdleGeometry = this.canSweepIdleGeometry?.() !== false;
       const nearGeometryPending = this.idleMeasureStep <= PREPARED_ROW_LIMIT;
       if (prewarm && !moving) {
         // Measure nearby prepared rows before spending idle slices on distant HTML.
@@ -403,9 +400,9 @@ export class TranscriptInitialRange {
           this.idleStep++;
         }
       }
-      // Keep the nearest geometry ready for the first scroll, but leave the
-      // distant measurement sweep paused while a run needs the main thread.
-      if (!moving && !sweepIdleGeometry && !nearGeometryPending) {
+      // Distant DOM measurements continuously change the native extent while
+      // a reader rests. Keep nearby geometry ready and warm only HTML farther out.
+      if (!moving && !nearGeometryPending) {
         return;
       }
       // Warming covers the predicted viewport, whose row count varies with
@@ -435,7 +432,7 @@ export class TranscriptInitialRange {
         candidates < lookahead && admitted === 0;
         step++
       ) {
-        if (!moving && !sweepIdleGeometry && step > PREPARED_ROW_LIMIT) {
+        if (!moving && step > PREPARED_ROW_LIMIT) {
           break;
         }
         if (performance.now() >= deadline) {
