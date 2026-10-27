@@ -127,4 +127,3 @@ it("treats a caller-supplied deadlineAt as epoch ms", async () => {
   expect(signal?.aborted).toBe(true);
   expect(await settled).toBe("Compaction timed out");
 });
-
