@@ -325,7 +325,13 @@ export class TranscriptInitialRange {
           ? virtualizer.getVirtualItemForOffset(predictedTop + (direction > 0 ? viewport : 0))
           : undefined;
       const domLookahead =
-        velocity || warmOnly ? 8 : Math.max(0, PREPARED_ROW_LIMIT - this.activeIndexes().length);
+        velocity || warmOnly
+          ? 8
+          : Math.max(
+              0,
+              PREPARED_ROW_LIMIT -
+                this.activeIndexes().filter((index) => rows[index]?.retainDom).length,
+            );
       const lookahead =
         opposite && predicted
           ? Math.abs(opposite.index - predicted.index) + 1 + 2 * overscan
@@ -333,19 +339,27 @@ export class TranscriptInitialRange {
       let admitted = 0;
       let warmed = false;
       let canMaterialize = false;
-      for (let step = 1; step <= lookahead && admitted === 0; step++) {
+      let candidates = 0;
+      for (let step = 1; candidates < lookahead && admitted === 0; step++) {
         if (performance.now() >= deadline) {
           this.queuePreparation(warmOnly ? canMaterialize && !skipSpeculativeDom : true);
           return;
         }
         const index = origin + step * searchDirection;
-        const row = rows?.[index];
+        const row = rows[index];
+        if (!row) {
+          break;
+        }
+        // Idle capacity counts completed rows, not intervening live/widget rows.
+        if (moving || warmOnly || row.retainDom) {
+          candidates++;
+        }
         const canPrepareRow =
-          row?.retainDom && !rendered.has(row.key) && !this.preparedRowKeys.has(row.key);
+          row.retainDom && !rendered.has(row.key) && !this.preparedRowKeys.has(row.key);
         canMaterialize ||= Boolean(canPrepareRow);
         // Distant HTML must not evict the nearby fragments needed by the next scroll.
         const mode = warmOnly || step <= 8 ? "fragment" : "html";
-        if (row && prewarm && moving && !rendered.has(row.key) && this.prewarmRow?.(index, mode)) {
+        if (prewarm && moving && !rendered.has(row.key) && this.prewarmRow?.(index, mode)) {
           // The shared cache owns readiness; no DOM or range invalidation is needed.
           if (warmOnly) {
             warmed = true;
@@ -354,7 +368,7 @@ export class TranscriptInitialRange {
           this.queuePreparation();
           return;
         }
-        if (!warmOnly && step <= domLookahead && canPrepareRow) {
+        if (!warmOnly && candidates <= domLookahead && canPrepareRow) {
           if (performance.now() >= deadline) {
             this.queuePreparation();
             return;

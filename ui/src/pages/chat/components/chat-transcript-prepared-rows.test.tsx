@@ -42,6 +42,7 @@ async function transcriptFixture(
   ordinary: boolean | "retained" = false,
   viewportHeight = 600,
   completedFrame: boolean | "toolCall" = false,
+  retainStride = 1,
 ) {
   let now = 1;
   let nextFrame = 0;
@@ -93,7 +94,7 @@ async function transcriptFixture(
     key: `fragment:${index}`,
     item: index,
     estimatedSize: index === 0 && plainFirstRow ? undefined : 100,
-    retainDom: ordinary !== true && !(index === 0 && plainFirstRow),
+    retainDom: ordinary !== true && !(index === 0 && plainFirstRow) && index % retainStride === 0,
   }));
   const groups = ordinary
     ? rows.map((_, index) =>
@@ -520,6 +521,18 @@ it("reuses a nearby completed row after scrolling away and back, with a bounded 
     ).not.toBeNull();
   }
   expect(first?.isConnected).toBe(false);
+});
+
+it("fills the completed-row window across intervening non-retainable rows", async () => {
+  const view = await transcriptFixture(0, false, false, false, 600, false, 2);
+  await view.frame(160);
+  const ahead = view.container.querySelector('[data-virtual-row-key="fragment:40"]');
+  expect(ahead).not.toBeNull();
+  expect(ahead!.getAttribute("data-prepared-row")).toBe("true");
+  expect(transcriptRows(view.container).length).toBeLessThan(40);
+  const preparations = view.renderRow.mock.calls.length;
+  await view.frame(16);
+  expect(view.renderRow.mock.calls).toHaveLength(preparations);
 });
 
 it("pauses queued preparation while hidden and retires it on disconnect", async () => {
