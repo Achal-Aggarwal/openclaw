@@ -83,8 +83,17 @@ describe("Solid menu navigation", () => {
   });
 
   it.each([false, true])("refuses lazy admission without active effects (veto %s)", (veto) => {
+    const [open, setOpen] = createSignal(true);
+    const changes: boolean[] = [];
     const view = mountMenu({
       lazy: true,
+      get open() {
+        return open();
+      },
+      onOpenChange: (accepted) => {
+        changes.push(accepted);
+        setOpen(accepted);
+      },
       items: veto ? [{ id: "ready", label: "Ready" }] : [],
       onBeforeShow: (event) => {
         if (veto) {
@@ -92,6 +101,9 @@ describe("Solid menu navigation", () => {
         }
       },
     });
+    expect(changes).toEqual([false]);
+    update(() => setOpen(true));
+    expect(changes).toEqual([false, false]);
     trigger().focus();
     expect(view.handle.open()).toBe(false);
     expect(surface().matches(":popover-open")).toBe(false);
@@ -181,9 +193,15 @@ describe("Solid menu navigation", () => {
     expect(selected).toEqual(["beta", "footer"]);
   });
 
-  it("preserves native link gestures, disables unavailable links, and honors selection vetoes", async () => {
+  it("preserves native link intent, vetoes, and nested navigation to the root", async () => {
     const selected: string[] = [];
+    const navigated: { href: string; value: string }[] = [];
+    let veto = true;
     let parentContextMenus = 0;
+    const links: MenuItem[] = [
+      { id: "disabled", label: "Unavailable", href: "/new?agent=other", disabled: true },
+      { id: "new", label: "New session", href: "/new?agent=main" },
+    ];
     render(() => (
       <aside
         onContextMenu={(event) => {
@@ -194,21 +212,24 @@ describe("Solid menu navigation", () => {
         <Menu
           id="people"
           label="People"
-          items={[
-            { id: "disabled", label: "Unavailable", href: "/new?agent=other", disabled: true },
-            { id: "new", label: "New session", href: "/new?agent=main" },
-          ]}
+          items={[submenu("links", "Links", links)]}
+          onNavigate={(link) => navigated.push(link)}
           onSelect={(entry, event) => {
             selected.push(entry.id);
-            event.preventDefault();
+            if (veto) {
+              event.preventDefault();
+            }
           }}
         />
       </aside>
     ));
     flush();
     await openMenu();
-    const link = surface().querySelector<HTMLAnchorElement>('a[data-value="new"]')!;
-    const disabled = surface().querySelector<HTMLAnchorElement>('a[data-value="disabled"]')!;
+    await openMenu("people-links");
+    const menu = surface("people-links");
+    const link = menu.querySelector<HTMLAnchorElement>('a[data-value="new"]')!;
+    const disabled = menu.querySelector<HTMLAnchorElement>('a[data-value="disabled"]')!;
+    expect(getComputedStyle(link).cursor).toBe("pointer");
     const mouse = (target: Element, type: string, init: MouseEventInit = {}) => {
       const event = new MouseEvent(type, { bubbles: true, cancelable: true, ...init });
       target.dispatchEvent(event);
@@ -228,28 +249,45 @@ describe("Solid menu navigation", () => {
       }
       mouse(link, "click", { button: 1 });
       mouse(link, "auxclick", { button: 1 });
-      expect(prevented).toEqual(Array(6).fill(false));
+      link.target = "_blank";
+      mouse(link, "click");
+      link.target = "";
+      link.download = "session.txt";
+      mouse(link, "click");
+      link.removeAttribute("download");
+      expect(prevented).toEqual(Array(8).fill(false));
+      const canceledClick = new MouseEvent("click", { bubbles: true, cancelable: true });
+      canceledClick.preventDefault();
+      link.dispatchEvent(canceledClick);
+      expect(prevented.at(-1)).toBe(true);
+      expect(mouse(link, "contextmenu", { button: 2 }).defaultPrevented).toBe(false);
+      expect(parentContextMenus).toBe(0);
+      expect(selected).toEqual([]);
+      expect(surface().matches(":popover-open")).toBe(true);
+      expect(mouse(trigger(), "contextmenu").defaultPrevented).toBe(true);
+      expect(parentContextMenus).toBe(1);
+      expect(disabled.hasAttribute("href")).toBe(false);
+      expect(disabled).toMatchObject({ ariaDisabled: "true", tabIndex: -1 });
+      disabled.click();
+      expect(selected).toEqual([]);
+      await userEvent.click(link);
+      expect(selected).toEqual(["new"]);
+      expect(surface().matches(":popover-open")).toBe(true);
+      link.focus();
+      await userEvent.keyboard("{Enter}");
+      expect(selected).toEqual(["new", "new"]);
+      expect(surface().matches(":popover-open")).toBe(true);
+      expect(navigated).toEqual([]);
+      veto = false;
+      await userEvent.click(link);
+      expect(selected).toEqual(["new", "new", "new"]);
+      expect(navigated).toEqual([{ href: "/new?agent=main", value: "new" }]);
+      expect(prevented.at(-1)).toBe(true);
+      await phase(surface(), "hidden");
     } finally {
       window.removeEventListener("click", stopNavigation);
       window.removeEventListener("auxclick", stopNavigation);
     }
-    expect(mouse(link, "contextmenu", { button: 2 }).defaultPrevented).toBe(false);
-    expect(parentContextMenus).toBe(0);
-    expect(selected).toEqual([]);
-    expect(surface().matches(":popover-open")).toBe(true);
-    expect(mouse(trigger(), "contextmenu").defaultPrevented).toBe(true);
-    expect(parentContextMenus).toBe(1);
-    expect(disabled.hasAttribute("href")).toBe(false);
-    expect(disabled).toMatchObject({ ariaDisabled: "true", tabIndex: -1 });
-    disabled.click();
-    expect(selected).toEqual([]);
-    await userEvent.click(link);
-    expect(selected).toEqual(["new"]);
-    expect(surface().matches(":popover-open")).toBe(true);
-    link.focus();
-    await userEvent.keyboard("{Enter}");
-    expect(selected).toEqual(["new", "new"]);
-    expect(surface().matches(":popover-open")).toBe(true);
   });
 
   it("owns Tab dismissal with caller-selected focus destinations", async () => {
@@ -283,23 +321,42 @@ describe("Solid menu navigation", () => {
     expect(document.activeElement).toBe(trigger("provider"));
   });
 
-  it("reopens at the selected item with a custom root trigger and preserves navigation", async () => {
+  it("owns checkbox/radio selection, vetoes, and custom-trigger keyboard navigation", async () => {
     const [selected, setSelected] = createSignal("alpha");
+    const [notified, setNotified] = createSignal(false);
+    let veto = true;
     const choices = ["Alpha", "Beta", "Gamma"].map((label) => ({ id: label.toLowerCase(), label }));
     const view = mountMenu({
       get triggerAttributes(): MenuProps["triggerAttributes"] {
         return { id: "provider-trigger", "data-value": selected(), "aria-busy": "false" };
       },
       get items() {
-        return choices.map<MenuItem>((choice) => ({
-          id: choice.id,
-          label: choice.label,
-          type: "radio",
-          checked: choice.id === selected(),
-          attributes: { "data-initial-focus": choice.id === selected() ? "" : undefined },
-        }));
+        return [
+          ...choices.map<MenuItem>((choice) => ({
+            id: choice.id,
+            label: choice.label,
+            type: "radio",
+            checked: choice.id === selected(),
+            attributes: { "data-initial-focus": choice.id === selected() ? "" : undefined },
+          })),
+          {
+            id: "notify",
+            label: "Notify",
+            type: "checkbox",
+            checked: notified(),
+            closeOnSelect: false,
+          } satisfies MenuItem,
+        ];
       },
-      onSelect: (entry) => setSelected(entry.id),
+      onSelect: (entry, event) => {
+        if (veto) {
+          event.preventDefault();
+        } else if (entry.type === "checkbox") {
+          setNotified((value) => !value);
+        } else {
+          setSelected(entry.id);
+        }
+      },
     });
     const button = view.getByRole("button", { name: "People" });
     expect(button).toMatchObject({ id: "provider-trigger", ariaBusy: "false" });
@@ -308,6 +365,15 @@ describe("Solid menu navigation", () => {
     button.focus();
     await keyPhase("{Enter}", "open");
     expect(document.activeElement).toBe(item("Alpha"));
+    await userEvent.click(item("Beta"));
+    expect(item("Beta").getAttribute("aria-checked")).toBe("false");
+    expect(surface().matches(":popover-open")).toBe(true);
+    veto = false;
+    await userEvent.click(item("Notify"));
+    flush();
+    expect(item("Notify").getAttribute("aria-checked")).toBe("true");
+    expect(surface().matches(":popover-open")).toBe(true);
+    item("Alpha").focus();
     await userEvent.keyboard("{ArrowDown}{Enter}");
     flush();
     await phase(surface(), "hidden");
@@ -315,13 +381,14 @@ describe("Solid menu navigation", () => {
     expect(document.activeElement).toBe(button);
     await keyPhase("{Enter}", "open");
     expect(item("Beta").getAttribute("aria-checked")).toBe("true");
+    expect(item("Alpha").getAttribute("aria-checked")).toBe("false");
     expect(document.activeElement).toBe(item("Beta"));
     await press("{Home}", item("Alpha"));
-    await press("{End}", item("Gamma"));
+    await press("{End}", item("Notify"));
     await keyPhase("{Escape}", "hidden");
     expect(document.activeElement).toBe(button);
     await keyPhase("{ArrowUp}", "open");
-    expect(document.activeElement).toBe(item("Gamma"));
+    expect(document.activeElement).toBe(item("Notify"));
     await press("{Home}g", item("Gamma"));
     expect(item("Gamma").tabIndex).toBe(0);
     expect(surface().hasAttribute("aria-activedescendant")).toBe(false);
@@ -332,31 +399,28 @@ describe("Solid menu navigation", () => {
     expect(document.activeElement).toBe(button);
   });
 
-  it.each(["ArrowDown", "ArrowUp"])(
-    "skips disabled submenu triggers when opened with %s",
-    async (key) => {
-      const children = [{ id: "child", label: "Child" }];
-      mountMenu({
-        items: [
-          submenu("first", "Unavailable first", children, true),
-          { id: "enabled", label: "Enabled" },
-          submenu("last", "Unavailable last", children, true),
-        ],
-      });
-      trigger().focus();
-      await keyPhase(`{${key}}`, "open");
-      expect(document.activeElement).toBe(item("Enabled"));
-      await press("{ArrowDown}", item("Enabled"));
-      expect(trigger("people-first").getAttribute("aria-disabled")).toBe("true");
-    },
-  );
-
-  it.each(["ltr", "rtl"] as const)("preserves sibling → Back → Down in %s", async (dir) => {
-    mountMenu({ dir });
+  it.each([
+    ["ltr", false],
+    ["rtl", false],
+    ["rtl", true],
+  ] as const)("preserves live %s sibling navigation (reopen=%s)", async (dir, reopen) => {
+    const [direction, setDirection] = createSignal<"ltr" | "rtl">("ltr");
+    mountMenu({
+      get dir() {
+        return direction();
+      },
+    });
+    if (reopen) {
+      await openMenu();
+      trigger("people-assign").focus();
+      await keyPhase("{ArrowRight}", "open", "people-assign");
+      await keyPhase("{ArrowLeft}{Escape}", "hidden");
+    }
+    update(() => setDirection(dir));
     await openMenu();
-    expect(trigger("people-assign").dataset.value).toBe("assign");
-    expect(trigger("people-move").dataset.value).toBe("move");
-    await openMenu("people-assign");
+    trigger("people-assign").focus();
+    await keyPhase(dir === "ltr" ? "{ArrowRight}" : "{ArrowLeft}", "open", "people-assign");
+    expect(document.activeElement).toBe(item("Ada Rivera", "people-assign"));
     trigger("people-move").focus();
     await userEvent.keyboard(dir === "ltr" ? "{ArrowRight}" : "{ArrowLeft}");
     await phase(surface("people-move"), "open");
@@ -369,32 +433,6 @@ describe("Solid menu navigation", () => {
     await phase(surface("people-move"), "hidden");
     expect(openSurfaces()).toEqual([surface()]);
   });
-
-  it.each(["before first open", "before reopen"] as const)(
-    "keeps live RTL keyboard direction when changed %s",
-    async (when) => {
-      const [direction, setDirection] = createSignal<"ltr" | "rtl">("ltr");
-      mountMenu({
-        get dir() {
-          return direction();
-        },
-      });
-      if (when === "before reopen") {
-        await openMenu();
-        trigger("people-assign").focus();
-        await keyPhase("{ArrowRight}", "open", "people-assign");
-        await keyPhase("{ArrowLeft}{Escape}", "hidden");
-      }
-      update(() => setDirection("rtl"));
-      await openMenu();
-      trigger("people-assign").focus();
-      await keyPhase("{ArrowLeft}", "open", "people-assign");
-      expect(document.activeElement).toBe(item("Ada Rivera", "people-assign"));
-      await keyPhase("{ArrowRight}", "hidden", "people-assign");
-      expect(document.activeElement).toBe(trigger("people-assign"));
-      await press("{ArrowDown}", trigger("people-move"));
-    },
-  );
 
   it("clears search before closing the deepest branch and restores each trigger", async () => {
     mountControls((controls) => ({
@@ -534,52 +572,6 @@ describe("Solid menu navigation", () => {
     await userEvent.tab();
     await phase(surface(), "hidden");
     expect(document.activeElement).toBe(view.getByRole("button", { name: "After menu" }));
-  });
-
-  it("publishes cancelable selection and renders owner-controlled checkbox/radio state", async () => {
-    const [entries, setEntries] = createSignal<readonly MenuItem[]>([
-      { id: "notify", label: "Notify", type: "checkbox", checked: false, closeOnSelect: false },
-      { id: "default", label: "Default", type: "radio", checked: true },
-      { id: "restricted", label: "Restricted", type: "radio", checked: false },
-    ]);
-    let veto = true;
-    mountMenu({
-      get items() {
-        return entries();
-      },
-      onSelect: (entry, event) => {
-        if (veto) {
-          event.preventDefault();
-          return;
-        }
-        setEntries((current) =>
-          current.map((value) => ({
-            ...value,
-            checked:
-              value.type === "radio" && entry.type === "radio"
-                ? value.id === entry.id
-                : value.id === entry.id
-                  ? !value.checked
-                  : value.checked,
-          })),
-        );
-      },
-    });
-    await openMenu();
-    await userEvent.click(item("Restricted"));
-    expect(item("Restricted").getAttribute("aria-checked")).toBe("false");
-    expect(surface().matches(":popover-open")).toBe(true);
-    veto = false;
-    await userEvent.click(item("Notify"));
-    flush();
-    expect(item("Notify").getAttribute("aria-checked")).toBe("true");
-    expect(surface().matches(":popover-open")).toBe(true);
-    await userEvent.click(item("Restricted"));
-    flush();
-    await phase(surface(), "hidden");
-    await openMenu();
-    expect(item("Restricted").getAttribute("aria-checked")).toBe("true");
-    expect(item("Default").getAttribute("aria-checked")).toBe("false");
   });
 });
 

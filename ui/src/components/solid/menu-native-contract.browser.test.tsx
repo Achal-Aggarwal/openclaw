@@ -1,6 +1,6 @@
 import { cleanup, render } from "@solidjs/testing-library";
 import type { JSX } from "@solidjs/web";
-import { createSignal, createStore, flush, untrack } from "solid-js";
+import { createSignal, createStore, flush } from "solid-js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { page, userEvent } from "vitest/browser";
 import {
@@ -31,16 +31,13 @@ import "../kbd.css";
 import "../../styles/chat/layout.css";
 import "../../styles/chat/split-view.css";
 
-function clickLink(link: HTMLAnchorElement, options: MouseEventInit = {}) {
-  link.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, ...options }));
-}
 function leaf(id: string, label: string, options: Partial<MenuItem> = {}): MenuItem {
   return { id, label, ...options };
 }
-function entries(prefix: string, count: number, padded = false): MenuItem[] {
+function entries(prefix: string, count: number): MenuItem[] {
   return Array.from({ length: count }, (_, index) => ({
     id: `${prefix.toLowerCase()}-${index}`,
-    label: `${prefix[0]!.toUpperCase()}${prefix.slice(1)} ${padded ? String(index + 1).padStart(2, "0") : index + 1}`,
+    label: `${prefix[0]!.toUpperCase()}${prefix.slice(1)} ${index + 1}`,
   }));
 }
 
@@ -69,23 +66,27 @@ afterEach(async () => {
 it("keeps disabled leaf explanations reachable without enabling activation", async () => {
   const select = vi.fn();
   const click = vi.fn();
+  const blocked = leaf("branch", "Unavailable submenu", {
+    disabled: true,
+    children: [leaf("child", "Child")],
+  });
   mountMenu({
     items: [
+      blocked,
       leaf("disabled", "Unavailable default", { disabled: true }),
       leaf("reason", "Unavailable explained", {
         disabled: true,
         focusableWhenDisabled: true,
         attributes: { title: "Connect to continue", onClick: click },
       }),
-      leaf("branch", "Unavailable submenu", {
-        disabled: true,
-        children: [leaf("child", "Child")],
-      }),
       leaf("allowed", "Allowed"),
+      { ...blocked, id: "last" },
     ],
     onSelect: select,
   });
-  await openMenu();
+  trigger().focus();
+  await userEvent.keyboard("{ArrowDown}");
+  await phase(surface(), "open");
   const explained = item("Unavailable explained");
   await expect.poll(() => document.activeElement).toBe(explained);
   expect(explained).toMatchObject({ disabled: false, ariaDisabled: "true" });
@@ -103,8 +104,14 @@ it("keeps disabled leaf explanations reachable without enabling activation", asy
   expect(select).not.toHaveBeenCalled();
   expect(surface().matches(":popover-open")).toBe(true);
   await userEvent.keyboard("{ArrowDown}{Enter}");
-  expect(select).toHaveBeenCalledOnce();
-  expect(select.mock.calls[0]?.[0].id).toBe("allowed");
+  expect(select.mock.calls.map(([entry]) => entry.id)).toEqual(["allowed"]);
+  await phase(surface(), "hidden");
+  trigger().focus();
+  await userEvent.keyboard("{ArrowUp}");
+  await phase(surface(), "open");
+  expect(document.activeElement).toBe(item("Allowed"));
+  await keyFocus("{ArrowDown}", explained);
+  expect(trigger("people-last").getAttribute("aria-disabled")).toBe("true");
 });
 
 it("keeps embedded-button activation and arrow navigation native", async () => {
@@ -130,96 +137,6 @@ it("keeps embedded-button activation and arrow navigation native", async () => {
   button.focus();
   await userEvent.keyboard("{ArrowUp}");
   await expect.poll(() => document.activeElement).toBe(item("Archive"));
-});
-
-it("preserves native link intent while routing selections", async () => {
-  const select = vi.fn();
-  const navigate = vi.fn();
-  const view = mountMenu({
-    items: [leaf("settings", "Settings", { href: "#settings" })],
-    onNavigate: navigate,
-    onSelect: select,
-  });
-  const prevented: boolean[] = [];
-  view.container.addEventListener("click", (event) => {
-    if (event.target instanceof Element && event.target.closest("a")) {
-      prevented.push(event.defaultPrevented);
-      event.preventDefault();
-    }
-  });
-  await openMenu();
-  const link = surface().querySelector<HTMLAnchorElement>("a")!;
-  expect(getComputedStyle(link).cursor).toBe("pointer");
-  for (const target of ["_blank", "named-window"]) {
-    link.target = target;
-    clickLink(link);
-  }
-  link.target = "";
-  link.download = "settings.txt";
-  clickLink(link);
-  link.removeAttribute("download");
-  expect(prevented).toEqual([false, false, false]);
-  const canceledClick = new MouseEvent("click", { bubbles: true, cancelable: true });
-  canceledClick.preventDefault();
-  link.dispatchEvent(canceledClick);
-  expect(prevented.at(-1)).toBe(true);
-
-  await userEvent.click(link);
-  await expect.poll(() => select).toHaveBeenCalledOnce();
-  expect(navigate).toHaveBeenCalledExactlyOnceWith({ href: "#settings", value: "settings" });
-  expect(prevented.at(-1)).toBe(true);
-  await phase(surface(), "hidden");
-});
-
-it("forwards link navigation from nested menus and closes the root", async () => {
-  const navigate = vi.fn();
-  mountMenu({
-    items: [
-      leaf("manage", "Manage", { children: [leaf("models", "Models", { href: "#models" })] }),
-    ],
-    onNavigate: navigate,
-  });
-  await openMenu();
-  await openMenu("people-manage");
-  await userEvent.click(surface("people-manage").querySelector<HTMLAnchorElement>("a")!);
-  await expect.poll(() => navigate).toHaveBeenCalledWith({ href: "#models", value: "models" });
-  await phase(surface(), "hidden");
-});
-
-it("rolls rejected initial and controlled visibility back", async () => {
-  const [open, setOpen] = createSignal(true);
-  let vetoShow = true;
-  let vetoHide = true;
-  const received: boolean[] = [];
-  const expectVisibility = (visible: boolean, events: boolean[]) => {
-    expect(untrack(open)).toBe(visible);
-    expect(surface().matches(":popover-open")).toBe(visible);
-    expect(received).toEqual(events);
-  };
-  mountMenu({
-    get open() {
-      return open();
-    },
-    onBeforeShow: (event) => vetoShow && event.preventDefault(),
-    onBeforeHide: (event) => vetoHide && event.preventDefault(),
-    onOpenChange: (accepted) => {
-      received.push(accepted);
-      setOpen(accepted);
-    },
-  });
-  expectVisibility(false, [false]);
-  update(() => setOpen(true));
-  expectVisibility(false, [false, false]);
-  vetoShow = false;
-  update(() => setOpen(true));
-  await phase(surface(), "open");
-  expectVisibility(true, [false, false, true]);
-  update(() => setOpen(false));
-  expectVisibility(true, [false, false, true, true]);
-  vetoHide = false;
-  update(() => setOpen(false));
-  await phase(surface(), "hidden");
-  expectVisibility(false, [false, false, true, true, false]);
 });
 
 it("retains submenu content and identity across label updates", async () => {
@@ -417,7 +334,6 @@ describe("Solid menu branch lifetime", () => {
       vi.useRealTimers();
       await phase(surface("people-move"), "open");
       await phase(surface("people-assign"), "hidden");
-      expect(surface("people-assign").matches(":popover-open")).toBe(false);
       expect(document.activeElement).toBe(item("Engineering", "people-move"));
       await keyFocus(dir === "ltr" ? "{ArrowLeft}" : "{ArrowRight}", trigger("people-move"));
       expect(trigger("people-move").getAttribute("aria-expanded")).toBe("false");
