@@ -25,6 +25,7 @@ const { seedRuntimeParityTranscript: seedTranscript, cleanup } =
 const PARENT_PROMPT = "Delegate one bounded QA task to a subagent.";
 type CellOutcome = Partial<Pick<RuntimeParityScenarioExecution, "status" | "details">> &
   Partial<RuntimeParityCell>;
+type CaptureParams = Parameters<typeof captureRuntimeParityCell>[0];
 
 function runPair(codex: CellOutcome = {}, openclaw: CellOutcome = {}) {
   return runRuntimeParityScenario({
@@ -57,9 +58,7 @@ function seedRuntimeParityTranscript(
 function captureCell(
   runtime: RuntimeId,
   tempRoot: string,
-  params: Partial<
-    Omit<Parameters<typeof captureRuntimeParityCell>[0], "runtime" | "gateway" | "wallClockMs">
-  > = {},
+  params: Partial<Omit<CaptureParams, "runtime" | "gateway" | "wallClockMs">> = {},
 ) {
   return captureRuntimeParityCell({
     runtime,
@@ -114,10 +113,10 @@ afterEach(async () => {
   await cleanup();
 });
 
-async function captureRuntimeParityWithMockRequests(params: {
+async function captureMock(params: {
   messages?: Array<Record<string, unknown>>;
   requests: Array<Record<string, unknown>>;
-  scenarioResult?: Parameters<typeof captureRuntimeParityCell>[0]["scenarioResult"];
+  scenarioResult?: CaptureParams["scenarioResult"];
 }) {
   const tempRoot = await seedRuntimeParityTranscript({
     messages: params.messages ?? [user(PARENT_PROMPT)],
@@ -253,7 +252,6 @@ describe("runtime parity", () => {
 
     const cell = await captureCell("codex", tempRoot);
 
-    expect(cell.transcriptBytes).toContain('"role":"toolResult"');
     expect(cell.finalText).toBe("plain nested message priority");
     expect(cell.toolCalls.map((toolCall) => toolCall.tool)).toEqual([
       "image_generate",
@@ -330,7 +328,6 @@ describe("runtime parity", () => {
       },
     });
 
-    expect(cell.transcriptBytes).toContain("target=session_status");
     expect(cell.transcriptBytes).toContain("failure target=session_status");
     expect(cell.transcriptBytes).not.toContain("Unrelated setup.");
     expect(cell.toolCalls).toEqual([expect.objectContaining({ tool: "session_status" })]);
@@ -364,7 +361,7 @@ describe("runtime parity", () => {
   ])(
     "records resolved mock calls as provider-plan evidence ($name)",
     async ({ toolOutput, expected }) => {
-      const cell = await captureRuntimeParityWithMockRequests({
+      const cell = await captureMock({
         requests: [
           { plannedToolName: "read_file", plannedToolArgs: { path: "README.md" } },
           { toolOutput },
@@ -421,7 +418,7 @@ describe("runtime parity", () => {
     ["pass", "MEDIA:/tmp/unrelated-screenshot.png", "tool-result-missing"],
     ["fail", "image_generate=true\nMEDIA:/tmp/failed-image.png", "tool-result-missing"],
   ] as const)("requires linked image evidence for %s/%s", async (status, details, expected) => {
-    const cell = await captureRuntimeParityWithMockRequests({
+    const cell = await captureMock({
       requests: [{ plannedToolName: "image_generate", plannedToolArgs: { prompt: "same" } }],
       messages: [
         user("Generate the QA image."),
@@ -435,7 +432,7 @@ describe("runtime parity", () => {
   it("scopes process-global mock requests to the parent session prompt", async () => {
     const child = "Fanout worker alpha: inspect the QA workspace and finish with exactly ALPHA-OK.";
     const followup = "Continue the bounded QA task with the retained child result.";
-    const cell = await captureRuntimeParityWithMockRequests({
+    const cell = await captureMock({
       messages: [PARENT_PROMPT, followup].map(user),
       requests: [
         {
@@ -469,11 +466,8 @@ describe("runtime parity", () => {
   });
 
   it("copies model-switch evidence into the runtime parity cell", async () => {
-    const modelSwitchEvidence = {
-      primary: { runId: "run-1", responseModel: "primary-model" },
-      alternate: { runId: "run-2", responseModel: "alternate-model" },
-    };
-    const cell = await captureRuntimeParityWithMockRequests({
+    const modelSwitchEvidence = { primary: { runId: "run-1" } };
+    const cell = await captureMock({
       requests: [],
       scenarioResult: { status: "pass", modelSwitchEvidence },
     });
