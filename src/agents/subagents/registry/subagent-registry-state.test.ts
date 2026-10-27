@@ -95,45 +95,6 @@ describe("subagent registry state", () => {
       },
     });
 
-    it("keeps control selection grouped and distinguishes agents sharing a child key", async () => {
-      const parent = "agent:main:parent";
-      const old = createRun("old", {
-        childSessionKey: "global",
-        childAgentId: "main",
-        requesterSessionKey: parent,
-        generation: 1,
-      });
-      const sibling = createRun("sibling", { requesterSessionKey: parent });
-      const latest = { ...old, runId: "latest", generation: 2 };
-      const foreign = {
-        ...old,
-        runId: "foreign",
-        childAgentId: "research",
-        requesterSessionKey: "agent:main:other",
-        generation: 3,
-      };
-      save(runMap(old, sibling, latest, foreign));
-      await prepare();
-      const read = () =>
-        listControlledSubagentRunFacts(parent, "main", {}).map((entry) => entry.runId);
-      expect(read()).toEqual([latest.runId, sibling.runId]);
-      const controlled = { ...latest, controllerSessionKey: "agent:main:controller" };
-      publish(runMap(controlled), [controlled.runId]);
-      expect(read()).toEqual([latest.runId, sibling.runId]);
-      expect(
-        listControlledSubagentRunFacts("agent:main:controller", "main", {}).map((run) => run.runId),
-      ).toEqual([latest.runId]);
-      const moved = {
-        ...controlled,
-        controllerSessionKey: undefined,
-        runId: "moved",
-        requesterSessionKey: foreign.requesterSessionKey,
-        generation: 4,
-      };
-      publish(runMap(moved), [moved.runId]);
-      expect(read()).toEqual([sibling.runId]);
-    });
-
     it("scopes compact reads while preserving owner writes and live controller moves", async () => {
       const parent = "agent:main:parent";
       const selected = createRun("selected", { controllerSessionKey: parent });
@@ -209,88 +170,74 @@ describe("subagent registry state", () => {
       ).toEqual([newer.runId, descendant.runId]);
     });
 
-    it("keeps exact child generations current through named moves, deletion, and live overlays", async () => {
-      const old = createRun("old");
-      const successor = createRun("successor", {
-        childSessionKey: old.childSessionKey,
-        generation: 2,
-        requesterSessionKey: "agent:main:other",
-      });
-      save(runMap(old, successor, createRun("unrelated")));
-      await prepare();
-      const read = () => [
-        ...readChildren([`  ${old.childSessionKey}  `, old.childSessionKey, " "]).keys(),
-      ];
-      const listener = vi.fn();
-      const stop = subscribeSubagentRunChanges("persistence", ({ sessionKeys }) =>
-        listener(sessionKeys),
-      );
-      try {
-        expect(read()).toEqual(["old", "successor"]);
-        expect(readChildren([old.childSessionKey]).get("successor")?.generation).toBe(2);
+    it.each(["compact", "full"] as const)(
+      "keeps %s child snapshots current through publication and live moves",
+      async (kind) => {
+        const old = createRun("old");
+        const successor = createRun("successor", {
+          childSessionKey: old.childSessionKey,
+          generation: 2,
+          requesterSessionKey: "agent:main:other",
+        });
         const moved = { ...successor, childSessionKey: "agent:main:moved" };
-        publish(runMap(moved), [moved.runId]);
-        expect(read()).toEqual(["old"]);
-        expect(listener).toHaveBeenLastCalledWith(
-          expect.arrayContaining([old.childSessionKey, moved.childSessionKey]),
+        save(runMap(old, successor, createRun("unrelated")));
+        const read = () =>
+          kind === "full"
+            ? getSubagentRunsSnapshotForChildSession(subagentRuns, old.childSessionKey)
+            : Promise.resolve(
+                readChildren([`  ${old.childSessionKey}  `, old.childSessionKey, " "]),
+              );
+        const ids = async () => [...(await read()).keys()];
+        const listener = vi.fn();
+        const stop = subscribeSubagentRunChanges("persistence", ({ sessionKeys }) =>
+          listener(sessionKeys),
         );
-        subagentRuns.set(old.runId, { ...old, childSessionKey: moved.childSessionKey });
-        expect(read()).toEqual([]);
-        subagentRuns.delete(old.runId);
-        publish(new Map(), [old.runId]);
-        expect(read()).toEqual([]);
-        publish(runMap(old));
-        expect(read()).toEqual(["old"]);
-        expect(listener).toHaveBeenLastCalledWith(undefined);
-      } finally {
-        stop();
-        subagentRuns.delete(old.runId);
-      }
-    });
-
-    it("requires prepared exact-child facts and keeps live moves authoritative", async () => {
-      const persisted = createRun("cold-move");
-      publish(runMap(persisted), [persisted.runId]);
-      save(runMap(persisted));
-      subagentRuns.set(persisted.runId, { ...persisted, childSessionKey: "agent:main:moved" });
-      try {
-        expect(readChildren([" "])).toEqual(new Map());
-        expect(() => readChildren([persisted.childSessionKey])).toThrow("must be prepared");
-        await prepare();
-        expect(readChildren([persisted.childSessionKey])).toEqual(new Map());
-        expect([...readChildren(["agent:main:moved"]).keys()]).toEqual([persisted.runId]);
-      } finally {
-        subagentRuns.delete(persisted.runId);
-      }
-    });
-
-    it("keeps warm child lookups scoped through cache publications and live moves", async () => {
-      const key = "agent:main:selected";
-      const first = createRun("first", { childSessionKey: key });
-      const second = createRun("second", { childSessionKey: key });
-      save(runMap(first, createRun("unrelated"), second));
-      await restoreSubagentRunsFromDisk({ runs: new Map() });
-      const read = getSubagentRunsSnapshotForChildSession;
-      expect([...(await read(new Map(), key)).keys()]).toEqual([first.runId, second.runId]);
-      const retained = (await read(new Map(), key)).get(first.runId)!;
-      expect(() => {
-        retained.task = "caller-local change";
-      }).toThrow(TypeError);
-      expect((await read(new Map(), key)).get(first.runId)?.task).toBe(first.task);
-
-      const moved = { ...first, childSessionKey: "agent:main:elsewhere" };
-      publish(runMap(moved), [moved.runId]);
-      expect([...(await read(new Map(), key)).keys()]).toEqual([second.runId]);
-      const live = runMap(first);
-      expect([...(await read(live, key)).keys()]).toEqual([second.runId, first.runId]);
-      publish(runMap(first), [first.runId]);
-      expect([...(await read(new Map(), key)).keys()]).toEqual([first.runId, second.runId]);
-      const movedLive = runMap({ ...first, childSessionKey: "agent:main:elsewhere" });
-      expect([...(await read(movedLive, key)).keys()]).toEqual([second.runId]);
-      publish(new Map(), [first.runId]);
-      publish(runMap(first), [first.runId]);
-      expect([...(await read(new Map(), key)).keys()]).toEqual([second.runId, first.runId]);
-    });
+        try {
+          if (kind === "compact") {
+            publish(runMap(old), [old.runId]);
+            subagentRuns.set(old.runId, { ...old, childSessionKey: moved.childSessionKey });
+            expect(readChildren([" "])).toEqual(new Map());
+            expect(() => readChildren([old.childSessionKey])).toThrow("must be prepared");
+            await prepare();
+            expect(await ids()).toEqual(["successor"]);
+            expect([...readChildren([moved.childSessionKey]).keys()]).toEqual(["old"]);
+            subagentRuns.delete(old.runId);
+          } else {
+            await restoreSubagentRunsFromDisk({ runs: new Map() });
+          }
+          expect(await ids()).toEqual(["old", "successor"]);
+          const retained = (await read()).get("successor")!;
+          expect(retained.generation).toBe(2);
+          expect(() => {
+            retained.task = "caller-local change";
+          }).toThrow(TypeError);
+          expect((await read()).get("successor")?.task).toBe(successor.task);
+          publish(runMap(moved), [moved.runId]);
+          expect(await ids()).toEqual(["old"]);
+          expect(listener).toHaveBeenLastCalledWith(
+            expect.arrayContaining([old.childSessionKey, moved.childSessionKey]),
+          );
+          subagentRuns.set(successor.runId, successor);
+          expect(await ids()).toEqual(["old", "successor"]);
+          subagentRuns.delete(successor.runId);
+          subagentRuns.set(old.runId, { ...old, childSessionKey: moved.childSessionKey });
+          expect(await ids()).toEqual([]);
+          subagentRuns.delete(old.runId);
+          publish(new Map(), [old.runId]);
+          expect(await ids()).toEqual([]);
+          publish(runMap(successor), [successor.runId]);
+          publish(runMap(old), [old.runId]);
+          expect(await ids()).toEqual(["successor", "old"]);
+          publish(runMap(old));
+          expect(await ids()).toEqual(["old"]);
+          expect(listener).toHaveBeenLastCalledWith(undefined);
+        } finally {
+          stop();
+          subagentRuns.delete(old.runId);
+          subagentRuns.delete(successor.runId);
+        }
+      },
+    );
 
     registerSubagentCollectorPublicationCases({
       createRun,
@@ -354,35 +301,59 @@ describe("subagent registry state", () => {
       },
     );
 
-    it("hydrates latest controlled payloads with requester descendant topology", async () => {
+    it("keeps per-agent control selection and hydrated descendant topology current", async () => {
       const requesterSessionKey = "agent:main:parent";
       const latest = record("latest", {
-        childSessionKey: "agent:main:subagent:visible",
+        childSessionKey: "global",
+        childAgentId: "main",
         requesterSessionKey,
         generation: 2,
+        createdAt: 1,
       });
       const old = { ...latest, runId: "old", generation: 1, task: "retained historical payload" };
+      const sibling = record("sibling", { requesterSessionKey, createdAt: 1 });
+      const foreign = {
+        ...latest,
+        runId: "foreign",
+        childAgentId: "research",
+        requesterSessionKey: "agent:main:other",
+        generation: 3,
+      };
       const descendant = record("descendant", {
         requesterSessionKey: latest.childSessionKey,
         controllerSessionKey: latest.childSessionKey,
       });
-      save(runMap(old, latest, descendant));
+      save(runMap(old, sibling, latest, foreign, descendant));
 
       const context = await readContext(requesterSessionKey);
 
-      expect(context.runs.map((entry) => entry.runId)).toEqual([latest.runId]);
+      const read = () =>
+        listControlledSubagentRunFacts(requesterSessionKey, "main", {}).map((entry) => entry.runId);
+      expect(read()).toEqual([latest.runId, sibling.runId]);
+      expect(context.runs.map((entry) => entry.runId)).toEqual([latest.runId, sibling.runId]);
       expect(context.list.pendingDescendants.get(latest.childSessionKey)).toBe(1);
       expect(context.list.childSessionsByController.get(latest.childSessionKey)).toEqual([
         descendant.childSessionKey,
       ]);
+      const controlled = { ...latest, controllerSessionKey: "agent:main:controller" };
+      publish(runMap(controlled), [controlled.runId]);
+      expect(read()).toEqual([latest.runId, sibling.runId]);
+      expect(
+        listControlledSubagentRunFacts(controlled.controllerSessionKey, "main", {}).map(
+          (entry) => entry.runId,
+        ),
+      ).toEqual([latest.runId]);
       const moved = {
         ...latest,
         runId: "moved",
-        generation: 3,
+        generation: 4,
         requesterSessionKey: "agent:main:moved",
       };
       publish(runMap(moved), [moved.runId]);
-      expect((await readContext(requesterSessionKey)).runs).toEqual([]);
+      expect(read()).toEqual([sibling.runId]);
+      expect((await readContext(requesterSessionKey)).runs.map((entry) => entry.runId)).toEqual([
+        sibling.runId,
+      ]);
     });
 
     it("captures parent and yielded-child facts after the final scoped hydration", async () => {
