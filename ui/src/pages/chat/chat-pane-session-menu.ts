@@ -10,7 +10,6 @@ import type {
   SidebarSessionMutationScope,
 } from "../../components/app-sidebar-session-types.ts";
 import { hasModalSurface } from "../../components/overlay-registry.ts";
-import { sessionMenuReasons } from "../../components/session-menu-access.ts";
 import {
   captureSessionMutationScope,
   isSessionMutationScopeCurrent,
@@ -69,9 +68,13 @@ export abstract class ChatPaneSessionMenu extends ChatPaneContext {
           hello: this.context.gateway.snapshot.hello,
         }),
       ) &&
-      !sessionMenuReasons({ snapshot: this.context.gateway.snapshot, session: row })[
-        "toggle-archived"
-      ]
+      readSessionMethodAccess(this.context.gateway.snapshot, {
+        method: "sessions.patch",
+        params: { key: row.key, archived: true },
+        sessionScope: true,
+        session: row,
+        allowDeferred: true,
+      }).allowed
     );
   }
 

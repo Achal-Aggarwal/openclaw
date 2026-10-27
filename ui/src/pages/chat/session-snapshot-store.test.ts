@@ -3,8 +3,6 @@
 import { IDBFactory } from "fake-indexeddb";
 import { afterEach, assert, beforeEach, describe, expect, it, vi } from "vitest";
 import { createDeferred } from "../../../../test/helpers/promise.js";
-import { parseSidebarSnapshot } from "../../components/sidebar-snapshot-data.ts";
-import { sidebarSnapshot } from "../../components/sidebar-snapshot.test-support.ts";
 import {
   requestResult,
   transactionComplete as transactionDone,
@@ -229,14 +227,11 @@ describe("persistent chat session snapshots", () => {
     replacement.dispose();
   });
 
-  it.each(["write", "forget", "prefix", "clear", "sidebar", "disconnect"] as const)(
+  it.each(["write", "forget", "prefix", "clear"] as const)(
     "keeps an old read scope retired after %s and recapture",
     (operation) => {
-      const target =
-        operation === "sidebar" || operation === "disconnect"
-          ? `${sessionKey.split("\u0000")[0]}\u0000sidebar:operator`
-          : sessionKey;
-      const store = makeStore(undefined, operation === "disconnect");
+      const target = sessionKey;
+      const store = makeStore();
       const retired = store.captureReadScope(target);
       const unrelated = store.captureReadScope(key("agent:main:unrelated"));
       if (operation === "write") {
@@ -247,10 +242,6 @@ describe("persistent chat session snapshots", () => {
         store.forgetScope(target);
       } else if (operation === "clear") {
         store.clearMemory();
-      } else if (operation === "sidebar") {
-        store.forgetSidebar({ sessionKey });
-      } else {
-        store.disconnect();
       }
       expect(retired.isCurrent()).toBe(false);
       const replacement = store.captureReadScope(target);
@@ -432,24 +423,6 @@ describe("persistent chat session snapshots", () => {
       );
     },
   );
-
-  it("defaults omitted sidebar presence preferences in the current projection", async () => {
-    const store = makeStore(undefined, true);
-    const sidebarKey = `${key("").split("\u0000")[0]}\u0000sidebar:operator`;
-    expect(await store.writeSidebar(sidebarKey, sidebarSnapshot, parseSidebarSnapshot)).toBe(true);
-    await putRawRecord(
-      {
-        sessionKey: sidebarKey,
-        projectionVersion: 3,
-        savedAt: Date.now(),
-        model: { ...sidebarSnapshot, peoplePresenceFilter: undefined, offlineUsers: undefined },
-      },
-      undefined,
-      SIDEBAR,
-    );
-    const restored = await store.readSidebar(sidebarKey, parseSidebarSnapshot);
-    expect(restored).toMatchObject({ peoplePresenceFilter: "online", offlineUsers: [] });
-  });
 
   it("retires one Gateway cache without touching another Gateway or account", async () => {
     const memory: ChatMessageCache = new Map();

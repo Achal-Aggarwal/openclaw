@@ -23,11 +23,6 @@ import {
   type ChatSessionSnapshot,
 } from "./session-message-cache.ts";
 import {
-  accessSidebarSnapshot,
-  sidebarRecordBytes,
-  type SidebarRecord,
-} from "./session-sidebar-snapshot.ts";
-import {
   isPersistableChatSnapshotKey,
   CHAT_SNAPSHOT_METADATA_STORE_NAME,
   CHAT_SNAPSHOT_STORE_NAME,
@@ -38,10 +33,8 @@ import {
 } from "./session-snapshot-database.ts";
 import {
   snapshotStoreGeneration,
-  sidebarSnapshotInvalidationMatches,
   subscribeSnapshotInvalidation,
   type SessionSnapshotInvalidationReason,
-  type SnapshotInvalidation,
 } from "./session-snapshot-invalidation-events.ts";
 import { deleteStoredChatSnapshot } from "./session-snapshot-invalidation.ts";
 import {
@@ -52,6 +45,7 @@ import {
   prewarmedHistoryStateValidator,
   readSharedPrewarm,
 } from "./session-snapshot-prewarm.ts";
+import { captureSnapshotReadScope } from "./session-snapshot-read-scope.ts";
 const CHAT_SNAPSHOT_PROJECTION_VERSION = 5;
 const CHAT_SNAPSHOT_MESSAGE_LIMIT = 80;
 const CHAT_SNAPSHOT_WRITE_DELAY_MS = 500;
@@ -168,11 +162,6 @@ type PendingSessionState = {
   savedAt: number;
   snapshot: ChatSessionSnapshot;
 };
-type SnapshotReadScope = {
-  isCurrent: () => boolean;
-  dispose: () => void;
-};
-
 const activeStores = new Set<SessionSnapshotStore>();
 
 async function parseSnapshotRecord(
@@ -447,7 +436,6 @@ export class SessionSnapshotStore implements ChatCacheObserver {
 
   disconnect(): void {
     this.connected = false;
-    this.forgetSidebar({});
     void this.flush().finally(() => {
       if (!this.connected) {
         activeStores.delete(this);
@@ -456,91 +444,8 @@ export class SessionSnapshotStore implements ChatCacheObserver {
   }
 
   /** Dispose after the final read or publication so idle keys have no retained metadata. */
-  captureReadScope(sessionKey: string): SnapshotReadScope {
-    const generation = snapshotStoreGeneration;
-    const entry = this.readScopes.get(sessionKey) ?? { readers: 0 };
-    this.readScopes.set(sessionKey, entry);
-    entry.readers += 1;
-    let disposed = false;
-    return {
-      isCurrent: () =>
-        !disposed &&
-        generation === snapshotStoreGeneration &&
-        this.readScopes.get(sessionKey) === entry,
-      dispose: () => {
-        if (disposed) {
-          return;
-        }
-        disposed = true;
-        entry.readers -= 1;
-        if (entry.readers === 0 && this.readScopes.get(sessionKey) === entry) {
-          this.readScopes.delete(sessionKey);
-        }
-      },
-    };
-  }
-
-  async readSidebar<Model>(
-    key: string,
-    validate: (value: unknown) => Model | null,
-  ): Promise<Model | null> {
-    if (!this.connected) {
-      return null;
-    }
-    const scope = this.captureReadScope(key);
-    try {
-      await this.writeChain;
-      return await accessSidebarSnapshot(key, validate, () => this.connected && scope.isCurrent());
-    } finally {
-      scope.dispose();
-    }
-  }
-
-  async writeSidebar<Model>(
-    key: string,
-    model: Model,
-    validate: (value: unknown) => Model | null,
-  ): Promise<boolean> {
-    if (!this.connected || !key.startsWith("scope:[") || !key.includes("\u0000sidebar:")) {
-      return false;
-    }
-    const scope = this.captureReadScope(key);
-    try {
-      const record: SidebarRecord = {
-        sessionKey: key,
-        savedAt: Date.now(),
-        projectionVersion: 3,
-        model: structuredClone(model),
-      };
-      if (sidebarRecordBytes(record) > 512 * 1024) {
-        return false;
-      }
-      let written = false;
-      this.writeChain = this.writeChain.then(async () => {
-        written =
-          (await accessSidebarSnapshot(
-            key,
-            validate,
-            () => this.connected && scope.isCurrent(),
-            record,
-          )) !== null;
-      });
-      await this.writeChain;
-      return written;
-    } catch (error) {
-      debugSnapshotStore("sidebar projection could not be cached", error);
-      return false;
-    } finally {
-      scope.dispose();
-    }
-  }
-
-  forgetSidebar(invalidation: SnapshotInvalidation): void {
-    for (const key of this.readScopes.keys()) {
-      if (key.includes("\u0000sidebar:") && sidebarSnapshotInvalidationMatches(key, invalidation)) {
-        this.forget(key);
-      }
-    }
+  captureReadScope(sessionKey: string) {
+    return captureSnapshotReadScope(this.readScopes, sessionKey);
   }
 
   async read(
@@ -725,7 +630,6 @@ export class SessionSnapshotStore implements ChatCacheObserver {
 subscribeSnapshotInvalidation(async (invalidation) => {
   const { sessionKey, scopePrefix } = invalidation;
   for (const store of activeStores) {
-    store.forgetSidebar(invalidation);
     if (scopePrefix) {
       store.forgetScope(scopePrefix);
     } else if (sessionKey) {

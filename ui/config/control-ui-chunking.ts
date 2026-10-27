@@ -177,6 +177,11 @@ export function controlUiStableChunkName(id: string): string | undefined {
     case "src/shared/dedupe-by-key.ts":
       // Config search shares this helper without loading optional session UI.
       return "control-ui-boot-shared";
+    case "ui/src/components/session-menu-access.ts":
+    case "ui/src/components/session-placement-menu.ts":
+    case "ui/src/lib/sessions/session-menu-navigation.ts":
+      // Menus load these before exposing actions; split registration and visible placement stay eager.
+      return "session-menu-runtime";
     case "ui/src/components/session-git-diff.tsx":
     case "ui/src/lib/sessions/usage.ts":
     case "src/shared/weak-owner-map.ts":
@@ -209,11 +214,9 @@ export function controlUiStableChunkName(id: string): string | undefined {
     case "ui/src/components/confirm-dialog.ts":
     case "ui/src/components/confirm-dialog-loading.tsx":
     case "ui/src/components/menu-surface.ts":
-    case "ui/src/components/session-menu-access.ts":
     case "ui/src/components/session-menu-data.ts":
     case "ui/src/components/session-placement-action.ts":
     case "ui/src/lib/editor-links.ts":
-    case "ui/src/lib/sessions/session-menu-navigation.ts":
     case "src/config/required-worker-profile.ts":
     case "ui/src/app/native-editor-locality.runtime.ts":
     case "ui/src/app/native-gateways.runtime.ts":
@@ -447,7 +450,7 @@ export function controlUiStableChunkName(id: string): string | undefined {
       return "markdown-streaming-runtime";
     case "ui/src/styles/session-panel-rail.css":
       // Keep normal rail CSS in Chat; other panels import its neutral inline text.
-      return /[?&]inline(?:[=&]|$)/u.test(id) ? "deferred-ui-support" : undefined;
+      return /[?&]inline(?:[=&]|$)/u.test(id) ? "panel-inline-rail-styles" : undefined;
     case "ui/src/pages/chat/session-snapshot-database.ts":
       // Warm boot reads while the Gateway connects; the chat boot group made it wait for the whole route.
       return "session-snapshot-database";

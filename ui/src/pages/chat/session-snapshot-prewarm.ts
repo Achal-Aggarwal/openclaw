@@ -169,11 +169,11 @@ export function admitSidebarBootScope(
   };
   sidebarScopes.set(gateway, entry);
   entry.snapshot = Promise.all([
-    import("./session-snapshot-store.ts"),
+    import("./session-sidebar-store.ts"),
     import("../../components/sidebar-snapshot-data.ts"),
   ])
-    .then(async ([{ SessionSnapshotStore }, { parseSidebarSnapshot }]) => {
-      const store = new SessionSnapshotStore();
+    .then(async ([{ SidebarSnapshotStore }, { parseSidebarSnapshot }]) => {
+      const store = new SidebarSnapshotStore();
       store.connect();
       try {
         const snapshot = await store.readSidebar(

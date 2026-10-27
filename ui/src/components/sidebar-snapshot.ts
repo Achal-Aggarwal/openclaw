@@ -2,6 +2,7 @@ import { gatewayCredentialScope } from "@openclaw/gateway-client/browser";
 import type { ApplicationGateway } from "../app/gateway.ts";
 import { listen } from "../lib/reactive/listener.ts";
 import { CHAT_TRANSCRIPT_LOADING_CHANGED_EVENT } from "../pages/chat/chat-history-events.ts";
+import { SidebarSnapshotStore } from "../pages/chat/session-sidebar-store.ts";
 import {
   sidebarSnapshotInvalidationMatches,
   subscribeSnapshotInvalidation,
@@ -12,7 +13,6 @@ import {
   subscribeSidebarBootRetirement,
   type SidebarSnapshotScope,
 } from "../pages/chat/session-snapshot-prewarm.ts";
-import { SessionSnapshotStore } from "../pages/chat/session-snapshot-store.ts";
 import { parseSidebarSnapshot, type SidebarSnapshotModel } from "./sidebar-snapshot-model.ts";
 
 export function createSidebarSnapshot(host: {
@@ -32,7 +32,7 @@ export function createSidebarSnapshot(host: {
   let publish: (() => void) | undefined;
   let pending = false;
   let saved = false;
-  const store = new SessionSnapshotStore();
+  const store = new SidebarSnapshotStore();
   let gateway: ApplicationGateway | undefined;
   let revision = -1;
   let scope: SidebarSnapshotScope | null = null;

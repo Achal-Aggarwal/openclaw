@@ -11,8 +11,8 @@ import {
   createTestSessionCapability,
   sessionsResult,
 } from "../lib/sessions/session-capability.test-support.ts";
+import { SidebarSnapshotStore } from "../pages/chat/session-sidebar-store.ts";
 import { admitSidebarBootScope } from "../pages/chat/session-snapshot-prewarm.ts";
-import { SessionSnapshotStore } from "../pages/chat/session-snapshot-store.ts";
 import "../test-helpers/app-sidebar-suite.ts";
 import {
   focusSidebarPersonWithKeyboard,
@@ -214,7 +214,7 @@ describe("sidebar people workload", () => {
   it("keeps a pending snapshot hidden until newly present profiles have counts", async () => {
     const snapshot = createDeferred<SidebarSnapshotModel | null>();
     const delayedCounts = createDeferred<SessionsListResult>();
-    vi.spyOn(SessionSnapshotStore.prototype, "readSidebar").mockReturnValue(snapshot.promise);
+    vi.spyOn(SidebarSnapshotStore.prototype, "readSidebar").mockReturnValue(snapshot.promise);
     const { gateway, sessions } = createWorkloadGateway(() => delayedCounts.promise);
     gateway.publish({
       hello: {

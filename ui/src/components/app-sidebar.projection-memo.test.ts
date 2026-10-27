@@ -7,8 +7,8 @@ import { makeBootRoster } from "../app/bootstrap.test-support.ts";
 import { createChatSubmissions } from "../app/chat-submissions.ts";
 import type { ApplicationOverlaySnapshot } from "../app/overlays-types.ts";
 import { captureBootRoster } from "../lib/sessions/session-boot-roster.ts";
+import { SidebarSnapshotStore } from "../pages/chat/session-sidebar-store.ts";
 import { admitSidebarBootScope } from "../pages/chat/session-snapshot-prewarm.ts";
-import { SessionSnapshotStore } from "../pages/chat/session-snapshot-store.ts";
 import "../test-helpers/app-sidebar-suite.ts";
 import {
   catalogPage,
@@ -300,7 +300,7 @@ describe("sidebar projection memo", () => {
   it("keeps a pending boot read across connected view recreation and retires it on detach", async () => {
     const pending = createDeferred<SidebarSnapshotModel | null>();
     const read = vi
-      .spyOn(SessionSnapshotStore.prototype, "readSidebar")
+      .spyOn(SidebarSnapshotStore.prototype, "readSidebar")
       .mockReturnValue(pending.promise);
     const sessions = createSessionsHarness("main", [key("cached")]);
     const gateway = createGatewayHarness(

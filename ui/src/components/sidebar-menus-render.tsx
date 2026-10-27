@@ -23,9 +23,9 @@ import {
 } from "../lib/sessions/session-key.ts";
 import {
   canCopySessionMarkdown,
-  canSplitSessionView,
   runSessionNavigationAction,
 } from "../lib/sessions/session-menu-navigation.ts";
+import { canSplitSessionView } from "../lib/sessions/session-split-hosts.ts";
 import { showToast } from "../lib/toast.ts";
 import {
   pluginSessionMenuActions,
@@ -48,7 +48,8 @@ import "../styles/sidebar-menus.css";
 import { sessionMenuReasons } from "./session-menu-access.ts";
 import { SessionMenu, type SessionMenuAction } from "./session-menu-solid.tsx";
 import { runSessionAction, runBatchSessionAction } from "./session-organizer-menu.runtime.ts";
-import { moveSessionFromMenu, sessionPlacementAction } from "./session-placement-action.ts";
+import { sessionPlacementAction } from "./session-placement-action.ts";
+import { moveSessionFromMenu } from "./session-placement-menu.ts";
 import { isUpdateAttentionForced } from "./sidebar-attention-dismissals.ts";
 import { isReleaseUpdateAvailable } from "./sidebar-attention-update.ts";
 import type { SidebarMenusOwner } from "./sidebar-menus-types.ts";

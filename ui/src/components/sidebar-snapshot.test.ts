@@ -8,6 +8,7 @@ import type { ApplicationGateway, ApplicationGatewaySnapshot } from "../app/gate
 import { createSessionCapability } from "../lib/sessions/index.ts";
 import { bootRosterSchema } from "../lib/sessions/session-boot-roster-schema.ts";
 import { sessionsResult } from "../lib/sessions/session-capability.test-support.ts";
+import { SidebarSnapshotStore } from "../pages/chat/session-sidebar-store.ts";
 import { subscribeSnapshotInvalidation } from "../pages/chat/session-snapshot-invalidation-events.ts";
 import {
   clearStoredChatSnapshots,
@@ -17,7 +18,6 @@ import {
   admitSidebarBootScope,
   sidebarSnapshotScopeKey,
 } from "../pages/chat/session-snapshot-prewarm.ts";
-import { SessionSnapshotStore } from "../pages/chat/session-snapshot-store.ts";
 import {
   createApplicationGateway,
   createApplicationGatewaySnapshot,
@@ -175,7 +175,7 @@ describe("sidebar snapshot lifecycle", () => {
   }
 
   async function warmFixture() {
-    const store = new SessionSnapshotStore();
+    const store = new SidebarSnapshotStore();
     store.connect();
     disposers.push(() => store.disconnect());
     await store.writeSidebar(sidebarSnapshotScopeKey(scope), model, parseSidebarSnapshot);
@@ -191,7 +191,7 @@ describe("sidebar snapshot lifecycle", () => {
   }
 
   it("shares one boot read with route rows and retires both displays on invalidation", async () => {
-    const store = new SessionSnapshotStore();
+    const store = new SidebarSnapshotStore();
     store.connect();
     disposers.push(() => store.disconnect());
     const roster = {
@@ -206,7 +206,7 @@ describe("sidebar snapshot lifecycle", () => {
     };
     const saved: SidebarSnapshotModel = { ...model, roster: bootRosterSchema.parse(roster) };
     await store.writeSidebar(sidebarSnapshotScopeKey(scope), saved, parseSidebarSnapshot);
-    const read = vi.spyOn(SessionSnapshotStore.prototype, "readSidebar");
+    const read = vi.spyOn(SidebarSnapshotStore.prototype, "readSidebar");
     const test = fixture();
     const sessions = createSessionCapability(
       test.gateway,
@@ -249,7 +249,7 @@ describe("sidebar snapshot lifecycle", () => {
   it.each(["before", "after"] as const)(
     "rejects another agent's chip snapshot when selection changes %s restoration",
     async (timing) => {
-      const store = new SessionSnapshotStore();
+      const store = new SidebarSnapshotStore();
       store.connect();
       disposers.push(() => store.disconnect());
       const chip: SidebarSnapshotModel = {
@@ -298,7 +298,7 @@ describe("sidebar snapshot lifecycle", () => {
 
   it("releases a stalled boot read when the live sidebar settles", async () => {
     const stalled = createDeferred<SidebarSnapshotModel | null>();
-    vi.spyOn(SessionSnapshotStore.prototype, "readSidebar").mockReturnValue(stalled.promise);
+    vi.spyOn(SidebarSnapshotStore.prototype, "readSidebar").mockReturnValue(stalled.promise);
     const test = fixture();
     disposers.push(
       admitSidebarBootScope(test.gateway, { ...scope, scope: scope.gatewayScope }),
@@ -317,7 +317,7 @@ describe("sidebar snapshot lifecycle", () => {
   it.each(["before", "after"] as const)(
     "rejects a Pages snapshot when its agent filter changes %s restoration",
     async (timing) => {
-      const store = new SessionSnapshotStore();
+      const store = new SidebarSnapshotStore();
       store.connect();
       disposers.push(() => store.disconnect());
       const pages = { ...model, navigationView: "pages" as const, pageScopeId: "main" };
@@ -347,7 +347,7 @@ describe("sidebar snapshot lifecycle", () => {
   );
 
   it("keeps an all-agent Pages snapshot when only the selected chat agent changes", async () => {
-    const store = new SessionSnapshotStore();
+    const store = new SidebarSnapshotStore();
     store.connect();
     disposers.push(() => store.disconnect());
     const pages: SidebarSnapshotModel = { ...model, navigationView: "pages", pageScopeId: null };
@@ -525,7 +525,7 @@ describe("sidebar snapshot lifecycle", () => {
     const test = fixture();
     const issued = createDeferred();
     const written = createDeferred<boolean>();
-    vi.spyOn(SessionSnapshotStore.prototype, "writeSidebar").mockImplementation(() => {
+    vi.spyOn(SidebarSnapshotStore.prototype, "writeSidebar").mockImplementation(() => {
       issued.resolve();
       return written.promise;
     });
@@ -549,7 +549,7 @@ describe("sidebar snapshot lifecycle", () => {
     const test = await warmFixture();
     const issued = createDeferred();
     const written = createDeferred<boolean>();
-    vi.spyOn(SessionSnapshotStore.prototype, "writeSidebar").mockImplementation(() => {
+    vi.spyOn(SidebarSnapshotStore.prototype, "writeSidebar").mockImplementation(() => {
       issued.resolve();
       return written.promise;
     });
@@ -689,7 +689,7 @@ describe("sidebar snapshot lifecycle", () => {
     const saved = test.settle();
     await capture(test.snapshotOwner);
     await saved;
-    const store = new SessionSnapshotStore();
+    const store = new SidebarSnapshotStore();
     store.connect();
     disposers.push(() => store.disconnect());
     expect(await store.readSidebar(sidebarSnapshotScopeKey(scope), parseSidebarSnapshot)).toEqual(

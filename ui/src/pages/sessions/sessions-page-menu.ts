@@ -4,7 +4,7 @@ import { togglePinnedSession } from "../../app/bootstrap-navigation-preferences.
 import type { ApplicationContext } from "../../app/context.ts";
 import { hasSessionArchiveDescendants } from "../../components/session-menu-descendants.ts";
 import { fetchSessionMenuWork } from "../../components/session-menu-work.ts";
-import { moveSessionFromMenu } from "../../components/session-placement-action.ts";
+import { moveSessionFromMenu } from "../../components/session-placement-menu.ts";
 import { t } from "../../i18n/index.ts";
 import { canCallGatewayMethod } from "../../lib/gateway-methods.ts";
 import { sessionPullRequestsForGateway } from "../../lib/session-pull-requests.ts";

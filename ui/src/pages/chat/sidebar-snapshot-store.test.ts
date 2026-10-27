@@ -2,11 +2,13 @@
 import { IDBFactory, IDBObjectStore } from "fake-indexeddb";
 import { afterEach, assert, beforeEach, expect, it, vi } from "vitest";
 import { z } from "zod";
+import { createDeferred } from "../../../../test/helpers/promise.js";
 import { projectSidebarSession } from "../../components/app-sidebar-session-navigation.test-support.ts";
 import { parseSidebarSnapshot, snapshotSessions } from "../../components/sidebar-snapshot-model.ts";
 import { sidebarSnapshot } from "../../components/sidebar-snapshot.test-support.ts";
 import { requestResult, transactionComplete } from "../../lib/chat/control-ui-database.runtime.ts";
 import { createStorageMock } from "../../test-helpers/storage.ts";
+import { SidebarSnapshotStore } from "./session-sidebar-store.ts";
 import {
   openSessionSnapshotDatabase,
   CHAT_SNAPSHOT_DB_NAME as DB_NAME,
@@ -14,6 +16,7 @@ import {
   CHAT_SNAPSHOT_METADATA_STORE_NAME as METADATA,
   SIDEBAR_SNAPSHOT_STORE_NAME as SIDEBAR,
 } from "./session-snapshot-database.ts";
+import * as snapshotDatabase from "./session-snapshot-database.ts";
 import {
   clearStoredChatSnapshots,
   deleteStoredChatSnapshot,
@@ -37,15 +40,15 @@ const profile = (profileId: string) => ({ ...scope, profileId });
 const otherProfile = profile("profile-b");
 const otherAccount = { ...scope, recoveryScope: "account-b" };
 const accountPrefix = `scope:${JSON.stringify([scope.gatewayScope, scope.recoveryScope])}\u0000`;
-const read = (store: SessionSnapshotStore, current = scope) =>
+const read = (store: SidebarSnapshotStore, current = scope) =>
   store.readSidebar(key(current), validate);
-const write = (store: SessionSnapshotStore, value = model, current = scope) =>
+const write = (store: SidebarSnapshotStore, value = model, current = scope) =>
   store.writeSidebar(key(current), value, validate);
 const sessionKey = `scope:${JSON.stringify([scope.gatewayScope, scope.recoveryScope])}\u0000agent:main:cedar`;
 
-const stores: SessionSnapshotStore[] = [];
+const stores: SidebarSnapshotStore[] = [];
 function createStore() {
-  const store = new SessionSnapshotStore();
+  const store = new SidebarSnapshotStore();
   store.connect();
   stores.push(store);
   return store;
@@ -144,8 +147,9 @@ it.each([1, 2, 3])(
       pagination: { hasMore: false as const },
       sessionId: "cedar",
     };
-    store.write(sessionKey, transcript);
-    await store.flush();
+    const transcripts = new SessionSnapshotStore();
+    transcripts.write(sessionKey, transcript);
+    await transcripts.flush();
     const [parent, child] = snapshotSessions(
       ["parent", "child"].map((name) =>
         projectSidebarSession({ key: `agent:main:${name}`, label: name }),
@@ -159,7 +163,7 @@ it.each([1, 2, 3])(
     for (const current of profiles) {
       expect(await store.readSidebar(key(current), parseSidebarSnapshot)).toEqual(sidebarSnapshot);
     }
-    expect(await store.read(sessionKey)).toMatchObject(transcript);
+    expect(await transcripts.read(sessionKey)).toMatchObject(transcript);
   },
 );
 
@@ -259,4 +263,33 @@ it("treats unavailable persistence as a cache miss and stops work after disconne
   const unavailable = createStore();
   await expect(write(unavailable)).resolves.toBe(false);
   expect(await read(unavailable)).toBeNull();
+});
+
+it("defaults omitted sidebar presence preferences in the current projection", async () => {
+  const store = createStore();
+  expect(await store.writeSidebar(key(scope), sidebarSnapshot, parseSidebarSnapshot)).toBe(true);
+  await putSidebar(
+    { ...sidebarSnapshot, peoplePresenceFilter: undefined, offlineUsers: undefined },
+    Date.now(),
+  );
+  const restored = await store.readSidebar(key(scope), parseSidebarSnapshot);
+  expect(restored).toMatchObject({ peoplePresenceFilter: "online", offlineUsers: [] });
+});
+
+it("keeps a pending read retired when reconnecting and reading the same sidebar", async () => {
+  const store = createStore();
+  await write(store);
+  const database = await openSessionSnapshotDatabase();
+  const opening = createDeferred<IDBDatabase | null>();
+  const open = vi
+    .spyOn(snapshotDatabase, "openSessionSnapshotDatabase")
+    .mockReturnValueOnce(opening.promise);
+  const pending = read(store);
+  await vi.waitFor(() => expect(open).toHaveBeenCalledOnce());
+  store.disconnect();
+  store.connect();
+  const replacement = read(store);
+  opening.resolve(database);
+  expect(await pending).toBeNull();
+  expect(await replacement).toEqual(model);
 });
