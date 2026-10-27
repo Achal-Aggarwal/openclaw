@@ -20,6 +20,7 @@ import {
   runDoctorConfigWithInput,
 } from "./doctor-config-flow.test-utils.js";
 import { createDoctorPrompter } from "./doctor-prompter.js";
+import type { DoctorConfigPreflightResult } from "./doctor/shared/config-migration-result.js";
 
 type TerminalNote = (message: string, title?: string) => void;
 type RepairParams = Parameters<
@@ -29,6 +30,7 @@ type RepairParams = Parameters<
 const terminalNoteMock = vi.hoisted(() => vi.fn<TerminalNote>());
 const callGatewayMock = vi.hoisted(() => vi.fn());
 const runDoctorRepairSequenceMock = vi.hoisted(() => vi.fn());
+const preflightFacts = vi.hoisted(() => ({ value: {} as Partial<DoctorConfigPreflightResult> }));
 const createDoctorPluginMetadataSnapshotScopeParamsMock = vi.hoisted(() => vi.fn());
 const collectDoctorPreviewNotesParamsMock = vi.hoisted(() => vi.fn());
 const collectTailscaleConfigWarningsMock = vi.hoisted(() =>
@@ -206,6 +208,7 @@ vi.mock("./doctor-config-preflight.js", async (importOriginal) => {
           legacyIssues,
         },
         baseConfig: config,
+        ...preflightFacts.value,
       };
     }),
   };
@@ -267,6 +270,7 @@ describe("doctor config flow", () => {
     callGatewayMock.mockReset();
     callGatewayMock.mockResolvedValue({});
     runDoctorRepairSequenceMock.mockReset();
+    preflightFacts.value = {};
     createDoctorPluginMetadataSnapshotScopeParamsMock.mockClear();
     collectDoctorPreviewNotesParamsMock.mockClear();
     collectTailscaleConfigWarningsMock.mockClear();
@@ -768,4 +772,94 @@ describe("doctor config flow", () => {
       "Doctor warnings",
     );
   });
+
+  it.each([
+    { name: "settled retirement", facts: {}, expected: true },
+    { name: "missing config", facts: {}, exists: false, expected: false },
+    { name: "another config repair", facts: { configChanged: true }, expected: false },
+    {
+      name: "unfinished state migration",
+      facts: { stateMigrationUnsettled: true },
+      expected: false,
+    },
+    {
+      name: "unbound discovery",
+      facts: { postSessionPluginMigrationPlanBound: false },
+      expected: false,
+    },
+    { name: "bound absent plan", facts: { postSessionPluginMigration: undefined }, expected: true },
+    {
+      name: "conditional session work",
+      facts: {
+        postSessionPluginMigration: {
+          step: {
+            id: "plugin-doctor-post-session-state",
+            phase: "final",
+            source: [],
+            target: [],
+            requiredness: "conditional",
+            reversibility: "checkpoint-required",
+          },
+          plannedActions: [{ pluginId: "example", id: "session-repair" }],
+        },
+      },
+      expected: true,
+    },
+    {
+      name: "refused session plan",
+      facts: {
+        postSessionPluginMigration: {
+          step: {
+            id: "plugin-doctor-post-session-state",
+            phase: "final",
+            source: [],
+            target: [],
+            requiredness: "conditional",
+            reversibility: "checkpoint-required",
+            refusal: { code: "step-refused", message: "Incomplete session discovery" },
+          },
+          plannedActions: [],
+        },
+      },
+      expected: false,
+    },
+    {
+      name: "unsettled preflight",
+      facts: { preflightLegacyStateConfig: undefined },
+      expected: false,
+    },
+    { name: "repair warning", facts: { warnings: ["Unfinished repair"] }, expected: false },
+  ] satisfies Array<{
+    name: string;
+    facts: Partial<DoctorConfigPreflightResult>;
+    exists?: boolean;
+    expected: boolean;
+  }>)(
+    "admits retirement with bound session work: $name",
+    async ({ facts, exists = true, expected }) => {
+      const config: OpenClawConfig = {
+        agents: { entries: { main: {} } },
+        messages: { queue: { allowCollaborativeSteering: false } },
+      };
+      preflightFacts.value = {
+        preflightLegacyStateConfig: config,
+        postSessionPluginMigrationPlanBound: true,
+        postSessionPluginMigration: {
+          step: {
+            id: "plugin-doctor-post-session-state",
+            phase: "final",
+            source: [],
+            target: [],
+            requiredness: "not-required",
+            reversibility: "not-applicable",
+          },
+          plannedActions: [],
+        },
+        ...facts,
+      };
+      mockRepair({ modelRetirementRepairRan: true, modelRetirementOnly: true });
+      await using result = await runConfig({ config, exists, repair: true });
+      expect(result.retirementOnly).toBe(expected);
+    },
+  );
 });

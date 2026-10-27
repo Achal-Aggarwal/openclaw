@@ -79,6 +79,13 @@ The delegated executor admits its grant data separately and still checks live pr
 installation ownership before effects. Callbacks and live deadline objects stay in the
 initiating process; only serializable options cross the migrated-update handoff.
 
+During a native update, when plugins are unchanged and only deferred model retirement
+remains, a supporting candidate completes the second Doctor pass with the required
+config, auth, session, and cron repairs and final validation. Startup, database admission, and config
+preparation still run in full. Other pending work or incomplete discovery selects
+the full Doctor flow; older candidates and standalone `openclaw update repair`
+continue using the full pass.
+
 Stopped update and Doctor database snapshots tolerate concurrent read-only SQLite
 probes. The transient `-shm` WAL index is rebuilt privately, never copied or used
 to detect durable changes. Empty WAL files created by readers count as absent.

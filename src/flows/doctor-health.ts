@@ -411,6 +411,7 @@ async function runDoctorHealthFlowWithResult(
         runtime: doctorRuntime,
         healthFindings: startupFindings.healthFindings,
         options,
+        retirementOnly: writeAuthority?.retirementOnly === true,
         prompter,
         configResult,
         cfg: configResult.cfg,

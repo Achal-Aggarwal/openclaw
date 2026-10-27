@@ -89,6 +89,7 @@ export async function runDoctorRepairSequence(params: {
   findings: readonly HealthFinding[];
   authProfilesRepaired: boolean;
   modelRetirementRepairRan: boolean;
+  modelRetirementOnly: boolean;
   openAICodexAuthProfileIdMap?: ReadonlyMap<string, string>;
   retiredModelRefConfig?: Pick<OpenClawConfig, "agents" | "models">;
   pluginMetadataSnapshot?: PluginMetadataSnapshot;
@@ -106,6 +107,7 @@ export async function runDoctorRepairSequence(params: {
     env,
   );
   let modelRetirementRepairRan = false;
+  let modelRetirementOnly = false;
   let retiredModelRefConfig: Pick<OpenClawConfig, "agents" | "models"> | undefined;
   const resolveCurrentPluginMetadataScope = () => {
     const config = state.candidate;
@@ -386,6 +388,12 @@ export async function runDoctorRepairSequence(params: {
         }),
       );
     }
+    const onlyRetirementPending =
+      !state.pendingChanges &&
+      changeNotes.length === 0 &&
+      warningNotes.length === 0 &&
+      authRepair.findings.length === 0 &&
+      !params.modelReplacements?.length;
     const modelRepair = repairStaleAgentModelRefs(state.candidate, {
       modelReplacements: params.modelReplacements,
       env,
@@ -395,6 +403,7 @@ export async function runDoctorRepairSequence(params: {
     applyMutation(modelRepair);
     modelRetirementRepairRan =
       modelRepair.warnings.length === 0 && hasDeferredUpdateModelRetirement(env);
+    modelRetirementOnly = onlyRetirementPending && modelRetirementRepairRan;
   } else if (packageSwapInProgress) {
     recordUpdateModelRetirement("deferred", env);
     warningNotes.push("Model retirement deferred until configured plugin installation converges.");
@@ -417,6 +426,7 @@ export async function runDoctorRepairSequence(params: {
     findings: authRepair.findings,
     authProfilesRepaired,
     modelRetirementRepairRan,
+    modelRetirementOnly,
     installedPluginIdRecovery: installedPluginRecovery.recovery,
     ...(retiredModelRefConfig ? { retiredModelRefConfig } : {}),
     openAICodexAuthProfileIdMap,

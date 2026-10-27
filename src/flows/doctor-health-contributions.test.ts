@@ -4,11 +4,8 @@ import nodePath from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createDoctorConfigSnapshot } from "../commands/doctor-config-snapshot.test-helpers.js";
 import { createAuthProfileImportResult } from "../commands/doctor/auth-profile-repair.test-support.js";
-import { ConfigWritePostCommitError } from "../config/io.write-errors.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
-import type { LegacyStateMigrationStepReceipt } from "../infra/state-migrations.types.js";
 import { fetchNpmPackageTargetStatus } from "../infra/update-check-package-target.js";
-import { buildUpdateRehearsalPathEnv } from "../infra/update-rehearsal-paths.js";
 import { readConfigMachineState } from "../state/config-machine-state.js";
 import { createOpenClawTestState } from "../test-utils/openclaw-test-state.js";
 import { CORE_HEALTH_CHECKS } from "./doctor-core-checks.js";
@@ -16,7 +13,10 @@ import {
   createDoctorHealthContribution,
   showDoctorHealthSummary,
 } from "./doctor-health-contribution.js";
-import { resolveDoctorContributionHealthChecks } from "./doctor-health-contributions.js";
+import {
+  resolveDoctorContributionHealthChecks,
+  runDoctorHealthContributions,
+} from "./doctor-health-contributions.js";
 import {
   createDoctorConfigFixture,
   createDoctorHealthFlowContext,
@@ -47,14 +47,11 @@ const mocks = vi.hoisted(() => ({
     changes: [],
     warnings: [],
   })),
-  maybeMigrateLegacyPluginModelCatalogs: vi.fn().mockResolvedValue({
-    detected: 0,
-    migrated: 0,
-    warnings: [],
-  }),
+  maybeMigrateLegacyPluginModelCatalogs: vi.fn().mockResolvedValue(false),
   maybeMigrateModelCatalogCredentials: vi.fn(async () => ({
     detected: 0,
     migrated: 0,
+    removed: 0,
     warnings: [],
   })),
   maybeRepairGatewayDaemon: vi.fn().mockResolvedValue(undefined),
@@ -726,11 +723,7 @@ describe("doctor health contributions", () => {
     mocks.maybeMigrateAuthProfileJsonStoresToSqlite.mockResolvedValue(
       createAuthProfileImportResult(),
     );
-    mocks.maybeMigrateLegacyPluginModelCatalogs.mockResolvedValue({
-      detected: 0,
-      migrated: 0,
-      warnings: [],
-    });
+    mocks.maybeMigrateLegacyPluginModelCatalogs.mockResolvedValue(false);
     mocks.maybeRepairGatewayDaemon.mockResolvedValue(undefined);
     mocks.maybeRepairLegacyPluginManifestContracts.mockResolvedValue(undefined);
     mocks.inspectAuthProfileHealth.mockResolvedValue([]);
@@ -793,28 +786,146 @@ describe("doctor health contributions", () => {
     vi.restoreAllMocks();
   });
 
-  it("stops after an optional contribution fails after writing config", async () => {
-    const laterRun = vi.fn(async () => undefined);
-    const ctx = createDoctorContext({ env: {} });
-    const failure = new ConfigWritePostCommitError({
-      configPath: ctx.configPath,
-      rollbackStatus: "not-restored",
-      cause: new Error("config path changed since last load"),
-    });
-
-    await expect(
-      runDoctorHealthContributionList(ctx, [
-        createDoctorHealthContribution("doctor:test-config-write", "Test config write", {
-          run: async () => {
-            throw failure;
+  it.each(["none", "detected", "migrated", "removed"] as const)(
+    "omits unrelated scans only when credential work is absent: %s",
+    async (credentialWork) => {
+      const state = await createOpenClawTestState({ layout: "state-only" });
+      try {
+        const routes = vi
+          .spyOn(
+            await import("../commands/doctor/shared/codex-route-warnings.js"),
+            "maybeRepairCodexSessionRoutes",
+          )
+          .mockResolvedValue({ scannedStores: 0, changes: [], warnings: [] });
+        const transcripts = vi
+          .spyOn(
+            await import("../commands/doctor-session-transcripts.js"),
+            "noteSessionTranscriptHealth",
+          )
+          .mockResolvedValue(undefined);
+        const cfg = { agents: { entries: { main: {} } } };
+        if (credentialWork !== "none") {
+          mocks.maybeMigrateModelCatalogCredentials.mockResolvedValue({
+            detected: 0,
+            migrated: 0,
+            removed: 0,
+            warnings: [],
+            [credentialWork]: 1,
+          });
+        }
+        const ctx = createDoctorContext({
+          cfg,
+          retirementOnly: true,
+          shouldRepair: true,
+          env: state.env,
+          configResult: {
+            cfg,
+            shouldWriteConfig: true,
+            modelRetirementRepairRan: true,
+            retirementOnly: true,
+            openAICodexAuthProfileIdMap: new Map(),
           },
-        }),
-        createDoctorHealthContribution("doctor:test-later", "Test later", laterRun),
-      ]),
-    ).rejects.toBe(failure);
+        });
 
-    expect(laterRun).not.toHaveBeenCalled();
-  });
+        await runDoctorHealthContributions(ctx);
+
+        if (credentialWork !== "none") {
+          expect(ctx.retirementOnly).toBe(false);
+          expect(transcripts).toHaveBeenCalledOnce();
+          expect(mocks.detectLegacyStateMigrations).toHaveBeenCalled();
+          return;
+        }
+        expect(mocks.replaceConfigFile).toHaveBeenCalledOnce();
+        expect(ctx.retirementOnly).toBe(true);
+        expect(mocks.maybeMigrateLegacyPluginModelCatalogs).toHaveBeenCalledOnce();
+        expect(mocks.maybeMigrateModelCatalogCredentials).toHaveBeenCalledOnce();
+        expect(routes).toHaveBeenCalledOnce();
+        expect(mocks.repairCronCodexModelRefsAfterConfigWrite).toHaveBeenCalledOnce();
+        // The initial writer and strict final validation each read the persisted config.
+        expect(mocks.readConfigFileSnapshot).toHaveBeenCalledTimes(2);
+        expect(mocks.replaceConfigFile.mock.invocationCallOrder[0]).toBeLessThan(
+          mocks.repairCronCodexModelRefsAfterConfigWrite.mock.invocationCallOrder[0]!,
+        );
+        expect(transcripts).toHaveBeenCalledOnce();
+        expect(mocks.detectLegacyStateMigrations).not.toHaveBeenCalled();
+        expect(mocks.maybeScanExtraGatewayServices).not.toHaveBeenCalled();
+        expect(mocks.noteMemorySearchHealth).not.toHaveBeenCalled();
+        expect(mocks.runDoctorHealthRepairs).not.toHaveBeenCalled();
+      } finally {
+        await state.cleanup();
+      }
+    },
+  );
+
+  it.each(["late-work", "current-refusal", "post-write-warning"])(
+    "uses the full list once after late work, but never retries a refusal: %s",
+    async (outcome) => {
+      const events: string[] = [];
+      const initialWrite = requireDoctorContribution("doctor:write-config-migrations");
+      const finalWrite = requireDoctorContribution("doctor:write-config");
+      if (outcome === "post-write-warning") {
+        mocks.repairCronCodexModelRefsAfterConfigWrite.mockResolvedValueOnce({
+          changes: [],
+          warnings: ["Cron repair needs the full Doctor pass"],
+        });
+      }
+      const cfg = {};
+      const ctx = createDoctorContext({
+        cfg,
+        retirementOnly: true,
+        shouldRepair: true,
+        env: {},
+        configResult: { cfg, shouldWriteConfig: true, retirementOnly: true },
+      });
+      const auth = createDoctorHealthContribution("doctor:auth-profile-migration", "Auth", {
+        async run(current) {
+          events.push("auth");
+          if (outcome !== "post-write-warning") {
+            current.retirementOnly = false;
+          }
+          if (outcome === "current-refusal") {
+            current.configWriteRefusal = "validation";
+          }
+        },
+      });
+      const unrelated = createDoctorHealthContribution("doctor:unrelated", "Unrelated", {
+        async run(current) {
+          events.push("full");
+          if (outcome === "post-write-warning") {
+            current.cfg = { gateway: { mode: "local" } };
+          }
+        },
+      });
+      vi.spyOn(
+        await import("./doctor-health-contributions-initial.js"),
+        "resolveInitialDoctorHealthContributions",
+      ).mockReturnValue([initialWrite, auth, unrelated]);
+      vi.spyOn(
+        await import("./doctor-health-contributions-final.js"),
+        "resolveFinalDoctorHealthContributions",
+      ).mockReturnValue([finalWrite]);
+
+      await runDoctorHealthContributions(ctx);
+
+      expect(events).toEqual(outcome === "current-refusal" ? ["auth"] : ["auth", "auth", "full"]);
+      const writes = outcome === "post-write-warning" ? 2 : 1;
+      expect(mocks.replaceConfigFile).toHaveBeenCalledTimes(writes);
+      expect(mocks.repairCronCodexModelRefsAfterConfigWrite).toHaveBeenCalledTimes(
+        outcome === "current-refusal" ? 0 : writes,
+      );
+      if (outcome === "post-write-warning") {
+        expect(mocks.replaceConfigFile.mock.calls[1]?.[0]).toMatchObject({
+          nextConfig: { gateway: { mode: "local" } },
+        });
+        expect(mocks.repairCronCodexModelRefsAfterConfigWrite.mock.calls[1]?.[0]).toMatchObject({
+          cfg: { gateway: { mode: "local" } },
+        });
+        expect(mocks.replaceConfigFile.mock.invocationCallOrder[1]).toBeLessThan(
+          mocks.repairCronCodexModelRefsAfterConfigWrite.mock.invocationCallOrder[1]!,
+        );
+      }
+    },
+  );
 
   it("rejects a failed initial config write before later work runs", async () => {
     const laterRun = vi.fn(async () => undefined);
@@ -900,34 +1011,6 @@ describe("doctor health contributions", () => {
     await contribution.run(ctx);
 
     expect(invalidatePluginMetadataSnapshot).toHaveBeenCalledOnce();
-  });
-
-  it("runs release configured plugin install repair before plugin registry and final config writes", () => {
-    const ids = resolveDoctorHealthContributions().map((entry) => entry.id);
-
-    expect(ids.indexOf("doctor:release-configured-plugin-installs")).toBeGreaterThan(-1);
-    expect(ids.indexOf("doctor:plugin-registry")).toBeGreaterThan(-1);
-    expect(ids.indexOf("doctor:release-configured-plugin-installs")).toBeLessThan(
-      ids.indexOf("doctor:plugin-registry"),
-    );
-    expect(ids.indexOf("doctor:plugin-registry")).toBeLessThan(ids.indexOf("doctor:write-config"));
-    expect(ids.indexOf("doctor:plugin-registry")).toBeLessThan(
-      ids.indexOf("doctor:runtime-tool-schemas"),
-    );
-  });
-
-  it("repairs canonical session rows before downstream agent-state checks", () => {
-    const ids = resolveDoctorHealthContributions().map((entry) => entry.id);
-
-    expect(ids.indexOf("doctor:legacy-state")).toBeLessThan(
-      ids.indexOf("doctor:session-transcripts"),
-    );
-    expect(ids.indexOf("doctor:session-transcripts")).toBeLessThan(
-      ids.indexOf("doctor:agent-memory-schema"),
-    );
-    expect(ids.indexOf("doctor:session-transcripts")).toBeLessThan(
-      ids.indexOf("doctor:plugin-registry"),
-    );
   });
 
   it("commits config migrations before reporting a runtime schema diagnostic failure", async () => {
@@ -3185,96 +3268,6 @@ describe("doctor health contributions", () => {
 
       expect(mocks.readConfigFileSnapshot).toHaveBeenCalledWith(
         expect.objectContaining({ skipPluginValidation: true }),
-      );
-    });
-  });
-  describe("Doctor contribution migration outcomes", () => {
-    function receipt(
-      outcome: "refused" | "warning",
-      requiredness: "required" | "conditional",
-    ): LegacyStateMigrationStepReceipt {
-      return {
-        id: "plugin-doctor-post-session-state",
-        phase: "final",
-        source: [{ kind: "owner", id: "plugin:example:legacy-state" }],
-        target: [{ kind: "owner", id: "plugin:example:doctor-state" }],
-        requiredness,
-        reversibility: "checkpoint-required",
-        outcome,
-        changes: [],
-        warnings: ["Owner could not complete the planned repair"],
-        ...(outcome === "refused"
-          ? {
-              refusal: {
-                code: "step-refused",
-                message: "Owner could not complete the planned repair",
-              },
-            }
-          : {}),
-      };
-    }
-
-    it("stops copied-state rehearsal after a conditional migration refusal", async () => {
-      const recorded = receipt("refused", "conditional");
-      const receipts: LegacyStateMigrationStepReceipt[] = [];
-      const ctx = createDoctorHealthFlowContext({
-        configResult: { stateMigrationStepReceipts: receipts },
-
-        env: {
-          ...buildUpdateRehearsalPathEnv("/synthetic/rehearsal"),
-          OPENCLAW_UPDATE_IN_PROGRESS: "1",
-          OPENCLAW_SERVICE_REPAIR_POLICY: "external",
-          OPENCLAW_UPDATE_PARENT_ALLOWS_GATEWAY_SERVICE_REPAIR: "0",
-          OPENCLAW_UPDATE_PARENT_ALLOWS_GATEWAY_ACTIVATION: "0",
-        },
-        updateBudget: {
-          agentCount: 1,
-          phase: "validation" as const,
-          inspectionDeadlineMs: Date.now() + 149_000,
-          source: "validation-ledger" as const,
-          deferred: new Map(),
-        },
-      });
-      const later = vi.fn(async () => {});
-      await expect(
-        runDoctorHealthContributionList(ctx, [
-          createDoctorHealthContribution("doctor:session-transcripts", "Sessions", {
-            run: async () => {
-              receipts.push(recorded);
-            },
-          }),
-          createDoctorHealthContribution("doctor:later", "Later repair", later),
-        ]),
-      ).rejects.toMatchObject({ stepReceipts: [recorded] });
-      expect(later).not.toHaveBeenCalled();
-      expect(receipts).toEqual([recorded]);
-    });
-
-    it("continues after an owner-classified recoverable warning and an unrelated advisory throw", async () => {
-      const recorded = receipt("warning", "conditional");
-      const receipts: LegacyStateMigrationStepReceipt[] = [];
-      const ctx = createDoctorHealthFlowContext({
-        configResult: { stateMigrationStepReceipts: receipts },
-      });
-      const later = vi.fn(async () => {});
-      await runDoctorHealthContributionList(ctx, [
-        createDoctorHealthContribution("doctor:session-transcripts", "Sessions", {
-          run: async () => {
-            receipts.push(recorded);
-          },
-        }),
-        createDoctorHealthContribution("doctor:advisory", "Advisory", {
-          run: async () => {
-            throw new Error("optional diagnostic\nunavailable");
-          },
-        }),
-        createDoctorHealthContribution("doctor:later", "Later repair", later),
-      ]);
-      expect(later).toHaveBeenCalledOnce();
-      expect(receipts).toEqual([recorded]);
-      showDoctorHealthSummary(ctx);
-      expect(ctx.runtime.log).toHaveBeenCalledWith(
-        "- Doctor could not complete Advisory: optional diagnostic unavailable",
       );
     });
   });

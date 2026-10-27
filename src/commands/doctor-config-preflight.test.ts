@@ -133,6 +133,41 @@ const doctorRepairOptions = {
 
 describe("runDoctorConfigPreflight", () => {
   it.each([
+    {
+      report: {
+        migrated: false,
+        skipped: false,
+        changes: [],
+        warnings: ["Manual state repair remains"],
+      },
+      expected: true,
+    },
+    {
+      report: {
+        migrated: false,
+        skipped: false,
+        changes: [],
+        warnings: ["Archived state requires manual inspection"],
+        warningDisposition: "recoverable" as const,
+      },
+      expected: false,
+    },
+  ])(
+    "retains unresolved migration outcomes for retirement admission: $expected",
+    async ({ report, expected }) => {
+      await withDoctorConfigPreflightHome(async (home) => {
+        await writeOpenClawConfig(home, { plugins: { enabled: false } });
+        const legacyState = await import("../infra/state-migrations.state-dir.js");
+        vi.spyOn(legacyState, "autoMigrateLegacyStateDir").mockResolvedValue(report);
+
+        const preflight = await runDoctorConfigPreflight(doctorRepairOptions);
+
+        expect(preflight.stateMigrationUnsettled).toBe(expected);
+      });
+    },
+  );
+
+  it.each([
     { selector: "environment", sidecarBytes: "not JSON" },
     { selector: "prefixed-include", sidecarBytes: "retired encrypted bytes" },
   ])(
@@ -412,6 +447,7 @@ describe("runDoctorConfigPreflight", () => {
 
       expect(repaired.snapshot.valid).toBe(true);
       expect(repaired.snapshot.config.gateway?.bind).toBe("loopback");
+      expect(repaired.configChanged).toBe(true);
       const persisted = JSON.parse(await fs.readFile(configPath, "utf-8")) as {
         gateway?: { bind?: string };
       };
@@ -470,6 +506,7 @@ describe("runDoctorConfigPreflight", () => {
 
         expect(repaired.snapshot.valid).toBe(true);
         expect(repaired.snapshot.config.gateway?.port).toBe(19092);
+        expect(repaired.configChanged).toBe(true);
         expect(repaired.snapshot.config).toHaveProperty("session.reset.idleMinutes", 45);
         expect(repaired.snapshot.config).toHaveProperty(
           "channels.discord.guilds.100.channels.general.enabled",
@@ -488,6 +525,7 @@ describe("runDoctorConfigPreflight", () => {
           runDoctorConfigPreflight(configRepairOptions),
         );
         expect(converged.snapshot.valid).toBe(true);
+        expect(converged.configChanged).toBe(false);
         await expect(
           observeDoctorConfigStep("read-converged-config", () => fs.readFile(configPath, "utf-8")),
         ).resolves.toBe(migratedRaw);
@@ -559,6 +597,7 @@ describe("runDoctorConfigPreflight", () => {
 
       expect(repaired.snapshot.valid).toBe(true);
       expect(repaired.snapshot.config.gateway?.port).toBe(19091);
+      expect(repaired.configChanged).toBe(true);
       await expect(fs.readFile(configPath, "utf-8")).resolves.toBe(lastGoodRaw);
       const entries = await fs.readdir(path.dirname(configPath));
       const clobbered = entries.filter((entry) => entry.startsWith("openclaw.json.clobbered."));
@@ -571,6 +610,7 @@ describe("runDoctorConfigPreflight", () => {
         runDoctorConfigPreflight(configRepairOptions),
       );
       expect(converged.snapshot.valid).toBe(true);
+      expect(converged.configChanged).toBe(false);
       await expect(fs.readFile(configPath, "utf-8")).resolves.toBe(lastGoodRaw);
       expect(
         (await fs.readdir(path.dirname(configPath))).filter((entry) =>
