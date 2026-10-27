@@ -14,7 +14,6 @@ import { ensureProfileForEmail } from "../../state/user-profiles.js";
 import { withOpenClawTestState } from "../../test-utils/openclaw-test-state.js";
 import { createGatewayRequestContext } from "../server-request-context.js";
 import { makeContextParams } from "../server-request-context.test-support.js";
-import { gatewayConnect, gatewayProfile } from "../server/client-fixtures.test-support.js";
 import * as chatAdmission from "./chat-send-admission.js";
 import { handleChatSend } from "./chat-send-handler.js";
 import type { GatewayClient, RespondFn } from "./types.js";
@@ -42,11 +41,19 @@ it("settles a detached dispatch failure when chat-run cleanup throws", async () 
     });
     const client: GatewayClient = {
       connId: "detached-client",
-      authenticatedUserProfile: gatewayProfile(profile.id),
-      connect: gatewayConnect(["operator.read", "operator.write", "operator.admin"], {
-        id: "cli",
-        mode: "cli",
-      }),
+      authenticatedUserProfile: {
+        profileId: profile.id,
+        displayName: null,
+        hasAvatar: false,
+        updatedAt: 1,
+      },
+      connect: {
+        minProtocol: 1,
+        maxProtocol: 1,
+        client: { id: "cli", mode: "cli", version: "test", platform: "test" },
+        role: "operator",
+        scopes: ["operator.read", "operator.write", "operator.admin"],
+      },
     };
     const context = createGatewayRequestContext(makeContextParams());
     const removeFaulted = createDeferred();

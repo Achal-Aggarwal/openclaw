@@ -16,11 +16,10 @@ import { executePreparedReplyAgentRun } from "./agent-runner-execute.js";
 import {
   createFollowupRun,
   createMinimalRunAgentTurnParams,
-  createMockReplyOperation,
   setupAgentRunnerExecutionTestState,
 } from "./agent-runner-execution.test-support.js";
 import { createReplyRestartRecoveryClaimController } from "./restart-recovery-claim.js";
-import { createMockTypingController } from "./test-helpers.js";
+import { createMockReplyOperation, createMockTypingController } from "./test-helpers.js";
 
 const fixture = useSubagentControlFixture();
 const state = await setupAgentRunnerExecutionTestState();
@@ -104,11 +103,10 @@ it("settles a reply visibly when the reactivation cohort changes before replacem
     key: sessionKey,
     sessionId: target.sessionId,
   });
-  const followupRun = createFollowupRun({
-    config: getRuntimeConfig(),
-    sessionKey,
-    sessionId: target.sessionId,
-  });
+  const followupRun = createFollowupRun();
+  followupRun.run.config = getRuntimeConfig();
+  followupRun.run.sessionKey = sessionKey;
+  followupRun.run.sessionId = target.sessionId;
   followupRun.userTurnTranscriptRecorder = recorder;
   const result = await executePreparedReplyAgentRun({
     ...createMinimalRunAgentTurnParams({
@@ -126,7 +124,6 @@ it("settles a reply visibly when the reactivation cohort changes before replacem
     queueKey: sessionKey,
     resolvedQueue: { mode: "followup" },
     shouldInjectGroupIntro: false,
-    preflightCompactionApplied: false,
     replyMediaContext: { normalizePayload: async (payload) => payload },
     replyRouteThreadId: undefined,
     replyToChannel: "webchat",
@@ -134,6 +131,16 @@ it("settles a reply visibly when the reactivation cohort changes before replacem
     typing: createMockTypingController(),
     typingMode: "never",
     getActiveSessionEntry: () => entry,
+    setActiveSessionEntry: (next) => {
+      if (next) {
+        entry = next;
+      }
+    },
+    applyReplyToMode: (payload) => payload,
+    sendDirectCompactionNotice: undefined,
+    shouldEmitToolOutput: () => false,
+    shouldEmitToolResult: () => false,
+    turnAdoptionLifecycle: undefined,
     isRestartRecoveryArmed: admission.isArmed,
     onCompactionNoticePayload: () => {},
     resolveVisibleReplyDelivery: async () => false,
