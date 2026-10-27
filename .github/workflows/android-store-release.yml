@@ -22,7 +22,7 @@ on:
 permissions: {}
 
 concurrency:
-  group: android-release
+  group: android-checkout-proof-${{ github.run_id }}
   cancel-in-progress: false
   queue: max
 
@@ -64,7 +64,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.sha }}
-          fetch-depth: 0
+          fetch-depth: 1
           persist-credentials: false
 
       - name: Verify release source
@@ -72,6 +72,13 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+
+      - name: Fetch release source history
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Keep release-note history without fetching unrelated branches and tags.
+          git fetch --no-tags --unshallow origin "$GITHUB_SHA"
 
       - name: Prepare trusted Linux Android tooling
         if: >-
@@ -236,3 +243,86 @@ jobs:
           if-no-files-found: ignore
           compression-level: 0
           retention-days: 30
+
+  checkout-proof:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/proof/android-release-checkout'
+    permissions:
+      contents: read
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    strategy:
+      max-parallel: 1
+      fail-fast: true
+      matrix:
+        sample: [1, 2, 3, 4, 5]
+    env:
+      SOURCE_SHA: 0d838ac431b57bbce984636ce4e395b4e2108e7b
+      BASELINE_REF: refs/openclaw/mobile-releases/android/v2/2026.10.5/0/2/2026090492-2026090493
+      BASELINE_SHA: 5460cca0d0fbc076dd8a65ca9b3eba27549edbf7
+    steps:
+      - name: Start cold checkout measurement
+        shell: bash
+        run: echo "CHECKOUT_STARTED=$(date +%s)" >> "$GITHUB_ENV"
+
+      - name: Checkout release source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Verify release source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          test "$(git rev-parse --is-shallow-repository)" = true
+
+      - name: Fetch release source history
+        shell: bash
+        run: |
+          set -euo pipefail
+          # The diagnostic branch is unmerged; use the frozen main source, not its dispatch SHA.
+          git fetch --no-tags --unshallow origin "$SOURCE_SHA"
+          echo "CHECKOUT_SECONDS=$(($(date +%s) - CHECKOUT_STARTED))" >> "$GITHUB_ENV"
+
+      - name: Verify full selected history without unrelated refs
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          test "$(git rev-parse --is-shallow-repository)" = false
+          test -z "$(git for-each-ref --format='%(refname)' refs/remotes refs/tags)"
+          test "$(git rev-list --count "$SOURCE_SHA")" = 121122
+          {
+            echo "Sample ${{ matrix.sample }} cold checkout + source history: ${CHECKOUT_SECONDS}s"
+            echo '```'
+            git count-objects -v
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Verify existing main and public baseline fetches
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin refs/heads/main
+          git merge-base --is-ancestor "$SOURCE_SHA" FETCH_HEAD
+          test "$(git ls-remote --refs origin "$BASELINE_REF" | cut -f1)" = "$BASELINE_SHA"
+          git fetch --no-tags origin "$BASELINE_REF"
+          test "$(git rev-parse FETCH_HEAD)" = "$BASELINE_SHA"
+          staged="$RUNNER_TEMP/staged-release"
+          git worktree add --detach "$staged" "$SOURCE_SHA"
+          cd "$staged"
+          roots=(
+            apps/android/app/src/main/ apps/android/app/src/play/
+            apps/android/wear/src/main/ apps/android/wear-shared/src/main/
+            apps/shared/OpenClawKit/Sources/OpenClawKit/Resources/ apps/shared/mermaid/
+          )
+          # Compare with the full local history at the successful release's saved source/baseline.
+          diff_hash="$(git diff --no-ext-diff --no-textconv --find-renames=50% --unified=3 "$BASELINE_SHA" "$SOURCE_SHA" -- "${roots[@]}" | sha256sum | cut -d' ' -f1)"
+          history_hash="$(git log --first-parent --format=%s --max-count=80 "$BASELINE_SHA..$SOURCE_SHA" -- "${roots[@]}" | sha256sum | cut -d' ' -f1)"
+          test "$diff_hash" = c40c226fbf1846bae1aaaa729860f352236bc8ea671ef26258faeaf25785b290
+          test "$history_hash" = f281e0046f91e0ccfaa6a7f3e4befda94f25e98822b9fbfe48ec73c08b463d48
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          test -z "$(git status --porcelain)"
+          echo 'Exact source, 121122 ancestors, current-main ancestry, saved public baseline, endpoint diff and first-parent history verified.' >> "$GITHUB_STEP_SUMMARY"
