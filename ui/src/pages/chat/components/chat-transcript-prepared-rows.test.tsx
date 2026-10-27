@@ -286,22 +286,27 @@ async function transcriptFixture(
   };
 }
 
-it("warms idle HTML during an active run but defers DOM preparation until completion", async () => {
+it("warms active-run HTML and nearby geometry but defers distant DOM until completion", async () => {
   const view = await transcriptFixture(0, true, false, "retained");
   await view.setRunActive(true);
   const elements = view.container.querySelectorAll(".chat-virtual-row").length;
   await view.idle(0);
-  for (let turn = 0; turn < 20; turn++) {
+  for (let turn = 0; turn < 80; turn++) {
     await view.idle(10, 1);
   }
   // The first fast scroll can cross more than the retained geometry window.
   expect(prewarmGroupedMessage(view.groups[40]!.messages[0]!.message, {})).toBe(false);
-  expect(view.container.querySelectorAll(".chat-virtual-row")).toHaveLength(elements);
+  expect(view.container.querySelector('[data-virtual-row-key="fragment:20"]')).not.toBeNull();
+  expect(view.container.querySelector('[data-virtual-row-key="fragment:40"]')).toBeNull();
+  expect(view.container.querySelectorAll(".chat-virtual-row").length).toBeLessThanOrEqual(
+    elements + 24,
+  );
   expect(view.container.querySelector("[data-preparing-row]")).toBeNull();
 
+  const prepared = view.renderRow.mock.calls.length;
   await view.setRunActive(false);
   await view.idle();
-  expect(view.container.querySelectorAll(".chat-virtual-row").length).toBeGreaterThan(elements);
+  expect(view.renderRow.mock.calls.length).toBeGreaterThan(prepared);
 });
 
 it.each(["group", "frame"] as const)(

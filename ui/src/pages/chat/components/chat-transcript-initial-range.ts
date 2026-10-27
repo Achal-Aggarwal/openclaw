@@ -45,7 +45,7 @@ export class TranscriptInitialRange {
       entry: ResizeObserverEntry | undefined,
     ) => number,
     private readonly prewarmRow?: (index: number, mode: MarkdownPrewarmMode) => boolean,
-    private readonly canMaterializeIdle?: () => boolean,
+    private readonly canSweepIdleGeometry?: () => boolean,
   ) {
     this.tailRows = initialOffset === null ? 1 : 0;
   }
@@ -353,8 +353,8 @@ export class TranscriptInitialRange {
             ? range.endIndex
             : range.startIndex;
       const rendered = new Set(virtualizer.getVirtualItems().map((row) => row.key));
-      const materializeIdle = this.canMaterializeIdle?.() !== false;
-      const nearGeometryPending = materializeIdle && this.idleMeasureStep <= PREPARED_ROW_LIMIT;
+      const sweepIdleGeometry = this.canSweepIdleGeometry?.() !== false;
+      const nearGeometryPending = this.idleMeasureStep <= PREPARED_ROW_LIMIT;
       if (prewarm && !moving) {
         // Measure nearby prepared rows before spending idle slices on distant HTML.
         const warmLimit = nearGeometryPending ? PREPARED_ROW_LIMIT : IDLE_PREWARM_ROW_LIMIT;
@@ -371,16 +371,16 @@ export class TranscriptInitialRange {
           if (!row) {
             break;
           }
-          const mode = materializeIdle && this.idleStep <= 8 ? "fragment" : "idle-html";
+          const mode = this.idleStep <= 8 ? "fragment" : "idle-html";
           if (!rendered.has(row.key) && this.prewarmRow?.(index, mode)) {
             continue;
           }
           this.idleStep++;
         }
       }
-      // Active generation keeps its DOM budget; idle HTML can still remove
-      // cold parsing from the reader's first scroll without mounting rows.
-      if (!moving && !materializeIdle) {
+      // Keep the nearest geometry ready for the first scroll, but leave the
+      // distant measurement sweep paused while a run needs the main thread.
+      if (!moving && !sweepIdleGeometry && !nearGeometryPending) {
         return;
       }
       // Warming covers the predicted viewport, whose row count varies with
@@ -410,6 +410,9 @@ export class TranscriptInitialRange {
         candidates < lookahead && admitted === 0;
         step++
       ) {
+        if (!moving && !sweepIdleGeometry && step > PREPARED_ROW_LIMIT) {
+          break;
+        }
         if (performance.now() >= deadline) {
           this.queuePreparation(warmOnly ? canMaterialize && !skipSpeculativeDom : true);
           return;
