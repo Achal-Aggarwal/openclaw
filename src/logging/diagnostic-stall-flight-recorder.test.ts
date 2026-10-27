@@ -77,21 +77,13 @@ function fixture(firstProfile?: string) {
     handles[0]!.stop.mockReturnValue(firstProfile);
   }
   recorders.push(recorder);
-  const sampleAt = (
-    value: number,
-    stall: { startedAt: number; endedAt: number } | null = {
-      startedAt: value - 1_500,
-      endedAt: value,
-    },
-  ) => {
+  const sampleAt = (value: number, stall?: Parameters<typeof recorder.sample>[0] | null) => {
     time = value;
-    return recorder.sample(stall ?? undefined);
+    return recorder.sample(
+      stall === null ? undefined : (stall ?? { startedAt: value - 1_500, endedAt: value }),
+    );
   };
   return { recorder, handles, warn, sampleAt, elapse: (ms: number) => (time += ms) };
-}
-function capture(json: string) {
-  const fixtureState = fixture(json);
-  return { ...fixtureState, result: fixtureState.sampleAt(1_500) };
 }
 it.each(["linux", "win32"] as const)(
   "rotates without a sampling gap and reports recent stall frames on %s",
@@ -245,35 +237,32 @@ it.each([
     profile(0, "placeholder").replace('"placeholder"', '"private"name\\with\ncontrols"'),
     'inclusive=[["[redacted]@node:timers:10",2]]',
   ],
-])("redacts %s without losing safe frames", (_kind, json, expected) => {
-  const { result, warn } = capture(json);
-  expect(result).toContain(expected);
-  expect(result).not.toMatch(/secretAccount|private|person/);
-  expect(warn).not.toHaveBeenCalled();
-});
-
-it.each([
-  'quoted"file.js',
-  String.raw`windows\file.js`,
-  "line\nbreak.js",
-  'json-{"key":"value"}-file.js',
-])("keeps trusted caller attribution when native script names contain %j", (filename) => {
-  // V8's native serializer writes these strings verbatim, without JSON escaping.
-  const { result, warn, sampleAt } = capture(
+  ...[
+    'quoted"file.js',
+    String.raw`windows\file.js`,
+    "line\nbreak.js",
+    'json-{"key":"value"}-file.js',
+  ].map((filename) => [
+    filename,
+    // V8's native serializer writes these strings verbatim, without JSON escaping.
     profile(0, "secretAccount")
       .replace('"functionName":"(root)"', '"functionName":"trustedCaller"')
       .replace('"url":"node:timers"', `"url":"file:///private/${filename}"`)
       .replace('"url":""', '"url":"node:timers"'),
-  );
-  expect(result).toContain('inclusive=[["trustedCaller@node:timers:0",2]]');
-  expect(result).not.toMatch(/secretAccount|private|quoted|windows|break/);
+    'inclusive=[["trustedCaller@node:timers:0",2]]',
+  ]),
+])("redacts %s without losing safe frames or later samples", (_kind, json, expected) => {
+  const { warn, sampleAt } = fixture(json);
+  const result = sampleAt(1_500);
+  expect(result).toContain(expected);
+  expect(result).not.toMatch(/secretAccount|private|person|quoted|windows|break/);
   expect(warn).not.toHaveBeenCalled();
   expect(sampleAt(6_500)).toContain("work1@node:timers:10");
 });
 
 it("caps oversized windows and disables failed capture without failing the sampler", () => {
-  const { recorder, handles, warn, result } = capture(" ".repeat(1_048_577));
-  expect(result).toContain("truncated=true inclusive=[]");
+  const { recorder, handles, warn, sampleAt } = fixture(" ".repeat(1_048_577));
+  expect(sampleAt(1_500)).toContain("truncated=true inclusive=[]");
   native.start.mockImplementation(() => {
     throw new Error("native failure");
   });
@@ -283,27 +272,20 @@ it("caps oversized windows and disables failed capture without failing the sampl
   expect(recorder.sample({ startedAt: 0, endedAt: 1_500 })).toBeUndefined();
 });
 
-it("never starts the automatic native sampler on macOS", () => {
-  native.platform = "darwin";
+it.each(["runtime", "profiler", "worker", "macOS"])("never starts the sampler for %s", (kind) => {
+  native.versions.node = kind === "runtime" ? "24.19.0" : "26.6.0";
+  native.conflict.mockReturnValue(kind === "profiler");
+  native.mainThread = kind !== "worker";
+  native.platform = kind === "macOS" ? "darwin" : "linux";
   const { recorder, sampleAt, warn } = fixture();
   expect(sampleAt(5_000, null)).toBeUndefined();
   expect(sampleAt(6_500)).toBeUndefined();
   recorder.stop();
   expect(sampleAt(12_000)).toBeUndefined();
   expect(native.start).not.toHaveBeenCalled();
-  expect(warn).toHaveBeenCalledExactlyOnceWith(
-    "stall flight recorder unavailable: macos-native-profiler-deadlock-risk",
+  expect(warn.mock.calls).toEqual(
+    kind === "macOS"
+      ? [["stall flight recorder unavailable: macos-native-profiler-deadlock-risk"]]
+      : [],
   );
 });
-
-it.each(["runtime", "profiler", "worker"])(
-  "leaves an unsupported or conflicting %s alone",
-  (kind) => {
-    native.versions.node = kind === "runtime" ? "24.19.0" : "26.6.0";
-    native.conflict.mockReturnValue(kind === "profiler");
-    native.mainThread = kind !== "worker";
-    const { recorder } = fixture();
-    expect(recorder.sample({ startedAt: 0, endedAt: 1_500 })).toBeUndefined();
-    expect(native.start).not.toHaveBeenCalled();
-  },
-);
