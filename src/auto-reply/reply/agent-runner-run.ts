@@ -251,7 +251,11 @@ export async function runReplyAgent(
     const activeReplyOperation = controllerInput.mailbox.owner.active;
     const steeringRequesterMismatch =
       isActiveSteer && hasReplySteeringRequesterMismatch(followupRun, activeReplyOperation);
-    if (messageInjectionDisposition === "collaborative-steering-disabled") {
+    const collaborationBlocked = messageInjectionDisposition === "collaborative-steering-disabled";
+    if (
+      collaborationBlocked &&
+      followupRun.run.config.messages?.queue?.collaborativeSteeringFallback === "reject"
+    ) {
       try {
         await refuseCollaborativeSteering(followupRun, replyOperationRunState);
       } finally {
@@ -263,7 +267,8 @@ export async function runReplyAgent(
     // independently of whether the incoming requester could collaborate.
     const shouldQueueUnavailableSteer =
       isActiveSteer &&
-      (messageInjectionDisposition === "rejected" ||
+      (collaborationBlocked ||
+        messageInjectionDisposition === "rejected" ||
         (messageInjectionDisposition === "none" && !activeReplyOperation));
     const typingSignals = createTypingSignaler({
       typing,
@@ -272,19 +277,18 @@ export async function runReplyAgent(
     // New steering must not reuse a terminal source claim. Compare the active
     // source identity so unrelated retained tombstones still permit steering.
     // The parked admission owner rechecks after any predecessor wait.
-    const activeSourceTurnId =
-      controllerInput.mailbox.owner.sourceTurnId ??
-      normalizeOptionalString(restartRecoveryEntry?.restartRecoveryDeliverySourceRunId) ??
-      "";
     const terminalDeliveryBlockReason = resolveRestartRecoverySteeringBlockReason(
       restartRecoveryEntry,
       activeReplyOperation?.sessionId ?? followupRun.run.sessionId,
-      activeSourceTurnId,
+      controllerInput.mailbox.owner.sourceTurnId ??
+        normalizeOptionalString(restartRecoveryEntry?.restartRecoveryDeliverySourceRunId) ??
+        "",
     );
     const shouldQueueTerminalReceiptSteer =
       isActiveSteer &&
       messageInjectionDisposition === "none" &&
-      terminalDeliveryBlockReason !== undefined;
+      terminalDeliveryBlockReason !== undefined &&
+      terminalDeliveryBlockReason !== "stale-claim";
 
     // Direct question creators can attest their caller before publishing a reply operation.
     const questionInput: Awaited<ReturnType<typeof runReplyQuestionInput>> =
@@ -416,6 +420,7 @@ export async function runReplyAgent(
       replyRunState.recordReplyFollowupAdmission(replyOperationRunState, {
         explicitFollowup,
         requesterMismatch: questionRequesterMismatch,
+        collaborationBlocked,
         unavailableSteer:
           effectiveShouldSteer && (isActive || messageInjectionDisposition === "rejected"),
         followupRun,

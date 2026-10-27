@@ -123,18 +123,20 @@ process.env = teamShape?.env ?? {
 
 const [
   { prepareSessionMaintenancePreservation },
-  { subagentRuns, compactSubagentRunForMemory, isSubagentRunPayloadEvicted },
+  { subagentRuns, compactSubagentRunForMemory },
+  { isSubagentRunPayloadEvicted },
   persistence,
   fixture,
   database,
   agentRuns,
-  { loadConfig },
+  { captureRuntimeConfigAsyncReader },
   { resolvePhysicalSessionStorePath },
   { buildActiveSubagentRuntimeContext },
   { buildControlledSubagentRunsReadContext },
 ] = await Promise.all([
   import("../../src/config/sessions/store-maintenance-preserve.js"),
   import("../../src/agents/subagents/registry/subagent-registry-memory.js"),
+  import("../../src/agents/subagents/registry/subagent-run-payload-facts.js"),
   import("../../src/agents/subagents/registry/subagent-registry-persistence.js"),
   import("../../src/agents/subagents/registry/subagent-registry-state.fixture.test-support.js"),
   import("../../src/state/openclaw-state-db.js"),
@@ -145,7 +147,7 @@ const [
   import("../../src/agents/subagents/registry/subagent-control-scope.js"),
 ]);
 await import("../../src/agents/subagents/registry/subagent-registry-maintenance.js");
-const cfg = loadConfig();
+const cfg = await captureRuntimeConfigAsyncReader()();
 
 const runId = (index: number) => `capture-run-${index}`;
 const childKey = (index: number) => `agent:main:subagent:capture-${index}`;
