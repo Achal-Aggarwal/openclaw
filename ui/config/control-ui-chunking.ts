@@ -67,31 +67,30 @@ export const controlUiLocaleConfigHintsChunkPrefix = "locale-config-hints-";
 export function controlUiStableChunkName(id: string): string | undefined {
   const normalized = normalizeModuleId(id);
 
+  // Chat media admission and Link Reader already load the Markdown closure.
   if (moduleIdIncludesPackage(id, "ipaddr.js")) {
-    return "net-policy-ip-runtime";
+    return "markdown-runtime";
   }
   switch (controlUiBootManifestKey(id)) {
     case "packages/net-policy/src/ip.ts":
-      return "net-policy-ip-runtime";
+      return "markdown-runtime";
     case "ui/src/components/app-sidebar-online.tsx":
       return "sidebar-online-runtime";
+    // These alternatives retain one unevaluated, normal-priority script preload.
     case "ui/src/pages/chat/components/chat-message-bubble-rich.tsx":
     case "ui/src/pages/chat/components/chat-message-attachment-status-solid.tsx":
     case "ui/src/pages/chat/components/chat-async-question-summary.tsx":
     case "ui/src/pages/chat/components/chat-message-context-view.tsx":
-      return "chat-message-rich-runtime";
     case "ui/src/pages/chat/components/chat-workspace-conflict.tsx":
-      return "chat-workspace-conflict-runtime";
     case "ui/src/pages/chat/components/chat-agent-run-frame.tsx":
     case "ui/src/pages/chat/components/chat-message-stream-view.tsx":
-      return "chat-stream-frame-runtime";
     case "ui/src/pages/chat/components/chat-working-indicator.tsx":
     case "ui/src/pages/chat/components/chat-working-indicator-branding.tsx":
     case "ui/src/components/working-phrase-solid.tsx":
     case "ui/src/pages/chat/components/chat-retry-status.tsx":
     case "ui/src/pages/chat/components/chat-working-indicator-surprise.ts":
     case "ui/src/pages/chat/components/chat-turn-recap-view.tsx":
-      return "chat-run-status-runtime";
+      return "chat-presentation-runtime";
     case "ui/src/components/modal-dialog.tsx":
     case "ui/src/components/solid/modal-dialog.tsx":
     case "ui/src/components/solid/modal-dialog.css":
@@ -99,7 +98,7 @@ export function controlUiStableChunkName(id: string): string | undefined {
       // Creation already fetches these controls; other dialogs avoid the full New route.
       return "route-controls-runtime";
     case "ui/src/components/markdown-json-parser.runtime.ts":
-      return "markdown-json-runtime";
+      return "markdown-streaming-runtime";
     case "ui/src/pages/chat/components/chat-ci-automation-control.tsx":
     case "ui/src/pages/chat/components/chat-ci-automation.tsx":
     case "ui/src/pages/chat/components/chat-ci-details.tsx":
@@ -153,6 +152,7 @@ export function controlUiStableChunkName(id: string): string | undefined {
     case "ui/src/pages/chat/components/chat-session-sharing-options.tsx":
       // Download mobile destinations with Chat, but evaluate them on the first mobile layout.
       return "chat-interaction-runtime";
+    case "ui/src/lib/protocol-validators.generated/session-restriction.js":
     case "ui/src/pages/chat/chat-tool-family-runtime.ts":
     case "ui/src/pages/chat/chat-tool-activity-coalesce.runtime.ts":
     case "ui/src/pages/chat/chat-sessions-yield.runtime.ts":
@@ -448,7 +448,7 @@ export function controlUiStableChunkName(id: string): string | undefined {
     case "ui/src/i18n/locales/en-file-preview.ts":
     case "src/shared/text/citation-control-markers.ts":
       // Parser extensions and sanitization are shared by non-Chat documents.
-      return "markdown-rendering-runtime";
+      return "markdown-runtime";
     case "ui/src/components/markdown-live.ts":
     case "ui/src/components/markdown-streaming.ts":
     case "ui/src/components/markdown-tokens.ts":
@@ -477,15 +477,15 @@ export function controlUiStableChunkName(id: string): string | undefined {
     return `locale-namespace-${normalized.slice(resolvedLocaleNamespaceModulePrefix.length).replace("/", "-")}`;
   }
 
-  // Emoji completion shares the vendor parser without evaluating document rendering.
+  // Optional JSON and streaming parsers share their existing low-priority preload.
   if (moduleIdIncludesPackage(id, "jsonc-parser")) {
-    return "markdown-json-runtime";
+    return "markdown-streaming-runtime";
   }
   if (
     moduleIdIncludesPackage(id, "markdown-it-cjk-friendly") ||
     moduleIdIncludesPackage(id, "get-east-asian-width")
   ) {
-    return "markdown-rendering-runtime";
+    return "markdown-runtime";
   }
   // Code highlighting is requested by the first completed code block; it must
   // not share the parser/sanitizer chunk used by ordinary transcript prose.

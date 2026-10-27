@@ -510,24 +510,15 @@ describe("Control UI build chunking", () => {
       [new URL("../pages/chat/route-entry.ts", import.meta.url).pathname, "chat-route-entry"],
       [new URL("../pages/cron/cron-page.tsx", import.meta.url).pathname, "cron-page"],
       [new URL("../pages/plugins/plugins-page.tsx", import.meta.url).pathname, "plugins-page"],
-      [
-        new URL("../components/markdown-parser.ts", import.meta.url).pathname,
-        "markdown-rendering-runtime",
-      ],
-      [
-        new URL("../components/markdown-json.ts", import.meta.url).pathname,
-        "markdown-rendering-runtime",
-      ],
+      [new URL("../components/markdown-parser.ts", import.meta.url).pathname, "markdown-runtime"],
+      [new URL("../components/markdown-json.ts", import.meta.url).pathname, "markdown-runtime"],
       [
         new URL("../components/markdown-json-parser.runtime.ts", import.meta.url).pathname,
-        "markdown-json-runtime",
+        "markdown-streaming-runtime",
       ],
-      ["/repo/ui/node_modules/jsonc-parser/lib/esm/main.js", "markdown-json-runtime"],
-      [
-        "/repo/ui/node_modules/markdown-it-cjk-friendly/dist/index.js",
-        "markdown-rendering-runtime",
-      ],
-      ["/repo/ui/node_modules/get-east-asian-width/index.js", "markdown-rendering-runtime"],
+      ["/repo/ui/node_modules/jsonc-parser/lib/esm/main.js", "markdown-streaming-runtime"],
+      ["/repo/ui/node_modules/markdown-it-cjk-friendly/dist/index.js", "markdown-runtime"],
+      ["/repo/ui/node_modules/get-east-asian-width/index.js", "markdown-runtime"],
       [
         new URL("../pages/chat/chat-spawned-subagent.ts", import.meta.url).pathname,
         "deferred-ui-support",
@@ -552,12 +543,12 @@ describe("Control UI build chunking", () => {
     }
   });
 
-  it("keeps address policy in one optional runtime ahead of measured route groups", () => {
+  it("keeps address policy with its existing Markdown consumers ahead of measured route groups", () => {
     const policy = new URL("../../../packages/net-policy/src/ip.ts", import.meta.url).pathname;
     const ipaddr = new URL("../../node_modules/ipaddr.js/lib/ipaddr.js", import.meta.url).pathname;
     const stableGroup = controlUiCodeSplitting.groups[0];
     for (const id of [policy, ipaddr]) {
-      expect(controlUiStableChunkName(id)).toBe("net-policy-ip-runtime");
+      expect(controlUiStableChunkName(id)).toBe("markdown-runtime");
       expect(stableGroup?.test?.(id)).toBe(true);
     }
   });
