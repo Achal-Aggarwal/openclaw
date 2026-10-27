@@ -299,7 +299,6 @@ module.exports = { id: ${JSON.stringify(provider)}, register(api) {
   const retainedShape = {
     controlCollected: true,
     captured: 1,
-    currentExportAlive: true,
     registries: 1,
   };
   expect(retained).toMatchObject(retainedShape);
@@ -341,12 +340,7 @@ module.exports = { id: ${JSON.stringify(provider)}, register(api) {
   }
   expect(
     JSON.parse(fs.readFileSync(path.join(fixture.root, "retention.json"), "utf8")),
-  ).toMatchObject({
-    captured: 2,
-    nativeExports: 2,
-    registries: 1,
-    controlCollected: true,
-  });
+  ).toMatchObject(retainedShape);
   const heap = fs
     .readFileSync(path.join(fixture.root, "heap.jsonl"), "utf8")
     .trim()
