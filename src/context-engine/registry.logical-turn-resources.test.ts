@@ -14,7 +14,11 @@ import { AsyncWorkScope, getAsyncWorkSignal, trackAsyncWork } from "../shared/as
 import * as initialization from "./init.js";
 import { LegacyContextEngine } from "./legacy.js";
 import * as health from "./quarantine-health.js";
-import { createNativeSource, resolveFixtureEngine } from "./registry-resources.test-support.js";
+import {
+  createNativeSource,
+  createRegistryFixture,
+  resolveFixtureEngine,
+} from "./registry-resources.test-support.js";
 import * as contextEngineRegistry from "./registry.js";
 import {
   adoptRuntimeContextEngineRegistrations,
@@ -72,14 +76,7 @@ describe("logical-turn native resources", () => {
       }
     });
     const { database, resources: source } = native;
-    const reads: number[] = [];
-    const read = () => {
-      try {
-        reads.push(native.read());
-      } catch {
-        reads.push(-1);
-      }
-    };
+    const read = vi.fn(native.read);
     const factoryStarted = createDeferred();
     const factoryGate = createDeferred();
     const factoryTail = createDeferred();
@@ -188,10 +185,15 @@ describe("logical-turn native resources", () => {
     if (mode !== "raw-view") {
       viewSource.attach(copiedView);
     }
-    const config = {
-      plugins: {
-        entries: { [plugin.id]: { enabled: true } },
-        slots: { contextEngine: "selected" },
+    const leaseOptions = {
+      identity: { runId: "fixture-run", sessionId: "fixture-session" },
+      agentDir: "/synthetic/staged-agent",
+      workspaceDir: "/synthetic/workspace",
+      config: {
+        plugins: {
+          entries: { [plugin.id]: { enabled: true } },
+          slots: { contextEngine: "selected" },
+        },
       },
     };
     const cleanupScope = createAgentCleanupScope();
@@ -214,28 +216,23 @@ describe("logical-turn native resources", () => {
       const create = () =>
         cleanupScope.run(() =>
           withRegistry(copiedView, async (): Promise<Lease> => {
-            const options = {
-              agentDir: "/synthetic/staged-agent",
-              workspaceDir: "/synthetic/workspace",
-            };
             // Keep the acquired alias pair even though lease initialization refreshes legacy.
             if (mode === "shared") {
-              const pair = await resolveLogicalTurnContextEngines(config, options);
+              const pair = await resolveLogicalTurnContextEngines(
+                leaseOptions.config,
+                leaseOptions,
+              );
               using resolution = vi
                 .spyOn(contextEngineRegistry, "resolveLogicalTurnContextEngines")
                 .mockResolvedValueOnce(pair);
               const lease = await createLease({
                 identity: { runId: "alias", sessionId: "alias" },
-                config,
+                config: leaseOptions.config,
               });
               expect(resolution).toHaveBeenCalledOnce();
               return lease;
             }
-            return createLease({
-              identity: { runId: "fixture-run", sessionId: "fixture-session" },
-              config,
-              ...options,
-            });
+            return createLease(leaseOptions);
           }),
         );
       const lease = await (factoryAbort
@@ -365,7 +362,7 @@ describe("logical-turn native resources", () => {
       if (mode === "closing-factory") {
         expect.soft(cleanupScope.outcome).toBe("uncertain");
       }
-      expect.soft(new Set(reads)).toEqual(new Set([42]));
+      expect.soft(new Set(read.mock.results.map((result) => result.value))).toEqual(new Set([42]));
       expect(engineDisposals).toBe(mode === "closing-factory" ? 0 : mode === "last-user" ? 2 : 1);
       await lease.dispose();
     } finally {
@@ -543,20 +540,16 @@ describe("lazy fallback native resources", () => {
       registry.contextEngines.set("legacy", donor.contextEngines.get("legacy")!);
       const id = `quarantine-source-${mode}`;
       const failure = new Error("configured engine failed");
+      const fail = () => {
+        throw failure;
+      };
       if (mode !== "missing") {
         registerEngine(
           registry,
           id,
-          () => {
-            if (mode === "factory") {
-              throw failure;
-            }
-            return Object.assign(new LegacyContextEngine(), {
-              assemble: async () => {
-                throw failure;
-              },
-            });
-          },
+          mode === "factory"
+            ? fail
+            : () => Object.assign(new LegacyContextEngine(), { assemble: async () => fail() }),
           "plugin:fixture",
         );
       }
@@ -619,26 +612,14 @@ describe("registry adoption", () => {
     const donor = pluginRegistry(record);
     const target = pluginRegistry(record);
     const donorSource = new PluginRegistryInspectionResources(retireInspectionInstances);
-    const primarySource = new PluginRegistryInspectionResources(retireInspectionInstances);
-    donorSource.attach(donor);
-    primarySource.attach(target);
-    let calls = 0;
-    let primaryDisposals = 0;
-    primarySource.register(record.id, {
-      id: "primary",
-      dispose() {
-        primaryDisposals++;
-      },
-    });
-    registerEngine(
-      donor,
+    const { resources: primarySource, retired } = createRegistryFixture(
+      undefined,
+      target,
       record.id,
-      () => {
-        calls++;
-        return new LegacyContextEngine();
-      },
-      `plugin:${record.id}`,
     );
+    donorSource.attach(donor);
+    const factory = vi.fn(() => new LegacyContextEngine());
+    registerEngine(donor, record.id, factory, `plugin:${record.id}`);
     const copied = adoptRuntimeContextEngineRegistrations(target, donor);
     primarySource.attach(copied);
     await donorSource.release();
@@ -652,10 +633,10 @@ describe("registry adoption", () => {
         }),
       );
       expect(lease.degraded).toBe(true);
-      expect(calls).toBe(0);
+      expect(factory).not.toHaveBeenCalled();
       await primarySource.release();
       await lease.dispose();
-      expect(primaryDisposals).toBe(1);
+      expect(retired).toHaveBeenCalledOnce();
     } finally {
       await lease?.dispose();
       await primarySource.release();

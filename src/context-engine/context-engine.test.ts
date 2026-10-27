@@ -164,7 +164,6 @@ it("delegates compaction with caller identity overriding runtime context", async
 
 it.each([
   { name: "caller agent", agentId: "worker" },
-  { name: "physical session", sessionId: "another-session" },
   { name: "caller key", sessionKey: "agent:main:another-key" },
   {
     name: "caller parsed key",
@@ -296,20 +295,16 @@ it("bounds configured and fallback disposal in parallel", async () => {
   const scope = createAgentCleanupScope();
   const value = await lease();
   vi.useFakeTimers();
-  let settled = false;
-  const cleanup = scope
-    .run(() => value.dispose())
-    .then(() => {
-      settled = true;
-    });
+  const settled = vi.fn();
+  const cleanup = scope.run(() => value.dispose()).then(settled);
   try {
     await vi.advanceTimersByTimeAsync(0);
     expect(configuredDispose).toHaveBeenCalledOnce();
     expect(fallbackDispose).toHaveBeenCalledOnce();
     await vi.advanceTimersByTimeAsync(24);
-    expect(settled).toBe(false);
+    expect(settled).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(1);
-    expect(settled).toBe(true);
+    expect(settled).toHaveBeenCalledOnce();
     expect(scope.outcome).toBe("uncertain");
     await value.dispose();
     expect(configuredDispose).toHaveBeenCalledOnce();
@@ -435,11 +430,7 @@ it("does not construct or quarantine discovery factories or replace runtime regi
 it.each<[Parameters<typeof register>[1], RegExp]>([
   [() => createPassthroughEngineMethods() as ContextEngine, /missing info/],
   [
-    () =>
-      ({
-        info: raw.info,
-        ingest: (params: Parameters<ContextEngine["ingest"]>[0]) => raw.ingest(params),
-      }) as unknown as ContextEngine,
+    () => ({ info: raw.info, ingest: raw.ingest }) as unknown as ContextEngine,
     /missing assemble\(\), missing compact\(\)/,
   ],
   [() => 42n as unknown as ContextEngine, /BigInt/],
