@@ -45,14 +45,24 @@ import { holdFirstCompactRead } from "./subagent-registry-state.read.test-suppor
 import { registerSubagentRestoreCacheCases } from "./subagent-registry-state.restore.test-support.js";
 import type { SubagentRunRecord } from "./subagent-registry.types.js";
 
-function createRun(runId: string, overrides: Partial<SubagentRunRecord> = {}): SubagentRunRecord {
+function record(
+  runId: string,
+  overrides: Omit<Parameters<typeof createSubagentRunRecord>[0], "runId"> = {},
+) {
   return createSubagentRunRecord({
     runId,
     childSessionKey: `agent:main:subagent:${runId}`,
+    completion: { required: false },
+    delivery: { status: "not_required" },
+    ...overrides,
+  });
+}
+
+function createRun(runId: string, overrides: Partial<SubagentRunRecord> = {}): SubagentRunRecord {
+  return record(runId, {
     task: `task ${runId}`,
     createdAt: 1,
     execution: { status: "running", startedAt: 1 },
-    completion: { required: false },
     delivery: { status: "pending" },
     ...overrides,
   });
@@ -245,28 +255,9 @@ describe("subagent registry state", () => {
     });
   });
   describe("worker snapshots", () => {
-    function snapshot() {
-      return readSnapshot(new Map());
-    }
-
-    function record(
-      runId: string,
-      overrides: Omit<Parameters<typeof createSubagentRunRecord>[0], "runId"> = {},
-    ) {
-      return createSubagentRunRecord({
-        runId,
-        childSessionKey: `agent:main:subagent:${runId}`,
-        completion: { required: false },
-        delivery: { status: "not_required" },
-        ...overrides,
-      });
-    }
-    function runs(model: string, runId = "one") {
-      return runMap(record(runId, { model }));
-    }
-    function models(rows = snapshot()) {
-      return [...rows].map(([id, row]) => `${id}:${row.model}`);
-    }
+    const snapshot = () => readSnapshot(new Map());
+    const runs = (model: string, runId = "one") => runMap(record(runId, { model }));
+    const models = (rows = snapshot()) => [...rows].map(([id, row]) => `${id}:${row.model}`);
     function cleanupFailure() {
       return new AggregateError(
         [new Error("query failed"), new Error("reader cleanup failed")],
@@ -275,29 +266,44 @@ describe("subagent registry state", () => {
     }
 
     it.each(["maintenance", "schema"] as const)(
-      "rejects resident session-list reads from an ended %s scope",
+      "keeps published facts but rejects readers from an ended %s scope",
       async (kind) => {
-        publish(runs("retained"));
+        const changed = record("changed", { model: "before", createdAt: 20 });
+        publish(runMap(changed, record("other", { model: "retained", createdAt: 10 })));
+        const initial = snapshot();
         const identity = snapshotIdentity();
+        const admission = captureOpenClawStateWorkerContext().admission;
         const maintenance = createOpenClawDatabaseMaintenanceScope();
-        const bind = () => {
-          const prepared = readView({ env: state.env });
-          expect(prepared.snapshotIdentity()).toBe(identity);
-          return { current: AsyncLocalStorage.bind(snapshot), prepared };
-        };
-        const read =
-          kind === "maintenance"
-            ? maintenance.run(bind)
-            : withExistingOpenClawStateSchema(
-                { path: captureOpenClawStateWorkerContext().admission.databasePath },
-                bind,
-              );
-        await maintenance.close();
-        const failure = kind === "maintenance" ? "scope is closed" : "admission has ended";
-        expect(read.current).toThrow(failure);
-        expect(read.prepared.runs).toThrow(failure);
-        await expect(read.prepared.prepare()).rejects.toThrow(failure);
-        expect(snapshotIdentity()).toBe(identity);
+        const observed: string[][] = [];
+        const stop = subscribeSubagentRunChanges("persistence", () => observed.push(models()));
+        try {
+          const bind = () => {
+            const prepared = readView({ env: state.env });
+            expect(prepared.snapshotIdentity()).toBe(identity);
+            return { current: AsyncLocalStorage.bind(snapshot), prepared };
+          };
+          const read =
+            kind === "maintenance"
+              ? maintenance.run(bind)
+              : withExistingOpenClawStateSchema(
+                  { path: captureOpenClawStateWorkerContext().admission.databasePath },
+                  bind,
+                );
+          maintenance.run(() => publish(runMap({ ...changed, model: "after" }), [changed.runId]));
+          await maintenance.close();
+          admission.assertCurrent();
+          expect(observed).toEqual([["changed:after", "other:retained"]]);
+          expect(models()).toEqual(["changed:after", "other:retained"]);
+          expect(initial.get("changed")?.model).toBe("before");
+          const failure = kind === "maintenance" ? "scope is closed" : "admission has ended";
+          expect(read.current).toThrow(failure);
+          expect(read.prepared.runs).toThrow(failure);
+          await expect(read.prepared.prepare()).rejects.toThrow(failure);
+          expect(snapshotIdentity()).toBe(identity);
+        } finally {
+          stop();
+          await maintenance.close();
+        }
       },
     );
 
@@ -480,31 +486,26 @@ describe("subagent registry state", () => {
             clearCache();
             const admission = captureOpenClawStateWorkerContext().admission;
             expect(admission.identity.key).toMatch(/^path:/);
-            const gate = creation === "during" ? holdFirstCompactRead() : undefined;
-            const prepared = prepare();
-            try {
-              if (gate) {
-                await gate.entered;
-              } else {
-                await prepared;
-                expect(snapshot().size).toBe(0);
-              }
+            const createDatabase = () => {
               save(runs("created"));
               admission.assertCurrent();
               expect(admission.identity.key).toMatch(/^file:/);
-              if (creation === "after a named publication") {
+            };
+            try {
+              if (creation === "during") {
+                await holdFirstCompactRead().during(prepare(), createDatabase);
+              } else {
+                await prepare();
+                expect(snapshot().size).toBe(0);
+                createDatabase();
                 publish(runs("published", "own"), ["own"]);
               }
-              gate?.release();
-              await prepared;
               await prepare();
               expect(snapshot().get("one")?.model).toBe("created");
               if (creation === "after a named publication") {
                 expect(snapshot().get("own")?.model).toBe("published");
               }
             } finally {
-              gate?.release();
-              await prepared.catch(() => {});
               clearCache();
             }
           },
@@ -527,28 +528,6 @@ describe("subagent registry state", () => {
       });
       await prepare();
       expect(snapshot().get("one")?.model).toBe("canonical");
-    });
-
-    it("keeps published compact facts through a temporary writer scope without reloading", async () => {
-      const changed = record("changed", { model: "before", createdAt: 20 });
-      publish(runMap(changed, record("other", { model: "retained", createdAt: 10 })));
-      const initial = snapshot();
-      const admission = captureOpenClawStateWorkerContext().admission;
-      const observed: string[][] = [];
-      const stop = subscribeSubagentRunChanges("persistence", () => observed.push(models()));
-      const writer = createOpenClawDatabaseMaintenanceScope();
-      try {
-        writer.run(() => publish(runMap({ ...changed, model: "after" }), [changed.runId]));
-        await writer.close();
-        admission.assertCurrent();
-        const current = snapshot();
-        expect(observed).toEqual([["changed:after", "other:retained"]]);
-        expect(models(current)).toEqual(["changed:after", "other:retained"]);
-        expect(initial.get("changed")?.model).toBe("before");
-      } finally {
-        stop();
-        await writer.close();
-      }
     });
 
     it("keeps unrelated publication context failures visible", () => {
