@@ -30,6 +30,13 @@ export class TranscriptOffsetState {
   syncNativeOffset: (() => void) | null = null;
   recordProgrammaticScroll: ((before: number, after: number, maintenance: boolean) => void) | null =
     null;
+  offsetNotification = false;
+
+  consumeOffsetNotification(): boolean {
+    const notifying = this.offsetNotification;
+    this.offsetNotification = false;
+    return notifying;
+  }
 
   get touchActive(): boolean {
     return this.touching || this.touchScrolling;
@@ -251,7 +258,14 @@ export function observeTranscriptOffset(
       touching: owner.state.touching,
       programmatic,
     });
-    callback(offset, scrolling);
+    // The consumer takes this marker before rendering, so a nested resize
+    // notification still commits compensation synchronously.
+    owner.state.offsetNotification = true;
+    try {
+      callback(offset, scrolling);
+    } finally {
+      owner.state.offsetNotification = false;
+    }
     owner.onOffset(programmatic ? 0 : delta);
     // Range/isScrolling and pane follow policy already invalidate themselves.
     // The rail observes offsets directly; only touch-held history needs a geometry commit.
