@@ -145,24 +145,15 @@ function createSharedVault(corpus: "all" | "wiki" | "memory") {
   return createQueryVault({ config: { search: { backend: "shared", corpus } } });
 }
 
-function createAppConfig(): OpenClawConfig {
-  return { agents: { entries: { main: {} } } } as OpenClawConfig;
-}
-
-function createSessionVisibilityAppConfig(): OpenClawConfig {
+function createAppConfig(visibility?: "self" | "agent"): OpenClawConfig {
   return {
     agents: {
-      ...createAppConfig().agents,
-      defaults: { sandbox: { sessionToolsVisibility: "all" } },
+      entries: { main: {}, ...(visibility === "agent" ? { secondary: {} } : {}) },
+      ...(visibility === "self" && {
+        defaults: { sandbox: { sessionToolsVisibility: "all" } },
+      }),
     },
-    tools: { sessions: { visibility: "self" } },
-  } as OpenClawConfig;
-}
-
-function createAgentSessionVisibilityAppConfig(): OpenClawConfig {
-  return {
-    agents: { entries: { main: {}, secondary: {} } },
-    tools: { sessions: { visibility: "agent" } },
+    ...(visibility && { tools: { sessions: { visibility } } }),
   } as OpenClawConfig;
 }
 
@@ -487,7 +478,7 @@ describe("searchMemoryWiki", () => {
     const manager = mockRecallManager();
 
     const results = await searchWiki(config, "alpha", {
-      appConfig: createSessionVisibilityAppConfig(),
+      appConfig: createAppConfig("self"),
       agentId: "main",
       agentSessionKey: RECALL_SESSION_KEY,
       conversationRecall: CONVERSATION_RECALL,
@@ -517,7 +508,7 @@ describe("searchMemoryWiki", () => {
         memoryHit("sessions/secondary/private-session.jsonl", 1),
       ],
     });
-    const appConfig = createAgentSessionVisibilityAppConfig();
+    const appConfig = createAppConfig("agent");
 
     const results = await searchWiki(config, "transcript", { appConfig });
     const forbiddenPage = await readWiki(config, "sessions/secondary/private-session.jsonl", {
@@ -663,7 +654,7 @@ describe("getMemoryWikiPage", () => {
     const manager = useMemoryManager();
 
     const result = await readWiki(config, "sessions/main/child-session.jsonl", {
-      appConfig: createSessionVisibilityAppConfig(),
+      appConfig: createAppConfig("self"),
       agentSessionKey: "agent:main:child-session",
       sandboxed: true,
     });
@@ -705,7 +696,7 @@ describe("wiki corpus bridge page agent scoping", () => {
     const { config } = await createBridgeVisibilityVault();
     const readAs = (lookup: string, agent: string) =>
       readWiki(config, lookup, {
-        appConfig: createAgentSessionVisibilityAppConfig(),
+        appConfig: createAppConfig("agent"),
         agentSessionKey: `agent:${agent}:child-session`,
         sandboxed: true,
       });
@@ -723,7 +714,7 @@ describe("wiki corpus bridge page agent scoping", () => {
   it("filters cross-agent bridge pages out of wiki search results", async () => {
     const { config } = await createBridgeVisibilityVault();
     const scoped = await searchWiki(config, "wikiscope marker", {
-      appConfig: createAgentSessionVisibilityAppConfig(),
+      appConfig: createAppConfig("agent"),
       agentId: "main",
       agentSessionKey: "agent:main:child-session",
       sandboxed: true,
@@ -744,7 +735,7 @@ describe("wiki corpus bridge page agent scoping", () => {
 });
 registerSessionlessAgentScopeQueryTests({
   createQueryVault,
-  createAppConfig: createAgentSessionVisibilityAppConfig,
+  createAppConfig: () => createAppConfig("agent"),
   createMemoryManager,
   getActiveMemorySearchManagerMock,
   loadMemorySearchSessionStoreMock,
@@ -788,7 +779,7 @@ it("enforces self visibility without a conversation recall grant", async () => {
   const { config } = await createSharedVault("memory");
   mockRecallManager();
   const results = await searchWiki(config, "transcript", {
-    appConfig: createSessionVisibilityAppConfig(),
+    appConfig: createAppConfig("self"),
     agentId: "main",
     agentSessionKey: ANCHOR_SESSION_KEY,
     sandboxed: false,
