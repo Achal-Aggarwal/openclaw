@@ -636,7 +636,7 @@ describe.skipIf(process.platform === "win32")("survivor loaded stop policy", () 
       ],
       { encoding: "utf8" },
     );
-    expectStatus(result);
+    expect(result.status, result.stderr).toBe(0);
     expect(result.stdout).toBe(String(expected));
   });
 
