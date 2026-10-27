@@ -1205,6 +1205,39 @@ describe("memory plugin e2e", () => {
     await vi.advanceTimersByTimeAsync(15_000);
   });
 
+  test("rejects task success after the recall deadline", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    let resolveTask: ((value: string) => void) | undefined;
+    const result = runWithTimeout({
+      timeoutMs: 15_000,
+      task: async () =>
+        await new Promise<string>((resolve) => {
+          resolveTask = resolve;
+        }),
+    });
+    await Promise.resolve();
+
+    await vi.advanceTimersByTimeAsync(15_000);
+    resolveTask?.("late success");
+
+    await expect(result).resolves.toEqual({ status: "timeout" });
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  test.each([-30_000, 30_000])(
+    "keeps the outer recall deadline monotonic across wall-clock step %s",
+    async (jumpMs) => {
+      vi.useFakeTimers();
+      const task = createDeferred<string>();
+      const result = runWithTimeout({ timeoutMs: 15_000, task: async () => await task.promise });
+      vi.setSystemTime(Date.now() + jumpMs);
+      task.resolve("on time");
+      await expect(result).resolves.toEqual({ status: "ok", value: "on time" });
+      expect(vi.getTimerCount()).toBe(0);
+    },
+  );
+
   test("gates every memory surface on the agent's memorySearch.enabled", async () => {
     const embeddingsCreate = vi.fn(async () => ({
       data: [{ embedding: [0.1, 0.2, 0.3] }],
