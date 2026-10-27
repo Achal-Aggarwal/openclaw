@@ -45,7 +45,7 @@ export class TranscriptInitialRange {
       entry: ResizeObserverEntry | undefined,
     ) => number,
     private readonly prewarmRow?: (index: number, mode: MarkdownPrewarmMode) => boolean,
-    private readonly canPrepareIdle?: () => boolean,
+    private readonly canMaterializeIdle?: () => boolean,
   ) {
     this.tailRows = initialOffset === null ? 1 : 0;
   }
@@ -282,7 +282,7 @@ export class TranscriptInitialRange {
       this.preparingRowKey ||
       this.pending ||
       this.tailRows > 0 ||
-      !this.canPrepareNow()
+      !this.canPrepare()
     ) {
       return;
     }
@@ -295,7 +295,7 @@ export class TranscriptInitialRange {
       }
       const virtualizer = this.virtualizer();
       const range = virtualizer.range;
-      if (!this.canPrepareNow() || !range || !virtualizer.scrollElement || this.prepareStarted) {
+      if (!this.canPrepare() || !range || !virtualizer.scrollElement || this.prepareStarted) {
         return;
       }
       const rows = this.rows;
@@ -353,7 +353,8 @@ export class TranscriptInitialRange {
             ? range.endIndex
             : range.startIndex;
       const rendered = new Set(virtualizer.getVirtualItems().map((row) => row.key));
-      const nearGeometryPending = this.idleMeasureStep <= PREPARED_ROW_LIMIT;
+      const materializeIdle = this.canMaterializeIdle?.() !== false;
+      const nearGeometryPending = materializeIdle && this.idleMeasureStep <= PREPARED_ROW_LIMIT;
       if (prewarm && !moving) {
         // Measure nearby prepared rows before spending idle slices on distant HTML.
         const warmLimit = nearGeometryPending ? PREPARED_ROW_LIMIT : IDLE_PREWARM_ROW_LIMIT;
@@ -370,12 +371,17 @@ export class TranscriptInitialRange {
           if (!row) {
             break;
           }
-          const mode = this.idleStep <= 8 ? "fragment" : "idle-html";
+          const mode = materializeIdle && this.idleStep <= 8 ? "fragment" : "idle-html";
           if (!rendered.has(row.key) && this.prewarmRow?.(index, mode)) {
             continue;
           }
           this.idleStep++;
         }
+      }
+      // Active generation keeps its DOM budget; idle HTML can still remove
+      // cold parsing from the reader's first scroll without mounting rows.
+      if (!moving && !materializeIdle) {
+        return;
       }
       // Warming covers the predicted viewport, whose row count varies with
       // measured heights. A fixed candidate cap left its last rows cold.
@@ -498,15 +504,6 @@ export class TranscriptInitialRange {
       const frame = requestAnimationFrame((time) => prepare(time + 6));
       this.cancelPreparation = () => cancelAnimationFrame(frame);
     }
-  }
-
-  private canPrepareNow(): boolean {
-    // Active generation owns idle time; reader scrolling still warms its next viewport.
-    return (
-      this.canPrepare() &&
-      ((this.scrollSample.time > 0 && performance.now() - this.scrollSample.time < 100) ||
-        this.canPrepareIdle?.() !== false)
-    );
   }
 
   disconnect(): void {

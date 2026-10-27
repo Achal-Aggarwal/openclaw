@@ -286,18 +286,22 @@ async function transcriptFixture(
   };
 }
 
-it("yields idle preparation to an active run and resumes after completion", async () => {
+it("warms idle HTML during an active run but defers DOM preparation until completion", async () => {
   const view = await transcriptFixture(0, true, false, "retained");
   await view.setRunActive(true);
-  const rendered = view.renderRow.mock.calls.length;
-  await view.idle();
-  await view.idle();
-  expect(view.renderRow.mock.calls).toHaveLength(rendered);
+  const elements = view.container.querySelectorAll(".chat-virtual-row").length;
+  await view.idle(0);
+  for (let turn = 0; turn < 20; turn++) {
+    await view.idle(10, 1);
+  }
+  // The first fast scroll can cross more than the retained geometry window.
+  expect(prewarmGroupedMessage(view.groups[40]!.messages[0]!.message, {})).toBe(false);
+  expect(view.container.querySelectorAll(".chat-virtual-row")).toHaveLength(elements);
   expect(view.container.querySelector("[data-preparing-row]")).toBeNull();
 
   await view.setRunActive(false);
   await view.idle();
-  expect(view.renderRow.mock.calls.length).toBeGreaterThan(rendered);
+  expect(view.container.querySelectorAll(".chat-virtual-row").length).toBeGreaterThan(elements);
 });
 
 it.each(["group", "frame"] as const)(
