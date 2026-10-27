@@ -146,7 +146,9 @@ function sampleWindow(earlier: number[], block: number[], later: number[]) {
 }
 
 // This test uses the real sampler; do not bypass the macOS safety exclusion with a mock.
-it.skipIf(process.platform === "darwin" || typeof getBuiltinModule("v8").startCpuProfile !== "function")(
+it.skipIf(
+  process.platform === "darwin" || typeof getBuiltinModule("v8").startCpuProfile !== "function",
+)(
   "profiles a real 1,200 ms synchronous block without the unrelated work before its report",
   async () => {
     native.start.mockImplementation(getBuiltinModule("v8").startCpuProfile);
