@@ -46,8 +46,26 @@ it.for(["Move down", "Remove personal group"])(
     );
     expect(item).toBeDefined();
     item!.click();
-    expect(context.navigation.snapshot.personalSessionGroups).toEqual(
-      action === "Move down" ? [second, first, newest] : [second, newest],
+    const expected = action === "Move down" ? [second, first, newest] : [second, newest];
+    expect(context.navigation.snapshot.personalSessionGroups).toEqual(expected);
+    await waitForSolid(() =>
+      expect(
+        [...view.container.querySelectorAll("[data-personal-session-group]")].map((group) =>
+          group.getAttribute("data-personal-session-group"),
+        ),
+      ).toEqual(expected.map((group) => group.id)),
+    );
+    host.sidebarSnapshot = {
+      ...sidebarBootSnapshot(null),
+      personalGroups: [{ id: "new-scope", label: "Other workspace", sessionKeys: [] }],
+    };
+    context.navigation.update({ personalSessionGroups: [] });
+    await waitForSolid(() =>
+      expect(
+        [...view.container.querySelectorAll("[data-personal-session-group]")].map((group) =>
+          group.getAttribute("data-personal-session-group"),
+        ),
+      ).toEqual(["new-scope"]),
     );
   },
 );

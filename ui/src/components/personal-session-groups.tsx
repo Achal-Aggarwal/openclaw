@@ -35,10 +35,12 @@ function PersonalGroups(props: { host: SidebarSessionListHost }) {
   const lifetime = new AbortController();
   onSettled(() => () => lifetime.abort());
   const navigation = projectOwner(context.navigation, (owner) => owner.snapshot);
-  const groups = createMemo(
-    () =>
-      props.host.sidebarSnapshot?.personalGroups ?? navigation.read().personalSessionGroups ?? [],
-  );
+  const groups = createMemo(() => {
+    navigation.revision();
+    return (
+      props.host.sidebarSnapshot?.personalGroups ?? navigation.read().personalSessionGroups ?? []
+    );
+  });
   // Cached definitions are filtered display facts, never preference replacement input.
   const authoredGroups = () => context.navigation.snapshot.personalSessionGroups ?? [];
   const unavailable = () => showToast({ message: t("sessionsView.personalGroupUnavailable") });
@@ -47,6 +49,15 @@ function PersonalGroups(props: { host: SidebarSessionListHost }) {
     // The profile preference has a byte limit. Never silently truncate an authored layout.
     if (!prefValuesEqual(normalizePersonalSessionGroups(next), next)) {
       return t("sessionsView.personalGroupCapacity");
+    }
+    const snapshot = props.host.sidebarSnapshot;
+    if (snapshot) {
+      // Keep the accepted display in the existing snapshot across view remounts.
+      snapshot.personalGroups = next.map((group) => ({
+        id: group.id,
+        label: group.label,
+        sessionKeys: props.host.personalGroupSessionRows(group).map((row) => row.key),
+      }));
     }
     context.navigation.update({ personalSessionGroups: next });
     return null;

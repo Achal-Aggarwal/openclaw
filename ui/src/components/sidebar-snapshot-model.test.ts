@@ -36,6 +36,35 @@ function displayRow(key: string, label: string, pinned = false) {
 }
 const parse = (patch: Record<string, unknown>) => parseSidebarSnapshot({ ...model, ...patch });
 
+it("loads saved rows and cards that predate the optional display expansion", () => {
+  // This is the stored shape admitted by the pre-expansion schema, without new fields.
+  const legacy = {
+    ...model,
+    pinnedSessions: [
+      {
+        key: "agent:main:older",
+        label: "Existing conversation",
+        pinned: true,
+        isChild: false,
+        children: [],
+        state: { unread: true, isRunVisuallyActive: true },
+      },
+    ],
+    cards: [{ id: "main", name: "Harbor", mainKey: "agent:main:main" }],
+  };
+  const saved = parseSidebarSnapshot(structuredClone(legacy));
+  expect(saved).not.toBeNull();
+  expect(saved?.personalGroups).toBeUndefined();
+  expect(saved?.cards).toEqual(legacy.cards);
+  expect(restoreSnapshotSession(saved!.pinnedSessions[0]!, "")).toMatchObject({
+    label: "Existing conversation",
+    unread: true,
+    isRunVisuallyActive: true,
+    hasActiveRun: false,
+    pinnable: false,
+  });
+});
+
 it("omits private session contributions from the saved Inbox count", () => {
   const incognito = "agent:main:dashboard:incognito-private";
   const outbox: SidebarInboxEntry = {

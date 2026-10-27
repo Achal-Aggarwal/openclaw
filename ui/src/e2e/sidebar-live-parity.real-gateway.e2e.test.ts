@@ -313,6 +313,10 @@ suite.define(() => {
           await focus.locator("[data-session-key]").waitFor();
           await expect.poll(() => aside.getAttribute("data-snapshot-saved")).toBe("true");
           const live = await capture("01-connected");
+          const authoredGroups = await evaluateControlUiContext(
+            page,
+            ({ navigation }) => navigation.snapshot.personalSessionGroups ?? [],
+          );
           link.disconnect();
           await expect
             .poll(() => page.evaluate(() => window.openclawControlUi?.snapshot().gatewayPhase))
@@ -339,20 +343,23 @@ suite.define(() => {
           expect.soft(cached.brand, "saved reload brand").toBe(live.brand);
           expect.soft(cached.rows, "saved row presentation").toEqual(live.rows);
           // A newer complete preference must not be replaced by the filtered cached layout.
-          const authored = await evaluateControlUiContext(page, ({ navigation }) => {
-            const groups = navigation.snapshot.personalSessionGroups ?? [];
-            navigation.update({
-              personalSessionGroups: [
-                ...groups,
-                {
-                  id: "newer-layout",
-                  label: "Later research",
-                  sessionKeys: ["agent:main:unresolved"],
-                },
-              ],
-            });
-            return groups;
-          });
+          const authored = await evaluateControlUiContext(
+            page,
+            ({ navigation }, groups) => {
+              navigation.update({
+                personalSessionGroups: [
+                  ...groups,
+                  {
+                    id: "newer-layout",
+                    label: "Later research",
+                    sessionKeys: ["agent:main:unresolved"],
+                  },
+                ],
+              });
+              return groups;
+            },
+            authoredGroups,
+          );
           await sidebar
             .getByRole("button", { name: "Options for personal group Museum focus", exact: true })
             .click();
@@ -365,6 +372,8 @@ suite.define(() => {
           ).toEqual([
             { id: "newer-layout", label: "Later research", sessionKeys: ["agent:main:unresolved"] },
           ]);
+          await capture("04b-cached-group-removed");
+          await expect.poll(() => focus.count()).toBe(0);
           await evaluateControlUiContext(
             page,
             ({ navigation }, groups) => navigation.update({ personalSessionGroups: groups }),
