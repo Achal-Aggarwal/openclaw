@@ -46,7 +46,7 @@ it("adds and removes usage details on a retained plain timestamp", () => {
   expect(view.container.querySelector("openclaw-tooltip")).toBe(tooltip);
 });
 
-it("shares the mobile layout query while preserving initial and updated message actions", () => {
+it("shares mobile layout only for earlier-message actions and preserves updates", () => {
   const query =
     "(max-width: 768px), (max-width: 932px) and (max-height: 500px) and (orientation: landscape)";
   const media = Object.assign(new EventTarget(), { matches: true });
@@ -57,6 +57,15 @@ it("shares the mobile layout query while preserving initial and updated message 
   const subscribe = vi.spyOn(media, "addEventListener");
   const unsubscribe = vi.spyOn(media, "removeEventListener");
   const message = { role: "user", content: "First message", timestamp: 1000 };
+  const singleGroup = createMessageGroup(message, "user");
+  const single = mountSolid(() => (
+    <MessageGroup group={singleGroup} options={{ showReasoning: false, onReply: vi.fn() }} />
+  ));
+  flush();
+  expect(single.container.querySelector(".chat-message-actions-row")).toBeNull();
+  expect(matchMedia.mock.calls.filter(([value]) => value === query)).toHaveLength(0);
+  expect(subscribe).not.toHaveBeenCalled();
+  single.unmount();
   const group = createMessageGroup(message, "user", {
     messages: [
       { key: "first", message },
@@ -91,6 +100,8 @@ it("shares the mobile layout query while preserving initial and updated message 
     media.dispatchEvent(new Event("change"));
     flush();
     expect(view.container.querySelectorAll(".chat-message-actions-row")).toHaveLength(2);
+    expect(subscribe).toHaveBeenCalledOnce();
+    expect(unsubscribe).not.toHaveBeenCalled();
     view.unmount();
     expect(unsubscribe).toHaveBeenCalledOnce();
   } finally {

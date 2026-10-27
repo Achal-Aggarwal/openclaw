@@ -241,7 +241,8 @@ async function transcriptFixture(
       }
       await settle();
     },
-    async task() {
+    async task(elapsed = 0) {
+      now += elapsed;
       await new Promise((resolve) => {
         setTimeout(resolve, 0);
       });
@@ -597,6 +598,18 @@ it("warms arriving Markdown without speculative mounts during viewport-sized scr
   expect(transcriptRows(view.container)).toEqual(mounted);
 });
 
+it("defers late preparation timers instead of spending another frame's budget", async () => {
+  const view = await transcriptFixture(0, true, false, "retained");
+  await view.scrollTo(60);
+  const rendered = view.renderRow.mock.calls.length;
+  await view.frame(1, false);
+  await view.task(8);
+  expect(view.renderRow.mock.calls).toHaveLength(rendered);
+  await view.frame(1, false);
+  await view.task();
+  expect(view.renderRow.mock.calls.length).toBeGreaterThan(rendered);
+});
+
 it("prepares inward when fast upward prediction reaches an ordinary first row", async () => {
   const view = await transcriptFixture(24_000, true, true);
   await view.scrollTo(8);
@@ -606,6 +619,9 @@ it("prepares inward when fast upward prediction reaches an ordinary first row", 
 
   await view.frame(1, false);
   await view.task();
+  await view.frame(1, false);
+  await view.task();
+  // The undelivered timer from the earlier two frames first yields its expired budget.
   await view.frame(1, false);
   await view.task();
 

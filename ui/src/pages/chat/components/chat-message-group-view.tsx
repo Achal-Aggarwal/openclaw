@@ -329,12 +329,7 @@ function UserFooterActions(props: { frame: MessageGroupFrame }) {
   );
 }
 
-function FramedMessage(props: {
-  frame: MessageGroupFrame;
-  item: GroupMessage;
-  index: number;
-  mobile: boolean;
-}) {
+function FramedMessage(props: { frame: MessageGroupFrame; item: GroupMessage; index: number }) {
   const replyElements: ReplyConnectorElements = {};
   const frame = () => props.frame;
   const prepared = () => frame().preparedMessages[props.index]!;
@@ -411,52 +406,57 @@ function FramedMessage(props: {
         </div>
       </Show>
       <Show when={showActions()}>
-        <Show
-          when={props.mobile}
-          fallback={
-            <MessageActionsRow
-              messageKey={props.item.key}
-              details={prepared().actions}
-              options={frame().options}
-              class="chat-message-actions-row"
-              reactionGroup={frame().group}
-            />
-          }
-        >
-          <div class="chat-group-footer chat-message-footer">
-            <GroupMessageReactions
-              group={frame().group}
-              actionDetails={prepared().actions}
-              isStreaming={false}
-              options={frame().options}
-            />
-            <div class="chat-group-footer__meta">
-              <SenderIdentity frame={props.frame} />
-              <MessageMeta timestamp={prepared().source.normalizedMessage.timestamp} meta={null} />
-            </div>
-            <MessageActionsRow
-              messageKey={props.item.key}
-              details={prepared().actions}
-              options={frame().options}
-            />
-          </div>
-        </Show>
+        {(_actions) => {
+          const media = createMediaQuerySource(
+            "(max-width: 768px), (max-width: 932px) and (max-height: 500px) and (orientation: landscape)",
+          );
+          const [mobile, setMobile] = createSignal(media.read());
+          onSettled(() => media.subscribe(setMobile));
+          return (
+            <Show
+              when={mobile()}
+              fallback={
+                <MessageActionsRow
+                  messageKey={props.item.key}
+                  details={prepared().actions}
+                  options={frame().options}
+                  class="chat-message-actions-row"
+                  reactionGroup={frame().group}
+                />
+              }
+            >
+              <div class="chat-group-footer chat-message-footer">
+                <GroupMessageReactions
+                  group={frame().group}
+                  actionDetails={prepared().actions}
+                  isStreaming={false}
+                  options={frame().options}
+                />
+                <div class="chat-group-footer__meta">
+                  <SenderIdentity frame={props.frame} />
+                  <MessageMeta
+                    timestamp={prepared().source.normalizedMessage.timestamp}
+                    meta={null}
+                  />
+                </div>
+                <MessageActionsRow
+                  messageKey={props.item.key}
+                  details={prepared().actions}
+                  options={frame().options}
+                />
+              </div>
+            </Show>
+          );
+        }}
       </Show>
     </>
   );
 }
 
 function FramedMessages(props: { frame: MessageGroupFrame }) {
-  const media = createMediaQuerySource(
-    "(max-width: 768px), (max-width: 932px) and (max-height: 500px) and (orientation: landscape)",
-  );
-  const [mobile, setMobile] = createSignal(media.read());
-  onSettled(() => media.subscribe(setMobile));
   return (
     <For each={props.frame.group.messages} keyed={(item) => item.key}>
-      {(item, index) => (
-        <FramedMessage frame={props.frame} item={item()} index={index()} mobile={mobile()} />
-      )}
+      {(item, index) => <FramedMessage frame={props.frame} item={item()} index={index()} />}
     </For>
   );
 }

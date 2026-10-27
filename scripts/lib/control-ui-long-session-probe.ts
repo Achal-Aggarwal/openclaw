@@ -795,6 +795,14 @@ export async function probeLongSession(options: {
   const scrollTop = await scroll("top");
   const scrollBottom = await scroll("bottom");
   const finalMemory = await memory("after-scroll");
+  // Widget admission intentionally waits for scrolling to stop. Its semantic
+  // readiness belongs to the capture, outside the measured scroll and heap.
+  await pane
+    .frameLocator(".chat-tool-card__preview-frame")
+    .last()
+    .frameLocator("iframe")
+    .getByText("Team metric 12", { exact: true })
+    .waitFor();
   await page.screenshot({ path: path.join(artifactDir, `${prefix}.bottom.png`) });
   return save({
     otherSessionKey,
