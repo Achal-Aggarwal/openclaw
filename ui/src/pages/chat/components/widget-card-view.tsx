@@ -42,6 +42,7 @@ import { createResizeObserver } from "../../../lib/reactive/observers.ts";
 import { ContentPresentation } from "../../../lib/solid/presentation.ts";
 import { showToast } from "../../../lib/toast.ts";
 import { postWidgetTheme, registerWidgetThemeFrame } from "../../../lib/widget-theme.ts";
+import { CanvasWidgetMount } from "./canvas-widget-mount-lazy.ts";
 import { ChatLazyBoundary } from "./chat-lazy-boundary.tsx";
 import { TranscriptRowKeyContext } from "./chat-transcript-layout.ts";
 import { WidgetCardMenu, type WidgetRawDetailsLabel } from "./widget-card-menu.tsx";
@@ -65,10 +66,6 @@ const YouTubeVideoCard = lazy(() => import("./youtube-video-card.tsx"), {
 
 const BrowserTabCardHost = lazy(() => import("./browser-tab-card.tsx"), {
   export: "BrowserTabCardHost",
-});
-
-const CanvasWidgetMount = lazy(() => import("./canvas-widget-mount.tsx"), {
-  export: "CanvasWidgetMount",
 });
 
 const McpAppPreview = lazy(async () => {

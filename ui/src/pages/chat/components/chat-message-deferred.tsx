@@ -1,7 +1,8 @@
 import { lazy, Show } from "solid-js";
 import { parseYouTubeVideoUrl } from "../../../lib/chat/youtube-video.ts";
+import { CanvasWidgetMount } from "./canvas-widget-mount-lazy.ts";
 import { ChatLazyBoundary } from "./chat-lazy-boundary.tsx";
-import { widgetPreviewHeight } from "./widget-preview-layout.ts";
+import { isManagedCanvasDocumentPreview, widgetPreviewHeight } from "./widget-preview-layout.ts";
 
 const Images = lazy(() => import("./chat-message-images-solid.tsx"), {
   export: "MessageImages",
@@ -82,6 +83,23 @@ export function ToolPreview(
         </Show>
       }
     >
+      <Show
+        when={
+          props.surface === "chat_message" &&
+          props.preview?.kind === "canvas" &&
+          props.preview.surface === "assistant_message" &&
+          props.options?.mediaReadAllowed !== false &&
+          !props.preview.mcpApp &&
+          props.preview.sandbox !== "strict" &&
+          isManagedCanvasDocumentPreview(props.preview)
+        }
+      >
+        {(_admitted) => {
+          // Avoid serializing Canvas behind its card; the mounted boundary owns import failures.
+          void CanvasWidgetMount.preload().catch(() => undefined);
+          return null;
+        }}
+      </Show>
       <Preview {...props} />
     </ChatLazyBoundary>
   );

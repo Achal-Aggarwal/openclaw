@@ -116,11 +116,11 @@ suite.define(() => {
       expect(await work.textContent()).not.toContain("Sign in to GitHub");
       await summary.click();
       const activityBody = work.locator(".chat-activity-group__body");
-      expect(await activityBody.locator(".chat-tool-row").count()).toBe(1);
       const wrapper = activityBody.locator(".chat-tool-msg-summary", {
         hasText: "Start GitHub authentication",
       });
       await wrapper.waitFor();
+      expect(await activityBody.locator(".chat-tool-row").count()).toBe(1);
       expect(await wrapper.textContent()).toContain("1 failed");
       await wrapper.click();
       const children = activityBody.locator(".chat-tool-children");

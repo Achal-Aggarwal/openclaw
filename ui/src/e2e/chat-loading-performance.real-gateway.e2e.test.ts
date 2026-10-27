@@ -40,6 +40,7 @@ type RpcMetric = {
   sessionKey?: string;
   agentId?: string;
   shortId?: string;
+  resolveParams?: Record<string, unknown>;
   limit?: number;
   maxBytes?: number;
   offset?: number;
@@ -274,6 +275,17 @@ suite.define(() => {
           );
         });
         const pending = new Map<string, RpcMetric>();
+        // Sample existing RPC hooks; times bound observed changes, not History API commits.
+        const pathnameObservations: Array<{ pathname: string; observedMs: number }> = [];
+        const observeStartupPathname = () => {
+          const pathname = new URL(page.url()).pathname;
+          if (
+            pathnameObservations.length < 8 &&
+            pathnameObservations.at(-1)?.pathname !== pathname
+          ) {
+            pathnameObservations.push({ pathname, observedMs: Date.now() - startedAt });
+          }
+        };
         const waitForStartupResponses = () =>
           expect
             .poll(() => {
@@ -309,6 +321,7 @@ suite.define(() => {
             if (!measuring) {
               return;
             }
+            observeStartupPathname();
             const frame: unknown = JSON.parse(payload.toString());
             if (
               !isRecord(frame) ||
@@ -338,6 +351,7 @@ suite.define(() => {
                 : {}),
               ...(typeof params.agentId === "string" ? { agentId: params.agentId } : {}),
               ...(typeof params.shortId === "string" ? { shortId: params.shortId } : {}),
+              ...(frame.method === "sessions.resolve" ? { resolveParams: params } : {}),
               ...(typeof historyParams.limit === "number" ? { limit: historyParams.limit } : {}),
               ...(typeof historyParams.maxBytes === "number"
                 ? { maxBytes: historyParams.maxBytes }
@@ -351,6 +365,7 @@ suite.define(() => {
             if (!measuring) {
               return;
             }
+            observeStartupPathname();
             const frame: unknown = JSON.parse(payload.toString());
             if (!isRecord(frame) || typeof frame.id !== "string") {
               return;
@@ -424,6 +439,7 @@ suite.define(() => {
 
         startedAt = Date.now();
         measuring = true;
+        observeStartupPathname();
         await page.reload();
         await waitForControlUiGatewayReady(page);
         await measureLoad();
@@ -435,6 +451,8 @@ suite.define(() => {
         // Transcript and roster avatars can render before the dedicated identity reply.
         // Freeze only completed payloads; keep the earlier visibility timings unchanged.
         await waitForStartupResponses();
+        observeStartupPathname();
+        const startupPathnames = structuredClone(pathnameObservations);
         const startupMetrics = structuredClone(rpc);
         const images = await page
           .locator(".sidebar-agent-card__avatar img")
@@ -542,6 +560,51 @@ suite.define(() => {
         expect(selectedStartup).toBeDefined();
         expect(olderHistoryRequests(startupMetrics)).toHaveLength(0);
         const resolutions = selectRpc(startupMetrics, "sessions.resolve");
+        if (resolutions.length !== 1) {
+          recordControlUiE2eFailureFacts(page, {
+            startupResolutionCount: resolutions.length,
+            startupResolutions: resolutions.slice(0, 8).map((metric) => {
+              const reference = metric.resolveParams?.reference;
+              const requestedKey =
+                metric.resolveParams?.key ?? (isRecord(reference) ? reference.key : undefined);
+              return {
+                selectorKind:
+                  typeof metric.resolveParams?.shortId === "string"
+                    ? "short-id"
+                    : isRecord(reference)
+                      ? "reference"
+                      : typeof metric.resolveParams?.key === "string"
+                        ? "key"
+                        : "other",
+                requestedTarget:
+                  requestedKey === homeKey
+                    ? "home"
+                    : requestedKey === selectedKey || metric.shortId === "12345678"
+                      ? "selected"
+                      : "other",
+                resolvedTarget:
+                  metric.resolvedKey === homeKey
+                    ? "home"
+                    : metric.resolvedKey === selectedKey
+                      ? "selected"
+                      : "other",
+                requestedAgentIsMain: metric.agentId === "main",
+                allowMissing: metric.resolveParams?.allowMissing === true,
+                sentMs: metric.sentMs,
+                receivedMs: metric.receivedMs ?? null,
+                resolutionOk: metric.resolutionOk ?? false,
+              };
+            }),
+          });
+          await writeFile(
+            path.join(suite.artifactDir, "startup-resolution-requests.json"),
+            JSON.stringify(resolutions, null, 2),
+          );
+          await writeFile(
+            path.join(suite.artifactDir, "startup-resolution-pathnames.json"),
+            JSON.stringify(startupPathnames, null, 2),
+          );
+        }
         expect(resolutions).toHaveLength(1);
         expect(resolutions[0]).toMatchObject({
           agentId: "main",
@@ -668,6 +731,7 @@ suite.define(() => {
             {
               transcriptLength,
               shortLinkReload: selectStartupHistory(startupMetrics, selectedKey),
+              startupPathnames,
               warmReload: {
                 pathname: new URL(page.url()).pathname,
                 cacheBeforeReload,
