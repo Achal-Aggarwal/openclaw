@@ -96,13 +96,14 @@ describe("chat submission handoff", () => {
     } finally {
       await sending;
     }
-    expect(rows()).toEqual(["Original request", "Later steer"]);
+    expect(rows()).toEqual(["Original request"]);
+    expect(host.chatQueue).toMatchObject([{ text: "Later steer" }]);
     const inputs = [
       original,
       pendingText("Later steer", 9_000, { id: "steer-input", runId: steerRunId }),
     ];
     applyChatPendingInputs(host, { items: inputs, total: inputs.length });
-    expect(rows()).toEqual(["Original request", "Later steer"]);
+    expect(rows()).toEqual(["Original request"]);
     for (const [index, input] of inputs.entries()) {
       applySessionMessagePayload(
         host,
@@ -120,7 +121,9 @@ describe("chat submission handoff", () => {
         true,
         { kind: "history-delta" },
       );
-      expect(rows()).toEqual(["Original request", "Later steer"]);
+      expect(rows()).toEqual(
+        index === 0 ? ["Original request"] : ["Original request", "Later steer"],
+      );
     }
   });
 
@@ -147,7 +150,7 @@ describe("chat submission handoff", () => {
       expect(submittedRows(host)).toEqual([]);
       expect(removeQueuedMessage(host, host.chatQueue[1]!.id, { discard: true })).toBe("removed");
     } finally {
-      sent.resolve({ runId: host.chatQueue[0]?.sendRunId, status: "started" });
+      sent.resolve({ runId: host.chatQueue[0]?.sendRunId, status: "started", messageSeq: 1 });
       await Promise.all([first, reentry, second]);
     }
     expect(host.request.mock.calls.filter(([method]) => method === "chat.send")).toHaveLength(1);

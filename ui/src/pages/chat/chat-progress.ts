@@ -177,7 +177,7 @@ export function shouldRenderQueuedSendInThread(
   // Pending follow-ups stay in the tray; rejected inputs retain inline recovery.
   // Transport attempts alone do not make an input part of the active turn.
   if (
-    activeRunId &&
+    (item.sendInline === false || activeRunId) &&
     (item.sendRunId ?? item.pendingRunId) !== activeRunId &&
     item.sendState !== "failed" &&
     item.sendState !== "held"

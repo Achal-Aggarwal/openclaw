@@ -42,6 +42,7 @@ import {
 import { requestChatSend } from "./chat-send-request.ts";
 import {
   OFFLINE_QUEUE_STORAGE_ERROR,
+  requiresChatInputConsumption,
   retireDeliveredQueuedUserTurn,
   surfaceChatDeliveryFailure,
 } from "./chat-send-support.ts";
@@ -51,7 +52,6 @@ import { formatConnectError } from "./connect-error.ts";
 import { readChatSessionProjectionScope, reduceChatSessionProjection } from "./history-merge.ts";
 import { adoptStartedChatRun, reconcileChatRunLifecycle } from "./run-lifecycle.ts";
 import { resetToolStream } from "./tool-stream-state.ts";
-import { buildLocalUserMessage } from "./user-message-content.ts";
 
 export { chatOutboxDrainDependencies } from "./chat-send-delivery.ts";
 
@@ -177,12 +177,16 @@ export async function sendPreparedChatQueueItem(
       const runId = prepared.sendRunId ?? generateUUID();
       const startedAt = Date.now();
       const requestStartedAtMs = performance.now();
+      const submittedActiveRunId = visibleSessionMatches(host, sessionKey, prepared.agentId)
+        ? host.chatRunId
+        : null;
       const sendingItem = updateQueuedSendItem(host, storageMode, id, (item) => ({
         ...item,
         sendAttempts: (item.sendAttempts ?? 0) + 1,
         sendError: undefined,
         sendRunId: runId,
         sendState: "sending",
+        sendInline: item.sendInline !== false && !submittedActiveRunId,
         sendRequestStartedAtMs: requestStartedAtMs,
         sessionKey,
         // A reconnect must not replay an old attempt into a replacement session.
@@ -207,20 +211,7 @@ export async function sendPreparedChatQueueItem(
           ? captureChatNativeRuntimeRecovery(host, route)
           : undefined;
       const submittedSteerTargetRunId =
-        prepared.queueMode === "steer" && isVisible() ? host.chatRunId : null;
-      const buildSubmittedUserMessage = (steerTargetRunId?: string) =>
-        buildLocalUserMessage(
-          {
-            ...prepared,
-            text: message,
-            mentions: submitted.mentions,
-            attachments,
-            createdAt: startedAt,
-            runId,
-            ...(steerTargetRunId ? { steerTargetRunId } : {}),
-          },
-          "complete",
-        );
+        prepared.queueMode === "steer" ? submittedActiveRunId : null;
       if (isVisible()) {
         host.chatSendingScopeKey = storedChatOutboxScopeKey(scope);
         host.chatSending = true;
@@ -315,6 +306,39 @@ export async function sendPreparedChatQueueItem(
           });
           return "failed";
         }
+        if (
+          sendingItem.sendInline === false &&
+          prepared.queueMode !== "interrupt" &&
+          ack.messageSeq === undefined &&
+          requiresChatInputConsumption(prepared)
+        ) {
+          // Acceptance does not place an input in the transcript. Keep its existing
+          // outbox presentation until the history owner reconciles exact custody.
+          if (!isVisible()) {
+            return "pending";
+          }
+          const retained = await retireDeliveredQueuedUserTurn(host, runId, scope, {
+            retainUntilConsumed: true,
+            preserveDisplay: false,
+            steerTargetRunId: submittedSteerTargetRunId ?? undefined,
+          });
+          if (retained === "stale" || !requestConnectionIsCurrent() || !isVisible()) {
+            return "pending";
+          }
+          const history = await loadChatHistory(host, {
+            deferBranches: true,
+            supersedeInFlight: true,
+          });
+          if (
+            !requestConnectionIsCurrent() ||
+            !isVisible() ||
+            (sendingItem.sessionId && sendingItem.sessionId !== host.currentSessionId) ||
+            !history ||
+            readQueuedMessageById(host, id)
+          ) {
+            return "pending";
+          }
+        }
         // Publish accepted run activity before retiring its queued progress across an await.
         // Steering keeps the active run; only an explicit interrupt replaces it here.
         if (
@@ -324,27 +348,16 @@ export async function sendPreparedChatQueueItem(
         ) {
           adoptStartedChatRun(host, ack.runId, startedAt);
         }
-        // Durable delivery hands complete display bytes to the existing shared owner.
-        // Memory-only admission has no stored row and retains its local projection.
         const inputConsumed = ack.status === "ok" && ack.messageSeq !== undefined;
-        const projectedMessage =
-          storageMode === "memory" && !inputConsumed
-            ? buildSubmittedUserMessage(submittedSteerTargetRunId ?? undefined)
-            : null;
-        if (storageMode === "durable" || inputConsumed) {
-          const retirement = await retireDeliveredQueuedUserTurn(host, runId, scope, {
-            inputConsumed,
-            steerTargetRunId: submittedSteerTargetRunId ?? undefined,
-          });
-          if (retirement === "stale" || !requestConnectionIsCurrent()) {
-            return "pending";
-          }
-          // A peer may have retired durable custody while this pane still displays its local row.
-          chatOutboxOwner(host).syncHost(host);
+        const retirement = await retireDeliveredQueuedUserTurn(host, runId, scope, {
+          inputConsumed,
+          steerTargetRunId: submittedSteerTargetRunId ?? undefined,
+        });
+        if (retirement === "stale" || !requestConnectionIsCurrent()) {
+          return "pending";
         }
-        if (storageMode === "memory") {
-          chatOutboxOwner(host).remove(host, id);
-        }
+        // A peer may have retired custody while this pane still displays its local row.
+        chatOutboxOwner(host).syncHost(host);
         const retirementFailed =
           storageMode === "durable" && readQueuedMessageById(host, id) !== null;
         if (isVisible()) {
@@ -352,13 +365,6 @@ export async function sendPreparedChatQueueItem(
             sessionKey,
             agentId: prepared.agentId,
           });
-          if (projectedMessage) {
-            reduceChatSessionProjection(
-              host,
-              { type: "sendPending", runId, message: projectedMessage },
-              { scope: projectionScope },
-            );
-          }
           if (ack.runId !== runId) {
             reduceChatSessionProjection(
               host,
