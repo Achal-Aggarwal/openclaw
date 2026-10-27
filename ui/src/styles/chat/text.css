@@ -484,6 +484,7 @@
       /* WebKit supports content-visibility without an adjustable paint clip.
          Keep mounted wide-table rows visible; transcript virtualization remains. */
       content-visibility: visible;
+      contain: none;
     }
   }
 }
