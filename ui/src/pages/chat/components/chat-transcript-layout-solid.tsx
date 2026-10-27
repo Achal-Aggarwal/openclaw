@@ -13,14 +13,14 @@ import {
   createSolidRenderLifecycle,
   type SolidRenderLifecycle,
 } from "../solid-render-lifecycle.ts";
-import { ChatHistoryBoundary } from "./chat-history-boundary.tsx";
 import { ChatLazyBoundary } from "./chat-lazy-boundary.tsx";
 import type { GroupedMessageOptions } from "./chat-message-bubble-options.ts";
 import { prewarmGroupedMessage } from "./chat-message-bubble-presentation.ts";
-import type {
-  TranscriptContent,
-  TranscriptLayoutProps,
-  TranscriptRow,
+import {
+  TranscriptRowKeyContext,
+  type TranscriptContent,
+  type TranscriptLayoutProps,
+  type TranscriptRow,
 } from "./chat-transcript-layout.ts";
 import { TranscriptMediaDisconnect } from "./chat-transcript-media-lifecycle.ts";
 import { transcriptArraysEqual } from "./chat-transcript-memo.ts";
@@ -50,21 +50,25 @@ function NativeRow(props: { value: NativeTranscriptView }): JSX.Element {
   );
 }
 
-function GuardedRow(props: { value: GuardedTranscriptItem }): JSX.Element {
-  // Equal dependency vectors preserve the accepted row across unrelated stream updates.
-  const current = createMemo(() => props.value, {
-    equals: (before, next) => transcriptArraysEqual(before.dependencies, next.dependencies),
-  });
-  return <Show when={current().native}>{(view) => <NativeRow value={view()} />}</Show>;
-}
-
 function RowContent(props: { value: TranscriptContent }): JSX.Element {
+  // Cut off unchanged rows before the content-kind branch and its child bindings.
+  const current = createMemo(() => props.value, {
+    equals: (before, next) =>
+      before instanceof GuardedTranscriptItem && next instanceof GuardedTranscriptItem
+        ? transcriptArraysEqual(before.dependencies, next.dependencies)
+        : Object.is(before, next),
+  });
+  const native = () => {
+    const value = current();
+    return value instanceof GuardedTranscriptItem ? value.native : undefined;
+  };
+  const fallback = () => {
+    const value = current();
+    return value instanceof GuardedTranscriptItem ? null : value;
+  };
   return (
-    <Show
-      when={props.value instanceof GuardedTranscriptItem ? props.value : undefined}
-      fallback={props.value instanceof GuardedTranscriptItem ? null : props.value}
-    >
-      {(item) => <GuardedRow value={item()} />}
+    <Show when={native()} fallback={fallback()}>
+      {(view) => <NativeRow value={view()} />}
     </Show>
   );
 }
@@ -105,7 +109,7 @@ function TranscriptRows(props: {
   };
   return (
     <>
-      <Show when={props.snapshot.header}>{(header) => <ChatHistoryBoundary {...header()} />}</Show>
+      {props.snapshot.header}
       <div class="chat-virtual-sizer" ref={(element) => props.columnRef(element)}>
         {props.snapshot.overlay}
         <div class="chat-virtual-block">
@@ -140,6 +144,7 @@ function TranscriptRows(props: {
                     ]}
                     style={{
                       "contain-intrinsic-block-size": `${virtualRow().size}px`,
+                      "min-height": `${props.snapshot.layout.rowMinimum(index())}px`,
                     }}
                     data-index={String(virtualRow().index)}
                     data-virtual-row-key={row()?.key}
@@ -148,9 +153,11 @@ function TranscriptRows(props: {
                     inert={!active()}
                     aria-hidden={active() ? undefined : "true"}
                   >
-                    <ContentPresentation value={() => presented() && (active() || preparing())}>
-                      <RowContent value={content()} />
-                    </ContentPresentation>
+                    <TranscriptRowKeyContext value={() => row()?.key}>
+                      <ContentPresentation value={() => presented() && (active() || preparing())}>
+                        <RowContent value={content()} />
+                      </ContentPresentation>
+                    </TranscriptRowKeyContext>
                   </div>
                 </>
               );

@@ -14,6 +14,7 @@ import { ChatSessionVirtualizerHost } from "./chat-transcript-virtualizer-host.t
 import {
   installTranscriptDomMocks,
   resetTranscriptTestDom,
+  threadProps,
   transcriptRows,
 } from "./chat-transcript.test-support.ts";
 
@@ -187,7 +188,11 @@ async function transcriptFixture(
     disposed = true;
     host.dispose();
   });
-  host.setContentReady(true);
+  host.layout.configureRows(
+    threadProps("prepared-rows", "agent:main:prepared-rows", []),
+    "gutter",
+    false,
+  );
   host.connect();
   draw();
   await settle();

@@ -1,11 +1,13 @@
 import type { GatewaySessionRow } from "../../../api/types.ts";
 import type { MessageGroup } from "../../../lib/chat/chat-types.ts";
+import { nativeHistoryMessageIdentity } from "../../../lib/chat/history-message-identity.ts";
 import {
   isInlineImageSource,
   readTranscriptMediaEntries,
 } from "../../../lib/chat/message-extract.ts";
 import { normalizeMessage } from "../../../lib/chat/message-normalizer.ts";
 import { extractToolCardsCached } from "../../../lib/chat/tool-cards.ts";
+import { fnv1aUtf16 } from "../../../lib/fnv1a.ts";
 import {
   agentRunFrameActiveStatusParts,
   chatItemGroups,
@@ -71,7 +73,10 @@ type TranscriptIndex = Readonly<{
   liveItem?: StreamOwner;
 }>;
 
-type TranscriptIndexSource = Pick<TranscriptChain, "searchActive" | "transcriptItems" | "live">;
+type TranscriptIndexSource = Pick<
+  TranscriptChain,
+  "searchActive" | "transcriptItems" | "continuations" | "live"
+>;
 
 type LiveStream = Extract<ReturnType<typeof buildCachedChatItems>[number], { kind: "stream" }>;
 type StreamOwner = Extract<ChatRenderItem, { kind: "stream-run" | "agent-run-frame" }>;
@@ -301,16 +306,17 @@ function estimateMessageGroupSize(group: MessageGroup): number | undefined {
 export function projectTranscriptIndex(
   chain: TranscriptIndexSource,
   expandedToolCards: Map<string, boolean>,
-  props: Pick<ChatThreadProps, "assistantName" | "userId" | "userName">,
+  props: Pick<ChatThreadProps, "assistantName" | "userId" | "userName" | "messageReactions">,
 ): TranscriptIndex {
-  const key = [
+  const cacheKey = [
     expandedToolCards,
     getExpansionStateVersion(expandedToolCards),
     props.assistantName,
     props.userId,
     props.userName,
+    props.messageReactions,
   ];
-  return indexes(chain, key, (): TranscriptIndex => {
+  return indexes(chain, cacheKey, (): TranscriptIndex => {
     // Smaller transcripts scroll more cheaply without repeatedly mounting fragments.
     let sourceCount = 0;
     const windowCompletedFrames = chain.transcriptItems.some((item) => {
@@ -325,9 +331,42 @@ export function projectTranscriptIndex(
     const loadedReplySources = new Map<string, LoadedReplySource>();
     const messageRowKeysById = new Map<string, string>();
     const transcriptMessageKeys = new Map<string, string>();
-    // New row keys measure expanded work immediately; existing keys keep their
-    // cached height until ResizeObserver reports the changed layout.
     const rows: TranscriptRow<ChatRenderItem>[] = [];
+    const row = (item: ChatRenderItem, key = item.key): TranscriptRow<ChatRenderItem> => {
+      if (item.kind === "agent-run-frame" && (item.fragment?.first || item.fragment?.last)) {
+        // Edge chrome depends on the whole frame; fragment content alone cannot key its footprint.
+        return { kind: "item", key, item };
+      }
+      const groups = chatItemGroups(item);
+      const parts = item.kind === "agent-run-frame" ? item.parts : [item];
+      if (
+        chain.continuations.has(item.key) ||
+        (item.kind === "agent-run-frame" && item.outcome.kind === "active") ||
+        groups.some((group) => group.isStreaming) ||
+        parts.some(
+          (part) =>
+            part.kind === "stream-run" ||
+            part.kind === "stream" ||
+            part.kind === "reading-indicator",
+        )
+      ) {
+        return { kind: "item", key, item };
+      }
+      const messages = groups.flatMap((group) =>
+        group.messages.map(({ message }) => [
+          nativeHistoryMessageIdentity(message) ?? message,
+          props.messageReactions?.get(persistedMessageEntryId(message) ?? "") ?? [],
+        ]),
+      );
+      const content = JSON.stringify(
+        item.kind === "agent-run-frame"
+          ? [item.outcome.kind, messages]
+          : messages.length
+            ? messages
+            : item,
+      );
+      return { kind: "item", key, item, revision: `${content.length}:${fnv1aUtf16(content)}` };
+    };
     for (const item of chain.transcriptItems) {
       const rendered =
         windowCompletedFrames && item.kind === "agent-run-frame"
@@ -370,11 +409,11 @@ export function projectTranscriptIndex(
             : rowItem.kind === "group"
               ? estimateMessageGroupSize(rowItem)
               : undefined;
-        rows.push({ kind: "item", key: rowItem.key, item: rowItem, estimatedSize, retainDom });
+        rows.push({ ...row(rowItem), estimatedSize, retainDom });
       }
       if (item.kind === "work-group" && expandedToolCards.get(item.key)) {
         for (const group of item.groups) {
-          rows.push({ kind: "item", key: `${item.key}:${group.key}`, item: group });
+          rows.push(row(group, `${item.key}:${group.key}`));
         }
       }
       const parts = item.kind === "agent-run-frame" ? item.parts : [item];

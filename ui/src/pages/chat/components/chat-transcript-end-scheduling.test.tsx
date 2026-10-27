@@ -11,6 +11,7 @@ import {
   installTranscriptDomMocks,
   requireElement,
   resetTranscriptTestDom,
+  threadProps,
   transcriptDomState,
 } from "./chat-transcript.test-support.ts";
 
@@ -71,7 +72,11 @@ it.each(["row growth", "viewport resize"] as const)(
       await Promise.resolve();
       flush();
     };
-    session.setContentReady(true);
+    session.layout.configureRows(
+      threadProps(paneId, "agent:main:end-scheduling", []),
+      "gutter",
+      false,
+    );
     emitTranscriptResize(container, 800, viewportHeight);
     emitTranscriptResize(requireElement(container, ".chat-virtual-row"), 800, contentHeight);
     await commitFrame();

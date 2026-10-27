@@ -25,6 +25,12 @@ export class TranscriptInitialRange {
   private prepareLatency = 16;
   private idleStep = 1;
   private scrollSample = { time: 0, distance: 0, velocity: 0, direction: -1 };
+  private viewportOnly = false;
+
+  get reading(): boolean {
+    return !this.pending && !this.viewportOnly;
+  }
+
   constructor(
     initialOffset: number | null,
     private readonly virtualizer: () => Virtualizer<HTMLDivElement, HTMLElement>,
@@ -110,8 +116,11 @@ export class TranscriptInitialRange {
     return true;
   }
 
-  finish(): void {
+  finish(viewportOnly = false): void {
     this.pending = false;
+    // Boot placement can precede the native extent; only reader navigation
+    // releases its anchor to subsequent native-offset measurements.
+    this.viewportOnly = viewportOnly;
     this.virtualizer().shouldAdjustScrollPositionOnItemSizeChange = undefined;
     if (!this.tailRows) {
       return;
@@ -124,7 +133,7 @@ export class TranscriptInitialRange {
 
   complete(): void {
     if (this.pending) {
-      this.finish();
+      this.finish(true);
     }
   }
 
@@ -405,6 +414,7 @@ export class TranscriptInitialRange {
     this.prepareStarted = 0;
     this.preparingRowKey = undefined;
     this.preparedRowKeys.clear();
+    this.viewportOnly = false;
     this.refresh();
   }
 }
