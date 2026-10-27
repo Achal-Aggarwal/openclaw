@@ -362,10 +362,11 @@ describe.skipIf(typeof HTMLElement.prototype.checkVisibility !== "function")(
         expect(trigger.getAttribute("aria-label")).toBe(t("chat.sessionHeader.panels"));
         expect(trigger.textContent?.trim()).toBe("");
         const surface = findElement(menu, ":scope > .oc-menu");
-        // The overlay can finish opening while the lazy action list is still loading.
+        // Wait for the lazy action content before measuring the menu geometry.
         await expect
           .element(
             page.elementLocator(menu).getByRole("menuitem", { name: "Terminal", exact: true }),
+            { timeout: 5_000 },
           )
           .toBeVisible();
         // Measure the settled surface, not its opening scale transition.

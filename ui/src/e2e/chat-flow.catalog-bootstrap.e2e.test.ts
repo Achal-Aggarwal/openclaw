@@ -23,6 +23,18 @@ import {
 } from "./control-ui-e2e-suite.test-support.ts";
 
 const token = "synthetic-catalog-mutation-token";
+type CatalogPickerClickState = {
+  bound: boolean;
+  open: boolean;
+  connected: boolean;
+  current: boolean;
+};
+type CatalogClickWindow = Window & {
+  readCatalogPickerClick?: () => {
+    before: CatalogPickerClickState;
+    final: CatalogPickerClickState;
+  } | null;
+};
 let state: OpenClawTestState | undefined;
 let gatewayStartup: ReturnType<typeof startGatewayWithClient> | undefined;
 let realGateway: Awaited<ReturnType<typeof startGatewayWithClient>>;
@@ -235,6 +247,42 @@ suite.define(() => {
             socket.send(message);
           });
         });
+        // Capture the click without inserting a browser round trip before it.
+        await page.addInitScript(() => {
+          let click:
+            | {
+                before: CatalogPickerClickState;
+                read: () => CatalogPickerClickState;
+              }
+            | undefined;
+          (window as CatalogClickWindow).readCatalogPickerClick = () =>
+            click ? { before: click.before, final: click.read() } : null;
+          document.addEventListener(
+            "click",
+            (event) => {
+              const details =
+                event.target instanceof Element
+                  ? event.target
+                      .closest("[data-chat-model-select]")
+                      ?.closest(".chat-controls__model-picker")
+                  : null;
+              if (!(details instanceof HTMLDetailsElement)) {
+                return;
+              }
+              const read = (): CatalogPickerClickState => ({
+                bound: details.hasAttribute("data-chat-native-picker"),
+                open: details.open,
+                connected: details.isConnected,
+                current:
+                  document.querySelector(
+                    'openclaw-chat-pane[aria-hidden="false"] .chat-controls__model-picker',
+                  ) === details,
+              });
+              click = { before: read(), read };
+            },
+            true,
+          );
+        });
         const url = new URL(`chat/alpha/~key/${sessionName}`, suite.server.baseUrl);
         url.searchParams.set("gatewayUrl", `ws://127.0.0.1:${port}`);
         url.hash = `token=${token}`;
@@ -343,9 +391,20 @@ suite.define(() => {
         catalogReloadStarted = true;
         recordCatalogFacts();
         await page.reload();
-        await trigger.click();
         try {
+          await trigger.click();
           await expect.poll(() => account.textContent()).toContain("Account B");
+          const selectedRow = picker.locator('[data-chat-model-option="fixture/second"]');
+          await revealChatModelOption(picker, "fixture/second");
+          await expect.poll(() => selectedRow.isVisible()).toBe(true);
+          expect(await selectedRow.isEnabled()).toBe(true);
+          expect(await account.textContent()).not.toContain("Account A");
+          const readsBeforeReopen = catalogRequests.size;
+          await trigger.click();
+          await trigger.click();
+          await expect.poll(() => account.textContent()).toContain("Account B");
+          expect(await selectedRow.isEnabled()).toBe(true);
+          expect(catalogRequests.size).toBe(readsBeforeReopen);
         } catch (error) {
           recordCatalogFacts();
           await withTimeout(
@@ -357,6 +416,8 @@ suite.define(() => {
                 "[data-chat-account-group-toggle]",
               );
               return {
+                catalogPickerClick:
+                  (window as CatalogClickWindow).readCatalogPickerClick?.() ?? null,
                 catalogPickerPresent: Boolean(pickerElement),
                 catalogMenuOpen: pickerElement?.hasAttribute("open") ?? false,
                 catalogAccountPresent: Boolean(accountElement),
@@ -382,17 +443,6 @@ suite.define(() => {
             .catch(() => recordControlUiE2eFailureFacts(page, { catalogDomRead: false }));
           throw error;
         }
-        const selectedRow = picker.locator('[data-chat-model-option="fixture/second"]');
-        await revealChatModelOption(picker, "fixture/second");
-        await expect.poll(() => selectedRow.isVisible()).toBe(true);
-        expect(await selectedRow.isEnabled()).toBe(true);
-        expect(await account.textContent()).not.toContain("Account A");
-        const readsBeforeReopen = catalogRequests.size;
-        await trigger.click();
-        await trigger.click();
-        await expect.poll(() => account.textContent()).toContain("Account B");
-        expect(await selectedRow.isEnabled()).toBe(true);
-        expect(catalogRequests.size).toBe(readsBeforeReopen);
       });
     },
     60_000,
