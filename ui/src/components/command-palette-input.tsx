@@ -1,7 +1,47 @@
 import type { JSX } from "@solidjs/web";
-import { createMemo, onSettled } from "solid-js";
+import { createMemo, For, onSettled } from "solid-js";
+import { t } from "../lib/reactive/i18n.ts";
 import { createLayoutMeasurement } from "../lib/reactive/layout-measurement.ts";
 import { liveValue as createLiveValue } from "../lib/reactive/live-value.ts";
+import type { CommandPaletteMode } from "./command-palette-contract.ts";
+import { Kbd } from "./solid/kbd.tsx";
+
+export function CommandPaletteModes(props: {
+  mode: CommandPaletteMode;
+  disabled?: boolean;
+  onChange: (mode: CommandPaletteMode) => void;
+}) {
+  return (
+    <div class="cmd-palette__modes" role="tablist" aria-label={t("palette.modeLabel")}>
+      <For each={["search", "compose"] as const}>
+        {(mode) => (
+          <button
+            type="button"
+            role="tab"
+            id={`cmd-palette-tab-${mode}`}
+            class="cmd-palette__mode"
+            aria-selected={props.mode === mode ? "true" : "false"}
+            aria-controls="cmd-palette-panel"
+            tabindex={props.mode === mode ? 0 : -1}
+            disabled={props.disabled}
+            onClick={() => props.onChange(mode)}
+            onKeyDown={(event) => {
+              if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+                event.preventDefault();
+                props.onChange(mode === "search" ? "compose" : "search");
+              }
+            }}
+          >
+            {t(`palette.modes.${mode}`)}
+            <span class="cmd-palette__mode-key" aria-hidden="true">
+              <Kbd keys="Tab" />
+            </span>
+          </button>
+        )}
+      </For>
+    </div>
+  );
+}
 
 export const COMMAND_PALETTE_INPUT_ID = "cmd-palette-input";
 
