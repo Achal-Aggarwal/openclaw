@@ -148,7 +148,7 @@ import {
   buildCliVisibleReplyGuidance,
   finalizeCliSystemPrompt,
   composeCliPromptContext,
-  createCliCurrentPromptRenderer,
+  prepareCliCurrentPromptContext,
   prepareCliSystemPrompt,
   prepareCliTurnPromptContext,
 } from "./prompt-context.js";
@@ -957,7 +957,9 @@ async function prepareCliRunContextWithinReadFence(
         JSON.stringify([
           baseExtraSystemPromptHash ?? null,
           params.cliToolAvailability.native.toSorted(),
-          params.cliToolAvailability.openClaw.toSorted(),
+          params.cliToolAvailability.openClaw
+            .filter((name) => !CALLER_SURFACE_TOOL_NAMES.has(name))
+            .toSorted(),
         ]),
       )
     : baseExtraSystemPromptHash;
@@ -1540,6 +1542,11 @@ async function prepareCliRunContextWithinReadFence(
     }
     let historyPromptCurrentTurn = preparedPrompt;
     if (!skipsTurnPreparation) {
+      const privateContext = executionTarget.kind === "plugin";
+      const currentPromptContext = prepareCliCurrentPromptContext(params, reusableCliSession, {
+        sessionGapContext: sessionPromptContext?.sessionGapContext,
+        privateContext,
+      });
       ({
         prompt: preparedPrompt,
         systemPrompt,
@@ -1549,12 +1556,13 @@ async function prepareCliRunContextWithinReadFence(
         configuredTimezone: params.config?.agents?.defaults?.userTimezone,
         prompt: preparedPrompt,
         systemPrompt,
-        privateContext: executionTarget.kind === "plugin",
+        privateContext,
         backendId: backendResolved.id,
         runtimeFactsInTurn: params.runtimeFactsInTurn,
         deliveryGuidance: effectiveReplyGuidance,
         hookResult: promptBuildHookResult,
         prependContext: [
+          currentPromptContext.prependContext,
           sessionPromptContext?.durableContext,
           promptBuildHookResult?.prependContext,
           authorizedPromptBuildResult?.prependContext,
@@ -1576,11 +1584,7 @@ async function prepareCliRunContextWithinReadFence(
       }));
       params.assertCurrent?.();
       params.abortSignal?.throwIfAborted();
-      const renderCurrentPrompt = createCliCurrentPromptRenderer(
-        params,
-        reusableCliSession,
-        sessionPromptContext,
-      );
+      const renderCurrentPrompt = currentPromptContext.renderPrompt;
       const preferResumableText =
         params.currentInboundEventKind === "room_event" && Boolean(reusableCliSessionId);
       historyPromptCurrentTurn = renderCurrentPrompt(preparedPrompt);

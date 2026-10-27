@@ -694,6 +694,10 @@ describe("restricted CLI tool preparation", () => {
         session: { store: sessionTarget.storePath },
         tools: { allow: ["read", "screen", "show_widget", "suggest_task", "dismiss_task"] },
       },
+      cliToolAvailability: {
+        native: [],
+        openClaw: ["read", "screen", "show_widget", "suggest_task", "dismiss_task"],
+      },
     };
     const turns: { binding: CliSessionBinding; names: string[]; systemPrompt: string }[] = [];
     for (const completion of [false, true, false]) {
@@ -707,6 +711,8 @@ describe("restricted CLI tool preparation", () => {
             }),
       });
       try {
+        // Only caller-surface tools vary; a native-tool change should still cause drift.
+        expect(context.params.cliToolAvailability?.native).toEqual([]);
         turns.push({
           binding: createTestCliSessionBinding(context, "native-surface-session"),
           systemPrompt: context.systemPrompt,
@@ -734,7 +740,7 @@ describe("restricted CLI tool preparation", () => {
           authEpochVersion: authEpochVersion!,
           binding: turns[index]!.binding,
         }),
-      ).toMatchObject({ sessionId: "native-surface-session" });
+      ).toMatchObject({ mode: "reuse", sessionId: "native-surface-session" });
     }
   });
 

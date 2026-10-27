@@ -192,6 +192,33 @@ describe("plugin-owned CLI execution host boundary", () => {
     });
   });
 
+  it.each([
+    [{ kind: "internal_system", sourceTool: "exec" }, "host"],
+    [{ kind: "internal_system", sourceTool: "cron" }, "host"],
+    [{ kind: "internal_system", sourceTool: "future_wake" }, "host"],
+    [{ kind: "inter_session", sourceTool: "subagent_announce" }, "host"],
+    [{ kind: "inter_session", sourceTool: "sessions_send" }, "host"],
+    [{ kind: "external_user", sourceTool: "exec" }, undefined],
+    [{ kind: "external_user" }, undefined],
+    [undefined, undefined],
+  ] as const)(
+    "preserves input provenance instead of classifying prompt text (%j)",
+    async (provenance, origin) => {
+      const { context } = await createExecution();
+      context.params.inputProvenance = provenance;
+      let observedExecution: CliBackendExecuteContext | undefined;
+      const execute: CliBackendExecute = async function* (execution) {
+        observedExecution = execution;
+        yield { type: "system", subtype: "init", session_id: "sdk-session" };
+        yield SUCCESS_RESULT;
+      };
+
+      await runPlugin(context, execute);
+
+      expect(observedExecution?.promptOrigin).toBe(origin);
+    },
+  );
+
   it.each(["permission preparation", "native prompt send"])(
     "does not disclose private context when history authority changes during %s",
     async (boundary) => {
