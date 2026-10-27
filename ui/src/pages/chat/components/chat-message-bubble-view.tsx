@@ -177,18 +177,6 @@ export function GroupedMessage(props: {
                       {t("chat.composer.runInterrupted")}
                     </div>
                   </Show>
-                  <Show
-                    when={state().duplicateCount > 1 && (!state().markdown || state().jsonResult)}
-                  >
-                    <div
-                      class="chat-duplicate-count"
-                      aria-label={t("chat.messages.duplicatesCollapsed", {
-                        count: String(state().duplicateCount),
-                      })}
-                    >
-                      ×{state().duplicateCount}
-                    </div>
-                  </Show>
                 </div>
                 <Show when={readMessageWorkContext(state().message)}>
                   <MessageWorkContext message={state().message} />
@@ -277,7 +265,6 @@ function MessageText(props: ContentProps) {
           messageKey={props.messageKey}
           options={prepared().options}
           markdownOptions={props.state().markdownRenderOptions}
-          duplicateSuffix={props.state().duplicateSuffix}
           media={prepared().media}
         />
       </Match>
