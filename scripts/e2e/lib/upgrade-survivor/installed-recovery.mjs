@@ -7,6 +7,7 @@ import { packFirstHopUpdateFixture } from "../update-first-hop-package-fixtures.
 import { selectInstalledRecoveryCuts } from "./installed-recovery-cases.mjs";
 import { runInstalledRecoveryCommand } from "./installed-recovery-command.mjs";
 import {
+  assertInstalledRecoveryConfig,
   assertPackageTree,
   assertRetirementCut,
   capturePackageTree,
@@ -302,6 +303,9 @@ async function main([artifacts, prefix, tarball, configPath, summary, selectedCu
     "--no-restart",
     "--json",
   ]);
+  // Healthy update runs Doctor and may persist bookkeeping. Status inspection
+  // must preserve those new bytes as well as the configured operator settings.
+  const updatedConfig = fs.readFileSync(configPath);
   const printed = parseRecoveryCommand(`${next.stdout}\n${next.stderr}`);
   assert.deepEqual(printed, { node, helper, anchor, operation: printed.operation });
   assert(!operationIds.has(printed.operation), "real next update must acquire distinct custody");
@@ -337,7 +341,7 @@ async function main([artifacts, prefix, tarball, configPath, summary, selectedCu
   assert.equal(fs.existsSync(helper), false);
   assertPackageTree(installedTree, capturePackageTree(root));
   assert.deepEqual(launcher(), installedLauncher);
-  settingsUnchanged();
+  assertInstalledRecoveryConfig(config, updatedConfig, fs.readFileSync(configPath));
   evidence.nextUpdate = {
     exitCode: next.status,
     operationId: printed.operation,

@@ -13,6 +13,11 @@ export function startInstalledRecoveryRun(
   summary: string;
 };
 export function readActivation(journal: string): Record<string, string | number | null>;
+export function assertInstalledRecoveryConfig(
+  original: Uint8Array,
+  updated: Uint8Array,
+  inspected: Uint8Array,
+): void;
 export type PackageTreeEntry = {
   path: string;
   kind: "directory" | "file" | "link";

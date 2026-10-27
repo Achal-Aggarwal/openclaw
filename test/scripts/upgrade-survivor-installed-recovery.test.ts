@@ -8,6 +8,7 @@ import {
   selectInstalledRecoveryCuts,
 } from "../../scripts/e2e/lib/upgrade-survivor/installed-recovery-cases.mjs";
 import {
+  assertInstalledRecoveryConfig,
   assertPackageTree,
   assertRetirementCut,
   capturePackageTree,
@@ -42,6 +43,43 @@ const command = [
   "status",
 ];
 const printed = `Package publication recovery: ${command.map(quoteCliArg).join(" ")}`;
+
+it("allows healthy-update bookkeeping while preserving operator settings and read-only status", () => {
+  const gateway = JSON.parse(
+    fs.readFileSync("scripts/e2e/lib/upgrade-survivor/config-recipe/gateway.json", "utf8"),
+  );
+  const original = Buffer.from(JSON.stringify({ gateway, plugins: { enabled: false } }));
+  const updated = Buffer.from(
+    JSON.stringify({
+      ...JSON.parse(original.toString()),
+      meta: { lastTouchedVersion: "next" },
+      wizard: { lastRunCommand: "doctor" },
+    }),
+  );
+  expect(() => assertInstalledRecoveryConfig(original, updated, updated)).not.toThrow();
+  for (const keys of [
+    ["gateway", "mode"],
+    ["gateway", "port"],
+    ["gateway", "bind"],
+    ["gateway", "reload", "mode"],
+    ["gateway", "auth", "mode"],
+    ["gateway", "auth", "token", "source"],
+    ["gateway", "auth", "token", "provider"],
+    ["gateway", "auth", "token", "id"],
+    ["plugins", "enabled"],
+  ]) {
+    const changed = JSON.parse(updated.toString());
+    const parent = keys.slice(0, -1).reduce((value, key) => value[key], changed);
+    parent[keys.at(-1)!] = null;
+    const bytes = Buffer.from(JSON.stringify(changed));
+    expect(() => assertInstalledRecoveryConfig(original, bytes, bytes)).toThrow(
+      "operator settings",
+    );
+  }
+  expect(() =>
+    assertInstalledRecoveryConfig(original, updated, Buffer.concat([updated, Buffer.from("\n")])),
+  ).toThrow("status changed full config bytes");
+});
 
 // The installed cell is Linux; use real POSIX modes and direct renames while
 // keeping the portable comparator/diagnostic coverage below active on Windows.

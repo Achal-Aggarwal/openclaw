@@ -73,6 +73,22 @@ export function readActivation(journal) {
   });
 }
 
+export function assertInstalledRecoveryConfig(original, updated, inspected) {
+  const settings = (bytes) => {
+    const { gateway, plugins } = JSON.parse(Buffer.from(bytes).toString("utf8"));
+    return {
+      mode: gateway.mode,
+      port: gateway.port,
+      bind: gateway.bind,
+      reloadMode: gateway.reload?.mode,
+      auth: gateway.auth,
+      pluginsEnabled: plugins.enabled,
+    };
+  };
+  assert.deepEqual(settings(updated), settings(original), "configured operator settings changed");
+  assert.deepEqual(inspected, updated, "status changed full config bytes");
+}
+
 // These checkpoints observe direct renames, including in-tree hardlink aliases.
 // Keep every entry (even npm caches); never follow links outside the package.
 export function capturePackageTree(root, { maxEntries = 100_000, maxBytes = 4 * 1024 ** 3 } = {}) {
