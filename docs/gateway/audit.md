@@ -207,7 +207,10 @@ also retain the prepared display label after secret redaction and the
 128-character bound. A resolved durable profile, including one established by
 verified trusted-proxy or Tailscale identity, supplies a pseudonymized person
 invoker. A paired device adds device assurance but never becomes a person.
-Shared tokens, passwords, auth-none connections, and other profileless clients
+Unidentified operator connections can receive the Gateway's durable
+[shared owner profile](/concepts/user-model), including authenticated ephemeral
+CLI and backend clients. That profile supplies attribution, not a verified
+personal login or additional permissions. Connections without a durable profile
 remain unattributed. If authenticated user evidence promises a durable profile
 but profile resolution fails, the invoker is `unknown` rather than guessed from
 headers, device ids, connection ids, or credentials.
@@ -475,6 +478,14 @@ what was recorded, not as proof of what happened:
 - **Absence of a row proves nothing.** Pre-admission inbound drops, sends from
   plugin-local or direct-send paths that bypass shared durable delivery, a
   dropped admission envelope, and crash-lost queued work can leave no record.
+- Agent-run starts are buffered until the run settles, then start and finish
+  commit together. A running turn's start becomes visible at turn end. Live
+  readers can see tool events before their enclosing run start; occurrence times
+  and source ordering are preserved. If no identity context or other audit event
+  exists yet, run inspection can report the running turn as unknown. A crash before
+  settlement can lose the buffered start. The oldest start flushes separately
+  when the 1,024-run buffer is full. An event that observes disabled collection,
+  or normal shutdown, also flushes accepted unmatched starts.
 - Writes go through a bounded asynchronous process-owned queue; queue
   saturation, storage failure, or a bounded shutdown timeout can drop records
   and log one operational warning.

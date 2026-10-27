@@ -12,6 +12,7 @@ import { resolveSessionModelIdentityRef } from "../agents/session-model-ref.js";
 import { buildGroupDisplayName } from "../config/sessions/group-display.js";
 import {
   MAX_SESSION_PARTICIPANTS,
+  resolveSessionCreatorActor,
   sessionCreatorProfileId,
 } from "../config/sessions/session-entry-provenance.js";
 import { isPinnableSessionEntry } from "../config/sessions/session-pin-policy.js";
@@ -24,14 +25,13 @@ import { formatGoalSummary } from "../shared/session-goal-display.js";
 import { isSessionRunStateActive } from "../shared/session-run-state.js";
 import { normalizeSessionSearchText } from "../shared/session-search-text.js";
 import type { SessionActivityPulse, SessionOwnerFacetIdentity } from "../shared/session-types.js";
-import type { SynchronousWork } from "../shared/synchronous-work.js";
 import { sessionDeliveryChannel, sessionDeliveryOrigin } from "../utils/delivery-context.read.js";
 import { readPreparedGatewayModelCatalogMetadata } from "./server-model-catalog-view.js";
 import {
   projectSessionOwner,
   addSessionOwnerFacetIdentity,
   sortSessionOwnerFacet,
-  projectSessionParticipant,
+  resolveSessionProfileId,
   projectSessionPeople,
   projectSessionPeopleFacet,
   resolveSessionListProfileReference,
@@ -107,7 +107,6 @@ export type SessionListFilterParams = {
   involvingActorId?: string;
   ownerFirstActorId?: string;
   projectActiveRun?: SessionListActiveRunProjector;
-  shouldYield?: () => boolean;
   involvementKeys: (profileId: string, personal: boolean) => ReadonlySet<string>;
 };
 
@@ -151,10 +150,10 @@ function matchesSessionListSearch(fields: Array<string | undefined>, search: str
   );
 }
 
-// Selection facts are replaced with the resident entry; weak keys release retired revisions.
+// Search follows the committed entry and physical key; weak keys release retired revisions.
 const staticSearchFields = new WeakMap<
-  NonNullable<ReturnType<SessionListTargetLookup>>["selection"],
-  { literal: string[]; titles: string[] }
+  SessionEntry,
+  { key: string; literal: string[]; titles: string[] }
 >();
 
 function createActivityPulse(opts: SessionsListParams): SessionActivityPulse | undefined {
@@ -172,11 +171,11 @@ function createActivityPulse(opts: SessionsListParams): SessionActivityPulse | u
   };
 }
 
-export function* filterSessionEntries(
+export function filterSessionEntries(
   params: SessionListFilterParams,
   window?: { offset: number; limit?: number; ownerLimit: number },
-): SynchronousWork<SessionListFilteredEntries> {
-  const { cfg, opts, now, shouldYield, configuredAgentIds } = params;
+): SessionListFilteredEntries {
+  const { cfg, opts, now, configuredAgentIds } = params;
   let rowContext: SessionListRowContext | undefined;
   const getRowContext = () => (rowContext ??= params.getRowContext());
   const search = normalizeLowercaseStringOrEmpty(opts.search);
@@ -210,11 +209,7 @@ export function* filterSessionEntries(
   const profileRelation = opts.profileRelation
     ? {
         ...opts.profileRelation,
-        profileId: projectSessionParticipant(
-          { type: "profile", id: opts.profileRelation.profileId },
-          identities,
-          cfg,
-        ).identity.id,
+        profileId: resolveSessionProfileId(opts.profileRelation.profileId, identities),
       }
     : undefined;
   const involvingActorId = normalizeOptionalString(params.involvingActorId);
@@ -233,9 +228,6 @@ export function* filterSessionEntries(
       ) {
         visibleEntries.push(pair);
       }
-      if (shouldYield?.()) {
-        yield;
-      }
     }
   }
   const allowedProfileIds =
@@ -246,18 +238,14 @@ export function* filterSessionEntries(
       for (const person of projectPeople(entry, identities, owner)) {
         allowedProfileIds.add(person.identity.id);
       }
-      if (shouldYield?.()) {
-        yield;
-      }
     }
   }
   const profileReference = opts.involvingProfileId
-    ? yield* resolveSessionListProfileReference(
+    ? resolveSessionListProfileReference(
         opts.involvingProfileId,
         visibleEntries,
         identities,
         allowedProfileIds,
-        shouldYield,
       )
     : undefined;
   if (profileReference && !profileReference.ok) {
@@ -277,11 +265,14 @@ export function* filterSessionEntries(
   // Excluded rows must not participate in search or ownership resolution.
   const titleSearch = search && normalizeSessionSearchText(search);
   const matchesSearch = search
-    ? (key: string, entry: SessionEntry): boolean => {
-        const target = expectDefined(params.getTarget(key), "search row owner");
+    ? (
+        key: string,
+        entry: SessionEntry,
+        target: NonNullable<ReturnType<SessionListTargetLookup>>,
+      ): boolean => {
         const storeKey = target.storeKey ?? key;
-        let fields = staticSearchFields.get(target.selection);
-        if (!fields) {
+        let fields = staticSearchFields.get(entry);
+        if (!fields || fields.key !== storeKey) {
           const titles = [
             entry.label,
             entry.subject,
@@ -300,10 +291,11 @@ export function* filterSessionEntries(
             model: entry.model,
           });
           fields = {
+            key: storeKey,
             literal: rawFields.map(normalizeLowercaseStringOrEmpty),
             titles: titles.map(normalizeSessionSearchText),
           };
-          staticSearchFields.set(target.selection, fields);
+          staticSearchFields.set(entry, fields);
         }
         if (
           fields.literal.some((field) => field.includes(search)) ||
@@ -345,7 +337,7 @@ export function* filterSessionEntries(
         if (matchesSessionListSearch([params.identityNames?.get(agentId)], search)) {
           return true;
         }
-        const source = expectDefined(params.getModelFacts, "prepared search row model facts")(key);
+        let models: Array<string | undefined> | undefined;
         // Derived model aliases are not agent-key matches.
         if (!search.startsWith("agent:")) {
           const subagentRun = getRowContext().subagentRuns.getDisplaySubagentRun(storeKey);
@@ -360,10 +352,17 @@ export function* filterSessionEntries(
               configuredDefaultModelByAgent: getRowContext().configuredDefaultModelByAgent,
             },
           );
-          const models: Array<string | undefined> = [];
-          for (const identity of [resolvedModel, source.selectedModel, source.rowModelIdentity]) {
-            addSessionListSearchModelFields(models, identity);
+          models = [];
+          addSessionListSearchModelFields(models, resolvedModel);
+          if (matchesSessionListSearch(models, search)) {
+            return true;
           }
+          models.length = 0;
+        }
+        const source = expectDefined(params.getModelFacts, "prepared search row model facts")(key);
+        if (models) {
+          addSessionListSearchModelFields(models, source.selectedModel);
+          addSessionListSearchModelFields(models, source.rowModelIdentity);
           if (matchesSessionListSearch(models, search)) {
             return true;
           }
@@ -381,9 +380,6 @@ export function* filterSessionEntries(
       : undefined;
 
   for (const pair of candidateEntries) {
-    if (shouldYield?.()) {
-      yield;
-    }
     const key = pair[0];
     const entry = pair[1];
     if (
@@ -454,7 +450,7 @@ export function* filterSessionEntries(
     ) {
       continue;
     }
-    if (matchesSearch && !matchesSearch(key, entry)) {
+    if (matchesSearch && !matchesSearch(key, entry, target)) {
       continue;
     }
     if (activeMinutes !== undefined) {
@@ -479,8 +475,7 @@ export function* filterSessionEntries(
       const createdProfileId = sessionCreatorProfileId(entry.createdActor);
       if (
         !createdProfileId ||
-        projectSessionParticipant({ type: "profile", id: createdProfileId }, identities, cfg)
-          .identity.id !== profileRelation.profileId
+        resolveSessionProfileId(createdProfileId, identities) !== profileRelation.profileId
       ) {
         continue;
       }
@@ -491,7 +486,7 @@ export function* filterSessionEntries(
     if (effectiveOwner) {
       addSessionOwnerFacetIdentity(ownerFacet, effectiveOwner);
     }
-    if (creatorId && entry.createdActor?.id !== creatorId) {
+    if (creatorId && resolveSessionCreatorActor(entry.createdActor)?.id !== creatorId) {
       continue;
     }
     if (ownerId && effectiveOwner?.id !== ownerId) {

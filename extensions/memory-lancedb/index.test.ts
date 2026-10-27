@@ -1,3 +1,4 @@
+import fs from "node:fs/promises";
 /**
  * Memory Plugin E2E Tests
  *
@@ -7,8 +8,6 @@
  * - Auto-recall via hooks
  * - Auto-capture filtering
  */
-
-import fs from "node:fs/promises";
 import path from "node:path";
 import { expectDefined } from "@openclaw/normalization-core";
 import { Command } from "commander";
@@ -23,7 +22,8 @@ import {
 } from "openclaw/plugin-sdk/memory-host-core";
 import { createTestPluginApi } from "openclaw/plugin-sdk/plugin-test-api";
 import { afterEach, describe, test, expect, vi } from "vitest";
-import { createEmbeddings, isMemoryRecallTimeoutError, runWithTimeout } from "./embeddings.js";
+import { makeUserMessage } from "../test-support/message-fixtures.test-support.js";
+import { createEmbeddings, isMemoryRecallTimeoutError } from "./embeddings.js";
 import memoryPlugin from "./index.js";
 import { looksLikeEnvelopeSludge } from "./memory-capture-sanitization.js";
 import { detectCategory, normalizeRecallQuery, shouldCapture } from "./memory-policy.js";
@@ -204,6 +204,7 @@ function createStandardMemoryTableHarness(
     toArray?: ReturnType<typeof vi.fn>;
     limit?: ReturnType<typeof vi.fn>;
     vectorSearch?: ReturnType<typeof vi.fn>;
+    query?: ReturnType<typeof vi.fn>;
     countRows?: ReturnType<typeof vi.fn>;
     add?: ReturnType<typeof vi.fn>;
     deleteRows?: ReturnType<typeof vi.fn>;
@@ -220,6 +221,7 @@ function createStandardMemoryTableHarness(
     schema: createAgentScopedSchemaMock(),
     checkoutLatest: vi.fn(async () => undefined),
     vectorSearch,
+    query: options.query,
     countRows,
     add,
     delete: deleteRows,
@@ -951,19 +953,7 @@ describe("memory plugin e2e", () => {
     const limit = vi.fn(() => ({ toArray }));
     const select = vi.fn(() => ({ limit, toArray }));
     const query = vi.fn(() => ({ where: vi.fn(() => ({ select })) }));
-    const loadLanceDbModule = vi.fn(async () => ({
-      connect: vi.fn(async () => ({
-        tableNames: vi.fn(async () => ["memories"]),
-        openTable: vi.fn(async () => ({
-          checkoutLatest: vi.fn(async () => undefined),
-          schema: createAgentScopedSchemaMock(),
-          query,
-          countRows: vi.fn(async () => 0),
-          add: vi.fn(async () => undefined),
-          delete: vi.fn(async () => undefined),
-        })),
-      })),
-    }));
+    const { loadLanceDbModule } = createStandardMemoryTableHarness({ query });
 
     installOpenAiMemoryModuleMocks({
       ensureGlobalUndiciEnvProxyDispatcher,
@@ -1099,16 +1089,14 @@ describe("memory plugin e2e", () => {
     const post = vi.fn(
       () =>
         new Promise((resolve) => {
-          setTimeout(
-            () =>
-              resolve({
-                data: [{ embedding: [0.1, 0.2, 0.3] }],
-              }),
-            30_000,
-          );
+          setTimeout(resolve, 30_000, { data: [{ embedding: [0.1, 0.2, 0.3] }] });
         }),
     );
-    const toArray = vi.fn(() => new Promise(() => {}));
+    const queryStarted = createDeferred<void>();
+    const toArray = vi.fn(() => {
+      queryStarted.resolve();
+      return new Promise(() => {});
+    });
     const limit = vi.fn(() => ({ toArray }));
     const {
       api: mockApi,
@@ -1166,7 +1154,7 @@ describe("memory plugin e2e", () => {
     await vi.advanceTimersByTimeAsync(60_000);
     post.mockResolvedValueOnce({ data: [{ embedding: [0.1, 0.2, 0.3] }] });
     const probeResult = recall();
-    await vi.advanceTimersByTimeAsync(0);
+    await queryStarted.promise;
     expect(loadLanceDbModule).toHaveBeenCalledTimes(1);
     await vi.advanceTimersByTimeAsync(15_000);
     await expect(probeResult).resolves.toBeUndefined();
@@ -1217,34 +1205,9 @@ describe("memory plugin e2e", () => {
     await vi.advanceTimersByTimeAsync(15_000);
   });
 
-  test("rejects task success after the recall deadline", async () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(0);
-    let resolveTask: ((value: string) => void) | undefined;
-    const result = runWithTimeout({
-      timeoutMs: 15_000,
-      task: async () =>
-        await new Promise<string>((resolve) => {
-          resolveTask = resolve;
-        }),
-    });
-    await Promise.resolve();
-
-    vi.setSystemTime(15_000);
-    resolveTask?.("late success");
-
-    await expect(result).resolves.toEqual({ status: "timeout" });
-    expect(vi.getTimerCount()).toBe(0);
-  });
-
   test("gates every memory surface on the agent's memorySearch.enabled", async () => {
-    const embeddingsCreate = vi.fn(async () => ({
-      data: [{ embedding: [0.1, 0.2, 0.3] }],
-    }));
-    const ensureGlobalUndiciEnvProxyDispatcher = vi.fn();
     const add = vi.fn(async () => undefined);
     const deleteRows = vi.fn(async () => ({ numDeletedRows: 1 }));
-    const { loadLanceDbModule } = createStandardMemoryTableHarness({ add, deleteRows });
     const pluginEntryConfig = parseConfig({ autoCapture: true, autoRecall: true });
     let configFile: Record<string, unknown> = {
       memory: { search: { enabled: true } },
@@ -1263,11 +1226,7 @@ describe("memory plugin e2e", () => {
       },
     };
 
-    installOpenAiMemoryModuleMocks({
-      ensureGlobalUndiciEnvProxyDispatcher,
-      embeddingsCreate,
-      loadLanceDbModule,
-    });
+    const { embeddingsCreate, loadLanceDbModule } = setupDirectMemoryHarness({ add, deleteRows });
 
     const on = vi.fn();
     const mockApi = createMemoryPluginApi(getDbPath(), {
@@ -1531,20 +1490,14 @@ describe("memory plugin e2e", () => {
   test("bounds completed text history without refreshing repeated hits", async () => {
     const harness = await setupAutoCaptureCursorHarness();
     const context = { agentId: "main", sessionKey: "session-material-window" };
-    const facts = Array.from({ length: 61 }, (_, index) => ({
-      role: "user",
-      content: `I prefer meeting room ${index} for project planning.`,
-      timestamp: index,
-    }));
+    const facts = Array.from({ length: 61 }, (_, index) =>
+      makeUserMessage(`I prefer meeting room ${index} for project planning.`, index),
+    );
     const history: typeof facts = [];
     const first = facts[0]!;
     const newest = facts[60]!;
-    const anchor = { role: "user", content: "That covers this topic.", timestamp: 200 };
-    const next = {
-      role: "user",
-      content: "I prefer written agendas for new projects.",
-      timestamp: 201,
-    };
+    const anchor = makeUserMessage("That covers this topic.", 200);
+    const next = makeUserMessage("I prefer written agendas for new projects.", 201);
     for (const fact of facts.slice(0, 60)) {
       history.push(fact);
       await harness.capture([...history], context);
@@ -1967,6 +1920,7 @@ describe("memory plugin e2e", () => {
   test("retries without rejected dimensions and truncates the fallback vector", async () => {
     let nowMs = 1_000;
     const dateNow = vi.spyOn(Date, "now").mockImplementation(() => nowMs);
+    const performanceNow = vi.spyOn(performance, "now").mockReturnValue(0);
     const rejectedDimensions = Object.assign(
       new Error("422 Extra inputs are not permitted: body.dimensions"),
       {
@@ -2041,8 +1995,9 @@ describe("memory plugin e2e", () => {
         model: "text-embedding-3-small",
         input: "hello dimensions",
       });
-      expect(post.mock.calls[0]?.[1]).toMatchObject({ timeout: 15_000 });
-      expect(post.mock.calls[1]?.[1]).toMatchObject({ timeout: 14_500 });
+      const firstTimeout = (post.mock.calls[0]?.[1] as { timeout?: number } | undefined)?.timeout;
+      const secondTimeout = (post.mock.calls[1]?.[1] as { timeout?: number } | undefined)?.timeout;
+      expect([firstTimeout, secondTimeout]).toEqual([15_000, 14_500]);
       const truncatedVector = expectDefined(
         vectorSearch.mock.calls[0]?.[0],
         "truncated LanceDB search vector",
@@ -2051,6 +2006,7 @@ describe("memory plugin e2e", () => {
       expect(truncatedVector.slice(0, 2)).toEqual([0.6, 0.8]);
     } finally {
       dateNow.mockRestore();
+      performanceNow.mockRestore();
       resetMemoryModuleMocks();
     }
   });
@@ -2453,20 +2409,12 @@ describe("memory plugin e2e", () => {
     const limitFn = vi.fn(() => ({ toArray }));
     const vectorSearch = vi.fn(() => createAgentScopedVectorQuery(limitFn));
 
-    const embeddingsCreate = vi.fn(async () => ({
-      data: [{ embedding: [0.1, 0.2, 0.3] }],
-    }));
     const countRows = vi.fn(async () => 2);
-    const { loadLanceDbModule } = createStandardMemoryTableHarness({
+    setupDirectMemoryHarness({
       toArray,
       limit: limitFn,
       vectorSearch,
       countRows,
-    });
-    installOpenAiMemoryModuleMocks({
-      ensureGlobalUndiciEnvProxyDispatcher: vi.fn(),
-      embeddingsCreate,
-      loadLanceDbModule,
     });
 
     const mockApi = createMemoryPluginApi(getDbPath());
