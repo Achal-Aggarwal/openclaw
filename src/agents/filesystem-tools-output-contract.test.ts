@@ -21,6 +21,15 @@ import { compactToolOutputHint } from "./tool-schema-hints.js";
 const ONE_PIXEL_PNG_BASE64 =
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=";
 
+type ReadPageDetails =
+  | { kind: "text"; content: string }
+  | {
+      kind: "truncated";
+      content: string;
+      continuation: { kind: string; offset?: number; cursor?: number; limit?: number };
+    }
+  | { kind: "binary" | "image" | "directory" };
+
 function expectContract(tool: AnyAgentTool, details: unknown): void {
   expect(tool.outputSchema).toBeDefined();
   expect(Value.Check(tool.outputSchema!, details)).toBe(true);
@@ -201,7 +210,8 @@ describe("filesystem tool output contracts", () => {
     for (let page = 0; page < 8; page++) {
       const result = await tool.execute(`read-page-${page}`, args);
       expectContract(tool, result.details);
-      const details = result.details;
+      // SAFETY: expectContract validated details against the read tool's output schema.
+      const details = result.details as ReadPageDetails;
       if (details.kind !== "text" && details.kind !== "truncated") {
         throw new Error("Expected file text");
       }

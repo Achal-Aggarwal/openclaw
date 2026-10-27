@@ -7,6 +7,7 @@ import { swapStagedPackageInstall } from "../../infra/package-update-swap.js";
 import { createPackageSwapFixture } from "../../infra/package-update-swap.test-support.js";
 import * as databaseBackup from "../../infra/update-database-backup.js";
 import type { UpdateRunResult } from "../../infra/update-runner-types.js";
+import type { UpdateStepResult } from "../../infra/update-step-result.js";
 import { captureUpdateDatabases } from "./update-command-database-backup.js";
 import { recordUpdateDatabaseWrites } from "./update-command-database-receipts.js";
 import type { MutableUpdateExecutionParams } from "./update-command-execution.types.js";
@@ -109,17 +110,23 @@ it.each([
     };
     if (lateRefusal) {
       const backup = capture!.backup!;
-      finalResult.steps.push(
-        recordUpdateDatabaseWrites(
-          backup,
-          {
-            fromGenerations: backup.sourceGenerations,
-            generations: { [source]: "changed-during-doctor" },
-            unchanged: false,
-          },
-          { name: "post-update doctor" },
-        ),
+      const doctorStep: UpdateStepResult = {
+        name: "post-update doctor",
+        command: "openclaw doctor",
+        cwd: fixture.packageRoot,
+        durationMs: 0,
+        exitCode: 0,
+      };
+      recordUpdateDatabaseWrites(
+        backup,
+        {
+          fromGenerations: backup.sourceGenerations,
+          generations: { [source]: "changed-during-doctor" },
+          unchanged: false,
+        },
+        doctorStep,
       );
+      finalResult.steps.push(doctorStep);
       expect(finalResult.steps.at(-1)?.warnings).toContain(
         `Automatic database restoration unavailable: databases changed after snapshot capture; the writer is unknown. Snapshots retained at ${backup.directory}.`,
       );

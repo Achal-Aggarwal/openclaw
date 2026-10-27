@@ -290,12 +290,17 @@ describe("handleBtwCommand", () => {
     "passes every line of a multi-line side question to the runner: %s",
     async (body, question) => {
       runBtwSideQuestionMock.mockResolvedValue({ text: "answer" });
-      const params = activeParams(body);
+      const params = buildParams(body);
+      params.agentDir = "/tmp/agent";
+      params.sessionEntry = { sessionId: "session-1", updatedAt: Date.now() };
 
-      const result = await run(params);
+      const result = await handleBtwCommand(params, true);
 
-      expect(runnerArgs().question).toBe(question);
-      expectReply(result, "answer", question);
+      expect(mockFirstObjectArg(runBtwSideQuestionMock).question).toBe(question);
+      expect(result).toEqual({
+        shouldContinue: false,
+        reply: { text: "answer", btw: { question } },
+      });
     },
   );
 });

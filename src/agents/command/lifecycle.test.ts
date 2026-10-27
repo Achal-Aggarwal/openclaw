@@ -6,6 +6,10 @@ import { buildAgentRunTerminalOutcome } from "../agent-run-terminal-outcome.js";
 import { createCliTimeoutError } from "../cli-runner/no-output-timeout-policy.js";
 import { FailoverError } from "../failover-error.js";
 import { renderFailoverCodeUserCopy } from "../failover/user-copy.js";
+import {
+  type AgentAttemptLifecycleState,
+  createAgentAttemptLifecycleCallbacks,
+} from "./attempt-callbacks.js";
 import { createAgentCommandLifecycle } from "./lifecycle.js";
 
 const { emitAgentEvent, lifecycleLog } = vi.hoisted(() => ({

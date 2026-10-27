@@ -5,6 +5,13 @@ import { useAutoCleanupTempDirTracker } from "../../../test/helpers/temp-dir.js"
 import { loadSingleSkillDirectory, type LocalSkillLoadDiagnostic } from "./local-loader.js";
 import { loadSkills } from "./session.js";
 
+async function writeRawSkill(dir: string, raw: string, filename = "SKILL.md") {
+  await fs.mkdir(dir, { recursive: true });
+  const filePath = path.join(dir, filename);
+  await fs.writeFile(filePath, raw, "utf-8");
+  return filePath;
+}
+
 const tempDirs = useAutoCleanupTempDirTracker(afterEach);
 
 function loadSkillsFromPath(dir: string) {
