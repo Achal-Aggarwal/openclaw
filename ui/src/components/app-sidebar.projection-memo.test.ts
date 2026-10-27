@@ -159,6 +159,41 @@ describe("sidebar projection memo", () => {
     expect(enumerate).not.toHaveBeenCalled();
   });
 
+  it("shares one cached row graph between navigation, geometry and badge consumers", async () => {
+    const target = session("shared-cached-row", { unread: true });
+    const { sidebar, sessions } = await mount([target]);
+    const owner = getAppSidebarOwner(sidebar.hostElement)!;
+    vi.spyOn(owner, "sidebarSnapshotSettled").mockReturnValue(false);
+    const rows = snapshotSessions([sidebar.getSessionNavigationState().toSidebarSession(target)]);
+    owner.restoreSidebarSnapshot({
+      ...sidebarBootSnapshot(captureBootRoster(sessions.sessions.state)),
+      mode: "chip",
+      sections: [
+        {
+          id: "ungrouped",
+          rows,
+          totalRowCount: 1,
+          visibleRowCount: 1,
+          visibleLimit: 10,
+          collapsedVisibleRowCount: 1,
+          renderHeader: false,
+        },
+      ],
+    });
+    owner.invalidate();
+    await settleLitElement(sidebar);
+    const navigationRow = owner.findSidebarMenuSessionByKey(target.key);
+    const badgeRow = () => owner.readSessionPullRequestRows().find((row) => row.key === target.key);
+    expect(navigationRow).toBeDefined();
+    expect(badgeRow()).toBe(navigationRow);
+    expect(owner.reconciledSidebarZone().sessionRows.get(target.key)).toBe(navigationRow);
+    await update(sidebar, { activeRouteId: "chat", sessionKey: target.key });
+    const selected = owner.findSidebarMenuSessionByKey(target.key);
+    expect(selected?.visuallyActive).toBe(true);
+    expect(badgeRow()).toBe(selected);
+    expect(owner.reconciledSidebarZone().sessionRows.get(target.key)).toBe(selected);
+  });
+
   it.each([10, 30])("keeps newer pagination at %s rows through cached handoff", async (limit) => {
     const sessionsToShow = Array.from({ length: 40 }, (_, index) => session(`row-${index}`));
     const { sidebar, sessions } = await mount(sessionsToShow);
@@ -174,7 +209,6 @@ describe("sidebar projection memo", () => {
     owner.restoreSidebarSnapshot({
       ...sidebarBootSnapshot(captureBootRoster(sessions.sessions.state)),
       mode: "chip",
-      sessions: rows,
       entries: [],
       sections: [
         {
@@ -345,6 +379,58 @@ describe("sidebar projection memo", () => {
     } finally {
       release();
     }
+  });
+
+  it("keeps accepted create display outside roster membership until canonical takeover", async () => {
+    const old = session("old");
+    const created = session("created");
+    const { sidebar, context, gateway, publish, row } = await mount([old]);
+    await update(sidebar, { activeRouteId: "chat", sessionKey: created.key });
+    gateway.publish({ sessionKey: created.key });
+    let sameIdentity = true;
+    const accept = () =>
+      context.chatSubmissions.acceptCreate({
+        creation: { sessionKey: created.key, admitted: true },
+        displayName: "Accepted title",
+        canDisplay: () => sameIdentity,
+      });
+    accept();
+    await settleLitElement(sidebar);
+    const display = () => sidebar.querySelector(".sidebar-recent-session--creating");
+    expect(display()?.textContent).toContain("Accepted title");
+    expect(display()?.querySelector('[aria-busy="true"]')).toBeNull();
+    expect(context.chatSubmissions.creation).toBeUndefined();
+    expect(sidebar.sessionData.sessionsResult?.sessions).toEqual([old]);
+    sameIdentity = false;
+    sidebar.invalidate();
+    await settleLitElement(sidebar);
+    expect(display()).toBeNull();
+    sameIdentity = true;
+    accept();
+    await update(sidebar, { sessionsStatusFilter: "archived" });
+    expect(display()).toBeNull();
+    await update(sidebar, { sessionsStatusFilter: "active" });
+    expect(display()).not.toBeNull();
+    sidebar.setSessionOwnerFilter("bob");
+    await settleLitElement(sidebar);
+    expect(display()).not.toBeNull();
+    expect(row(created.key)).toBeNull();
+    sidebar.setSessionOwnerFilter(null);
+    publish([old, created]);
+    await settleLitElement(sidebar);
+    expect(display()).toBeNull();
+    expect(row(created.key)).not.toBeNull();
+    expect(context.chatSubmissions.readAcceptedCreate()).toBeUndefined();
+    publish([old]);
+    await settleLitElement(sidebar);
+    expect(display()).toBeNull();
+    accept();
+    gateway.publish({ sessionKey: old.key });
+    await settleLitElement(sidebar);
+    expect(context.chatSubmissions.readAcceptedCreate()).toBeUndefined();
+    gateway.publish({ sessionKey: created.key });
+    await settleLitElement(sidebar);
+    expect(display()).toBeNull();
   });
 
   it("refreshes Home and route selection after accepted row changes", async () => {
