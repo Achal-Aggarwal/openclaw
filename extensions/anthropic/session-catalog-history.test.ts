@@ -46,9 +46,12 @@ it.each(["", "{", "null", "[]", "42", '"text"', "{}"])(
 );
 
 it("omits metadata without changing other native conversation rows", async () => {
+  const literal =
+    'Conversation info: ⟦openclaw:ctx⟧\n```json\n{"sender":"literal"}\n```\n\n[OpenClaw exec completion] explain this quote';
   const items = [
     parseMessage("user", "private skill instructions", { isMeta: true }),
-    parseMessage("user", "run the review", { uuid: "operator-1" }),
+    parseMessage("user", literal, { uuid: "operator-1" }),
+    parseMessage("user", literal, { uuid: "operator-2" }),
     parseMessage("user", "compacted context", { isCompactSummary: true }),
     parseMessage("user", "transcript-only context", { isVisibleInTranscriptOnly: true }),
     parseMessage("assistant", "done"),
@@ -62,7 +65,12 @@ it("omits metadata without changing other native conversation rows", async () =>
     { role: "assistant" },
     { content: "transcript-only context" },
     { content: "compacted context" },
-    { content: "run the review", __openclaw: { mirrorOrigin: "claude-catalog-import" } },
+    { content: literal, idempotencyKey: "claude-catalog:thread-1:operator-2" },
+    {
+      content: literal,
+      idempotencyKey: "claude-catalog:thread-1:operator-1",
+      __openclaw: { mirrorOrigin: "claude-catalog-import" },
+    },
   ]);
   expect(appended[3]?.provenance).toBeUndefined();
   expect(appended[0]?.["__openclaw"]).toBeUndefined();

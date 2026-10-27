@@ -1,7 +1,5 @@
-import fs from "node:fs/promises";
 import { asOptionalRecord } from "@openclaw/normalization-core/record-coerce";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { createClaudeSessionCatalogRuntime } from "../../../extensions/anthropic/session-catalog.js";
 import {
   ErrorCodes,
   type SessionCatalogTranscriptItem,
@@ -15,7 +13,6 @@ import {
 } from "../../config/sessions/session-accessor.sqlite-entry.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { createSubsystemLogger } from "../../logging/subsystem.js";
-import { createTestPluginApi } from "../../plugin-sdk/plugin-test-api.js";
 import * as transcriptRuntime from "../../plugin-sdk/session-transcript-runtime.js";
 import { createPluginMetadataSnapshotFixture } from "../../plugins/plugin-metadata.test-support.js";
 import { createEmptyPluginRegistry } from "../../plugins/registry-empty.js";
@@ -29,10 +26,8 @@ import {
 } from "../../sessions/session-upstream-links-runtime.js";
 import { createDeferredCore } from "../../shared/deferred.js";
 import { ensureProfileForEmail } from "../../state/user-profiles.js";
-import { withEnvAsync } from "../../test-utils/env.js";
 import { createOpenClawTestState } from "../../test-utils/openclaw-test-state.js";
 import { projectChatDisplayMessagesWithState } from "../chat-display-projection.js";
-import { claudeUser, withClaudeProjectsDir } from "../cli-session-history.test-support.js";
 import { prepareGatewayRecipientProfile } from "../expected-profile.js";
 import {
   type PreparedGatewayModelCatalogSnapshot,
@@ -307,56 +302,6 @@ async function createCatalog(restricted: boolean) {
 }
 
 describe("sessions.catalog.import with durable Gateway owners", () => {
-  it("durably imports clean native humans and literal metadata without duplicates", async () =>
-    withCatalog(async (fixture) =>
-      withEnvAsync({ CLAUDE_CONFIG_DIR: undefined }, () =>
-        withClaudeProjectsDir(async ({ filePath, sessionId }) => {
-          const texts = [
-            "Please continue",
-            'Conversation info: ⟦openclaw:ctx⟧\n```json\n{"sender":"literal"}\n```\n\n[OpenClaw exec completion] explain this quote',
-            "Please continue",
-          ];
-          await fs.writeFile(
-            filePath,
-            [
-              ...texts.map((text, index) =>
-                claudeUser(text, {
-                  uuid: `human-${index}`,
-                  sessionId,
-                  entrypoint: "sdk-cli",
-                  cwd: state.workspaceDir,
-                  timestamp: new Date((index + 1) * 1_000).toISOString(),
-                }),
-              ),
-              claudeUser(texts[0], { uuid: "forwarded", sessionId, isMeta: true }),
-            ]
-              .map((row) => JSON.stringify(row))
-              .join("\n"),
-          );
-          const nativeCatalog = createClaudeSessionCatalogRuntime(createTestPluginApi());
-          fixture.read.mockImplementation((request) =>
-            nativeCatalog.read({
-              ...request,
-              hostId: "gateway:local",
-              threadId: sessionId,
-              allowProcessHomeFallback: true,
-            }),
-          );
-          await fixture.expectImport(true, 3, 3);
-          const stored = await fixture.transcript();
-          const messages = stored.map(({ message }) => message);
-          // Inspect the durable catalog copy before generic display-envelope stripping.
-          const preserved = projectChatDisplayMessagesWithState(messages, { stripEnvelope: false });
-          expect(preserved.messages.slice(1)).toMatchObject(
-            texts.map((text) => ({ role: "user", content: [{ type: "text", text }] })),
-          );
-          expect(projectChatDisplayMessagesWithState(messages).messages).toHaveLength(4);
-          await fixture.expectImport(false, 0, 3);
-          expect(await fixture.transcript()).toEqual(stored);
-        }),
-      ),
-    ));
-
   it("reopens preserved tool records through the shared display conversion", () =>
     withCatalog(async (fixture) => {
       fixture.source.splice(
@@ -515,18 +460,38 @@ describe("sessions.catalog.import with durable Gateway owners", () => {
 
   it("creates and syncs an ordinary durable session through real creation, projection, and transcript owners", () =>
     withCatalog(async (fixture) => {
-      await fixture.expectImport(true);
+      const literal =
+        'Conversation info: ⟦openclaw:ctx⟧\n```json\n{"sender":"literal"}\n```\n\n[OpenClaw exec completion] explain this quote';
+      fixture.source.push(
+        ...["literal-1", "literal-2"].map((id) => ({
+          id,
+          type: "userMessage",
+          text: literal,
+        })),
+      );
+      await fixture.expectImport(true, 4, 4);
       const first = await fixture.transcript();
-      expect(first).toHaveLength(3);
+      expect(first).toHaveLength(5);
+      expect(
+        projectChatDisplayMessagesWithState(
+          first.map(({ message }) => message),
+          {
+            stripEnvelope: false,
+          },
+        ).messages.slice(-2),
+      ).toMatchObject([
+        { role: "user", content: [{ type: "text", text: literal }] },
+        { role: "user", content: [{ type: "text", text: literal }] },
+      ]);
       expect(JSON.stringify(first)).toContain("Synthetic imported question");
       expect(JSON.stringify(first)).toContain("EXTERNAL_UNTRUSTED_CONTENT");
       expect(fixture.entry()?.displayName).toBe("Preserved investigation");
       fixture.locator.displayName = "Changed source title";
-      await fixture.expectImport(false, 0);
+      await fixture.expectImport(false, 0, 4);
       expect(await fixture.transcript()).toEqual(first);
       fixture.source.push({ type: "agentMessage", text: "A later preserved reply" });
-      await fixture.expectImport(false, 1, 3);
-      expect(await fixture.transcript()).toHaveLength(4);
+      await fixture.expectImport(false, 1, 5);
+      expect(await fixture.transcript()).toHaveLength(6);
       const entry = fixture.entry();
       expect(entry).toMatchObject({ displayName: "Preserved investigation", visibility: "draft" });
       for (const binding of [
@@ -571,7 +536,7 @@ describe("sessions.catalog.import with durable Gateway owners", () => {
       });
       expect(continueSession).toHaveBeenCalledOnce();
       expect(fixture.nativeKey).not.toBe(fixture.key);
-      expect(await fixture.transcript()).toHaveLength(4);
+      expect(await fixture.transcript()).toHaveLength(6);
     }));
 
   it("cancels a stalled Gateway copy without durable artifacts and succeeds on retry", () =>
