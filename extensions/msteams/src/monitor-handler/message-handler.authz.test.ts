@@ -203,13 +203,15 @@ describe("msteams message authorization and supplemental context", () => {
       ),
     };
     const { handler } = setup(projected);
-    await handler(activity({
-      conversation: {
-        id: probe?.channelId ?? "19:outsider-random@thread.tacv2",
-        conversationType: "channel",
-      },
-      channelData: { team: { id: probe?.teamId ?? "19:outsider-general@thread.tacv2" } },
-    }));
+    await handler(
+      activity({
+        conversation: {
+          id: probe?.channelId ?? "19:outsider-random@thread.tacv2",
+          conversationType: "channel",
+        },
+        channelData: { team: { id: probe?.teamId ?? "19:outsider-general@thread.tacv2" } },
+      }),
+    );
     expect(dispatch).not.toHaveBeenCalled();
   });
 
@@ -241,15 +243,17 @@ describe("msteams message authorization and supplemental context", () => {
         },
       },
     );
-    await handler(activity({
-      from: {
-        id: "29:second",
-        aadObjectId: "22222222-2222-2222-2222-222222222222",
-        name: "Second",
-      },
-      conversation: { id: "19:outsider-random@thread.tacv2", conversationType: "channel" },
-      channelData: { team: { id: "19:outsider-general@thread.tacv2" } },
-    }));
+    await handler(
+      activity({
+        from: {
+          id: "29:second",
+          aadObjectId: "22222222-2222-2222-2222-222222222222",
+          name: "Second",
+        },
+        conversation: { id: "19:outsider-random@thread.tacv2", conversationType: "channel" },
+        channelData: { team: { id: "19:outsider-general@thread.tacv2" } },
+      }),
+    );
     expect(dispatch).not.toHaveBeenCalled();
   });
 

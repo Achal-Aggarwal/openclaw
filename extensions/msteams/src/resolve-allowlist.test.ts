@@ -402,8 +402,8 @@ describe("looksLikeMSTeamsTargetId", () => {
 });
 
 const userId = "40a1a0ed-4ff2-4164-a219-55518990c197";
-const team = (channels: Record<string, {}>) => ({ channels });
-const page = <T,>(items: T[]) => ({items, truncated: false});
+const team = (channels: Record<string, Record<string, never>>) => ({ channels });
+const page = <T>(items: T[]) => ({ items, truncated: false });
 
 describe("configured allowlists that cannot be resolved stay configured", () => {
   it("does not add placeholders to a team without channels or to an empty map", () => {
