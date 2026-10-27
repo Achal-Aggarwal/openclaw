@@ -42,6 +42,7 @@ const delay = (ms: number) =>
   new Promise<void>((resolve) => {
     setTimeout(resolve, ms);
   });
+const avatarUrl = (id: number) => `https://avatars.githubusercontent.com/u/${id}?s=64`;
 function fixtureResponse(url: string, overrides = {}, commits = coauthorTrailers(["Ada", 20])) {
   return url.includes("avatars.githubusercontent.com")
     ? pngResponse()
@@ -121,12 +122,10 @@ it("keeps different commit revisions separate", async () => {
       commit: { message: "Another commit", author: { date: "2026-10-24T01:00:00Z" } },
     }),
   );
-  expect(await loadPreview({ ...target, sha: "b".repeat(40) }, undefined, fetchMock)).toMatchObject(
-    {
-      sha: "b".repeat(40),
-      title: "Another commit",
-    },
-  );
+  await expectPreview(loadPreview({ ...target, sha: "b".repeat(40) }, undefined, fetchMock), {
+    sha: "b".repeat(40),
+    title: "Another commit",
+  });
 });
 
 describe("loadControlUiGitHubPreview", () => {
@@ -396,7 +395,7 @@ describe("loadControlUiGitHubPreview", () => {
     const urls = fetchMock.mock.calls.map(([input]) => requestUrl(input));
     expect(urls.filter((url) => url.startsWith("https://api.github.com/"))).toHaveLength(2);
     expect(urls.filter((url) => url.startsWith("https://avatars.githubusercontent.com/"))).toEqual(
-      [58493, 20, 7, 31].map((id) => `https://avatars.githubusercontent.com/u/${id}?s=64`),
+      [58493, 20, 7, 31].map(avatarUrl),
     );
   });
 
@@ -454,12 +453,7 @@ describe("loadControlUiGitHubPreview", () => {
         return githubJson({ private: true });
       }
       if (url.includes("/commits")) {
-        return new Response("moved", {
-          status: 301,
-          headers: {
-            Location: "https://api.github.com/repos/openclaw/secret/pulls/88201/commits",
-          },
-        });
+        return githubRedirect("https://api.github.com/repos/openclaw/secret/pulls/88201/commits");
       }
       return fixtureResponse(url);
     });
@@ -498,10 +492,7 @@ describe("loadControlUiGitHubPreview", () => {
     expect(await load()).toEqual(updated);
     expect(f.itemHeaders).toEqual([null, '"item-1"', '"item-1"', '"item-2"']);
     expect(f.commitsHeaders).toEqual([null, '"commits-1"', '"commits-1"', '"commits-1"']);
-    expect(avatars).toEqual([
-      "https://avatars.githubusercontent.com/u/58493?s=64",
-      "https://avatars.githubusercontent.com/u/20?s=64",
-    ]);
+    expect(avatars).toEqual([58493, 20].map(avatarUrl));
     for (const elapsed of [60_000, 60_000, 179_999]) {
       now += elapsed;
       expect(await load()).toEqual(updated);
