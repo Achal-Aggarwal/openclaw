@@ -12,6 +12,7 @@ export function copySurvivorCaptureClosure(workDir: string) {
     UPGRADE_SURVIVOR_DIAGNOSTICS_PATH,
     "scripts/e2e/lib/upgrade-survivor/observations.mjs",
     "scripts/e2e/lib/upgrade-survivor/installed-recovery-observations.mjs",
+    "scripts/e2e/lib/upgrade-survivor/installed-recovery-cases.mjs",
     "scripts/e2e/lib/upgrade-survivor/package-activation-recovery.mjs",
     "scripts/e2e/lib/upgrade-survivor/backup-rollback-summary.mjs",
     "scripts/e2e/lib/upgrade-survivor/native-assignment-summary.mjs",

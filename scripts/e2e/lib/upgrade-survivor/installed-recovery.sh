@@ -21,9 +21,13 @@ source "$harness/scripts/lib/openclaw-e2e-instance.sh"
 runtime="/tmp/openclaw-installed-recovery"
 mkdir -p "$runtime/tmp" "$runtime/state-tmp" "$runtime/npm-cache" "$artifacts"
 run_artifacts="$(node --input-type=module -e '
-  import { startInstalledRecoveryRun } from "/tmp/openclaw-release-harness/scripts/e2e/lib/upgrade-survivor/installed-recovery-observations.mjs";
-  process.stdout.write(startInstalledRecoveryRun(process.argv[1]).directory);
-' "$artifacts")"
+  import fs from "node:fs";
+  import path from "node:path";
+  import { openInstalledRecoveryEvidence, startInstalledRecoveryRun } from "/tmp/openclaw-release-harness/scripts/e2e/lib/upgrade-survivor/installed-recovery-observations.mjs";
+  const run = startInstalledRecoveryRun(process.argv[1], process.argv[2]);
+  fs.closeSync(openInstalledRecoveryEvidence(path.join(run.directory, "install.log")));
+  process.stdout.write(run.directory);
+' "$artifacts" "${OPENCLAW_UPGRADE_SURVIVOR_INSTALLED_RECOVERY_CUT:-}")"
 export TMPDIR="$runtime/tmp" OPENCLAW_TEST_STATE_TMPDIR="$runtime/state-tmp"
 export npm_config_prefix="$runtime/npm-prefix" NPM_CONFIG_PREFIX="$runtime/npm-prefix"
 export npm_config_cache="$runtime/npm-cache" NPM_CONFIG_CACHE="$runtime/npm-cache"
@@ -42,4 +46,4 @@ openclaw_e2e_maybe_timeout 180s openclaw config set plugins.enabled false --stri
 phase=installed-recovery-command
 node "$harness/scripts/e2e/lib/upgrade-survivor/installed-recovery.mjs" \
   "$run_artifacts" "$npm_config_prefix" "$OPENCLAW_CURRENT_PACKAGE_TGZ" "$OPENCLAW_CONFIG_PATH" \
-  "$artifacts/installed-recovery.json"
+  "$artifacts/installed-recovery.json" "${OPENCLAW_UPGRADE_SURVIVOR_INSTALLED_RECOVERY_CUT:-}"

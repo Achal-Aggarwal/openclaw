@@ -5,7 +5,11 @@ import fs from "node:fs";
 import fsp from "node:fs/promises";
 import { syncBuiltinESMExports } from "node:module";
 import path from "node:path";
-import { readActivation, retirementCuts } from "./installed-recovery-observations.mjs";
+import {
+  openInstalledRecoveryEvidence,
+  readActivation,
+  retirementCuts,
+} from "./installed-recovery-observations.mjs";
 
 const specPath = process.env.OPENCLAW_SURVIVOR_INSTALLED_RECOVERY_FAULT;
 if (specPath) {
@@ -55,10 +59,12 @@ if (specPath) {
       assert(fs.existsSync(path.join(anchor, "previous")));
       report("journal-assertions-validated");
     }
-    fs.writeFileSync(evidence, JSON.stringify({ cut, pid: process.pid, effect, synced, row }), {
-      flag: "wx",
-      mode: 0o600,
-    });
+    const fd = openInstalledRecoveryEvidence(evidence);
+    try {
+      fs.writeFileSync(fd, JSON.stringify({ cut, pid: process.pid, effect, synced, row }));
+    } finally {
+      fs.closeSync(fd);
+    }
     process.kill(process.pid, "SIGKILL");
   };
   fsp.rename = async (source, destination) => {

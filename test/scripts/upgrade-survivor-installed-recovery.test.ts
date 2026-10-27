@@ -4,6 +4,10 @@ import { DatabaseSync } from "node:sqlite";
 import { pathToFileURL } from "node:url";
 import { afterEach, expect, it } from "vitest";
 import {
+  installedRecoveryLaneNames,
+  selectInstalledRecoveryCuts,
+} from "../../scripts/e2e/lib/upgrade-survivor/installed-recovery-cases.mjs";
+import {
   assertPackageTree,
   assertRetirementCut,
   capturePackageTree,
@@ -12,7 +16,11 @@ import {
   retirementCuts,
   startInstalledRecoveryRun,
 } from "../../scripts/e2e/lib/upgrade-survivor/installed-recovery-observations.mjs";
-import { findLaneByName, resolveDockerE2ePlan } from "../../scripts/lib/docker-e2e-plan.mts";
+import {
+  findLaneByName,
+  parseLaneSelection,
+  resolveDockerE2ePlan,
+} from "../../scripts/lib/docker-e2e-plan.mts";
 import { quoteCliArg } from "../../src/cli/quote-cli-arg.js";
 import { resolveTestNodeExecPath } from "../../src/test-utils/node-process.js";
 import { useAutoCleanupTempDirTracker } from "../helpers/temp-dir.js";
@@ -168,6 +176,82 @@ it("reports bounded relative drift without truncating the compared inventory or 
   expect(message.length).toBeLessThan(800);
 });
 
+it("bounds directory discovery before sorting and closes handles on entry overflow", () => {
+  const directory = dirs.make("installed-recovery-entry-budget-");
+  const observations = pathToFileURL(
+    path.resolve("scripts/e2e/lib/upgrade-survivor/installed-recovery-observations.mjs"),
+  ).href;
+  const result = runProcess(
+    node,
+    [
+      "--input-type=module",
+      "-e",
+      `
+      import assert from 'node:assert/strict';
+      import fs from 'node:fs';
+      import path from 'node:path';
+      import { capturePackageTree } from ${JSON.stringify(observations)};
+      const directory = ${JSON.stringify(directory)};
+      const wide = path.join(directory, 'wide');
+      const empty = path.join(directory, 'empty');
+      const nested = path.join(directory, 'nested');
+      fs.mkdirSync(wide);
+      fs.mkdirSync(empty);
+      for (let index = 63; index >= 0; index--) {
+        fs.writeFileSync(path.join(wide, 'entry-' + index), 'bytes');
+      }
+      const names = Array.from({ length: 64 }, (_, index) => 'entry-' + index);
+      assert.deepEqual(capturePackageTree(wide, { maxEntries: 65 }).map(entry => entry.path),
+        ['', ...names.toSorted((a, b) => a < b ? -1 : a > b ? 1 : 0)]);
+      assert.deepEqual(capturePackageTree(empty, { maxEntries: 1 }).map(entry => entry.path), ['']);
+      fs.mkdirSync(path.join(nested, 'z'), { recursive: true });
+      fs.mkdirSync(path.join(nested, 'a'));
+      fs.writeFileSync(path.join(nested, 'a', 'payload'), 'bytes');
+      assert.deepEqual(capturePackageTree(nested, { maxEntries: 4 }).map(entry => entry.path),
+        ['', 'a', path.join('a', 'payload'), 'z']);
+      const opendir = fs.opendirSync;
+      const lstat = fs.lstatSync;
+      const handles = [];
+      const visited = [];
+      let reads = 0;
+      fs.opendirSync = (...args) => {
+        const handle = opendir(...args);
+        const read = handle.readSync.bind(handle);
+        handle.readSync = () => { reads++; return read(); };
+        handles.push(handle);
+        return handle;
+      };
+      fs.lstatSync = (file, ...args) => {
+        visited.push(path.relative(nested, file));
+        return lstat(file, ...args);
+      };
+      try {
+        assert.throws(() => capturePackageTree(wide, { maxEntries: 3 }), /entry budget/);
+        assert.equal(reads, 3);
+        assert.equal(handles.length, 1);
+        assert.throws(() => handles[0].readSync(), { code: 'ERR_DIR_CLOSED' });
+        reads = 0;
+        handles.length = 0;
+        visited.length = 0;
+        assert.throws(() => capturePackageTree(nested, { maxEntries: 3 }), /entry budget/);
+        assert.deepEqual(visited, ['', 'a']);
+        assert.equal(reads, 4);
+        assert.equal(handles.length, 2);
+        for (const handle of handles) {
+          assert.throws(() => handle.readSync(), { code: 'ERR_DIR_CLOSED' });
+        }
+      } finally {
+        fs.opendirSync = opendir;
+        fs.lstatSync = lstat;
+      }
+    `,
+    ],
+    { ...process.env, NODE_OPTIONS: "" },
+    10_000,
+  );
+  expect(result.status, result.stderr).toBe(0);
+});
+
 it("extracts a sealed helper beyond Node's buffered limit and closes owned output files", () => {
   const directory = dirs.make("installed-recovery-package-");
   const extractor = pathToFileURL(
@@ -225,6 +309,53 @@ it("extracts a sealed helper beyond Node's buffered limit and closes owned outpu
   expect(result.status, result.stderr).toBe(0);
 });
 
+it.skipIf(process.platform === "win32")(
+  "keeps shared evidence readable through restrictive umask",
+  () => {
+    const directory = dirs.make("installed-recovery-evidence-");
+    const observations = pathToFileURL(
+      path.resolve("scripts/e2e/lib/upgrade-survivor/installed-recovery-observations.mjs"),
+    ).href;
+    const result = runProcess(
+      node,
+      [
+        "--input-type=module",
+        "-e",
+        `
+    import assert from 'node:assert/strict';
+    import fs from 'node:fs';
+    import path from 'node:path';
+    import { startInstalledRecoveryRun, openInstalledRecoveryEvidence, writeInstalledRecoveryEvidence } from ${JSON.stringify(observations)};
+    for (const mode of [0o700, 0o2770, 0o2777]) {
+      const shared = mode === 0o2770;
+      const root = path.join(${JSON.stringify(directory)}, String(mode));
+      fs.mkdirSync(root); fs.chmodSync(root, mode);
+      const mask = process.umask(0o777);
+      try {
+        const run = startInstalledRecoveryRun(root, 'partial-previous');
+        const output = path.join(run.directory, 'install.log');
+        const fd = openInstalledRecoveryEvidence(output);
+        try { fs.writeFileSync(fd, 'private bytes'); } finally { fs.closeSync(fd); }
+        writeInstalledRecoveryEvidence(run.summary, { status: 'running' });
+        assert.equal(fs.statSync(run.directory).mode & 0o7777, shared ? 0o2750 : 0o700);
+        for (const file of [output, run.summary]) {
+          assert.equal(fs.statSync(file).mode & 0o777, shared ? 0o640 : 0o600);
+          assert.equal(fs.statSync(file).gid, fs.statSync(root).gid);
+          assert(fs.readFileSync(file).length > 0);
+        }
+        const link = path.join(root, 'linked'); fs.symlinkSync(run.directory, link);
+        assert.throws(() => openInstalledRecoveryEvidence(path.join(link, 'unsafe')), /physical directory/);
+      } finally { process.umask(mask); }
+    }
+  `,
+      ],
+      { ...process.env, NODE_OPTIONS: "" },
+      10_000,
+    );
+    expect(result.status, result.stderr).toBe(0);
+  },
+);
+
 it("invalidates an earlier PASS before setup and isolates repeated attempts", () => {
   const artifacts = dirs.make("installed-recovery-runs-");
   const first = startInstalledRecoveryRun(artifacts);
@@ -238,6 +369,7 @@ it("invalidates an earlier PASS before setup and isolates repeated attempts", ()
   expect(readJson(second.summary)).toEqual({
     status: "running",
     runDirectory: path.basename(second.directory),
+    selectedCuts: retirementCuts,
   });
   expect(fs.readFileSync(earlier, "utf8")).toBe("earlier helper");
   const helper = path.join(second.directory, "independent-recovery.mjs");
@@ -265,7 +397,16 @@ it("reads the printed recovery argv without evaluating quoted shell text", () =>
   }
 });
 
-it("selects current packed recovery without expanding the published baseline matrix", () => {
+it("selects every isolated recovery cell without expanding the published baseline matrix", () => {
+  expect(retirementCuts).toEqual([
+    "partial-previous",
+    "anchor-before",
+    "anchor-after",
+    "anchor-sync",
+    "helper-before",
+    "helper-after",
+    "helper-sync",
+  ]);
   const { plan } = resolveDockerE2ePlan({
     allowFrozenTargetScenarioOmissions: true,
     includeOpenWebUI: false,
@@ -274,27 +415,32 @@ it("selects current packed recovery without expanding the published baseline mat
     planReleaseAll: false,
     profile: "all",
     releaseChunk: "core",
-    selectedLaneNames: ["package-installed-recovery"],
+    selectedLaneNames: parseLaneSelection("package-installed-recovery"),
     timingStore: undefined,
   });
-  expect(plan.lanes).toHaveLength(1);
-  expect(plan.lanes[0]).toMatchObject({
-    name: "package-installed-recovery",
-    imageKind: "bare",
-    stateScenario: "empty",
-    live: false,
-  });
-  expect(plan.lanes[0]!.command).toContain(
-    "OPENCLAW_UPGRADE_SURVIVOR_SCENARIO=package-installed-recovery",
-  );
-  expect(plan.lanes[0]!.command).toContain("OPENCLAW_UPGRADE_SURVIVOR_PUBLISHED_BASELINE=0");
+  expect(plan.lanes.map((lane) => lane.name)).toEqual(installedRecoveryLaneNames);
+  for (const [sequence, cut] of retirementCuts.entries()) {
+    const lane = plan.lanes[sequence]!;
+    expect(lane).toMatchObject({
+      imageKind: "bare",
+      stateScenario: "empty",
+      live: false,
+      timeoutMs: 1_200_000,
+    });
+    expect(lane.command).toContain("OPENCLAW_UPGRADE_SURVIVOR_SCENARIO=package-installed-recovery");
+    expect(lane.command).toContain(`OPENCLAW_UPGRADE_SURVIVOR_INSTALLED_RECOVERY_CUT=${cut}`);
+    expect(lane.command).toContain("OPENCLAW_UPGRADE_SURVIVOR_PUBLISHED_BASELINE=0");
+    expect(selectInstalledRecoveryCuts(cut)).toEqual([[sequence, cut]]);
+  }
+  expect(selectInstalledRecoveryCuts()).toEqual([...retirementCuts.entries()]);
+  expect(() => selectInstalledRecoveryCuts("unknown")).toThrow("Unknown installed recovery cut");
 });
 
 // The lane's Bash entrypoint executes in Linux Docker jobs; portable catalog
 // selection above remains covered on Windows without assuming a POSIX shell.
-it.skipIf(process.platform === "win32")(
-  "isolates the current writer from inherited published-survivor settings",
-  () => {
+it.skipIf(process.platform === "win32").each(retirementCuts)(
+  "isolates the %s writer from inherited published-survivor settings",
+  (cut) => {
     const harness = dirs.make("installed-recovery-command-");
     const script = path.join(harness, "scripts/e2e/upgrade-survivor-docker.sh");
     fs.mkdirSync(path.dirname(script), { recursive: true });
@@ -306,12 +452,13 @@ it.skipIf(process.platform === "win32")(
       OPENCLAW_UPGRADE_SURVIVOR_ROOT_MANAGED_VPS: "1",
       OPENCLAW_UPGRADE_SURVIVOR_LIVE_MODELS: "openai/example",
       OPENCLAW_UPGRADE_SURVIVOR_LIVE_OPENAI: "1",
+      OPENCLAW_UPGRADE_SURVIVOR_INSTALLED_RECOVERY_CUT: "unrelated",
     };
     const observe = `printf '%s\n' ${Object.keys(inheritedMode)
       .map((name) => `"$${name}"`)
       .join(" ")}`;
     fs.writeFileSync(script, `#!/bin/bash\nset -eu\n${observe}\n`);
-    const lane = findLaneByName("package-installed-recovery");
+    const lane = findLaneByName(`package-installed-recovery-${cut}`);
     expect(lane).toBeDefined();
     const result = runProcess(
       "/bin/bash",
@@ -334,6 +481,7 @@ it.skipIf(process.platform === "win32")(
       "0",
       "",
       "0",
+      cut,
       ...Object.values(inheritedMode),
       "",
     ]);

@@ -2,7 +2,10 @@ import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { afterEach, expect, it } from "vitest";
-import { publishDiagnostics } from "../../scripts/e2e/lib/upgrade-survivor/diagnostics.mjs";
+import {
+  publishDiagnostics,
+  publishInstalledRecoveryDiagnostics,
+} from "../../scripts/e2e/lib/upgrade-survivor/diagnostics.mjs";
 import { startInstalledRecoveryRun } from "../../scripts/e2e/lib/upgrade-survivor/installed-recovery-observations.mjs";
 import { redactSensitiveText } from "../../src/logging/redact.js";
 import { resolveTestNodeExecPath } from "../../src/test-utils/node-process.js";
@@ -34,6 +37,7 @@ function fixture() {
   writeJson(run.summary, {
     status: "running",
     runDirectory: path.basename(run.directory),
+    selectedCuts: ["partial-previous"],
     current,
   });
   return {
@@ -81,6 +85,112 @@ function capture(f: ReturnType<typeof fixture>) {
   expect(result.status, result.stderr).toBe(0);
   return publish(f).report;
 }
+
+function publishJoined(f: ReturnType<typeof fixture>, exitStatus = 128) {
+  const destination = path.join(f.root, "joined-public");
+  publishInstalledRecoveryDiagnostics(f.artifacts, destination, redactSensitiveText, {
+    cut: "partial-previous",
+    exitStatus,
+    timedOut: exitStatus === 128,
+    packageSha256: "a".repeat(64),
+  });
+  const text = fs.readFileSync(
+    path.join(destination, exitStatus === 0 ? "summary.json" : "failure.json"),
+    "utf8",
+  );
+  expect(text).not.toContain(secret);
+  expect(text).not.toContain(privateData);
+  return JSON.parse(text);
+}
+
+it("publishes the last running command after outer timeout without an inner exit snapshot", () => {
+  const f = fixture();
+  fs.writeFileSync(path.join(f.run.directory, f.current.stdout), "candidate prepared\n");
+  fs.writeFileSync(path.join(f.run.directory, f.current.stderr), `token=${secret}\n`);
+  const report = publishJoined(f);
+  expect(report).toMatchObject({
+    exitStatus: 128,
+    host: { processGroupJoined: true, timedOut: true },
+    installedRecovery: { status: "running", current: f.current },
+  });
+  expect(report.installedRecovery.current).not.toHaveProperty("treeJoined");
+  expect(report.installedRecovery.current).not.toHaveProperty("status");
+  expect(fs.existsSync(path.join(f.artifacts, "diagnostics/raw.json"))).toBe(false);
+});
+
+it.each([false, true])(
+  "requires a complete selected cut and distinct subsequent update: %s",
+  (complete) => {
+    const f = fixture();
+    const commands = [
+      "displacement",
+      "missing-status",
+      "repair",
+      "repeat-repair",
+      "retirement",
+      "resume-retirement",
+      "completed-status",
+      "archive-completed",
+      "next-update",
+      "next-update-status",
+    ].map((name) => {
+      const prefix = name.startsWith("next-") ? "" : "partial-previous/";
+      return {
+        cut: prefix ? "partial-previous" : null,
+        name,
+        state: "completed",
+        treeJoined: true,
+        status: ["displacement", "retirement"].includes(name) ? 137 : 0,
+        startedAt: 1000,
+        elapsedMs: 50,
+        stdout: `${prefix}${name}.out`,
+        stderr: `${prefix}${name}.err`,
+      };
+    });
+    const summary = {
+      ...readJson(f.run.summary),
+      status: "passed",
+      artifactSha256: "a".repeat(64),
+      current: commands.at(-1),
+      commands,
+      rows: [
+        {
+          cut: "partial-previous",
+          operationId: "12345678-1234-4234-8234-123456789abc",
+          installedVersion: "2026.10.6",
+          missingCli: true,
+          originalWriterJoined: true,
+          originalHelperRepairs: 2,
+          interruptedPhase: "retiring",
+          completedViaIndependentHelper: true,
+          packagePreserved: true,
+          launchersPreserved: true,
+          fullConfigPreserved: true,
+        },
+      ],
+      ...(complete
+        ? {
+            nextUpdate: {
+              exitCode: 0,
+              operationId: "12345678-1234-4234-8234-123456789abd",
+              installedVersion: "2026.10.13",
+              receiptPhase: "anchor-retired",
+              status: "complete",
+            },
+          }
+        : {}),
+    };
+    writeJson(f.run.summary, summary);
+    if (!complete) expect(() => publishJoined(f, 0)).toThrow("success receipt is incomplete");
+    else {
+      const report = publishJoined(f, 0);
+      expect(report.outcome).toBe("passed");
+      expect(report.completedCuts).toEqual(summary.rows);
+      expect(report.commands).toEqual(commands);
+      expect(report.nextUpdate).toEqual(summary.nextUpdate);
+    }
+  },
+);
 
 it.skipIf(process.platform === "win32")(
   "publishes the real rejected command's output without inventing an exit or join receipt",
@@ -153,6 +263,9 @@ it.skipIf(process.platform === "win32")(
       },
     });
     const report = capture(f);
+    const joined = publishJoined(f);
+    expect(joined.exitStatus).toBe(128);
+    expect(joined.host.timedOut).toBe(true);
     expect(report.installedRecovery.current).toMatchObject({
       cut: "partial-previous",
       name: "displacement",
@@ -222,6 +335,9 @@ it.each(["stale", "symlink", "oversize", "partial-checkpoint"])(
         );
       }
     }
+    const joined = publishJoined(f);
+    expect(joined.installedRecovery).toEqual(report.installedRecovery);
+    expect(joined.host).toEqual({ processGroupJoined: true, timedOut: true });
   },
 );
 

@@ -42,6 +42,7 @@ export const SOURCE_ADMISSION_PATHS = [
   "scripts/lib/frozen-target-source.mjs",
   "scripts/lib/docker-e2e-plan.mts",
   "scripts/lib/docker-e2e-scenarios.mts",
+  "scripts/e2e/lib/upgrade-survivor/installed-recovery-cases.mjs",
   "scripts/lib/official-external-channel-catalog.json",
   "scripts/lib/official-external-provider-catalog.json",
   "scripts/lib/update-compat-inventory.json",

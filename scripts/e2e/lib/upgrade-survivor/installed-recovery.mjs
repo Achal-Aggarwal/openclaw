@@ -4,6 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { packFirstHopUpdateFixture } from "../update-first-hop-package-fixtures.mjs";
+import { selectInstalledRecoveryCuts } from "./installed-recovery-cases.mjs";
 import { runInstalledRecoveryCommand } from "./installed-recovery-command.mjs";
 import {
   assertPackageTree,
@@ -11,20 +12,20 @@ import {
   capturePackageTree,
   fileDigest,
   fileIdentity,
+  installedRecoveryEvidenceMode,
   parseRecoveryCommand,
   readActivation,
-  retirementCuts,
   sha256,
+  writeInstalledRecoveryEvidence as write,
 } from "./installed-recovery-observations.mjs";
 import { extractPackedRecoveryHelper } from "./installed-recovery-package.mjs";
 
 const read = (file) => JSON.parse(fs.readFileSync(file, "utf8"));
-const write = (file, value) =>
-  fs.writeFileSync(file, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600 });
 const packedManifest = (tarball) =>
   JSON.parse(execFileSync("tar", ["-xOf", tarball, "package/package.json"], { encoding: "utf8" }));
 
-async function main([artifacts, prefix, tarball, configPath, summary]) {
+async function main([artifacts, prefix, tarball, configPath, summary, selectedCut = ""]) {
+  const cuts = selectInstalledRecoveryCuts(selectedCut);
   assert.equal(
     process.platform,
     "linux",
@@ -112,7 +113,7 @@ async function main([artifacts, prefix, tarball, configPath, summary]) {
       },
     });
     const { status } = result;
-    commands.push({ name, status, treeJoined: true, preload: faultCut ?? null });
+    commands.push({ ...evidence.current, preload: faultCut ?? null });
     assert.equal(
       status === 0,
       !faultCut,
@@ -133,6 +134,7 @@ async function main([artifacts, prefix, tarball, configPath, summary]) {
     status: "running",
     runDirectory: path.basename(artifacts),
     scope: "installed-current-writer-process-interruption",
+    selectedCuts: cuts.map(([, cut]) => cut),
     artifactSha256: fileDigest(tarball),
     baselineVersion: baseline.version,
     helperSha256: helperDigest,
@@ -142,9 +144,10 @@ async function main([artifacts, prefix, tarball, configPath, summary]) {
   };
   write(summary, evidence);
 
-  for (const [sequence, cut] of retirementCuts.entries()) {
+  for (const [sequence, cut] of cuts) {
     const directory = path.join(artifacts, cut);
     fs.mkdirSync(directory);
+    fs.chmodSync(directory, installedRecoveryEvidenceMode(artifacts, true));
     const target = path.join(directory, "candidate.tgz");
     const fixture = packFirstHopUpdateFixture(tarball, target, sequence);
     write(path.join(directory, "candidate-fixture.json"), fixture);

@@ -2,17 +2,9 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { selectInstalledRecoveryCuts } from "./installed-recovery-cases.mjs";
 import { readDatabase } from "./observations.mjs";
-
-export const retirementCuts = [
-  "partial-previous",
-  "anchor-before",
-  "anchor-after",
-  "anchor-sync",
-  "helper-before",
-  "helper-after",
-  "helper-sync",
-];
+export { retirementCuts } from "./installed-recovery-cases.mjs";
 
 export const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
 export const fileDigest = (file) => sha256(fs.readFileSync(file));
@@ -21,17 +13,52 @@ export const fileIdentity = (file) => {
   return `${stat.dev}:${stat.ino}`;
 };
 
-export function startInstalledRecoveryRun(artifacts) {
+// Only the scheduler's setgid evidence tree shares reads with the host. The
+// private outer directory remains host-only; package/config modes are unrelated.
+export function installedRecoveryEvidenceMode(directory, isDirectory = false) {
+  const parent = fs.lstatSync(directory);
+  assert(parent.isDirectory(), "Evidence parent must be a physical directory");
+  const mode = parent.mode & 0o7777;
+  const shared = mode === 0o2770 || mode === 0o2750;
+  return shared ? (isDirectory ? 0o2750 : 0o640) : isDirectory ? 0o700 : 0o600;
+}
+
+export function openInstalledRecoveryEvidence(file) {
+  const mode = installedRecoveryEvidenceMode(path.dirname(file));
+  const fd = fs.openSync(file, "wx", mode);
+  try {
+    fs.fchmodSync(fd, mode); // Creation umask must not remove the host's read access.
+    return fd;
+  } catch (error) {
+    fs.closeSync(fd);
+    throw error;
+  }
+}
+
+export function writeInstalledRecoveryEvidence(file, value) {
+  const temporary = `${file}.tmp`;
+  const fd = openInstalledRecoveryEvidence(temporary);
+  try {
+    fs.writeFileSync(fd, `${JSON.stringify(value, null, 2)}\n`);
+  } finally {
+    fs.closeSync(fd);
+  }
+  fs.renameSync(temporary, file);
+}
+
+export function startInstalledRecoveryRun(artifacts, cut = "") {
+  const selectedCuts = selectInstalledRecoveryCuts(cut).map(([, value]) => value);
   const summary = path.join(artifacts, "installed-recovery.json");
   // Invalidate an earlier PASS before install or helper preparation can fail.
   // Keep prior attempt files separate; only this current pointer is replaced.
-  fs.writeFileSync(summary, `${JSON.stringify({ status: "running" })}\n`, { mode: 0o600 });
+  writeInstalledRecoveryEvidence(summary, { status: "running" });
   const directory = fs.mkdtempSync(path.join(artifacts, "installed-recovery-"));
-  fs.writeFileSync(
-    summary,
-    `${JSON.stringify({ status: "running", runDirectory: path.basename(directory) })}\n`,
-    { mode: 0o600 },
-  );
+  fs.chmodSync(directory, installedRecoveryEvidenceMode(artifacts, true));
+  writeInstalledRecoveryEvidence(summary, {
+    status: "running",
+    runDirectory: path.basename(directory),
+    selectedCuts,
+  });
   return { directory, summary };
 }
 
@@ -52,6 +79,7 @@ export function capturePackageTree(root, { maxEntries = 100_000, maxBytes = 4 * 
   const entries = [];
   const buffer = Buffer.alloc(1024 * 1024);
   let bytes = 0;
+  let discoveredEntries = 1;
   const visit = (relative) => {
     assert(entries.length < maxEntries, "Package tree entry budget exceeded");
     const file = path.join(root, relative);
@@ -98,7 +126,19 @@ export function capturePackageTree(root, { maxEntries = 100_000, maxBytes = 4 * 
       content,
     });
     if (kind === "directory") {
-      for (const name of fs.readdirSync(file).toSorted((a, b) => (a < b ? -1 : a > b ? 1 : 0))) {
+      const names = [];
+      const directory = fs.opendirSync(file);
+      try {
+        for (let entry; (entry = directory.readSync()) !== null;) {
+          // Reserve pending siblings too, before retaining or sorting their names.
+          assert(discoveredEntries < maxEntries, "Package tree entry budget exceeded");
+          discoveredEntries++;
+          names.push(entry.name);
+        }
+      } finally {
+        directory.closeSync();
+      }
+      for (const name of names.toSorted((a, b) => (a < b ? -1 : a > b ? 1 : 0))) {
         visit(path.join(relative, name));
       }
     }

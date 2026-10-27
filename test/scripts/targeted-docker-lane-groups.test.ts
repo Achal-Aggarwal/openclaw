@@ -1,6 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { expect, it } from "vitest";
+import { installedRecoveryLaneNames } from "../../scripts/e2e/lib/upgrade-survivor/installed-recovery-cases.mjs";
 import { parseLaneSelection, resolveDockerE2ePlan } from "../../scripts/lib/docker-e2e-plan.mts";
 import {
   UPDATE_FIRST_HOP_MISSING_LOAD_PATH_LANE,
@@ -143,6 +144,14 @@ it("runs each recorded first-hop source and the fresh candidate edge as separate
     ...firstHopLanes,
   ]);
   expect(parseLaneSelection(mixed)).toHaveLength(expandedLanes.length);
+});
+
+it("plans all seven installed recovery cells once as separate unchanged-budget jobs", () => {
+  const mixed = `package-installed-recovery ${installedRecoveryLaneNames[0]}`;
+  expect(planGroups(mixed)).toEqual(
+    installedRecoveryLaneNames.map((lane) => ({ docker_lanes: lane, label: lane })),
+  );
+  expect(parseLaneSelection(mixed)).toEqual(installedRecoveryLaneNames);
 });
 
 it("shards published upgrade survivor by baseline while preserving surrounding lanes", () => {

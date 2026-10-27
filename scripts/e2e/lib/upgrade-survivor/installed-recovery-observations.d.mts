@@ -2,7 +2,13 @@ export const retirementCuts: readonly string[];
 export function sha256(bytes: string | Uint8Array): string;
 export function fileDigest(file: string): string;
 export function fileIdentity(file: string): string;
-export function startInstalledRecoveryRun(artifacts: string): {
+export function installedRecoveryEvidenceMode(directory: string, isDirectory?: boolean): number;
+export function openInstalledRecoveryEvidence(file: string): number;
+export function writeInstalledRecoveryEvidence(file: string, value: unknown): void;
+export function startInstalledRecoveryRun(
+  artifacts: string,
+  cut?: string,
+): {
   directory: string;
   summary: string;
 };

@@ -1,15 +1,20 @@
 import fs from "node:fs";
 import { runManagedCommand } from "../../../lib/managed-child-process.mts";
+import { openInstalledRecoveryEvidence } from "./installed-recovery-observations.mjs";
 
 export async function runInstalledRecoveryCommand({ stdout, stderr, record, ...options }) {
-  const out = fs.openSync(stdout, "wx", 0o600);
+  const startedAt = Date.now();
+  const start = performance.now();
+  const observation = (state) =>
+    record({ ...state, startedAt, elapsedMs: Math.round(performance.now() - start) });
+  const out = openInstalledRecoveryEvidence(stdout);
   let err;
   let status;
   try {
-    err = fs.openSync(stderr, "wx", 0o600);
+    err = openInstalledRecoveryEvidence(stderr);
     // Record the selected files before launch: a timeout rejects instead of
     // returning a numeric exit, but its private output still needs publication.
-    record({ state: "running" });
+    observation({ state: "running" });
     try {
       status = await runManagedCommand({
         ...options,
@@ -19,7 +24,7 @@ export async function runInstalledRecoveryCommand({ stdout, stderr, record, ...o
       });
     } catch (error) {
       try {
-        record({
+        observation({
           state: "rejected",
           error: error instanceof Error ? error.message : String(error),
         });
@@ -34,7 +39,7 @@ export async function runInstalledRecoveryCommand({ stdout, stderr, record, ...o
       fs.closeSync(err);
     }
   }
-  record({ state: "completed", status, treeJoined: true });
+  observation({ state: "completed", status, treeJoined: true });
   return {
     status,
     stdout: fs.readFileSync(stdout, "utf8"),

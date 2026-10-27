@@ -1,7 +1,8 @@
-export type InstalledRecoveryCommandState =
+export type InstalledRecoveryCommandState = { startedAt: number; elapsedMs: number } & (
   | { state: "running" }
   | { state: "rejected"; error: string }
-  | { state: "completed"; status: number; treeJoined: true };
+  | { state: "completed"; status: number; treeJoined: true }
+);
 export function runInstalledRecoveryCommand(options: {
   stdout: string;
   stderr: string;
