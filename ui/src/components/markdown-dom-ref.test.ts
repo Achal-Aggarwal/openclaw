@@ -85,6 +85,25 @@ it("bounds prepared DOM while keeping evicted HTML reusable", () => {
   expect(typeof toSanitizedMarkdownContent("near-first-63")).toBe("string");
 });
 
+it("stops distant idle admission at the character budget without evicting nearby HTML", () => {
+  const near = "nearby-before-large-idle-sweep";
+  toSanitizedMarkdownHtml(near);
+  const sources = Array.from(
+    { length: 200 },
+    (_, index) => `large-idle-${index} ${"plain text ".repeat(4000)}`,
+  );
+  for (const source of sources) {
+    prewarmSanitizedMarkdown(source, {}, "idle-html");
+  }
+  expect(prewarmSanitizedMarkdown(near, {})).toBe(false);
+  expect(toSanitizedMarkdownHtml(near)).toBe(`<p>${near}</p>\n`);
+  const parse = vi.spyOn(DOMParser.prototype, "parseFromString");
+  for (const source of sources) {
+    toSanitizedMarkdownHtml(source);
+  }
+  expect(parse.mock.calls.length).toBeGreaterThan(0);
+});
+
 it("mounts fresh chat Markdown without reparsing and keeps only HTML in its cache", () => {
   const marker = "chat-sanitized-fragment-first-mount";
   const source = `### ${marker}\n\n| State |\n| --- |\n| Ready |\n\n<img src="x" onerror="alert(1)"><script>alert(2)</script>`;

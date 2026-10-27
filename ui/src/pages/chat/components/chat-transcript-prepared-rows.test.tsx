@@ -128,7 +128,9 @@ async function transcriptFixture(
   let presented = true;
   let queued = false;
   let disposed = false;
+  let preparationCost = 0;
   const renderRow = vi.fn((row: TranscriptRow<number>) => {
+    now += preparationCost;
     if (!ordinary) {
       return <span>Message {row.kind === "item" ? row.item : ""}</span>;
     }
@@ -230,12 +232,14 @@ async function transcriptFixture(
         await settle();
       }
     },
-    async idle(available = 10) {
+    async idle(available = 10, costPerRow = 0) {
+      preparationCost = costPerRow;
       const pending = [...idleCallbacks.values()];
       idleCallbacks.clear();
       for (const callback of pending) {
         callback({ didTimeout: false, timeRemaining: () => available });
       }
+      preparationCost = 0;
       await settle();
       for (const row of container.querySelectorAll<HTMLElement>("[data-prepared-row]")) {
         emitTranscriptResize(row, 800, 100);
@@ -322,7 +326,7 @@ it.each([600, 1400])(
     expect(view.renderRow.mock.calls).toHaveLength(rendered);
     await view.idle();
     expect(view.renderRow.mock.calls.length).toBeGreaterThan(rendered);
-    const warmed = view.renderRow.mock.calls.slice(rendered).at(-1)![0];
+    const warmed = view.renderRow.mock.calls[rendered]![0];
     const index = warmed.kind === "item" ? warmed.item : -1;
     expect(index).toBeGreaterThan(0);
     expect(view.container.querySelector(`[data-virtual-row-key="${warmed.key}"]`)).toBeNull();
@@ -335,7 +339,9 @@ it.each([600, 1400])(
     expect(last.kind === "item" ? last.item : -1).toBeGreaterThan(index);
     expect(view.container.querySelectorAll(".chat-virtual-row")).toHaveLength(elements);
     // A fast first movement can cross several viewports before scroll warming runs.
-    expect(prewarmGroupedMessage(view.groups[48]!.messages[0]!.message, {})).toBe(false);
+    expect(prewarmGroupedMessage(view.groups[200]!.messages[0]!.message, {})).toBe(false);
+    // A completed sweep does not walk the cached prefix again on every idle delivery.
+    expect(view.renderRow.mock.calls.length - rendered).toBeLessThan(530);
     const completed = view.renderRow.mock.calls.length;
     await view.idle();
     expect(view.renderRow.mock.calls).toHaveLength(completed);
@@ -361,8 +367,8 @@ it.each([true, "toolCall"] as const)(
     await view.idle(0);
     expect(view.renderRow.mock.calls).toHaveLength(rendered);
 
-    await view.idle();
-    const warmed = view.renderRow.mock.calls.slice(rendered).at(-1)![0];
+    await view.idle(10, 3);
+    const warmed = view.renderRow.mock.calls[rendered]![0];
     const index = warmed.kind === "item" ? warmed.item : -1;
     expect(index).toBeGreaterThan(0);
     const first = `idle-frame-${index}-first`;
@@ -785,3 +791,64 @@ it("updates the settled scroll window without re-entering the caller renderer", 
   expect(view.container.querySelector('[data-virtual-row-key="fragment:120"]')).not.toBeNull();
   expect(view.container.scrollTop).toBe(12_000);
 });
+
+it.each(["group", "frame"] as const)(
+  "finishes active warming when one completed %s exceeds the character budget",
+  (kind) => {
+    const group = createMessageGroup({}, "assistant", {
+      messages: Array.from({ length: 120 }, (_, index) => ({
+        key: `${kind}-large-idle-${index}`,
+        message: {
+          role: "assistant",
+          content: `**${kind}-large-idle-${index}** ${"row text ".repeat(4300)}`,
+        },
+      })),
+    });
+    const renderer = new ChatTranscriptRenderer();
+    renderer.contentFor(
+      [
+        { kind: "item", key: group.key, item: group },
+        { kind: "item", key: `${group.key}-neighbor`, item: group },
+      ],
+      () =>
+        new GuardedTranscriptItem(
+          [group],
+          kind === "group"
+            ? { kind, group, options: {} }
+            : {
+                kind,
+                frame: {
+                  kind: "agent-run-frame",
+                  key: group.key,
+                  runId: group.key,
+                  boundaryId: group.key,
+                  outcome: { kind: "completed", actionOwner: group.messages.at(-1)! },
+                  parts: [group],
+                },
+                options: {
+                  streamOptions: {},
+                  workPreviews: new Map(),
+                  renderGroupOptions: () => ({}),
+                  isWorkExpanded: () => false,
+                  onToggleWork: () => {},
+                },
+              },
+        ),
+    );
+    let work = 0;
+    while (work < 125 && renderer.prewarmRow(0, "fragment")) {
+      renderer.prewarmRow(1, "fragment");
+      work++;
+    }
+    expect(work).toBeLessThan(125);
+    const parse = vi.spyOn(DOMParser.prototype, "parseFromString");
+    for (let step = 0; step < 125; step++) {
+      const before = parse.mock.calls.length;
+      const worked = renderer.prewarmRow(0, "idle-html");
+      expect(parse.mock.calls.length - before).toBeLessThanOrEqual(1);
+      if (!worked) {
+        break;
+      }
+    }
+  },
+);

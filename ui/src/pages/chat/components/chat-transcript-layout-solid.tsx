@@ -169,6 +169,7 @@ export class ChatTranscriptRenderer {
     renderer: unknown;
     getContent: (index: number) => TranscriptContent;
   };
+  private prewarming = new WeakMap<TranscriptRow, { mode: MarkdownPrewarmMode; next: number }>();
   private element?: HTMLDivElement;
   private column?: HTMLDivElement;
   private accepted?: TranscriptLayoutProps;
@@ -190,18 +191,29 @@ export class ChatTranscriptRenderer {
   ) {
     // Geometry commits reuse content; a replaced row or renderer still refreshes it.
     if (this.contentSource?.rows !== rows || this.contentSource.renderer !== renderer) {
+      this.prewarming = new WeakMap();
       this.contentSource = { rows, renderer, getContent: (index) => renderer(rows[index]!) };
     }
     return this.contentSource.getContent;
   }
 
   prewarmRow(index: number, mode: MarkdownPrewarmMode = "cold-fragment"): boolean {
+    const row = this.contentSource?.rows[index];
+    if (!row) {
+      return false;
+    }
+    let progress = this.prewarming.get(row);
+    if (!progress || progress.mode !== mode) {
+      progress = { mode, next: 0 };
+      this.prewarming.set(row, progress);
+    }
     const content = this.contentSource?.getContent(index);
     const view = content instanceof GuardedTranscriptItem ? content.native : undefined;
     // Restoring every source in an atomic row larger than the fragment cache
     // would evict its own earlier work forever. Restore only the first source;
     // media-only first sources leave later cached HTML for the visible mount.
     let nextMode = mode;
+    let position = 0;
     const prewarm = (
       message: unknown,
       options: Pick<GroupedMessageOptions, "onOpenImage" | "fetchLinkFavicon">,
@@ -210,6 +222,11 @@ export class ChatTranscriptRenderer {
       if (nextMode === "fragment") {
         nextMode = "cold-fragment";
       }
+      if (position++ < progress.next) {
+        return false;
+      }
+      // Finish this pass even if a large row evicts its earlier HTML entries.
+      progress.next = position;
       return prewarmGroupedMessage(message, options, currentMode);
     };
     if (view?.kind === "group" && !view.group.isStreaming) {
@@ -233,6 +250,7 @@ export class ChatTranscriptRenderer {
         }
       }
     }
+    this.prewarming.delete(row);
     return false;
   }
 
@@ -415,6 +433,7 @@ export class ChatTranscriptRenderer {
     this.lifecycle = undefined;
     this.accepted = undefined;
     this.contentSource = undefined;
+    this.prewarming = new WeakMap();
     this.committed = undefined;
     this.commitQueued = false;
     this.layoutEffects.clear();

@@ -33,16 +33,18 @@ import { streamingMarkdownStableHtml } from "./markdown-streaming-state.ts";
 import { isMarkdownBlockArtText, normalizeMarkdownLineBreaks } from "./markdown-text.ts";
 
 export const MARKDOWN_CHAR_LIMIT = 140_000;
-// Covers several message-heavy sessions during rapid switching. Only inputs
-// up to 50k characters enter this 500-entry LRU, keeping memory bounded.
-const MARKDOWN_CACHE_LIMIT = 500;
+// HTML can cover a long transcript; fragments remain limited independently.
+// Count keys and HTML so a few large messages cannot fill the heap.
+const MARKDOWN_CACHE_LIMIT = 2048;
+const MARKDOWN_CACHE_TOTAL_CHARS = 8_000_000;
 const MARKDOWN_CACHE_MAX_CHARS = 50_000;
 type MarkdownCacheEntry = { html: string; highlighting?: boolean };
 const markdownCache = new Map<string, MarkdownCacheEntry>();
+let markdownCacheChars = 0;
 // Carry recent idle work into its first mount; the larger cache remains HTML-only.
 const preparedFragments = new Map<MarkdownCacheEntry, DocumentFragment>();
 const PREPARED_FRAGMENT_LIMIT = 32;
-export type MarkdownPrewarmMode = "html" | "cold-fragment" | "fragment";
+export type MarkdownPrewarmMode = "html" | "idle-html" | "cold-fragment" | "fragment";
 export const HIGHLIGHTABLE_CODE_RE = /<pre><code(?! class="markdown-block-art")/u;
 
 export function appendMarkdownTruncationNotice(truncated: {
@@ -291,12 +293,22 @@ function prepareSanitizedMarkdown(
   }
   const cacheKey = `${markdownRenderKey(renderOptions)}\0${renderInput}`;
   let cached = markdownCache.get(cacheKey);
+  const previousChars = cached ? cacheKey.length + cached.html.length : 0;
+  const idle = prewarm && mode === "idle-html";
   let content: MarkdownContent | undefined;
   // Only highlightable code changes when the optional highlighter loads.
   if (
     !cached ||
     (cached.highlighting !== undefined && cached.highlighting !== markdownHighlightingReady())
   ) {
+    // Distant idle work must never evict the reader's nearby preparation.
+    if (
+      idle &&
+      ((!cached && markdownCache.size >= MARKDOWN_CACHE_LIMIT) ||
+        markdownCacheChars - previousChars + cacheKey.length >= MARKDOWN_CACHE_TOTAL_CHARS)
+    ) {
+      return false;
+    }
     if (cached) {
       preparedFragments.delete(cached);
     }
@@ -308,10 +320,18 @@ function prepareSanitizedMarkdown(
       returnFragment || prewarm,
     );
     cached = { html: markdownContentHtml(content) };
+    if (
+      idle &&
+      markdownCacheChars - previousChars + cacheKey.length + cached.html.length >
+        MARKDOWN_CACHE_TOTAL_CHARS
+    ) {
+      // Rendering still spent this slice even when its result cannot be retained.
+      return true;
+    }
     if (HIGHLIGHTABLE_CODE_RE.test(cached.html)) {
       cached.highlighting = markdownHighlightingReady();
     }
-    if (prewarm && mode !== "html" && typeof content !== "string") {
+    if (prewarm && mode !== "html" && mode !== "idle-html" && typeof content !== "string") {
       preparedFragments.set(cached, content.fragment);
       pruneMapToMaxSize(preparedFragments, PREPARED_FRAGMENT_LIMIT);
     }
@@ -332,9 +352,22 @@ function prepareSanitizedMarkdown(
       content = { html: cached.html, fragment };
     }
   }
-  markdownCache.delete(cacheKey);
+  const previous = markdownCache.get(cacheKey);
+  if (previous) {
+    markdownCacheChars -= cacheKey.length + previous.html.length;
+    markdownCache.delete(cacheKey);
+  }
   markdownCache.set(cacheKey, cached);
-  pruneMapToMaxSize(markdownCache, MARKDOWN_CACHE_LIMIT);
+  markdownCacheChars += cacheKey.length + cached.html.length;
+  while (
+    markdownCache.size > MARKDOWN_CACHE_LIMIT ||
+    markdownCacheChars > MARKDOWN_CACHE_TOTAL_CHARS
+  ) {
+    const [key, entry] = markdownCache.entries().next().value!;
+    markdownCacheChars -= key.length + entry.html.length;
+    markdownCache.delete(key);
+    preparedFragments.delete(entry);
+  }
   return prewarm ? true : (content ?? cached.html);
 }
 

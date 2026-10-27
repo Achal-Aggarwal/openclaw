@@ -7,7 +7,7 @@ import type { TranscriptRow } from "./chat-transcript-layout.ts";
 const PREPARED_ROW_LIMIT = 12;
 // Cover the first fast scroll before direction sampling can warm its next viewport.
 // These are HTML cache entries; the smaller DOM and pristine-fragment limits stay unchanged.
-const IDLE_PREWARM_ROW_LIMIT = 64;
+const IDLE_PREWARM_ROW_LIMIT = 2048;
 
 /** Own initial tail placement and bounded preparation ahead of the visible range. */
 export class TranscriptInitialRange {
@@ -23,6 +23,7 @@ export class TranscriptInitialRange {
   private preparationIsIdle = false;
   private prepareStarted = 0;
   private prepareLatency = 16;
+  private idleStep = 1;
   private scrollSample = { time: 0, distance: 0, velocity: 0, direction: -1 };
   constructor(
     initialOffset: number | null,
@@ -128,6 +129,7 @@ export class TranscriptInitialRange {
   }
 
   updateRows(rows: readonly TranscriptRow[]): void {
+    this.idleStep = 1;
     const indexes = this.rowIndexes;
     indexes.clear();
     rows.forEach((row, index) => indexes.set(row.key, index));
@@ -153,6 +155,7 @@ export class TranscriptInitialRange {
   }
 
   recordReaderMovement(delta: number): void {
+    this.idleStep = 1;
     const now = performance.now();
     const previous = this.scrollSample;
     this.scrollSample = {
@@ -285,6 +288,27 @@ export class TranscriptInitialRange {
             ? range.endIndex
             : range.startIndex;
       const rendered = new Set(virtualizer.getVirtualItems().map((row) => row.key));
+      if (prewarm && !moving) {
+        // Resume the sweep rather than charging every slice for its cached prefix.
+        // A row can contain several messages; false means ready or not admitted
+        // by the bounded cache, so even an oversized row eventually advances.
+        while (this.idleStep <= IDLE_PREWARM_ROW_LIMIT) {
+          if (performance.now() >= deadline) {
+            this.queuePreparation();
+            return;
+          }
+          const index = origin + this.idleStep * searchDirection;
+          const row = rows[index];
+          if (!row) {
+            break;
+          }
+          const mode = this.idleStep <= 8 ? "fragment" : "idle-html";
+          if (!rendered.has(row.key) && this.prewarmRow?.(index, mode)) {
+            continue;
+          }
+          this.idleStep++;
+        }
+      }
       // Warming covers the predicted viewport, whose row count varies with
       // measured heights. A fixed candidate cap left its last rows cold.
       const opposite =
@@ -296,9 +320,7 @@ export class TranscriptInitialRange {
       const lookahead =
         opposite && predicted
           ? Math.abs(opposite.index - predicted.index) + 1 + 2 * overscan
-          : prewarm && !moving
-            ? IDLE_PREWARM_ROW_LIMIT
-            : domLookahead;
+          : domLookahead;
       let admitted = 0;
       let warmed = false;
       let canMaterialize = false;
@@ -314,7 +336,7 @@ export class TranscriptInitialRange {
         canMaterialize ||= Boolean(canPrepareRow);
         // Distant HTML must not evict the nearby fragments needed by the next scroll.
         const mode = warmOnly || step <= 8 ? "fragment" : "html";
-        if (row && prewarm && !rendered.has(row.key) && this.prewarmRow?.(index, mode)) {
+        if (row && prewarm && moving && !rendered.has(row.key) && this.prewarmRow?.(index, mode)) {
           // The shared cache owns readiness; no DOM or range invalidation is needed.
           if (warmOnly) {
             warmed = true;
