@@ -69,7 +69,9 @@ const controlUiPerformanceBudgets = {
   // Chat stylesheet rule blocks are unchanged; order alone changes compression.
   // Retain the measured 307,787 B gzip plus the existing 64 B of headroom.
   totalCssGzipBytes: 307_851,
-  totalCssRawBytes: 1_597_581,
+  // Logs windowing adds 38 B raw / 11 B gzip for 17% lower first-render task CPU
+  // and 42% lower filter task CPU at 4x. Measured raw total plus 64 B variance.
+  totalCssRawBytes: 1_597_676,
 } satisfies Record<string, number>;
 export const CONTROL_UI_PERFORMANCE_BUDGETS = Object.freeze(controlUiPerformanceBudgets);
 

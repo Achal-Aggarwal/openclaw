@@ -454,6 +454,10 @@ suite.define(() => {
         observeStartupPathname();
         const startupPathnames = structuredClone(pathnameObservations);
         const startupMetrics = structuredClone(rpc);
+        await writeFile(
+          path.join(suite.artifactDir, "startup-rpc.json"),
+          JSON.stringify(startupMetrics, null, 2),
+        );
         const images = await page
           .locator(".sidebar-agent-card__avatar img")
           .evaluateAll((elements) =>

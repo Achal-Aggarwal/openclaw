@@ -197,6 +197,7 @@ const repositoryScriptEntries = [
   "scripts/perf/subagent-maintenance-capture-measure.ts!",
   "scripts/perf/subagent-sweep-measure.ts!",
   "scripts/perf/tool-schema-preparation-measure.ts!",
+  "scripts/perf/terminal-assistant-snapshot-measure.ts!",
   // Retained source commands and selectable preloads execute directly by exact path.
   "scripts/perf/after-turn-context-measure.ts!",
   "scripts/perf/agent-runtime-dispatch-measure.ts!",
@@ -223,6 +224,7 @@ const repositoryScriptEntries = [
   "scripts/perf/session-catalog-pairing-measure.ts!",
   "scripts/perf/session-involvement-measure.ts!",
   "scripts/perf/sqlite-native-lease-measure.mjs!",
+  "scripts/perf/agent-db-close-receipt-measure.mjs!",
   "scripts/perf/sqlite-owner-dispatch-measure.mjs!",
   "scripts/perf/sqlite-wal-scan-measure.mjs!",
   "scripts/perf/state-engine-schema-bench.ts!",
@@ -254,6 +256,8 @@ const repositoryScriptEntries = [
   "scripts/perf/provider-request-prepare-measure.ts!",
   // Invoked directly with Node as documented in its header.
   "scripts/perf/attempt-stream-options-measure.ts!",
+  "scripts/perf/attempt-prompt-context-measure.ts!",
+  "scripts/perf/current-prompt-history-measure.ts!",
   "scripts/perf/session-profile-reference-measure.ts!",
   "scripts/perf/worker-task-metrics-measure.ts!",
   // scripts/perf/README.md invokes this worker protocol benchmark by path.
@@ -488,6 +492,7 @@ const repositoryScriptEntries = [
   "scripts/perf/quadratic-report-measure.ts!",
   "scripts/perf/reef-device-sign-measure.ts!",
   "scripts/perf/session-actor-admission-measure.ts!",
+  "scripts/perf/session-input-custody-measure.ts!",
   "scripts/perf/session-pin-policy-measure.ts!",
   "scripts/perf/session-prompt-begin-measure.ts!",
   "scripts/perf/session-store-target-inventory-measure.ts!",
@@ -553,6 +558,15 @@ const repositoryScriptEntries = [
   "scripts/perf/installed-plugin-index-fingerprint-measure.ts!",
   "scripts/perf/knowledge-worker-diagnostics-measure.mjs!",
   "scripts/perf/knowledge-worker-heap-measure.mjs!",
+  // These source headers document standalone measurement commands.
+  "scripts/perf/agent-deletion-blocked-measure.ts!",
+  "scripts/perf/chat-history-response-page-measure.mjs!",
+  "scripts/perf/chat-metadata-auth-check-measure.ts!",
+  "scripts/perf/config-schema-retention-measure.ts!",
+  "scripts/perf/sandbox-retirement-authority.ts!",
+  "scripts/perf/subagent-registration-retention.ts!",
+  "scripts/perf/system-prompt-request-measure.ts!",
+  "scripts/perf/worktree-index-metadata-measure.ts!",
   // Maintained source headers invoke these standalone commands by exact path.
   "scripts/perf/archive-worker-startup-measure.mjs!",
   "scripts/perf/archive-canonical-worker-measure.ts!",
@@ -709,6 +723,7 @@ const repositoryScriptEntries = [
   // The transcript broadcast benchmark loads the stall recorder through --gateway-preload.
   "scripts/bench-filesystem-preconditions.mts!",
   "scripts/perf/github-tool-selection-measure.ts!",
+  "scripts/perf/github-preview-authority-measure.ts!",
   "scripts/perf/github-conditional-json-measure.ts!",
   "scripts/perf/session-transcript-code-measure.mjs!",
   "scripts/perf/stall-recorder-cost-preload.mjs!",
@@ -1761,6 +1776,7 @@ const config = {
         "openclaw",
         "sleep",
         "swiftlint",
+        "uptime",
         "xcrun",
       ],
       // The stylelint config lives under config/, not a root default path.
