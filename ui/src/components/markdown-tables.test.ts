@@ -39,13 +39,31 @@ const MutationObserverMock = vi.fn(function (_callback: MutationCallback) {
   return { disconnect: vi.fn(), observe: vi.fn() };
 });
 const ResizeObserverMock = vi.fn(function (
-  _callback: (entries: Pick<ResizeObserverEntry, "target">[]) => void,
+  _callback: (
+    entries: Pick<ResizeObserverEntry, "target" | "contentRect" | "borderBoxSize">[],
+  ) => void,
 ) {
   return { disconnect: vi.fn(), observe: vi.fn(), unobserve: vi.fn() };
 });
 
-function deliverTableResize(target: HTMLElement): void {
-  ResizeObserverMock.mock.calls.at(-1)?.[0]([{ target }]);
+function deliverTableResize(
+  target: HTMLElement,
+  tableWidth = 300,
+  viewportWidth = 100,
+  observerIndex = -1,
+): void {
+  ResizeObserverMock.mock.calls.at(observerIndex)?.[0]([
+    {
+      target,
+      contentRect: new DOMRect(0, 0, viewportWidth, 100),
+      borderBoxSize: [{ inlineSize: viewportWidth, blockSize: 100 }],
+    },
+    {
+      target: query(target, "table"),
+      contentRect: new DOMRect(0, 0, tableWidth - 2, 100),
+      borderBoxSize: [{ inlineSize: tableWidth, blockSize: 100 }],
+    },
+  ]);
 }
 
 const interactiveOptions = {
@@ -137,7 +155,28 @@ describe("Markdown table interactions", () => {
     }
   });
 
-  it("updates retained table overflow without mutation-time layout", async () => {
+  it("keeps the table scroll offset across nested and replacement enhancement owners", () => {
+    const { owner, shell, viewport } = interactiveOwner();
+    const inner = query(owner, ".chat-text");
+    enhanceMarkdownTables(inner);
+    cleanups.push(() => releaseMarkdownTables(inner));
+    deliverTableResize(viewport);
+    viewport.scrollLeft = 200;
+    viewport.dispatchEvent(new Event("scroll"));
+    const masks = () => [
+      shell.classList.contains("markdown-table--can-scroll-left"),
+      shell.classList.contains("markdown-table--can-scroll-right"),
+    ];
+    expect(masks()).toEqual([true, false]);
+    deliverTableResize(viewport, 300, 100, 0);
+    expect(masks()).toEqual([true, false]);
+    releaseMarkdownTables(inner);
+    enhanceMarkdownTables(inner);
+    deliverTableResize(viewport);
+    expect(masks()).toEqual([true, false]);
+  });
+
+  it("updates retained table overflow from resize entries without reading layout", async () => {
     vi.stubGlobal("MutationObserver", originalMutationObserver);
     const { owner, shell, viewport } = interactiveOwner(`${table}\n\n${table}`);
     const otherViewport = owner.querySelectorAll(".markdown-table__viewport")[1]!;
@@ -151,9 +190,9 @@ describe("Markdown table interactions", () => {
     await Promise.resolve();
     expect(changedWidth).not.toHaveBeenCalled();
     expect(otherWidth).not.toHaveBeenCalled();
-    deliverTableResize(viewport);
+    deliverTableResize(viewport, 100);
     expect(shell.classList.contains("markdown-table--can-scroll-right")).toBe(false);
-    expect(changedWidth).toHaveBeenCalled();
+    expect(changedWidth).not.toHaveBeenCalled();
     expect(otherWidth).not.toHaveBeenCalled();
 
     changedWidth.mockClear();

@@ -16,11 +16,15 @@ const tableViewportSelector = ".markdown-table__viewport";
 const enhancedTableShells = new WeakSet<HTMLElement>();
 const tableCopyStatuses = new WeakMap<HTMLElement, HTMLElement>();
 const tableOwnerStates = new WeakMap<HTMLElement, TableOwnerState>();
+// The DOM survives enhancer replacement and may have nested enhancement owners.
+const tableBounds = new WeakMap<HTMLElement, TableBounds>();
 
 type TableOwnerState = {
   release: () => void;
   closeDialog?: () => void;
 };
+
+type TableBounds = { viewport?: number; table?: number; offset: number };
 
 function tableInteractionsEnabled(env: unknown): boolean {
   return (
@@ -54,20 +58,18 @@ export function markdownTableCopyText(table: HTMLTableElement): string {
     .join("\n");
 }
 
-function syncTableOverflow(shell: HTMLElement): void {
+function syncTableOverflow(shell: HTMLElement, bounds: TableBounds): void {
   if (isMarkdownBlockParked(shell)) {
     return;
   }
-  const viewport = shell.querySelector<HTMLElement>(tableViewportSelector);
-  if (!viewport) {
+  if (bounds.viewport === undefined || bounds.table === undefined) {
     return;
   }
-  const { scrollWidth, clientWidth, scrollLeft } = viewport;
-  const overflows = scrollWidth - clientWidth > 1;
-  shell.classList.toggle("markdown-table--can-scroll-left", overflows && scrollLeft > 1);
+  const overflows = bounds.table - bounds.viewport > 1;
+  shell.classList.toggle("markdown-table--can-scroll-left", overflows && bounds.offset > 1);
   shell.classList.toggle(
     "markdown-table--can-scroll-right",
-    overflows && scrollLeft + clientWidth < scrollWidth - 1,
+    overflows && bounds.offset + bounds.viewport < bounds.table - 1,
   );
 }
 
@@ -97,13 +99,26 @@ export function enhanceMarkdownTables(owner: HTMLElement): TableOwnerState {
   if (!state) {
     const observedNodes = new Set<HTMLElement>();
     const resizeObserver = new ResizeObserver((entries) => {
-      const shells = new Set(
-        entries.map((entry) => entry.target.closest<HTMLElement>(tableShellSelector)),
-      );
-      for (const shell of shells) {
-        if (shell) {
-          syncTableOverflow(shell);
+      const shells = new Map<HTMLElement, TableBounds>();
+      // Earlier resize subscribers may have dirtied layout. Consume the delivered
+      // boxes instead of forcing another layout for scrollWidth/clientWidth.
+      for (const entry of entries) {
+        const shell = entry.target.closest<HTMLElement>(tableShellSelector);
+        if (!shell || isMarkdownBlockParked(shell)) {
+          continue;
         }
+        const viewport = entry.target.closest<HTMLElement>(tableViewportSelector)!;
+        const bounds = tableBounds.get(viewport) ?? { offset: 0 };
+        if (entry.target.matches(tableViewportSelector)) {
+          bounds.viewport = entry.contentRect.width;
+        } else {
+          bounds.table = entry.borderBoxSize[0]!.inlineSize;
+        }
+        tableBounds.set(viewport, bounds);
+        shells.set(shell, bounds);
+      }
+      for (const [shell, bounds] of shells) {
+        syncTableOverflow(shell, bounds);
       }
     });
     const syncTables = (shells: Iterable<HTMLElement>) => {
@@ -196,8 +211,10 @@ export function enhanceMarkdownTables(owner: HTMLElement): TableOwnerState {
           return;
         }
         const shell = viewport.closest<HTMLElement>(tableShellSelector);
-        if (shell) {
-          syncTableOverflow(shell);
+        const bounds = tableBounds.get(viewport);
+        if (shell && bounds) {
+          bounds.offset = viewport.scrollLeft;
+          syncTableOverflow(shell, bounds);
         }
       },
       { capture: true, passive: true },

@@ -203,6 +203,9 @@ async function transcriptFixture(
     draw,
     renderRow,
     groups,
+    elapse(milliseconds: number) {
+      now += milliseconds;
+    },
     async updateRow(index: number, item: number) {
       rows[index] = {
         kind: "item",
@@ -649,6 +652,27 @@ it("uses cached geometry on the first reader movement after tail placement", asy
   expect(
     style.mock.calls.filter(([element]) => element.classList.contains("chat-virtual-row")),
   ).toHaveLength(0);
+});
+
+it("measures nearby rows before spending idle budgets on distant Markdown", async () => {
+  const view = await transcriptFixture(0, true, false, "retained");
+  const warmed = new Set<number>();
+  vi.spyOn(ChatTranscriptRenderer.prototype, "prewarmRow").mockImplementation((index) => {
+    if (warmed.has(index)) {
+      return false;
+    }
+    warmed.add(index);
+    view.elapse(6);
+    return true;
+  });
+
+  for (let turn = 0; turn < 30; turn++) {
+    await view.idle();
+  }
+
+  expect(view.container.querySelector("[data-prepared-row]")).not.toBeNull();
+  expect(warmed.size).toBeLessThan(32);
+  expect(view.container.querySelectorAll("[data-prepared-row]").length).toBeLessThanOrEqual(24);
 });
 
 it("materializes one predicted row between scroll frames and uses the latest viewport", async () => {

@@ -352,11 +352,14 @@ export class TranscriptInitialRange {
             ? range.endIndex
             : range.startIndex;
       const rendered = new Set(virtualizer.getVirtualItems().map((row) => row.key));
+      const nearGeometryPending = this.idleMeasureStep <= PREPARED_ROW_LIMIT;
       if (prewarm && !moving) {
+        // Measure nearby prepared rows before spending idle slices on distant HTML.
+        const warmLimit = nearGeometryPending ? PREPARED_ROW_LIMIT : IDLE_PREWARM_ROW_LIMIT;
         // Resume the sweep rather than charging every slice for its cached prefix.
         // A row can contain several messages; false means ready or not admitted
         // by the bounded cache, so even an oversized row eventually advances.
-        while (this.idleStep <= IDLE_PREWARM_ROW_LIMIT) {
+        while (this.idleStep <= warmLimit) {
           if (performance.now() >= deadline) {
             this.queuePreparation();
             return;
@@ -448,6 +451,14 @@ export class TranscriptInitialRange {
       if (!admitted) {
         if (warmOnly && (warmed || (canMaterialize && !skipSpeculativeDom))) {
           this.queuePreparation(canMaterialize && !skipSpeculativeDom);
+        } else if (
+          prewarm &&
+          !moving &&
+          nearGeometryPending &&
+          this.idleMeasureStep > PREPARED_ROW_LIMIT
+        ) {
+          // Ordinary rows need no DOM admission; resume their remaining HTML sweep.
+          this.queuePreparation();
         }
         return;
       }
