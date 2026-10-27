@@ -205,8 +205,13 @@ export class TranscriptInitialRange {
     }
   }
 
+  private isReaderMoving(): boolean {
+    // Size compensation also sets isScrolling; only reader input interrupts idle preparation.
+    return this.scrollSample.time > 0 && performance.now() - this.scrollSample.time < 100;
+  }
+
   didCommit(): void {
-    if (this.preparationIsIdle && this.virtualizer().isScrolling) {
+    if (this.preparationIsIdle && this.isReaderMoving()) {
       this.cancelPreparation?.();
       this.cancelPreparation = undefined;
       this.preparationIsIdle = false;
@@ -327,7 +332,7 @@ export class TranscriptInitialRange {
         (sampledDirection < 0 && range.startIndex === 0);
       const direction = inward ? -sampledDirection : sampledDirection;
       const viewport = virtualizer.scrollRect?.height ?? 600;
-      const moving = !inward && performance.now() - this.scrollSample.time < 100;
+      const moving = !inward && this.isReaderMoving();
       const velocity = moving ? this.scrollSample.velocity : 0;
       // A viewport-sized step skips speculative DOM before it can be reused.
       // Spend that frame's preparation budget on the arriving Markdown instead.
@@ -499,11 +504,7 @@ export class TranscriptInitialRange {
       });
       this.invalidate();
     };
-    if (
-      this.virtualizer().isScrolling &&
-      this.prewarmRow &&
-      typeof requestIdleCallback === "function"
-    ) {
+    if (this.isReaderMoving() && this.prewarmRow && typeof requestIdleCallback === "function") {
       // Admit one slice per frame, after paint. Repeated zero-delay slices can
       // otherwise spend several budgets before the next scrolling frame.
       const frame = requestAnimationFrame(() => {

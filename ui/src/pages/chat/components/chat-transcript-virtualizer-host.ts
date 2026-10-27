@@ -220,13 +220,14 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
         this.presentation.commitChange(
           () => {
             (redraw ? (this.renderPreviousRows ?? invalidate) : invalidate)();
-            this.scheduleEndReconcile(view.getTotalSize());
           },
           defer &&
             (offsetState.measuringOffset
               ? this.renderer.coversViewport(view.calculateRange())
               : !sync),
         );
+        // A caller render can replace the queued redraw without replacing this geometry receipt.
+        this.scheduleEndReconcile(view.getTotalSize());
       },
       count: 0,
       getScrollElement: () => this.scrollElement,

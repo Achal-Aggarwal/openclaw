@@ -102,6 +102,7 @@ it.each(["row growth", "viewport resize"] as const)(
 
     if (geometryChange === "row growth") {
       contentHeight = 1100;
+      transcriptDomState.measuredRowHeight = contentHeight;
       emitTranscriptResize(requireElement(container, ".chat-virtual-row"), 800, contentHeight);
     } else {
       viewportHeight = 300;

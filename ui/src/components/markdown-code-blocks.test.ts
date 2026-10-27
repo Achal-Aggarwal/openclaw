@@ -135,7 +135,7 @@ it("suspends parked transcript Markdown measurements and resumes the same DOM", 
     "ResizeObserver",
     class {
       readonly targets = new Set<Element>();
-      constructor(private readonly callback: (entries: Array<{ target: Element }>) => void) {
+      constructor(private readonly callback: ResizeObserverCallback) {
         observers.push(this);
       }
       observe(target: Element) {
@@ -148,7 +148,19 @@ it("suspends parked transcript Markdown measurements and resumes the same DOM", 
         this.targets.clear();
       }
       deliver(target: Element) {
-        this.callback([{ target }]);
+        const width = target.matches(".markdown-table__viewport") ? 100 : 300;
+        this.callback(
+          [
+            {
+              target,
+              contentRect: new DOMRect(0, 0, width, 100),
+              borderBoxSize: [{ inlineSize: width, blockSize: 100 }],
+              contentBoxSize: [{ inlineSize: width, blockSize: 100 }],
+              devicePixelContentBoxSize: [],
+            },
+          ],
+          this,
+        );
       }
     },
   );
@@ -163,6 +175,7 @@ it("suspends parked transcript Markdown measurements and resumes the same DOM", 
   const code = row.querySelector<HTMLElement>("code")!;
   const codeViewport = row.querySelector<HTMLElement>(".code-block-viewport")!;
   const tableViewport = row.querySelector<HTMLElement>(".markdown-table__viewport")!;
+  const table = tableViewport.querySelector("table")!;
   const codeWidth = vi.fn(() => 300);
   const tableWidth = vi.fn(() => 300);
   Object.defineProperty(code, "scrollWidth", { configurable: true, get: codeWidth });
@@ -199,6 +212,7 @@ it("suspends parked transcript Markdown measurements and resumes the same DOM", 
     for (const [target, previous] of [
       [code, codeObservers],
       [tableViewport, tableObservers],
+      [table, tableObservers],
     ] as const) {
       // A queued receipt can arrive after the parked row was unobserved.
       const recipients =
@@ -213,7 +227,10 @@ it("suspends parked transcript Markdown measurements and resumes the same DOM", 
       expect(tableWidth).not.toHaveBeenCalled();
     } else {
       expect(codeWidth).toHaveBeenCalled();
-      expect(tableWidth).toHaveBeenCalled();
+      expect(tableWidth).not.toHaveBeenCalled();
+      expect(tableViewport.closest(".markdown-table")?.classList).toContain(
+        "markdown-table--can-scroll-right",
+      );
     }
     expect(row.querySelector("code")).toBe(code);
     expect(row.querySelector(".markdown-table__viewport")).toBe(tableViewport);

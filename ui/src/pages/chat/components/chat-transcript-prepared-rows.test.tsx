@@ -25,6 +25,7 @@ afterEach(() => {
     dispose();
   }
   resetTranscriptTestDom();
+  vi.useRealTimers();
 });
 
 async function settle() {
@@ -263,9 +264,13 @@ async function transcriptFixture(
     },
     async task(elapsed = 0) {
       now += elapsed;
-      await new Promise((resolve) => {
-        setTimeout(resolve, 0);
-      });
+      if (vi.isFakeTimers()) {
+        await vi.advanceTimersByTimeAsync(0);
+      } else {
+        await new Promise((resolve) => {
+          setTimeout(resolve, 0);
+        });
+      }
       await settle();
     },
     async scrollTo(index: number) {
@@ -337,7 +342,7 @@ it.each(["group", "frame"] as const)(
         new GuardedTranscriptItem(
           [group],
           kind === "group"
-            ? { kind, group, options: {} }
+            ? { kind, group, options: { showReasoning: false } }
             : {
                 kind,
                 frame: {
@@ -351,7 +356,7 @@ it.each(["group", "frame"] as const)(
                 options: {
                   streamOptions: {},
                   workPreviews: new Map(),
-                  renderGroupOptions: () => ({}),
+                  renderGroupOptions: () => ({ showReasoning: false }),
                   isWorkExpanded: () => false,
                   onToggleWork: () => {},
                 },
@@ -793,6 +798,7 @@ it("warms rows when earlier animation callbacks delay preparation delivery", asy
 });
 
 it("defers late preparation timers instead of spending another frame's budget", async () => {
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
   const view = await transcriptFixture(0, true, false, "retained");
   await view.scrollTo(60);
   const rendered = view.renderRow.mock.calls.length;
@@ -878,7 +884,7 @@ it.each(["group", "frame"] as const)(
         new GuardedTranscriptItem(
           [group],
           kind === "group"
-            ? { kind, group, options: {} }
+            ? { kind, group, options: { showReasoning: false } }
             : {
                 kind,
                 frame: {
@@ -892,7 +898,7 @@ it.each(["group", "frame"] as const)(
                 options: {
                   streamOptions: {},
                   workPreviews: new Map(),
-                  renderGroupOptions: () => ({}),
+                  renderGroupOptions: () => ({ showReasoning: false }),
                   isWorkExpanded: () => false,
                   onToggleWork: () => {},
                 },

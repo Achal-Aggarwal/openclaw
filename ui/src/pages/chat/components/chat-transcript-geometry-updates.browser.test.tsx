@@ -145,7 +145,7 @@ it("publishes native scroll policy and row position in one Solid update", async 
   viewport.style.cssText = "height: 100px; overflow: auto; scroll-behavior: auto";
   viewport.appendChild(document.createElement("div")).style.height = "1000px";
   onTestFinished(() => viewport.remove());
-  const updates: number[][] = [];
+  const updates: Array<readonly [number, number]> = [];
   createRoot((dispose) => {
     onTestFinished(dispose);
     const [policy, setPolicy] = createSignal(0);
@@ -620,7 +620,9 @@ it("defers uncompensated measurement read-back until the next frame", async () =
     flush();
     expect(render).not.toHaveBeenCalled();
     expect(paint).not.toHaveBeenCalled();
-    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    await new Promise<void>((resolve) => {
+      requestAnimationFrame(() => resolve());
+    });
     flush();
     expect(render).toHaveBeenCalledOnce();
     expect(Number.parseFloat(inner.style.height)).toBe(height + 60);
@@ -700,7 +702,10 @@ it("commits rows before paint when an uncompensated extent shrink clamps the rea
     expect(Number.parseFloat(inner.style.height)).toBe(height - 330);
     expect(viewport.scrollTop).toBeLessThan(before);
     expect(viewport.scrollTop).toBe(viewport.scrollHeight - viewport.clientHeight);
-    const finalRow = expectDefined(virtualizer.getVirtualItems().find((row) => row.index === 5));
+    const finalRow = expectDefined(
+      virtualizer.getVirtualItems().find((row) => row.index === 5),
+      "final virtual row",
+    );
     expect(
       Math.abs(
         last.getBoundingClientRect().top -
