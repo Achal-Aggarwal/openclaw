@@ -18,17 +18,20 @@ const memory = vi.hoisted(() => ({
   sessions: vi.fn(),
 }));
 
+// mock-isolation: Supply caller-scoped query providers without activating host plugins.
 vi.mock("openclaw/plugin-sdk/memory-host-search", () => ({
   getActiveMemorySearchManager: memory.manager,
   getActiveMemoryProvider: memory.provider,
   isActiveMemoryProviderNative: memory.native,
 }));
 
+// mock-isolation: Resolve synthetic session identities without reading runtime agent state.
 vi.mock("openclaw/plugin-sdk/agent-scope-runtime", () => ({
   resolveSessionAgentIdStrict: ({ sessionKey }: { sessionKey?: string }) =>
     /^agent:([^:]+):/.exec(sessionKey ?? "")?.[1] ?? "main",
 }));
 
+// mock-isolation: Fixture vaults use main as their default agent, independent of host configuration.
 vi.mock("openclaw/plugin-sdk/memory-host-core", () => ({
   resolveDefaultAgentId: () => "main",
 }));

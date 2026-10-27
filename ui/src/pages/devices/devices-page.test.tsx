@@ -41,8 +41,7 @@ const HOST_METHODS = ["system.info", "desktop.observe"];
 const ADMIN_SCOPES = ["operator.admin"];
 type AccessCase = [string, string[] | undefined, string[] | undefined, boolean, boolean, boolean];
 type Page = ReturnType<typeof mountPage>;
-const query = <T extends Element = Element>(page: Page, selector: string) =>
-  page.container.querySelector<T>(selector);
+const query = (page: Page, selector: string) => page.container.querySelector(selector);
 const pageText = (page: Page) => page.container.textContent;
 const modalQuery = (selector: string) => document.body.querySelector(selector);
 const methodsCalled = (request: ReturnType<typeof clientFor>["request"]) =>
@@ -138,7 +137,8 @@ describe("DevicesPage gateway lifecycle", () => {
       );
       const { client, snapshot, fixture } = page;
       const queries = getQueriesForElement(page.container);
-      const mode = () => query<HTMLSelectElement>(page, 'select[aria-label="Mode"]');
+      const mode = () =>
+        page.container.querySelector<HTMLSelectElement>('select[aria-label="Mode"]');
       await waitForSolid(() => expect(mode()).not.toBeNull());
       mode()!.value = "allowlist";
       mode()!.dispatchEvent(new Event("change", { bubbles: true }));
@@ -527,27 +527,44 @@ describe("DevicesPage gateway lifecycle", () => {
   );
 
   it("rejects a device pairing request after the in-app dialog is confirmed", async () => {
-    const page = mountConnected(undefined, {
+    const { client, request } = clientFor();
+    const fixture = gatewayFixture(gatewaySnapshot(client));
+    const page = mountPage(fixture, {
       nodes: [{ nodeId: "node-1" }],
       devicesList: {
         paired: [],
         pending: [{ requestId: "request-1", deviceId: "device-1", displayName: "Browser" }],
       },
     });
-    const { request } = page;
     button(page.container, t("devices.inventory.reject")).click();
     const { dialog } = await waitForRenderedModalDialog(document.body);
     expect(dialog.getAttribute("aria-label")).toBe(t("devices.inventory.rejectDevicePromptTitle"));
-    dialogButton(t("common.cancel")).click();
-    await expectNoModal();
-    expect(methodsCalled(request)).not.toContain("device.pair.reject");
-    button(page.container, t("devices.inventory.reject")).click();
-    await waitForRenderedModalDialog(document.body);
     dialogButton(t("devices.inventory.reject")).click();
     await vi.waitFor(() =>
       expect(request).toHaveBeenCalledWith("device.pair.reject", { requestId: "request-1" }),
     );
     await expectNoModal();
+  });
+
+  it("issues no node pairing request when the dialog is cancelled", async () => {
+    const { client, request } = clientFor();
+    const page = mountPage(gatewayFixture(gatewaySnapshot(client)), {
+      nodes: [
+        {
+          nodeId: "node-1",
+          displayName: "Pending node",
+          approvalState: "pending-approval",
+          pendingRequestId: "request-2",
+        },
+      ],
+      devicesList: { paired: [], pending: [] },
+    });
+    await selectEntryAction(page.container, "reject", "Pending node");
+    await waitForRenderedModalDialog(document.body);
+    request.mockClear();
+    dialogButton(t("common.cancel")).click();
+    await expectNoModal();
+    expect(request).not.toHaveBeenCalled();
   });
 
   it.each(["connection resets", "pairing access is lost"])(

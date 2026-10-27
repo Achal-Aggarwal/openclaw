@@ -22,6 +22,7 @@ const afterCompileHook = vi.hoisted<{ run?: () => Promise<void> }>(() => ({}));
 
 const afterMoveHook = vi.hoisted(() => ({ run: undefined as RootMoveHooks["afterMove"] }));
 
+// mock-isolation: Capture CLI requests without connecting to an operator Gateway.
 vi.mock("openclaw/plugin-sdk/gateway-runtime", () => ({
   callGatewayFromCli: gatewayCall,
 }));
