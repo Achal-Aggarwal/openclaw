@@ -15,7 +15,10 @@ export { assertOpenClawStateWriteAllowed } from "../state/openclaw-state-ownersh
 export { resolveImmutableSqliteFileUri } from "./node-sqlite.js";
 export { procCgroupMembershipMatches } from "./update-managed-service-handoff-scope.js";
 export { packageActivationIdentity } from "./package-update-activation-paths.js";
-export { recoverInterruptedManagedUpdate } from "./update-managed-service-handoff-interrupted.js";
+export {
+  recoverInterruptedManagedUpdate,
+  readManagedHandoffGatewayStop,
+} from "./update-managed-service-handoff-interrupted.js";
 export const handoffLedger = {
   adoptUpdateRun,
   finishUpdateRun,

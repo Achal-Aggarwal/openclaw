@@ -7,14 +7,25 @@ const { runManagedServiceManagerBoundary: runBoundary } =
   useManagedServiceHandoffLifecycleFixture(true);
 const itUnix = it.runIf(process.platform !== "win32");
 
-itUnix.each(["before", "prepared", "publishing", "after"] as const)(
-  "recovers the parked Gateway after SIGKILL at %s publication",
-  async (interruptedUpdate) => {
+itUnix.each([
+  ...(["before", "prepared", "publishing", "after"] as const).map((interruptedUpdate) => ({
+    interruptedUpdate,
+    updaterStopped: undefined,
+  })),
+  { interruptedUpdate: "before" as const, updaterStopped: "legacy" as const },
+  ...(["before", "publishing", "after"] as const).map((interruptedUpdate) => ({
+    interruptedUpdate,
+    updaterStopped: "native" as const,
+  })),
+])(
+  "recovers after SIGKILL at $interruptedUpdate publication (updater stop: $updaterStopped)",
+  async ({ interruptedUpdate, updaterStopped }) => {
     const forward = interruptedUpdate === "publishing" || interruptedUpdate === "after";
     const result = await runBoundary("systemd", {
       ledger: true,
       controlDisconnect: "transferred",
       interruptedUpdate,
+      updaterStopped,
       helperExitCode: forward ? 0 : 1,
     });
     expect(result.state, result.log).toMatchObject({
@@ -35,10 +46,9 @@ itUnix.each(["before", "prepared", "publishing", "after"] as const)(
     expect(result.log).not.toMatch(
       /Cannot find module|ERR_MODULE_NOT_FOUND|failed to finalize update run/,
     );
-    if (forward) {
+    if (forward || updaterStopped) {
       expect(result.state).toMatchObject({
-        postCoreRepaired: true,
-        repairRunId: result.run?.runId,
+        ...(forward ? { postCoreRepaired: true, repairRunId: result.run?.runId } : {}),
         guardedRestart: ["gateway", "restart", "--preserve-definition", "--json"],
       });
     }
@@ -52,6 +62,7 @@ itUnix(
       ledger: true,
       controlDisconnect: "transferred",
       interruptedUpdate: "risk",
+      updaterStopped: "native" as const,
       helperExitCode: 1,
     });
     expect(result.state.restored).toBeUndefined();

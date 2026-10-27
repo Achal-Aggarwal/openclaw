@@ -9,11 +9,13 @@ import {
 } from "../../daemon/service.test-helpers.js";
 import * as temporaryRoot from "../../infra/tmp-openclaw-dir.js";
 import { createManagedHandoffLeaseStore } from "../../infra/update-managed-service-handoff-lease.js";
+import { createManagedHandoffRecoveryFixture } from "../../infra/update-managed-service-handoff-recovery.test-support.js";
 import {
   createUpdateRun,
   finishUpdateRun,
   getUpdateRun,
   listUpdateRuns,
+  recordUpdateRunPhase,
   recordUpdateRunStep,
   recordUpdateRunVerification,
 } from "../../infra/update-run-ledger.js";
@@ -92,9 +94,20 @@ afterEach(async () => {
   await state.cleanup();
 });
 
-function seed(stopped: boolean, verification = {}) {
-  const run = createUpdateRun({ trigger: "control-ui" });
-  if (stopped) {
+function seed(stopped: boolean, verification = {}, nativeStop = false, restarted = false) {
+  const run = createUpdateRun({
+    trigger: "control-ui",
+    ...(nativeStop ? { target: { installationMethod: "npm-global" } } : {}),
+  });
+  if (nativeStop) {
+    recordUpdateRunStep(run.runId, {
+      step: "managed-service update handoff",
+      status: "completed",
+      endedAtMs: Date.now(),
+    });
+    recordUpdateRunPhase(run.runId, "activating");
+  }
+  if (stopped && !nativeStop) {
     recordUpdateRunStep(run.runId, {
       step: "service-stop",
       status: "completed",
@@ -102,6 +115,13 @@ function seed(stopped: boolean, verification = {}) {
     });
   }
   recordUpdateRunVerification(run.runId, verification);
+  if (restarted) {
+    recordUpdateRunStep(run.runId, {
+      step: "managed-service-restart",
+      status: "completed",
+      endedAtMs: Date.now(),
+    });
+  }
   finishUpdateRun(run.runId, { status: "failed", reason: "managed-service-handoff-failed" });
   return run.runId;
 }
@@ -135,31 +155,85 @@ it("finalizes an interrupted managed update, then starts and verifies its stoppe
   expect(service.start).toHaveBeenCalledTimes(1);
 });
 
-it.each(["operator stop", "successful restart", "named data risk"])(
-  "does not start a Gateway after %s",
-  async (reason) => {
-    seed(
-      reason !== "operator stop",
-      reason === "named data risk"
-        ? {
-            recovery: {
-              serviceRestartSafe: false,
-              reason: "state-migration-started",
-              dataAtRisk: "session migration is incomplete",
-            },
-          }
-        : reason === "successful restart"
-          ? { serviceRunning: true, settled: true }
-          : {},
-    );
+it.each(["recorded native handoff", "legacy activating phase"])(
+  "restores an updater-stopped Gateway after both owners die with %s",
+  async (evidence) => {
+    await fs.rmdir(state.path("handoff-control"));
+    const handoff = createManagedHandoffRecoveryFixture(state.root);
+    handoff.seed({ ageMs: 1_000 });
+    const original = createUpdateRun({
+      trigger: "control-ui",
+      target: {
+        installationMethod:
+          evidence === "recorded native handoff" ? "npm-global" : "managed-service",
+      },
+    });
+    recordUpdateRunVerification(original.runId, {
+      serviceRunning: true,
+      runningVersion: "1.0.0",
+    });
+    recordUpdateRunPhase(original.runId, "activating");
+    if (evidence === "recorded native handoff") {
+      recordUpdateRunStep(original.runId, {
+        step: "managed-service update handoff",
+        status: "completed",
+        endedAtMs: Date.now(),
+      });
+    }
+    finishUpdateRun(original.runId, { status: "failed", reason: "abandoned" });
+    handoff.facts.runIds = [original.runId];
+
     await repair();
-    expect(service.start).not.toHaveBeenCalled();
-    expect(healthApi.waitForGatewayHealthyRestart).not.toHaveBeenCalled();
-    expect(defaultRuntime.writeJson).toHaveBeenCalledWith(
-      expect.objectContaining({ restart: false }),
-    );
+
+    expect(handoff.store.read(state.root)).toEqual({ kind: "absent" });
+    expect(events).toEqual(["finalized", "start", "verified"]);
+    expect(getUpdateRun(original.runId)?.verification).toMatchObject({
+      serviceRunning: true,
+      settled: true,
+      runningVersion: "1.0.0",
+    });
+    expect(listUpdateRuns()[0]?.status).toBe("succeeded");
   },
 );
+
+it.each([
+  "operator stop",
+  "successful restart",
+  "recorded running Gateway",
+  "completed managed restart",
+  "later settled run",
+  "named data risk",
+])("does not start a Gateway after %s", async (reason) => {
+  seed(
+    reason !== "operator stop",
+    reason === "named data risk"
+      ? {
+          recovery: {
+            serviceRestartSafe: false,
+            reason: "state-migration-started",
+            dataAtRisk: "session migration is incomplete",
+          },
+        }
+      : reason === "successful restart"
+        ? { serviceRunning: true, settled: true }
+        : reason === "recorded running Gateway"
+          ? { serviceRunning: true }
+          : {},
+    reason !== "operator stop",
+    reason === "completed managed restart",
+  );
+  if (reason === "later settled run") {
+    const later = createUpdateRun({ trigger: "cli" });
+    recordUpdateRunVerification(later.runId, { serviceRunning: true, settled: true });
+    finishUpdateRun(later.runId, { status: "succeeded" });
+  }
+  await repair();
+  expect(service.start).not.toHaveBeenCalled();
+  expect(healthApi.waitForGatewayHealthyRestart).not.toHaveBeenCalled();
+  expect(defaultRuntime.writeJson).toHaveBeenCalledWith(
+    expect.objectContaining({ restart: false }),
+  );
+});
 
 it("verifies a handoff that recorded manager liveness without settled readiness", async () => {
   const original = seed(true, { serviceRunning: true });

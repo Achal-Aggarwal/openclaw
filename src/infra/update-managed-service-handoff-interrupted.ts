@@ -13,12 +13,19 @@ import { verifyPackageUpdateRecovery } from "./update-global.js";
 import type { ManagedUpdateLeaseDatabaseIdentity } from "./update-managed-service-handoff-identity.js";
 import type { UpdateRecovery } from "./update-recovery.js";
 import { withUpdateRunRead } from "./update-run-admission.js";
-import { readUpdateRunRecord } from "./update-run-read.kernel.js";
+import { findUpdateGatewayStop } from "./update-run-gateway-stop.js";
+import { readUpdateRunRecord, readUpdateRuns } from "./update-run-read.kernel.js";
 import { readCurrentGitUpdateRecovery } from "./update-runner-git-recovery.js";
 
 /** This one-shot helper already owns the parked state; no installed snapshot worker is needed. */
 export function readManagedHandoffUpdateRun(runId: string) {
   return withUpdateRunRead(({ db }) => readUpdateRunRecord(db, runId), { allowNativeRead: true });
+}
+
+export function readManagedHandoffGatewayStop() {
+  return withUpdateRunRead(({ db }) => findUpdateGatewayStop(readUpdateRuns(db, { limit: 100 })), {
+    allowNativeRead: true,
+  });
 }
 
 /** The parked helper continues its own run; publication keeps its sealed owner and checks. */

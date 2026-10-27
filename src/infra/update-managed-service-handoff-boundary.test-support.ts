@@ -255,7 +255,7 @@ export function createManagedServiceManagerBoundary({
           `${fixtureReceiptClientSource(receipts.endpoint)}\nexport { sendReceipt };\n`,
         );
         const continuation =
-          options.validationResult === "child-result"
+          options.validationResult === "child-result" || options.updaterStopped
             ? updaterScript
             : options.validationResult
               ? `process.stdout.write(JSON.stringify({root:${JSON.stringify(root)},status:${JSON.stringify(options.validationResult === "failed" ? "error" : "skipped")},mode:"npm",reason:${JSON.stringify(options.validationResult === "failed" ? "candidate-validation-failed" : "already-current")}}));`

@@ -23,6 +23,7 @@ import type { ManagedHandoffRepair } from "../../infra/update-managed-service-ha
 import { POST_CORE_UPDATE_SOURCE_CONFIG_PATH_ENV } from "../../infra/update-post-core-context.js";
 import { readUpdateResultPolicy } from "../../infra/update-result-telemetry.js";
 import { formatUpdateRunOwnership } from "../../infra/update-run-activity.js";
+import { findUpdateGatewayStop } from "../../infra/update-run-gateway-stop.js";
 import {
   acknowledgeAbandonedUpdateRun,
   getUpdateRun,
@@ -89,7 +90,7 @@ import {
   UpdateFinalizationLifecycle,
   type UpdateFinalizationPhase,
 } from "./update-finalization-lifecycle.js";
-import { findRepairGatewayStop, restoreRepairGateway } from "./update-repair-service.js";
+import { restoreRepairGateway } from "./update-repair-service.js";
 import {
   reportRetainedUpdateCustody,
   type RetainedUpdateCustodyReport,
@@ -361,7 +362,7 @@ async function updateFinalizeCommandInternal(
 ): Promise<() => Promise<void>> {
   const { root, nodeRunner, preFinalizeConfig, requestedChannel, channel } = prepared;
   const interruptedGateway = recoveryRunIds.length
-    ? findRepairGatewayStop(listUpdateRuns({ limit: 100 }))
+    ? findUpdateGatewayStop(listUpdateRuns({ limit: 100 }))
     : undefined;
   let doctorWarnings: string[] = [];
   const onDoctorWarnings = (warnings: string[]) => {

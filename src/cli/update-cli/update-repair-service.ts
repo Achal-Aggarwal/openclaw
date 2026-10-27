@@ -4,6 +4,7 @@ import { withGatewayServiceOperationLock } from "../../daemon/service-operation-
 import { resolveGatewayService } from "../../daemon/service.js";
 import { formatErrorMessage } from "../../infra/errors.js";
 import { readBuiltGatewayBuildId } from "../../infra/update-git-runtime.js";
+import { findUpdateGatewayStop } from "../../infra/update-run-gateway-stop.js";
 import {
   getUpdateRun,
   listUpdateRuns,
@@ -25,33 +26,6 @@ import {
   resolveUpdatedGatewayRestartPort,
 } from "./update-command-service-plan.js";
 import type { UpdateFinalizationPhase } from "./update-finalization-lifecycle.js";
-
-/** A settled restart retires older stop intent; failed readiness remains repairable. */
-export function findRepairGatewayStop(
-  runs: readonly UpdateRunRecord[],
-): { runId: string; started: boolean } | undefined {
-  let started = false;
-  for (const run of runs) {
-    if (run.verification.settled === true) {
-      return undefined;
-    }
-    started ||=
-      run.verification.serviceRunning === true ||
-      run.steps.some(
-        ({ step, status }) =>
-          (step === "service-start" || step === "service-running") && status === "completed",
-      );
-    if (
-      run.steps.some(
-        ({ step, status }) =>
-          step === "service-stop" && (status === "completed" || status === "in_progress"),
-      )
-    ) {
-      return { runId: run.runId, started };
-    }
-  }
-  return undefined;
-}
 
 export async function restoreRepairGateway(params: {
   originalRunId: string;
@@ -84,7 +58,7 @@ export async function restoreRepairGateway(params: {
   const service = resolveGatewayService();
   return await withGatewayServiceOperationLock(env, async (assertNative) => {
     const readPendingStop = () => {
-      const pending = findRepairGatewayStop(listUpdateRuns({ limit: 100 }, { env }));
+      const pending = findUpdateGatewayStop(listUpdateRuns({ limit: 100 }, { env }));
       if (pending?.runId !== params.originalRunId) {
         throw new Error(
           "Recovered update's Gateway stop intent changed. Run openclaw gateway status --deep.",

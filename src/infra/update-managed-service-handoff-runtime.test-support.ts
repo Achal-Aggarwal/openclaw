@@ -37,7 +37,11 @@ export async function prepareManagedServiceRuntimeFixture({
   root: string;
   options?: Pick<
     ManagedServiceBoundaryOptions,
-    "replaceLedgerWriter" | "requester" | "cancelAtActivation" | "interruptedUpdate"
+    | "replaceLedgerWriter"
+    | "requester"
+    | "cancelAtActivation"
+    | "interruptedUpdate"
+    | "updaterStopped"
   >;
 }) {
   const appendRuntime = (source: string) => fs.appendFile(recoveryModulePath, source);
@@ -65,6 +69,7 @@ export async function prepareManagedServiceRuntimeFixture({
           ledgerRuntimeImport,
           runId,
           cut: options.interruptedUpdate,
+          updaterStopped: options.updaterStopped,
         })
       : undefined;
   if (options?.requester) {

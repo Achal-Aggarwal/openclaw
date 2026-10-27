@@ -19,6 +19,7 @@ export async function prepareInterruptedManagedServiceFixture(params: {
   recoveryModulePath: string;
   ledgerRuntimeImport: string;
   runId: string;
+  updaterStopped?: "native" | "legacy";
   cut: "before" | "prepared" | "publishing" | "after" | "risk";
 }) {
   const fixture = await createPackageSwapFixture(params.root);
@@ -66,6 +67,19 @@ export async function prepareInterruptedManagedServiceFixture(params: {
     const fs = require("node:fs");
     fs.writeFileSync(${JSON.stringify(path.join(params.root, "updater-ran"))}, "ran");
     const runId = ${JSON.stringify(params.runId)};
+    ${
+      params.updaterStopped
+        ? `
+    ledger.recordUpdateRunVerification(runId, {serviceRunning:true, runningVersion:"1.0.0"});
+    ${params.updaterStopped === "native" ? 'ledger.recordUpdateRunStep(runId, {step:"managed-service update handoff", status:"completed", endedAtMs:Date.now()});' : ""}
+    ledger.recordUpdateRunPhase(runId, "activating", {target:{installationMethod:${JSON.stringify(params.updaterStopped === "native" ? "npm-global" : "managed-service")}}});
+    await new Promise((resolve, reject) => {
+      const stop = require("node:child_process").spawn("systemctl", ["--user", "stop", "openclaw-gateway.service"], {stdio:"inherit"});
+      stop.once("error", reject).once("exit", code => code === 0 ? resolve() : reject(new Error("updater stop failed")));
+    });
+    `
+        : ""
+    }
     ${
       params.cut === "risk"
         ? `ledger.recordUpdateRunVerification(runId, {recovery:{serviceRestartSafe:false, reason:"state-migration-started", dataAtRisk:"unreadable-state"}});

@@ -63,7 +63,12 @@ are reported by the scheduler without restarting the Gateway.
 **Updates always work** (`openclaw update` finishes best effort everywhere). Changes to update, Doctor, service lifecycle, migrations, plugin loading: state their update behavior. Installed updater runs first, can't be patched; candidate fixes key on markers shipped drivers set; existing operator state = input. Recoverable hiccups → recorded warnings; back up before mutating, let rollback restore it; refuse only for named data risk with previous Gateway kept running. Timeouts and budgets: generous, derived from measured state, sized for slow hardware. Proof: published-driver × candidate cell.
 
 The managed update helper owns recovery when its updater exits by signal or
-without a readable result after parking the Gateway. Its staged runtime keeps
+without a readable result after either the helper or the updater stopped the
+Gateway. Both recovery paths use the same update-history evidence of an
+unfinished stop: the helper's stop step, or a managed handoff followed by the
+updater's activation phase while the Gateway is currently stopped. The handoff
+record remains usable after target selection records a package-manager method.
+Its staged runtime keeps
 bookkeeping available while the installed package is missing. An untouched
 publication preparation is retired and the verified original Gateway restored;
 an interrupted publication completes the recorded candidate, runs post-core
@@ -315,11 +320,12 @@ When both the managed-update helper and updater are proven dead, explicit
 `openclaw update repair` can reclaim their handoff immediately; unknown custody
 keeps the 45-minute (or longer recorded) grace. The descendant census still
 refuses live or unverified work. After finalization succeeds, repair starts and
-verifies the managed Gateway only when update history records that the update
-stopped it without a subsequent successful start or verification. A Gateway
+verifies the managed Gateway only when update history records that the helper
+or updater stopped it without a subsequent start, running observation, completed
+managed restart, or settled run. Both recovery owners use this same decision. A Gateway
 stopped by its operator stays stopped. A recorded named data risk prevents
-automatic startup. The repairing CLI must contain this fix; no new stop-time
-record is required from older updaters.
+automatic startup. The repairing CLI must contain this fix; older managed-service
+activation records can establish the stop without a new stop-time receipt.
 
 A successful foreground update hands completion to the replacement Gateway.
 Automatic history reconciliation preserves that handoff while startup verifies

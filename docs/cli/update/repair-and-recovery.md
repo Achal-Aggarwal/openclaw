@@ -374,13 +374,21 @@ from the new installation before restarting through the service manager.
 ## `update repair`
 
 If the managed update helper is still alive after its updater dies, it recovers
-the parked Gateway automatically. It restores a verified original installation
+the Gateway automatically when either the helper or the updater stopped it.
+Both the helper and `update repair` use the same unfinished-stop evidence from
+update history: the helper's stop step, or a recorded managed handoff followed
+by the updater's activation phase while the Gateway is currently stopped. Target
+selection may record a package-manager method without losing the handoff evidence.
+It restores a verified original installation
 when activation never started, or completes an interrupted package publication
 and runs post-core repair before restarting the verified candidate. Its private
 staged runtime survives a missing installed package and records a terminal result
 in `openclaw update status`. This requires the helper that started the update to
 contain the recovery fix. `update repair` remains the backstop if the helper also
-dies, such as after a reboot or a process-group kill. Recorded data risk, lost
+dies, such as after a reboot or a process-group kill. After finalization, repair
+starts and verifies a Gateway that the update left stopped. A later recorded
+start, running observation, completed managed restart, or settled run retires
+that stop intent, so a subsequent operator stop stays stopped. Recorded data risk, lost
 ownership, or failed identity checks still require operator attention; inspect
 `openclaw update status` and `openclaw gateway status --deep` before restarting.
 
@@ -637,8 +645,9 @@ owner. Updating the candidate cannot change the older updater already in memory.
 When update history records that the recovered update's managed handoff stopped
 the Gateway and never successfully started or verified it again, successful
 standalone repair starts it through its service manager and verifies readiness.
-The existing `service-stop` step and verification facts provide this evidence;
-the service merely being stopped does not. A recorded named data risk prevents
+The existing helper `service-stop` step, or a recorded managed handoff followed
+by activation, provides this evidence together with current service state and
+verification facts; the service merely being stopped does not. A recorded named data risk prevents
 startup. Successful restoration reports `restart: true` and verified health in
 JSON and update history, and a startup or health failure names
 `openclaw gateway status --deep`.
@@ -723,7 +732,7 @@ The repair parent uses Doctor's maintenance lifecycle to stop the owned Gateway,
 then releases its database locks before running the Doctor children. The children
 repair state without stopping or restarting the service. The parent restores and
 verifies the same service after convergence, including when a Doctor child fails.
-An already stopped service stays stopped. Service ownership and the invoking
+An operator-stopped service stays stopped. Service ownership and the invoking
 run are revalidated before every native operation. A restoration failure names
 the cause and the commands to inspect and restart the Gateway. Normal update
 finalization continues to leave activation with its outer updater.
