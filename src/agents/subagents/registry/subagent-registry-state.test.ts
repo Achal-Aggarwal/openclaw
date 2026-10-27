@@ -1,5 +1,4 @@
 import { AsyncLocalStorage } from "node:async_hooks";
-// Subagent registry state tests cover hot read caching over the persisted SQLite snapshot.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { readSqliteUserVersion } from "../../../infra/sqlite-user-version.js";
 import { AsyncWorkScope } from "../../../shared/async-work-scope.js";
@@ -184,35 +183,31 @@ describe("subagent registry state", () => {
       }
     });
 
-    it.each(["global"])(
-      "retains all child generations when a newer %s requester vetoes old descendants",
-      async (requesterSessionKey) => {
-        await prepareEmptyReadCaches();
-        const root = "agent:main:tree";
-        const older = createRun("older", { requesterSessionKey: root });
-        const descendant = createRun("descendant", {
-          requesterSessionKey: older.childSessionKey,
-        });
-        const newer = createRun("newer", {
-          childSessionKey: older.childSessionKey,
-          requesterSessionKey,
-          createdAt: 2,
-          execution: { status: "running", startedAt: 2 },
-        });
-        publish(runMap(older, descendant, newer));
+    it("retains all child generations when a newer global requester vetoes old descendants", async () => {
+      const requesterSessionKey = "global";
+      await prepareEmptyReadCaches();
+      const root = "agent:main:tree";
+      const older = createRun("older", { requesterSessionKey: root });
+      const descendant = createRun("descendant", {
+        requesterSessionKey: older.childSessionKey,
+      });
+      const newer = createRun("newer", {
+        childSessionKey: older.childSessionKey,
+        requesterSessionKey,
+        createdAt: 2,
+        execution: { status: "running", startedAt: 2 },
+      });
+      publish(runMap(older, descendant, newer));
 
-        const selected = readTree(new Map(), [root]);
-        expect([...selected.keys()]).toEqual([older.runId, descendant.runId, newer.runId]);
-        const index = buildSubagentRunReadIndexFromRuns({ runs: selected, now: Date.now() });
-        expect(index.latestRunsByChildSessionKey.get(older.childSessionKey)?.runId).toBe(
-          newer.runId,
-        );
-        expect(index.listDescendantRunsForRequester(root)).toEqual([]);
-        expect(
-          index.listDescendantRunsForRequester(requesterSessionKey).map((run) => run.runId),
-        ).toEqual([newer.runId, descendant.runId]);
-      },
-    );
+      const selected = readTree(new Map(), [root]);
+      expect([...selected.keys()]).toEqual([older.runId, descendant.runId, newer.runId]);
+      const index = buildSubagentRunReadIndexFromRuns({ runs: selected, now: Date.now() });
+      expect(index.latestRunsByChildSessionKey.get(older.childSessionKey)?.runId).toBe(newer.runId);
+      expect(index.listDescendantRunsForRequester(root)).toEqual([]);
+      expect(
+        index.listDescendantRunsForRequester(requesterSessionKey).map((run) => run.runId),
+      ).toEqual([newer.runId, descendant.runId]);
+    });
 
     it("keeps exact child generations current through named moves, deletion, and live overlays", async () => {
       const old = createRun("old");
@@ -221,8 +216,7 @@ describe("subagent registry state", () => {
         generation: 2,
         requesterSessionKey: "agent:main:other",
       });
-      const unrelated = createRun("unrelated");
-      save(runMap(old, successor, unrelated));
+      save(runMap(old, successor, createRun("unrelated")));
       await prepare();
       const read = () => [
         ...readChildren([`  ${old.childSessionKey}  `, old.childSessionKey, " "]).keys(),
@@ -274,8 +268,7 @@ describe("subagent registry state", () => {
       const key = "agent:main:selected";
       const first = createRun("first", { childSessionKey: key });
       const second = createRun("second", { childSessionKey: key });
-      const unrelated = createRun("unrelated");
-      save(runMap(first, unrelated, second));
+      save(runMap(first, createRun("unrelated"), second));
       await restoreSubagentRunsFromDisk({ runs: new Map() });
       const read = getSubagentRunsSnapshotForChildSession;
       expect([...(await read(new Map(), key)).keys()]).toEqual([first.runId, second.runId]);

@@ -34,6 +34,25 @@ vi.mock("./subagent-registry.js", () => ({ resumeSubagentRun: vi.fn() }));
 const storedRun = (input: ReturnType<typeof records>) =>
   loadSubagentRegistryFromSqlite().get(input.subagent.runId);
 const storedWake = (input: ReturnType<typeof records>) => storedRun(input)?.requesterSettleWake;
+type Wake = Parameters<ReturnType<typeof requesterWakeDriver>["wake"]>[0];
+const completeWake = (params: Wake, finalized?: () => void) =>
+  params.completeBatch(
+    [params.settledEntry],
+    params.settledEntry.requesterSettleWake?.rearmGeneration,
+    undefined,
+    finalized,
+  );
+
+function changeRun(
+  input: ReturnType<typeof records>,
+  change: (run: ReturnType<typeof records>["subagent"]) => void,
+) {
+  return mutateSubagentRuns([input.subagent.runId], (rows) => {
+    const next = structuredClone(rows.get(input.subagent.runId)!);
+    change(next);
+    return { value: undefined, postimages: new Map([[next.runId, next]]) };
+  });
+}
 function seedDriver(
   database: Parameters<Parameters<typeof withSubagentCompletionWorkerState>[0]>[0],
   input: ReturnType<typeof records>,
@@ -59,16 +78,10 @@ describe("requester settle retry lifetime", () => {
         const input = armRequesterWake(records());
         const stateDir = path.dirname(database.path);
         const logicalStore = path.join(stateDir, "agents", "main", "sessions", "sessions.json");
-        const physicalStore = path.join(
-          stateDir,
-          "agents",
-          "main",
-          "agent",
-          "openclaw-agent.sqlite",
-        );
+        const physicalStore = path.join(stateDir, "agents/main/agent/openclaw-agent.sqlite");
         input.subagent.requesterStorePath =
           store === "unbound" ? undefined : physicalStore + (store === "other" ? ".other" : "");
-        const driver = seedDriver(database, input);
+        using driver = seedDriver(database, input);
         const admitted = await admitRequesterTurnForTest(
           input.subagent.requesterSessionKey,
           logicalStore,
@@ -83,7 +96,6 @@ describe("requester settle retry lifetime", () => {
         } finally {
           admitted.operation.complete();
           await admitted.operation.ownerSettlement;
-          driver.controller.clearRuntimeState();
         }
       });
     },
@@ -94,7 +106,7 @@ describe("requester settle retry lifetime", () => {
     async (restored) => {
       await withSubagentCompletionWorkerState(async (database) => {
         const input = armRequesterWake(records());
-        const driver = seedDriver(database, input);
+        using driver = seedDriver(database, input);
         if (restored) {
           driver.controller.markRequesterSettleWakeRestored(input.subagent);
         }
@@ -114,10 +126,7 @@ describe("requester settle retry lifetime", () => {
           await release.promise;
           assertCaller?.("agent");
           expect(params.isSourceCurrent()).toBe(true);
-          await params.completeBatch(
-            [params.settledEntry],
-            params.settledEntry.requesterSettleWake?.rearmGeneration,
-          );
+          await completeWake(params);
           return true;
         });
         const running = withGatewayToolCallerIdentity(caller, () => driver.run());
@@ -137,7 +146,6 @@ describe("requester settle retry lifetime", () => {
         } finally {
           release.resolve();
           await running;
-          driver.controller.clearRuntimeState();
         }
       });
     },
@@ -157,7 +165,7 @@ describe("requester settle retry lifetime", () => {
           requesterYieldBatch: true,
           pauseNotice: { acknowledgment: "Waiting for direction" },
         };
-        const driver = seedDriver(database, input);
+        using driver = seedDriver(database, input);
         const releaseCapacity = createDeferred();
         const capacityOccupied = createDeferred();
         let occupied = 0;
@@ -165,19 +173,14 @@ describe("requester settle retry lifetime", () => {
         const observedNotices: unknown[] = [];
         driver.wake.mockImplementation(async (params) => {
           observedNotices.push(params.settledEntry.requesterSettleWake?.pauseNotice);
-          await params.completeBatch(
-            [params.settledEntry],
-            params.settledEntry.requesterSettleWake?.rearmGeneration,
-          );
+          await completeWake(params);
           return true;
         });
         const stop = () =>
-          mutateSubagentRuns([input.subagent.runId], (rows) => {
-            const next = structuredClone(rows.get(input.subagent.runId)!);
+          changeRun(input, (next) => {
             next.pauseReason = undefined;
             next.endedReason = "subagent-killed";
             next.execution.outcome = { status: "error", error: "subagent run terminated" };
-            return { value: undefined, postimages: new Map([[next.runId, next]]) };
           });
         const drainScheduled = observeRootWork();
         try {
@@ -235,7 +238,6 @@ describe("requester settle retry lifetime", () => {
           releaseCapacity.resolve();
           await Promise.all(capacity);
           await drainScheduled();
-          driver.controller.clearRuntimeState();
         }
       });
     },
@@ -335,7 +337,7 @@ describe("requester settle retry lifetime", () => {
   it("retains a descendant event arriving before an in-flight read records its wait", async () => {
     await withSubagentCompletionWorkerState(async (database) => {
       const input = armRequesterWake(records());
-      const driver = seedDriver(database, input);
+      using driver = seedDriver(database, input);
       const reading = createDeferred();
       const finishRead = createDeferred();
       driver.wake.mockImplementation(async (params) => {
@@ -345,10 +347,7 @@ describe("requester settle retry lifetime", () => {
           params.onDescendantsPending?.();
           return false;
         }
-        await params.completeBatch(
-          [params.settledEntry],
-          params.settledEntry.requesterSettleWake?.rearmGeneration,
-        );
+        await completeWake(params);
         return true;
       });
       const first = driver.run();
@@ -366,7 +365,6 @@ describe("requester settle retry lifetime", () => {
       } finally {
         finishRead.resolve();
         await first;
-        driver.controller.clearRuntimeState();
       }
     });
   });
@@ -393,12 +391,7 @@ describe("requester settle retry lifetime", () => {
           if (wakeSignals.length === 1) {
             return false;
           }
-          await params.completeBatch(
-            [params.settledEntry],
-            params.settledEntry.requesterSettleWake?.rearmGeneration,
-            undefined,
-            finalized,
-          );
+          await completeWake(params, finalized);
           return true;
         });
         try {
@@ -410,10 +403,8 @@ describe("requester settle retry lifetime", () => {
           expect(origin.signal.aborted).toBe(true);
           const deliveryBeforeCompletion = structuredClone(currentCompletionRun(input).delivery);
           if (mode === "replacement entry") {
-            await mutateSubagentRuns([input.subagent.runId], (rows) => {
-              const next = structuredClone(rows.get(input.subagent.runId)!);
+            await changeRun(input, (next) => {
               next.generation = (next.generation ?? 0) + 1;
-              return { value: undefined, postimages: new Map([[next.runId, next]]) };
             });
           }
           const replacement = currentCompletionRun(input);
@@ -470,7 +461,7 @@ describe("requester settle retry lifetime", () => {
         armRequesterWake(input, batchRunIds);
         seedSubagentCompletionOwner({ subagent: input.subagent, databaseOptions: { database } });
       }
-      const driver = requesterWakeDriver(inputs);
+      using driver = requesterWakeDriver(inputs);
       const transport = vi.fn();
       const finalized = vi.fn();
       let settlementWrites = 0;
@@ -535,7 +526,6 @@ describe("requester settle retry lifetime", () => {
         }
       } finally {
         database.db.exec("DROP TRIGGER IF EXISTS reject_delivered_batch");
-        driver.controller.clearRuntimeState();
         worker.mockRestore();
       }
     });
@@ -544,7 +534,7 @@ describe("requester settle retry lifetime", () => {
   it("recovers a failed replay publication through the existing sweep", async () => {
     await withSubagentCompletionWorkerState(async (database) => {
       const input = armRequesterWake(records());
-      const driver = seedDriver(database, input);
+      using driver = seedDriver(database, input);
       const attempts = vi.fn();
       const batchRunIds = [input.subagent.runId];
       const pending = {
@@ -584,7 +574,6 @@ describe("requester settle retry lifetime", () => {
         expect(storedRun(input)?.delivery?.status).toBe("delivered");
       } finally {
         database.db.exec("DROP TRIGGER IF EXISTS reject_wake_publication");
-        driver.controller.clearRuntimeState();
       }
     });
   });
@@ -592,7 +581,7 @@ describe("requester settle retry lifetime", () => {
   it("does not settle a new wake generation with a retained prior outcome", async () => {
     await withSubagentCompletionWorkerState(async (database) => {
       const input = armRequesterWake(records());
-      const driver = seedDriver(database, input);
+      using driver = seedDriver(database, input);
       const transport = vi.fn();
       const finalized = vi.fn();
       driver.wake.mockImplementation(async (params) => {
@@ -624,8 +613,7 @@ describe("requester settle retry lifetime", () => {
         expect(transport.mock.calls).toEqual([[1]]);
         expect(finalized).not.toHaveBeenCalled();
         database.db.exec("DROP TRIGGER reject_old_outcome");
-        await mutateSubagentRuns([input.subagent.runId], (rows) => {
-          const next = structuredClone(rows.get(input.subagent.runId)!);
+        await changeRun(input, (next) => {
           next.requesterSettleWake = {
             status: "pending",
             attemptCount: 0,
@@ -633,7 +621,6 @@ describe("requester settle retry lifetime", () => {
             batchRunIds: [next.runId],
           };
           next.delivery = { status: "pending", generation: 2 };
-          return { value: undefined, postimages: new Map([[next.runId, next]]) };
         });
         await driver.run(currentCompletionRun(input));
         expect(transport.mock.calls).toEqual([[1], [2]]);
@@ -647,7 +634,6 @@ describe("requester settle retry lifetime", () => {
         expect(stored?.requesterSettleWake).toBeUndefined();
       } finally {
         database.db.exec("DROP TRIGGER IF EXISTS reject_old_outcome");
-        driver.controller.clearRuntimeState();
       }
     });
   });
