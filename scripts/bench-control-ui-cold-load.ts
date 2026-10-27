@@ -74,6 +74,7 @@ import {
 } from "./lib/control-ui-bench-warm-state.ts";
 import {
   compareCpuTables,
+  controlUiScriptAssetUrl,
   formatCpuTables,
   medianCpuTables,
   readCpuProfileReport,
@@ -2099,7 +2100,7 @@ try {
     await settle(runRoute);
     const coverage = values.coverage
       ? (await page.coverage.stopJSCoverage())
-          .filter((entry) => URL.parse(entry.url)?.pathname.startsWith("/assets/"))
+          .filter((entry) => controlUiScriptAssetUrl(entry.url, new URL("assets/", baseUrl)))
           .map((entry) =>
             Object.assign(
               { url: entry.url, functions: entry.functions },

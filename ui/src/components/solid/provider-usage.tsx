@@ -12,6 +12,7 @@ import { formatUiExternalText } from "../../lib/format-error.ts";
 import { formatCompactTokenCount } from "../../lib/format.ts";
 import { formatRelativeTimestamp } from "../../lib/reactive/format.ts";
 import { registerEnglishCatalog, t } from "../../lib/reactive/i18n.ts";
+import "../../styles/carapace-control-ui.css";
 import "../../styles/provider-usage.css";
 import { Icon } from "./icon.tsx";
 

@@ -46,6 +46,7 @@ it("reserves widget height and starts admitted Canvas while the card renderer is
           ...input().options,
           widgetLayout: {
             read: () => savedHeight(),
+            readRows: () => undefined,
             write: () => undefined,
             writeRows: () => {},
             invalidateRow: () => {},
