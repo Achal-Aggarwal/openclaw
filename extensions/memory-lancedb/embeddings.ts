@@ -307,7 +307,9 @@ class ProviderAdapterEmbeddings implements Embeddings {
     if (this.closed) {
       throw new Error("memory-lancedb embeddings are closed");
     }
-    const deadlineAtMs = timeoutMs ? Date.now() + resolveTimerTimeoutMs(timeoutMs, 1) : undefined;
+    const deadlineAtMs = timeoutMs
+      ? performance.now() + resolveTimerTimeoutMs(timeoutMs, 1)
+      : undefined;
     const embedding = { ...embeddingConfig };
     const fingerprint = embeddingConfigFingerprint(embedding);
     this.invalidate(fingerprint);
@@ -319,7 +321,7 @@ class ProviderAdapterEmbeddings implements Embeddings {
         return await provider.embed(text, { inputType: "query" });
       }
       // Shared initialization may outlive the caller; never dispatch an expired query.
-      const remainingTimeoutMs = deadlineAtMs - Date.now();
+      const remainingTimeoutMs = Math.floor(deadlineAtMs - performance.now());
       if (remainingTimeoutMs <= 0) {
         throw new Error("memory-lancedb embedding timed out");
       }
