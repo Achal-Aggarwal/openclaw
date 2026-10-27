@@ -514,7 +514,10 @@ export class MemoryIndexDatabase {
     command: { type: Key; input: MemoryPublicationOperations[Key]["input"] },
     assertCurrent: () => void,
   ): Promise<MemoryPublicationOperations[Key]["output"]> {
-    const maintenanceAuthority = captureMemoryMaintenanceAuthority();
+    // Exact owner-bound TEMP cleanup must outlive the request that created its stage.
+    // Database ownership and caller authority are still checked below and by the worker.
+    const maintenanceAuthority =
+      command.type === "database.stage.discard" ? undefined : captureMemoryMaintenanceAuthority();
     const assertPublicationCurrent = () => {
       maintenanceAuthority?.();
       assertCurrent();
