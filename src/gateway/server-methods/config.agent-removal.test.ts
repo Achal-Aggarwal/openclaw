@@ -16,7 +16,9 @@ vi.mock("../../config/io.js", async (importOriginal) => ({
 }));
 vi.mock("../../config/runtime-schema.js", async (importOriginal) => ({
   ...(await importOriginal<typeof RuntimeSchemaModule>()),
-  loadGatewayConfigRedactionHints: () => ({}),
+  // This branch obtains redaction hints through the complete schema boundary.
+  // Keep the real merge/persistence guard below; isolate only schema discovery.
+  loadGatewayRuntimeConfigSchema: () => ({ schema: { type: "object" }, uiHints: undefined }),
 }));
 vi.mock("../../secrets/runtime.js", async (importOriginal) => ({
   ...(await importOriginal<typeof SecretsRuntimeModule>()),
