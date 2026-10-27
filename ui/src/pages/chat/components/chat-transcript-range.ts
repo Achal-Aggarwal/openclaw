@@ -10,14 +10,10 @@ export function extractTranscriptRange(
   range: Range,
   rowIndexesByKey: ReadonlyMap<string, number>,
   retainedRowKeys: readonly (string | null)[],
-  rows: readonly TranscriptRow[],
 ): number[] {
-  // Measure one completed neighbor before it enters the viewport. Otherwise
-  // its first correction can mount another cold row in the same scroll frame.
-  const indexes = defaultRangeExtractor(range).filter(
-    (index) =>
-      !rows[index]!.retainDom || (index >= range.startIndex - 1 && index <= range.endIndex + 1),
-  );
+  // Keep both overscan neighbors in the first measurement pass. Truncating
+  // completed rows can require another cold render before the same paint.
+  const indexes = defaultRangeExtractor(range);
   for (const key of retainedRowKeys) {
     const index = key === null ? undefined : rowIndexesByKey.get(key);
     if (index !== undefined && index >= 0 && index < range.count && !indexes.includes(index)) {
@@ -39,8 +35,7 @@ export function previewTranscriptRowKeys(
     initialOffset: virtualizer.scrollOffset ?? virtualizer.options.initialOffset,
     initialRect: virtualizer.scrollRect ?? virtualizer.options.initialRect,
     onChange: () => undefined,
-    rangeExtractor: (range) =>
-      extractTranscriptRange(range, nextIndexes, [focusedRowKey], nextRows),
+    rangeExtractor: (range) => extractTranscriptRange(range, nextIndexes, [focusedRowKey]),
   });
   preview.scrollElement = virtualizer.scrollElement;
   // Isolate the fork's key-anchor transition so teardown selection cannot

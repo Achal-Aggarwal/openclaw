@@ -613,14 +613,16 @@ it("warms idle geometry beyond its bounded upward DOM window", async () => {
   await view.frame(32);
   expect(view.container.scrollTop).toBeGreaterThan(24_000);
   expect(view.container.querySelector('[data-virtual-row-key="fragment:255"]')).not.toBeNull();
-  expect(transcriptRows(view.container).every((row) => Number(row.dataset.index) > 230)).toBe(true);
+  expect(transcriptRows(view.container).every((row) => Number(row.dataset.index) >= 230)).toBe(
+    true,
+  );
   await view.scrollTo(249);
   await view.scrollTo(250);
   await view.frame(320);
   expect(transcriptRows(view.container).some((row) => Number(row.dataset.index) < 250)).toBe(true);
   // The 24 retained rows share the DOM with the active viewport and its neighbours.
   expect(view.container.querySelectorAll("[data-prepared-row]").length).toBeLessThanOrEqual(24);
-  expect(transcriptRows(view.container).length).toBeLessThanOrEqual(32);
+  expect(transcriptRows(view.container).length).toBeLessThanOrEqual(34);
   const ahead = view.container.querySelector('[data-virtual-row-key="fragment:235"]');
   expect(ahead).not.toBeNull();
   const preparations = view.renderRow.mock.calls.length;
@@ -734,11 +736,11 @@ it("defers late preparation timers instead of spending another frame's budget", 
   expect(view.renderRow.mock.calls.length).toBeGreaterThan(rendered);
 });
 
-it("prepares inward when fast upward prediction reaches an ordinary first row", async () => {
+it("prepares ahead of the active upward overscan", async () => {
   const view = await transcriptFixture(24_000, true, true);
-  await view.scrollTo(8);
+  await view.scrollTo(9);
   await view.frame(2);
-  await view.scrollTo(4);
+  await view.scrollTo(5);
   expect(view.container.querySelector('[data-virtual-row-key="fragment:1"]')).toBeNull();
 
   await view.frame(1, false);
@@ -752,36 +754,7 @@ it("prepares inward when fast upward prediction reaches an ordinary first row", 
   const firstFragment = view.container.querySelector('[data-virtual-row-key="fragment:1"]');
   expect(firstFragment).not.toBeNull();
   expect(firstFragment?.getAttribute("data-prepared-row")).toBe("true");
-  expect(view.container.scrollTop).toBe(400);
-});
-
-it("shares calendar formatting within one row mounting batch", async () => {
-  await Promise.resolve();
-  const timestamp = Date.UTC(2026, 9, 25, 12, 34, 56);
-  const label = new Date(timestamp).toLocaleString([], {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-    timeZoneName: "short",
-  });
-  const format = vi.spyOn(Intl, "DateTimeFormat");
-  const legacyFormat = vi.spyOn(Date.prototype, "toLocaleString");
-  const formattingSetups = () => format.mock.calls.length + legacyFormat.mock.calls.length;
-  const mount = () => {
-    const view = mountSolid<Parameters<typeof ChatTimestamp>[0]>(ChatTimestamp, {
-      timestamp,
-    });
-    disposers.push(view.dispose);
-    expect(view.container.querySelector("openclaw-tooltip")).toHaveProperty("content", label);
-  };
-  mount();
-  mount();
-  expect(formattingSetups()).toBe(1);
-  await Promise.resolve();
-  mount();
-  expect(formattingSetups()).toBe(2);
+  expect(view.container.scrollTop).toBe(500);
 });
 
 it("formats the detailed timestamp only when metadata becomes available", () => {

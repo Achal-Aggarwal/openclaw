@@ -179,8 +179,7 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
     this.initialRange = new TranscriptInitialRange(
       initialOffset,
       () => this.virtualizer,
-      (...range) =>
-        this.prependAnchor.extractRange(...range, this.focusedRowKey, this.acceptedRows ?? []),
+      (...range) => this.prependAnchor.extractRange(...range, this.focusedRowKey),
       invalidate,
       this.layout.rowMinimum,
       () => this.connected && this.renderer.isPresented(),
