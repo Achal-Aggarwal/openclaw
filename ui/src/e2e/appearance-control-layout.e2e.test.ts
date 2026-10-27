@@ -60,12 +60,8 @@ suite.define(() => {
         await expectStyles(customSwatch, { "box-shadow": expect.not.stringMatching(/^none$/) });
 
         const grid = page.locator("#settings-appearance-theme .settings-theme-grid");
-        for (const [width, expectedColumns] of [
-          [560, 3],
-          [320, 1],
-        ] as const) {
-          await page.setViewportSize({ height: 1000, width });
-          const layout = await grid.evaluate((element) => {
+        const layout = () =>
+          grid.evaluate((element) => {
             const cards = Array.from(element.children, (card) =>
               (card as HTMLElement).getBoundingClientRect(),
             );
@@ -74,8 +70,14 @@ suite.define(() => {
               minWidth: Math.min(...cards.map((card) => card.width)),
             };
           });
-          expect(layout.columns).toBe(expectedColumns);
-          expect(layout.minWidth).toBeGreaterThanOrEqual(150);
+        for (const [width, expectedColumns] of [
+          [560, 3],
+          [320, 1],
+        ] as const) {
+          await page.setViewportSize({ height: 1000, width });
+          // The shell commits its responsive navigation after the viewport event.
+          await expect.poll(async () => (await layout()).columns).toBe(expectedColumns);
+          expect((await layout()).minWidth).toBeGreaterThanOrEqual(150);
         }
 
         const colorMode = page.locator(".settings-row").filter({

@@ -247,6 +247,33 @@ describe("chat attachment read failures", () => {
     });
   }
 
+  it("keeps admitted file order when preview props lag behind completed reads", async () => {
+    StubFileReader.heldNames = new Set(["first.png", "second.png"]);
+    const h = readFixture([], () => redraw());
+    const view = () => ({ ...h.props, attachments: [], readRevision: h.reads.revision });
+    const preview = mountSolid(AttachmentPreview, view());
+    const redraw = () => preview.update(view());
+    onTestFinished(preview.dispose);
+    h.append([imageFile("first.png", "a"), imageFile("second.png", "b")]);
+    await vi.waitFor(() => expect(StubFileReader.heldReads).toHaveLength(2));
+
+    expectDefined(StubFileReader.heldReads.pop(), "second file completion")();
+    await waitForSolid(() => {
+      expect(preview.container.querySelectorAll(".chat-attachment-thumb")).toHaveLength(2);
+    });
+    expectDefined(StubFileReader.heldReads.pop(), "first file completion")();
+    await h.done.promise;
+
+    expect(h.attachments.map(({ fileName }) => fileName)).toEqual(["first.png", "second.png"]);
+    await waitForSolid(() => {
+      expect(
+        [...preview.container.querySelectorAll(".chat-attachment-remove")].map((button) =>
+          button.getAttribute("aria-label"),
+        ),
+      ).toEqual(["Remove first.png", "Remove second.png"]);
+    });
+  });
+
   it.each(["remove", "reset"] as const)(
     "cancels an admitted attachment before its read starts on %s",
     async (action) => {
