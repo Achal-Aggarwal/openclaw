@@ -321,9 +321,13 @@ try {
   assert.ok(!interrupted, "Diagnostic interrupted");
   const state = qa.createQaBusState();
   const transport = qa.createQaChannelTransport(state);
-  bus = await qa.startQaBusServer({ state });
+  const startedBus: NonNullable<typeof bus> = await qa.startQaBusServer({ state });
+  bus = startedBus;
   const model = "openai/doctor-benchmark";
-  mock = await qa.startQaMockOpenAiServer({ modelRefs: [model] });
+  const startedMock: NonNullable<typeof mock> = await qa.startQaMockOpenAiServer({
+    modelRefs: [model],
+  });
+  mock = startedMock;
   assert.ok(!interrupted, "Diagnostic interrupted");
   const reservation = await reserveQaGatewayPort(net.createServer());
   const port = reservation.port;
