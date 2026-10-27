@@ -131,6 +131,7 @@ it.each([false, true])(
     const indicatorChunk = isolated.chunks.find((chunk) => indicator in chunk.modules);
     expect(indicator in shared!.modules).toBe(false);
     const chatChunk = isolated.chunks.find((chunk) => chat in chunk.modules);
+    expect(indicatorChunk!.fileName).toBe(chatChunk!.fileName);
     const interactionChunk = isolated.chunks.find((chunk) => composerInteraction in chunk.modules);
     expect(payload in interactionChunk!.modules).toBe(true);
     for (const route of ["chat", "new"] as const) {
@@ -139,16 +140,11 @@ it.each([false, true])(
       expect(after).toEqual(
         expect.arrayContaining(
           route === "chat"
-            ? [
-                shared!.fileName,
-                chatChunk!.fileName,
-                interactionChunk!.fileName,
-                indicatorChunk!.fileName,
-              ]
+            ? [shared!.fileName, chatChunk!.fileName, interactionChunk!.fileName]
             : [shared!.fileName, interactionChunk!.fileName],
         ),
       );
-      expect(after).toHaveLength(route === "chat" ? 4 : 2);
+      expect(after).toHaveLength(route === "chat" ? 3 : 2);
       if (route === "new") {
         expect(after).not.toContain(indicatorChunk!.fileName);
       }
@@ -305,6 +301,8 @@ it("prioritizes route and common interaction hints, retaining saved Context byte
       globalThis.preloadBuildFixture.events.push(${JSON.stringify(name)});
       export const value = dependency;`;
   }
+  // Critical transcript rows now load through Chat's static graph.
+  sources[entries.chat] = `import "fixture:runFrame"; ${sources[entries.chat]}`;
   sources[entries.signer] = `globalThis.preloadBuildFixture.events.push("signer");
     export const value = "signer";
     export const fallback = () => import("fixture:signing-fallback");`;

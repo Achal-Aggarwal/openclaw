@@ -1775,8 +1775,10 @@ html.openclaw-native-desktop .shell:not(.shell--mobile-nav) {
   --sidebar-session-state-reserve: 24px;
 }
 
-/* No section header separates the rows from the owner picker. */
-.sidebar-recent-sessions > .sidebar-recent-sessions__group--inline-owner:first-child {
+/* Only the first section tucks its headless rows under the owner picker. */
+.sidebar-sessions
+  > .sidebar-recent-sessions:first-child
+  > .sidebar-recent-sessions__group--inline-owner:first-child {
   margin-top: calc(4px - var(--sidebar-group-gap));
 }
 
