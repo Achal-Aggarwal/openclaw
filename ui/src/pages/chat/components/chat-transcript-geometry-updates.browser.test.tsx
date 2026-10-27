@@ -345,7 +345,7 @@ it.each([
       const active = [
         ...document.querySelectorAll<HTMLElement>(".chat-virtual-row:not([data-prepared-row])"),
       ].map((row) => Number(row.dataset.index));
-      if (active.length && active.join() !== windows.at(-1)?.join()) {
+      if (active.length && active.join(",") !== windows.at(-1)?.join(",")) {
         windows.push(active);
       }
     });
