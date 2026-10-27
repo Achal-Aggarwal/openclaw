@@ -2,6 +2,7 @@ import type { JSX } from "@solidjs/web";
 import {
   defaultRangeExtractor,
   elementScroll,
+  measureElement,
   observeElementOffset,
   observeElementRect,
   Virtualizer,
@@ -16,6 +17,7 @@ export type PickerWindowRow<Option> = {
   index: number;
   count: number;
   start: number;
+  size: number;
 };
 
 /** Mounted only for an open, caller-sized large picker. The menu owns selection;
@@ -45,6 +47,7 @@ export default function PickerWindow<Option extends PickerOption>(props: {
         index: item.index,
         count: current.length,
         start: item.start,
+        size: item.size,
       })),
       height: virtualizer.getTotalSize(),
     });
@@ -57,6 +60,17 @@ export default function PickerWindow<Option extends PickerOption>(props: {
     scrollToFn: elementScroll,
     overscan: 5,
     useAnimationFrameWithResizeObserver: true,
+    measureElement: (element, entry, instance) => {
+      if (entry) {
+        return measureElement(element, entry, instance);
+      }
+      // Keep the estimate until the batched observer supplies actual heights.
+      const index = instance.indexFromElement(element);
+      return (
+        instance.itemSizeCache.get(instance.options.getItemKey(index)) ??
+        instance.options.estimateSize(index)
+      );
+    },
     onChange: publish,
   });
   onSettled(() => {
@@ -93,12 +107,18 @@ export default function PickerWindow<Option extends PickerOption>(props: {
   const height = () =>
     window().source === props.options ? window().height : props.options.length * 32;
   const rows = () => (window().source === props.options ? window().rows : []);
-  const activeMounted = createMemo(() => rows().some((row) => row.option.value === props.active));
+  const activeRow = createMemo(() => rows().find((row) => row.option.value === props.active), {
+    equals: (before, after) =>
+      before?.option.value === after?.option.value &&
+      before?.start === after?.start &&
+      before?.size === after?.size,
+  });
   createScrollPosition(
     () => ({
-      reveal: activeMounted()
+      reveal: activeRow()
         ? {
-            identity: [props.options, props.active],
+            // Observer measurements can move a row after its first reveal.
+            identity: [props.options, props.active, activeRow()?.start, activeRow()?.size],
             target: () => (props.pointerHighlight() ? undefined : props.target()),
           }
         : undefined,

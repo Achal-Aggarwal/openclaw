@@ -236,6 +236,31 @@ describe("Picker", () => {
     },
   );
 
+  it("keeps an initially selected wrapping row visible after window measurements settle", async () => {
+    const choices = Array.from({ length: 200 }, (_, index) => ({
+      value: `model-${index}`,
+      label: `Model ${index}`,
+      description: "A long model description that wraps across several lines in this narrow picker",
+    }));
+    const p = await mount({ options: choices, value: "model-8", windowed: () => "" });
+    p.container.style.width = "280px";
+    await p.open();
+    await waitForSolid(() =>
+      expect(p.picker.querySelector(".picker-select__window")).not.toBeNull(),
+    );
+    const viewport = p.picker.querySelector<HTMLElement>(".picker-select__options")!;
+    await waitForSolid(() => {
+      const row = p.picker.querySelector<HTMLElement>('[data-value="model-8"]')!;
+      const bounds = row.getBoundingClientRect();
+      const clip = viewport.getBoundingClientRect();
+      expect(bounds.height).toBeGreaterThan(32);
+      expect(bounds.top - clip.top + viewport.scrollTop).toBeGreaterThan(8 * 32);
+      expect(bounds.top).toBeGreaterThanOrEqual(clip.top - 1);
+      expect(bounds.bottom).toBeLessThanOrEqual(clip.bottom + 1);
+    });
+    expect(p.params.onChange).not.toHaveBeenCalled();
+  });
+
   it("windows a caller-sized large catalog without truncating keyboard selection", async () => {
     const choices = Array.from({ length: 1000 }, (_, index) => ({
       value: `model-${index}`,
@@ -265,8 +290,8 @@ describe("Picker", () => {
         expect(row.getAttribute("aria-setsize")).toBe(String(count));
         const clip = viewport.getBoundingClientRect();
         const bounds = row.getBoundingClientRect();
-        expect(bounds.top).toBeGreaterThanOrEqual(clip.top - 1);
-        expect(bounds.bottom).toBeLessThanOrEqual(clip.bottom + 1);
+        expect(bounds.top, value).toBeGreaterThanOrEqual(clip.top - 1);
+        expect(bounds.bottom, value).toBeLessThanOrEqual(clip.bottom + 1);
         expect(p.rows().length).toBeLessThan(50);
       });
     };
