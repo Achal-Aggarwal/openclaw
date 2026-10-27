@@ -198,6 +198,7 @@ const catalog = {
       askLabel: "Ask in side chat",
       askPlaceholder: "Ask a question",
       askImageQuestion: "What does this image show?",
+      askSelectionQuestion: "Respond to the selected text and comments.",
       selectionTooLong: registerChatSessionEnglish.catalog.chat.rail.selectionTooLong,
       askSubmit: "Ask",
       askBusy: "Side chat is already answering a question.",

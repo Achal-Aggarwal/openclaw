@@ -46,6 +46,7 @@ export function AttachmentPreview(
 ) {
   const entries = createMemo(() => {
     void props.readRevision;
+    // Reconciliation mutates read membership; only the live composer can retire a ready slot.
     const attachments = currentAttachments(props);
     const reads =
       props.attachmentReads?.project(attachments) ??
