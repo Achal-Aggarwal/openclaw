@@ -203,14 +203,12 @@ export function AppSidebarOnline(props: { host: AppSidebarRenderHost }) {
                     <ViewerAvatar user={user()} markAsViewer={false} variant="footer" />
                   </span>
                   <span class="sidebar-online__person-name">
+                    <span class="sidebar-online__person-label">{presenceViewerLabel(user())}</span>
                     <Show when={user().isGuest}>
-                      <Icon
-                        name="userPlus"
-                        class="sidebar-online__guest"
-                        aria-label={t("presence.guest")}
-                      />
+                      <span class="sidebar-online__guest" aria-label={t("presence.guest")}>
+                        {t("presence.guest")}
+                      </span>
                     </Show>
-                    {presenceViewerLabel(user())}
                   </span>
                   {workload() && (workload()!.open > 0 || workload()!.running > 0) ? (
                     <span class="sidebar-online__counts" aria-hidden="true">
