@@ -102,8 +102,8 @@ export function CanvasWidgetFrame(props: {
                 tabindex={props.input ? -1 : undefined}
                 referrerpolicy="origin"
                 style={{
-                  height: props.height ? `${props.height}px` : undefined,
-                  "min-height": props.height ? `${props.height}px` : undefined,
+                  height: props.input || props.height ? `${props.height}px` : undefined,
+                  "min-height": props.input || props.height ? `${props.height}px` : undefined,
                   "pointer-events": props.input ? "none" : undefined,
                   transition: "height var(--widget-height-duration, 0ms) var(--ease-out)",
                 }}

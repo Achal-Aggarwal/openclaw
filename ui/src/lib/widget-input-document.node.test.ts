@@ -72,9 +72,22 @@ it("grows inert HTML/SVG under the Control UI HTTP policy and blocks generated r
           parseWidgetInputDocument(html),
         );
     };
-    const first = '<section id="stable"><h2>Morning survey</h2><p>Café 雪 🦀';
+    await page.evaluate(() => {
+      window.addEventListener("message", (event) => {
+        if (event.data?.type === "openclaw:widget-size") {
+          Reflect.set(window, "inputHeight", event.data.height);
+        }
+      });
+    });
+    await update('<svg viewBox="0 0 100 30"><circle cx="15" cy="15" r="10"/></svg>');
+    await expect
+      .poll(() => page.evaluate(() => Reflect.get(window, "inputHeight")))
+      .toBeGreaterThan(0);
+    const first =
+      '<section id="stable"><h2>Morning survey</h2><p hidden>Unavailable fallback</p><p>Café 雪 🦀';
     await update(first);
     await frame.getByText("Café 雪 🦀", { exact: true }).waitFor();
+    expect(await frame.getByText("Unavailable fallback", { exact: true }).isVisible()).toBe(false);
     const original = await frame.locator("#stable").elementHandle();
     await update(
       first +

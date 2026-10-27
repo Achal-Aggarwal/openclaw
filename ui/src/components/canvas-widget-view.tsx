@@ -86,7 +86,7 @@ export const CanvasWidgetView = defineSolidBridge<CanvasWidgetViewProps, CanvasW
       ),
     );
     const height = () =>
-      read().contentHeight ?? props.preferredHeight ?? (props.inputPreview ? 48 : 420);
+      read().contentHeight ?? props.preferredHeight ?? (props.inputPreview ? 0 : 420);
     return (
       <CanvasWidgetFrame
         state={read()}

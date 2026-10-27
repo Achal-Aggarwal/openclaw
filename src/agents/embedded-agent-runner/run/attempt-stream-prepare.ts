@@ -32,6 +32,7 @@ import {
   createAgentRunSupersededAbortError,
   isAgentRunRestartAbortReason,
 } from "../../run-termination.js";
+import type { ToolSearchCatalogRef } from "../../tool-search-types.js";
 import type { ToolSearchCatalogToolExecutor } from "../../tool-search.js";
 import { isRunnerAbortError } from "../abort.js";
 import { log } from "../logger.js";
@@ -86,6 +87,7 @@ type AttemptStreamQueueHandle = EmbeddedAgentQueueHandle & {
 
 type PrepareEmbeddedAttemptStreamInput = {
   attempt: EmbeddedRunAttemptInternalParams;
+  toolSearchCatalogRef?: ToolSearchCatalogRef;
   agentSession: Pick<
     Awaited<ReturnType<typeof prepareEmbeddedAttemptAgentSession>>,
     | "activeSession"
@@ -353,6 +355,7 @@ function prepareStream(
     ...attempt,
     ...agentSession,
     session: activeSession,
+    toolSearchCatalogRef: input.toolSearchCatalogRef,
     onModelUsage: input.onModelUsage,
     messageChannel: input.runtimeChannel,
     hookRunner: getGlobalHookRunner() ?? undefined,

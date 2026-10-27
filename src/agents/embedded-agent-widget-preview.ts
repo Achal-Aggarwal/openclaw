@@ -7,6 +7,9 @@ import {
 } from "../shared/widget-input-preview.js";
 import { runBestEffortCallback } from "./embedded-agent-subscribe.callback.js";
 import type { EmbeddedAgentSubscribeContext } from "./embedded-agent-subscribe.handlers.types.js";
+import { findToolSearchCatalogEntry } from "./tool-search-catalog.js";
+import { readToolSearchCallArgs } from "./tool-search-request.js";
+import type { ToolSearchCatalogRef } from "./tool-search-types.js";
 
 const MIN_PREVIEW_INTERVAL_MS = 100;
 const MIN_PREVIEW_ADVANCE_CHARS = 512;
@@ -32,7 +35,10 @@ export function createWidgetInputPreviewCapture() {
   const calls = new Map<string, PreviewState>();
   return {
     clear: () => calls.clear(),
-    capture(value: unknown): WidgetInputPreviewEvent | undefined {
+    capture(
+      value: unknown,
+      catalogRef?: ToolSearchCatalogRef,
+    ): WidgetInputPreviewEvent | undefined {
       const event = asOptionalRecord(value);
       if (event?.type !== "toolcall_delta" && event?.type !== "toolcall_end") {
         return undefined;
@@ -43,9 +49,34 @@ export function createWidgetInputPreviewCapture() {
           ? asOptionalRecord(partial.content[event.contentIndex])
           : undefined;
       const tool = event.type === "toolcall_end" ? asOptionalRecord(event.toolCall) : block;
-      if (tool?.type !== "toolCall" || tool.name !== "show_widget" || typeof tool.id !== "string") {
+      if (
+        tool?.type !== "toolCall" ||
+        (tool.name !== "show_widget" && tool.name !== "dispatch_action") ||
+        typeof tool.id !== "string"
+      ) {
         return undefined;
       }
+      const widgetArguments = (args: Record<string, unknown> | undefined) => {
+        if (tool.name === "show_widget") {
+          return args;
+        }
+        const catalog = catalogRef?.current;
+        if (!catalog || !args) {
+          return undefined;
+        }
+        try {
+          const { id, input } = readToolSearchCallArgs(args, catalog);
+          const entry = findToolSearchCatalogEntry(catalog, id);
+          return entry.source === "openclaw" &&
+            entry.name === "show_widget" &&
+            entry.sourceName === "core"
+            ? asOptionalRecord(input)
+            : undefined;
+        } catch {
+          // Incomplete streamed ids are not catalog lookups yet.
+          return undefined;
+        }
+      };
       const toolCallId = tool.id;
       const previous = calls.get(toolCallId);
       const retract = (): WidgetInputPreviewEvent | undefined => {
@@ -57,8 +88,8 @@ export function createWidgetInputPreviewCapture() {
       };
       if (event.type === "toolcall_end") {
         calls.delete(toolCallId);
-        const args = asOptionalRecord(tool.arguments);
-        return args && !inlineHtmlArguments(args) ? retract() : undefined;
+        const args = widgetArguments(asOptionalRecord(tool.arguments));
+        return !args || !inlineHtmlArguments(args) ? retract() : undefined;
       }
       const json = typeof block?.partialJson === "string" ? block.partialJson : "";
       if (!json || json.length > WIDGET_INPUT_PREVIEW_MAX_CHARS) {
@@ -82,8 +113,8 @@ export function createWidgetInputPreviewCapture() {
       state.checkedAt = now;
       state.checkedLength = json.length;
       state.snapshots += 1;
-      const args = parseStreamingJson(json, { preserveValidControlEscapes: true });
-      if (!inlineHtmlArguments(args)) {
+      const args = widgetArguments(parseStreamingJson(json, { preserveValidControlEscapes: true }));
+      if (!args || !inlineHtmlArguments(args)) {
         return retract();
       }
       if (typeof args.widget_code !== "string" || !args.widget_code) {

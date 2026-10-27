@@ -157,13 +157,12 @@ function readChatMessagePreview(toolMessage: Record<string, unknown>) {
         parentToolCallId: card.parentToolCallId,
         preview:
           toolMessage["__openclawToolStreamLive"] === true &&
-          card.name === "show_widget" &&
           card.preview.render === "url" &&
           card.runId &&
           card.callId
             ? {
                 ...card.preview,
-                inputViewId: `input:${buildToolStreamIdentity(card.runId, card.callId)}`,
+                inputViewId: `input:${buildToolStreamIdentity(card.runId, card.parentToolCallId ?? card.callId)}`,
               }
             : card.preview,
         text: card.outputText ?? null,
@@ -273,12 +272,12 @@ export function findNearestAssistantMessage(
     if (item?.kind !== "message") {
       continue;
     }
-    const message = asRecord(item.message);
-    if (typeof message?.role !== "string" || message.role.toLowerCase() !== "assistant") {
+    const message = safeNormalizeMessage(item.message);
+    if (!message || normalizeRoleForGrouping(message.role) !== "assistant") {
       continue;
     }
     last = { index, item };
-    const timestamp = safeNormalizeMessage(item.message)?.timestamp;
+    const timestamp = message.timestamp;
     if (toolTimestamp == null || timestamp == null) {
       continue;
     }

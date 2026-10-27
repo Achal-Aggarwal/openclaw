@@ -412,7 +412,7 @@ function WidgetContent(props: {
     (props.preview.render === "url" && props.preview.inputViewId
       ? props.options?.widgetLayout?.read(`canvas:${props.preview.inputViewId}`)
       : undefined) ??
-    (input() ? 48 : (props.preview.preferredHeight ?? (props.preview.mcpApp ? 600 : 420)));
+    (input() ? 0 : (props.preview.preferredHeight ?? (props.preview.mcpApp ? 600 : 420)));
   return (
     <Show
       when={props.options?.mediaReadAllowed !== false}
@@ -620,7 +620,9 @@ function CanvasPreview(props: {
       class="chat-tool-card__preview"
       style={{
         "--widget-height-duration":
-          props.preview.render === "url" && props.preview.inputViewId
+          props.preview.render === "url" &&
+          props.preview.inputViewId &&
+          props.options?.widgetLayout?.read(`canvas:${props.preview.inputViewId}`)
             ? "var(--duration-normal)"
             : undefined,
       }}

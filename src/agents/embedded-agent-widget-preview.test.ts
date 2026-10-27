@@ -1,3 +1,4 @@
+import { Type } from "typebox";
 import { afterEach, expect, it, vi } from "vitest";
 import type { ToolCall } from "../llm/types.js";
 import { createEmbeddedAgentSessionEventHandler } from "./embedded-agent-subscribe.handlers.js";
@@ -21,64 +22,94 @@ function subscriber(options: { caps?: string[]; core?: string[] } = {}) {
   };
 }
 
-it("publishes decoded widget input before completion and owns strings before queued delivery", async () => {
-  vi.useFakeTimers({ toFake: ["Date"] });
-  vi.setSystemTime(1000);
-  const { ctx, receive, events } = subscriber();
-  let release!: () => void;
-  ctx.state.pendingEventChain = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  const html = `<section><h2>Café 雪 🦀</h2><p>${"Survey ".repeat(100)}</p><p>Drive C:\nNext line D:\tTabbed</p><p>quote: " and slash: \\</p></section>`;
-  const json = JSON.stringify({ title: "Survey", widget_code: html })
-    .replace("雪", "\\u96ea")
-    .replace("🦀", "\\ud83e\\udd80");
-  const tool: ToolCall = {
-    type: "toolCall",
-    id: "widget-1",
-    name: "show_widget",
-    arguments: {},
-    partialJson: "",
-  };
-  const message = makeAgentAssistantMessage({ content: [tool] });
-  for (let end = 13; end < json.length; end += 13) {
-    tool.partialJson = json.slice(0, end);
+it.each(["show_widget", "dispatch_action"])(
+  "publishes decoded %s widget input before completion and owns strings before queued delivery",
+  async (name) => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(1000);
+    const { ctx, receive, events } = subscriber();
+    ctx.params.toolSearchCatalogRef = {
+      current: {
+        counterScope: "widget-preview",
+        searchCount: 0,
+        describeCount: 0,
+        callCount: 0,
+        entries: [
+          {
+            id: "openclaw:core:show_widget",
+            source: "openclaw",
+            sourceName: "core",
+            name: "show_widget",
+            description: "Render widget",
+            tool: {
+              name: "show_widget",
+              label: "Widget",
+              description: "Render widget",
+              parameters: Type.Object({}),
+              execute: async () => ({ content: [], details: undefined }),
+            },
+          },
+        ],
+      },
+    };
+    let release!: () => void;
+    ctx.state.pendingEventChain = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const html = `<section><h2>Café 雪 🦀</h2><p>${"Survey ".repeat(100)}</p><p>Drive C:\nNext line D:\tTabbed</p><p>quote: " and slash: \\</p></section>`;
+    const input = { title: "Survey", widget_code: html };
+    const json = JSON.stringify(
+      name === "dispatch_action" ? { id: "openclaw:core:show_widget", args: input } : input,
+    )
+      .replace("雪", "\\u96ea")
+      .replace("🦀", "\\ud83e\\udd80");
+    const tool: ToolCall = {
+      type: "toolCall",
+      id: "widget-1",
+      name,
+      arguments: {},
+      partialJson: "",
+    };
+    const message = makeAgentAssistantMessage({ content: [tool] });
+    for (let end = 13; end < json.length; end += 13) {
+      tool.partialJson = json.slice(0, end);
+      void receive({
+        type: "message_update",
+        message,
+        assistantMessageEvent: {
+          type: "toolcall_delta",
+          contentIndex: 0,
+          delta: json.slice(end - 13, end),
+          partial: message,
+        },
+      });
+      vi.setSystemTime(Date.now() + 100);
+    }
+    const completeTool: ToolCall = { ...tool, id: "complete-widget", partialJson: json };
+    const completeMessage = makeAgentAssistantMessage({ content: [completeTool] });
     void receive({
       type: "message_update",
-      message,
+      message: completeMessage,
       assistantMessageEvent: {
         type: "toolcall_delta",
         contentIndex: 0,
-        delta: json.slice(end - 13, end),
-        partial: message,
+        delta: json,
+        partial: completeMessage,
       },
     });
-    vi.setSystemTime(Date.now() + 100);
-  }
-  const completeTool: ToolCall = { ...tool, id: "complete-widget", partialJson: json };
-  const completeMessage = makeAgentAssistantMessage({ content: [completeTool] });
-  void receive({
-    type: "message_update",
-    message: completeMessage,
-    assistantMessageEvent: {
-      type: "toolcall_delta",
-      contentIndex: 0,
-      delta: json,
-      partial: completeMessage,
-    },
-  });
-  delete tool.partialJson;
-  tool.arguments = { title: "Unrelated mutated title", widget_code: "not the captured input" };
-  release();
-  await ctx.state.pendingEventChain;
-  const snapshots = events().map((event) => event.data.preview);
-  expect(snapshots.length).toBeGreaterThan(0);
-  expect(
-    snapshots.every((preview) => preview.title === "Survey" && html.startsWith(preview.html)),
-  ).toBe(true);
-  expect(snapshots[0].html).toContain("Café 雪 🦀");
-  expect(snapshots.length).toBeLessThanOrEqual(Math.ceil(json.length / 512) + 1);
-});
+    delete tool.partialJson;
+    tool.arguments = { title: "Unrelated mutated title", widget_code: "not the captured input" };
+    release();
+    await ctx.state.pendingEventChain;
+    const snapshots = events().map((event) => event.data.preview);
+    expect(snapshots.length).toBeGreaterThan(0);
+    expect(
+      snapshots.every((preview) => preview.title === "Survey" && html.startsWith(preview.html)),
+    ).toBe(true);
+    expect(snapshots[0].html).toContain("Café 雪 🦀");
+    expect(snapshots.length).toBeLessThanOrEqual(Math.ceil(json.length / 512) + 1);
+  },
+);
 
 it("only streams the admitted direct inline tool, retracts a late destination, and leaves final-only calls alone", async () => {
   vi.useFakeTimers({ toFake: ["Date"] });

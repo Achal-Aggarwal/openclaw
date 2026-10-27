@@ -75,7 +75,7 @@ export function createEmbeddedAgentSessionEventHandler(ctx: EmbeddedAgentSubscri
       ctx.params.clientCaps?.includes("inline-widgets") &&
       ctx.params.coreBuiltinToolNames?.has("show_widget") &&
       !ctx.params.suppressLiveStreamOutput
-        ? widgetInputs.capture(evt.assistantMessageEvent)
+        ? widgetInputs.capture(evt.assistantMessageEvent, ctx.params.toolSearchCatalogRef)
         : undefined;
     if (evt.type === "agent_end" || evt.type === "compaction_start") {
       widgetInputs.clear();

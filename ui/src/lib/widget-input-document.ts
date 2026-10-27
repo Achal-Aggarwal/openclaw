@@ -25,7 +25,7 @@ const SVG_TAGS = new Set(
   ),
 );
 const ATTRIBUTES = new Set(
-  "id class style title role width height colspan rowspan scope open disabled value min max low high optimum type placeholder selected checked x y x1 y1 x2 y2 cx cy r rx ry viewBox d points fill fill-rule fill-opacity stroke stroke-width stroke-linecap stroke-linejoin stroke-dasharray stroke-dashoffset stroke-opacity opacity transform preserveAspectRatio offset stop-color stop-opacity gradientUnits gradientTransform spreadMethod clip-path clipPathUnits mask maskUnits patternUnits patternContentUnits patternTransform markerWidth markerHeight refX refY orient marker-start marker-mid marker-end text-anchor dominant-baseline font-size font-family font-weight letter-spacing dx dy startOffset filter filterUnits in in2 result stdDeviation mode values operator flood-color flood-opacity".split(
+  "id class style title role hidden width height colspan rowspan scope open disabled value min max low high optimum type placeholder selected checked x y x1 y1 x2 y2 cx cy r rx ry viewBox d points fill fill-rule fill-opacity stroke stroke-width stroke-linecap stroke-linejoin stroke-dasharray stroke-dashoffset stroke-opacity opacity transform preserveAspectRatio offset stop-color stop-opacity gradientUnits gradientTransform spreadMethod clip-path clipPathUnits mask maskUnits patternUnits patternContentUnits patternTransform markerWidth markerHeight refX refY orient marker-start marker-mid marker-end text-anchor dominant-baseline font-size font-family font-weight letter-spacing dx dy startOffset filter filterUnits in in2 result stdDeviation mode values operator flood-color flood-opacity".split(
     " ",
   ),
 );

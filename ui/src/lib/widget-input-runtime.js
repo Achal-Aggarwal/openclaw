@@ -66,7 +66,25 @@
     scheduled = true;
     requestAnimationFrame(() => {
       scheduled = false;
-      host.postMessage({ type: "openclaw:widget-size", height: document.body.scrollHeight }, "*");
+      // Empty script-generated containers and styles alone are not a preview.
+      const hasContent =
+        // oxlint-disable-next-line unicorn/prefer-dom-node-text-content -- Sizing needs rendered text, excluding styles and hidden content.
+        root.innerText.trim() ||
+        Array.from(
+          root.querySelectorAll(
+            "svg path, svg rect, svg circle, svg ellipse, svg line, svg polyline, svg polygon, svg text",
+          ),
+        ).some((element) => {
+          const rect = element.getBoundingClientRect();
+          return rect.width > 0 || rect.height > 0;
+        });
+      host.postMessage(
+        {
+          type: "openclaw:widget-size",
+          height: hasContent ? document.body.scrollHeight : 0,
+        },
+        "*",
+      );
     });
   };
   new ResizeObserver(reportSize).observe(document.body);
