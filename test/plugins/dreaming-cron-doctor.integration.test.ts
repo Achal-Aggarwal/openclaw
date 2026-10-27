@@ -703,7 +703,8 @@ describe("host Cron Doctor repair", () => {
             expect(managed).toHaveLength(enabled ? 1 : 0);
             if (enabled) {
               expect(managed[0]).toMatchObject({
-                enabled: true,
+                // Doctor and runtime reconciliation preserve an operator-disabled survivor.
+                enabled: !activeDreaming,
                 sessionTarget: "isolated",
                 schedule: { kind: "cron", expr: "15 4 * * *", tz: "UTC" },
                 payload: { kind: "agentTurn", lightContext: true },
@@ -823,7 +824,7 @@ describe("host Cron Doctor repair", () => {
           (job) => job.declarationKey === declarationKey,
         );
         expect(managed).toMatchObject([
-          { id: "survivor", enabled: true, payload: { kind: "agentTurn" } },
+          { id: "survivor", enabled: false, payload: { kind: "agentTurn" } },
         ]);
       } finally {
         cron.stop();
