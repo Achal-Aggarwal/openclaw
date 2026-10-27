@@ -192,26 +192,6 @@ async function withGateway(fixture: SpeechFixture, run: () => void) {
   return inRegistry(registry, run);
 }
 
-async function withCatalogMutation(
-  fixture: SpeechFixture,
-  mutation: { body: string } | { entry: unknown },
-  run: () => void,
-) {
-  const { pluginDir, runtimeImported } = declareCapabilityCatalog(fixture);
-  if ("body" in mutation) {
-    fs.writeFileSync(
-      path.join(fixture.root, "dist", "extensions", id, "capability-catalog.js"),
-      mutation.body,
-    );
-  } else {
-    patchManifest(pluginDir, { capabilityCatalogEntry: mutation.entry });
-  }
-  await withGateway(fixture, () => {
-    run();
-    expect(fs.existsSync(runtimeImported)).toBe(false);
-  });
-}
-
 afterEach(() => {
   vi.restoreAllMocks();
   resetPluginLoaderTestStateForTest();
@@ -287,55 +267,62 @@ describe("capability loading from a Gateway generation", () => {
     },
   );
 
-  it("loads a cold catalog without evaluating the full entry", async ({ speech: fixture }) => {
-    fixture.config.plugins = { enabled: true };
-    const { pluginDir, runtimeImported } = declareCapabilityCatalog(fixture);
-    fs.rmSync(path.join(fixture.root, "dist"), { recursive: true, force: true });
-    fs.appendFileSync(
-      path.join(pluginDir, "runtime-only.cjs"),
-      '\nthrow new Error("catalog imported forbidden full runtime");',
-    );
-    await withGateway(fixture, () => {
-      const providers = fixture.providers();
-      expect(fs.existsSync(runtimeImported)).toBe(false);
-      expect(providers.map((provider) => provider.id)).toEqual([id, "fixture-secondary"]);
-      const provider = fixture.provider("fixture-alias");
-      expect(provider).toBe(providers[0]);
-      expect(fixture.providers()[0]).toBe(provider);
-      expect(provider?.label).toBe("source:catalog");
-      const providerContext = { cfg: fixture.config, timeoutMs: 1000 };
-      const ready = { ready: true };
-      expect(provider?.resolveConfig?.({ ...providerContext, rawConfig: ready })).toEqual(ready);
-      expect(provider?.isConfigured({ ...providerContext, providerConfig: ready })).toBe(true);
-      expect(Reflect.get(provider!, Symbol.for("fixture.internal")).ready()).toBe(true);
-    });
-  });
-
-  it("loads only the requested built catalog owners", async ({ speech: fixture }) => {
-    fixture.config.plugins = { enabled: true };
-    fixture.config.tts = { provider: id, providers: { "fixture-secondary": {} } };
-    const { pluginDir, runtimeImported } = declareCapabilityCatalog(fixture);
-    patchManifest(pluginDir, {
-      contracts: { ...contracts, speechProviders: [id, "fixture-secondary"] },
-    });
-    const unrelatedDir = path.join(fixture.root, "extensions", "fixture-seed");
-    patchManifest(unrelatedDir, {
-      contracts: { speechProviders: ["fixture-unrequested"] },
-      capabilityCatalogEntry: "./capability-catalog.cjs",
-    });
-    fs.writeFileSync(
-      path.join(unrelatedDir, "capability-catalog.cjs"),
-      'throw new Error("unrequested catalog must not be evaluated");',
-    );
-    await withGateway(fixture, () => {
-      const providers = fixture.providers();
-      expect(providers.map(({ id: providerId, label }) => ({ id: providerId, label }))).toEqual([
-        { id, label: "built:catalog" },
-        { id: "fixture-secondary", label: "built:catalog" },
-      ]);
-      expect(fs.existsSync(runtimeImported)).toBe(false);
-    });
-  });
+  it.for([
+    { artifact: "source", enabled: true, scoped: false },
+    { artifact: "built", enabled: true, scoped: true },
+    { artifact: "built", enabled: false, scoped: false },
+  ])(
+    "loads cold $artifact catalogs (enabled=$enabled, scoped=$scoped)",
+    async ({ artifact, enabled, scoped }, { speech: fixture }) => {
+      fixture.config.plugins = { enabled };
+      const { pluginDir, runtimeImported } = declareCapabilityCatalog(fixture);
+      if (artifact === "source") {
+        fs.rmSync(path.join(fixture.root, "dist"), { recursive: true, force: true });
+        fs.appendFileSync(
+          path.join(pluginDir, "runtime-only.cjs"),
+          '\nthrow new Error("catalog imported forbidden full runtime");',
+        );
+      }
+      if (scoped) {
+        fixture.config.tts = { provider: id, providers: { "fixture-secondary": {} } };
+        patchManifest(pluginDir, {
+          contracts: { ...contracts, speechProviders: [id, "fixture-secondary"] },
+        });
+        const unrelatedDir = path.join(fixture.root, "extensions", "fixture-seed");
+        patchManifest(unrelatedDir, {
+          contracts: { speechProviders: ["fixture-unrequested"] },
+          capabilityCatalogEntry: "./capability-catalog.cjs",
+        });
+        fs.writeFileSync(
+          path.join(unrelatedDir, "capability-catalog.cjs"),
+          'throw new Error("unrequested catalog must not be evaluated");',
+        );
+      }
+      await withGateway(fixture, () => {
+        const providers = fixture.providers();
+        expect(providers.map(({ id: providerId, label }) => ({ id: providerId, label }))).toEqual([
+          { id, label: `${artifact}:catalog` },
+          { id: "fixture-secondary", label: `${artifact}:catalog` },
+        ]);
+        expect(fs.existsSync(runtimeImported)).toBe(false);
+        if (artifact === "source") {
+          const provider = fixture.provider("fixture-alias");
+          expect(provider).toBe(providers[0]);
+          expect(fixture.providers()[0]).toBe(provider);
+          const providerContext = { cfg: fixture.config, timeoutMs: 1000 };
+          const ready = { ready: true };
+          expect(provider?.resolveConfig?.({ ...providerContext, rawConfig: ready })).toEqual(
+            ready,
+          );
+          expect(provider?.isConfigured({ ...providerContext, providerConfig: ready })).toBe(true);
+          expect(Reflect.get(provider!, Symbol.for("fixture.internal")).ready()).toBe(true);
+        }
+        if (!enabled) {
+          expect(fixture.providers("realtimeVoiceProviders")).toEqual([]);
+        }
+      });
+    },
+  );
 
   it("uses register() for an uncovered speech family", async ({ speech: fixture }) => {
     const key = "speechProviders";
@@ -347,17 +334,6 @@ describe("capability loading from a Gateway generation", () => {
     await withGateway(fixture, () => {
       expect(fixture.labels(key)).toEqual(["built:1"]);
       expect(fs.readFileSync(runtimeImported, "utf8")).toBe("loaded");
-    });
-  });
-
-  it("uses built speech catalogs when plugins are globally disabled", async ({
-    speech: fixture,
-  }) => {
-    const { runtimeImported } = declareCapabilityCatalog(fixture);
-    await withGateway(fixture, () => {
-      expect(fixture.labels()).toEqual(["built:catalog", "built:catalog"]);
-      expect(fixture.providers("realtimeVoiceProviders")).toEqual([]);
-      expect(fs.existsSync(runtimeImported)).toBe(false);
     });
   });
 
@@ -452,7 +428,16 @@ describe("capability loading from a Gateway generation", () => {
   ])(
     "honors empty catalogs and rejects invalid ones without importing the full entry: %j",
     async (mutation, { speech: fixture }) => {
-      await withCatalogMutation(fixture, mutation, () => {
+      const { pluginDir, runtimeImported } = declareCapabilityCatalog(fixture);
+      if ("body" in mutation) {
+        fs.writeFileSync(
+          path.join(fixture.root, "dist", "extensions", id, "capability-catalog.js"),
+          mutation.body,
+        );
+      } else {
+        patchManifest(pluginDir, { capabilityCatalogEntry: mutation.entry });
+      }
+      await withGateway(fixture, () => {
         if ("empty" in mutation) {
           expect(fixture.providers()).toEqual([]);
           expect(fixture.provider("fixture-alias")).toBeUndefined();
@@ -463,6 +448,7 @@ describe("capability loading from a Gateway generation", () => {
               : /capabilityCatalogEntry failed/,
           );
         }
+        expect(fs.existsSync(runtimeImported)).toBe(false);
       });
     },
   );

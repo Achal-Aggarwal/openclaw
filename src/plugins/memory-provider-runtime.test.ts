@@ -75,8 +75,8 @@ function provider(withCandidates = false) {
     ...(withCandidates ? { candidates: vi.fn(async () => ({ hits: [] })) } : {}),
   } satisfies MemoryProviderHandle;
 }
-function open(caller = context()) {
-  return getActiveMemoryProviderCore({ cfg: {}, agentId: "main", context: caller.value });
+function open(caller = context(), purpose?: "status") {
+  return getActiveMemoryProviderCore({ cfg: {}, agentId: "main", context: caller.value, purpose });
 }
 function advertise(raw = provider()) {
   const openProvider = vi.fn(async () => ({ provider: raw }));
@@ -100,6 +100,7 @@ const hit = {
 };
 const readRange = { truncated: true, from: 4, lines: 2, nextFrom: 6 };
 const read = { text: "", path: hit.path, ...readRange };
+const reference = { providerId: "test-memory", id: hit.path };
 class LegacyManager implements RegisteredMemorySearchManager {
   #text = "";
   #snippet: string;
@@ -131,8 +132,11 @@ async function bind(raw = provider()) {
   advertise(raw);
   return (await open()).provider!;
 }
-async function bindLegacy(old: MemoryPluginRuntime) {
-  state.capability.runtime = old;
+async function bindLegacy(
+  overrides: Partial<RegisteredMemorySearchManager> = {},
+  runtime: Partial<MemoryPluginRuntime> = {},
+) {
+  state.capability.runtime = { ...legacy(manager(overrides)), ...runtime };
   const bound = (await open()).provider!;
   onTestFinished(() => bound.close());
   return bound;
@@ -312,15 +316,9 @@ it("preserves frozen class receivers, statusless empty reads, and read paginatio
   state.capability.runtime = legacy(Object.freeze(new LegacyManager("")));
   const bound = (await open()).provider!;
   await expect(bound.search({ query: "q" })).resolves.toMatchObject({
-    hits: [{ excerpt: "", reference: { providerId: "test-memory", id: "virtual:record" } }],
+    hits: [{ excerpt: "", reference }],
   });
-  await expect(
-    bound.get({
-      reference: { providerId: "test-memory", id: "virtual:record" },
-      from: 4,
-      lines: 2,
-    }),
-  ).resolves.toMatchObject({
+  await expect(bound.get({ reference, from: 4, lines: 2 })).resolves.toMatchObject({
     status: "ok",
     text: "",
     ...readRange,
@@ -362,13 +360,16 @@ it("keeps authorized legacy session and keyless project hits ineligible for auto
     provenance: { originClass: "owner", sessionKind: "interactive", observedAt: 1 } as const,
     triggers: "remember",
   };
-  const oldManager = manager({
-    search: async () => [{ ...recall, source: "sessions" }, { ...recall, projectKey: ";" }, recall],
-  });
-  const bound = await bindLegacy({
-    ...legacy(oldManager),
-    authorizeSearchHits: async ({ hits }) => hits,
-  });
+  const bound = await bindLegacy(
+    {
+      search: async () => [
+        { ...recall, source: "sessions" },
+        { ...recall, projectKey: ";" },
+        recall,
+      ],
+    },
+    { authorizeSearchHits: async ({ hits }) => hits },
+  );
   const { hits } = await bound.search({ query: "q" });
   expect(hits.map(({ automaticRecall }) => automaticRecall?.eligible)).toEqual([
     false,
@@ -378,7 +379,7 @@ it("keeps authorized legacy session and keyless project hits ineligible for auto
 });
 
 it("reports legacy health without host filesystem paths", async () => {
-  const oldManager = manager({
+  const bound = await bindLegacy({
     status: () => ({
       backend: "builtin",
       provider: "test",
@@ -389,7 +390,6 @@ it("reports legacy health without host filesystem paths", async () => {
       vector: { enabled: true, extensionPath: "/opt/sqlite-vec.dylib" },
     }),
   });
-  const bound = await bindLegacy(legacy(oldManager));
   expect(await bound.health()).toEqual({
     status: "ready",
     details: {
@@ -401,54 +401,34 @@ it("reports legacy health without host filesystem paths", async () => {
 const vectorState = (indexState: "empty" | "complete" | "incomplete" | "unverified") => ({
   vector: { enabled: true, index: { state: indexState } },
 });
-const healthCase = (name: string, facts: Partial<MemoryProviderStatus>, complete = false) => ({
-  name,
-  facts,
-  complete,
+const providerState = (mode: string, requestedProvider?: string) => ({
+  requestedProvider,
+  custom: { providerState: { mode } },
 });
-it.each([
-  healthCase("pending embeddings after reacquisition", {
-    custom: { providerState: { mode: "pending" }, indexIdentity: { status: "valid" } },
-  }),
-  healthCase("incomplete vectors", vectorState("incomplete")),
-  healthCase("unverified vectors", vectorState("unverified")),
-  healthCase("degraded provider", {
-    custom: { providerState: { mode: "degraded", providerId: "test", reason: "unavailable" } },
-  }),
-  healthCase("unavailable semantic provider with keyword fallback", {
-    provider: "none",
-    requestedProvider: "openai",
-    custom: {
-      providerState: { mode: "fts-only", attemptedProviderId: "openai", reason: "unavailable" },
-    },
-  }),
-  healthCase(
-    "intentional keyword-only index before lazy initialization",
-    {
-      provider: "none",
-      requestedProvider: "none",
-      custom: { providerState: { mode: "pending", requestedProvider: "none" } },
-    },
-    true,
-  ),
-  healthCase("dirty sources", { dirty: true }),
-  healthCase("failed sync", { lastSyncError: "worker ran out of memory" }),
-  healthCase("complete semantic index", vectorState("complete"), true),
-  healthCase("empty semantic index", vectorState("empty"), true),
-  healthCase(
-    "intentional keyword-only index",
-    {
-      provider: "none",
-      ...vectorState("incomplete"),
-      custom: { searchMode: "fts-only", providerState: { mode: "fts-only" } },
-    },
-    true,
-  ),
-])("reports health and search coverage for $name", async ({ facts, complete }) => {
-  const oldManager = manager({
+const keywordState = (mode: string, requested?: string) => ({
+  provider: "none",
+  ...providerState(mode, requested),
+});
+it.each<[string, Partial<MemoryProviderStatus>, boolean]>([
+  [
+    "pending embeddings after reacquisition",
+    { custom: { providerState: { mode: "pending" }, indexIdentity: { status: "valid" } } },
+    false,
+  ],
+  ["incomplete vectors", vectorState("incomplete"), false],
+  ["unverified vectors", vectorState("unverified"), false],
+  ["degraded provider", providerState("degraded"), false],
+  ["keyword fallback", keywordState("fts-only", "openai"), false],
+  ["keyword-only before initialization", keywordState("pending", "none"), true],
+  ["dirty sources", { dirty: true }, false],
+  ["failed sync", { lastSyncError: "worker ran out of memory" }, false],
+  ["complete semantic index", vectorState("complete"), true],
+  ["empty semantic index", vectorState("empty"), true],
+  ["keyword-only index", { ...keywordState("fts-only"), ...vectorState("incomplete") }, true],
+])("reports health and search coverage for %s", async (_name, facts, complete) => {
+  const bound = await bindLegacy({
     status: () => ({ backend: "builtin", provider: "test", ...facts }),
   });
-  const bound = await bindLegacy(legacy(oldManager));
   const page = await bound.search({ query: "remember" });
   expect(page.hits).toHaveLength(1);
   expect(page.coverage).toBe(complete ? "complete" : "partial");
@@ -461,11 +441,11 @@ it.each([
 });
 
 it("returns authorized hits with partial coverage when optional status diagnostics fail", async () => {
-  const oldManager = manager();
-  oldManager.statusAsync = vi.fn(async () => {
-    throw new Error("diagnostic worker unavailable");
+  const bound = await bindLegacy({
+    statusAsync: async () => {
+      throw new Error("diagnostic worker unavailable");
+    },
   });
-  const bound = await bindLegacy(legacy(oldManager));
   const page = await bound.search({ query: "remember" });
   expect(page.hits).toHaveLength(1);
   expect(page).toMatchObject({
@@ -481,7 +461,7 @@ it("returns authorized hits with partial coverage when optional status diagnosti
 it.each(["search", "readFile"] as const)("rejects a legacy manager missing %s", async (method) => {
   const oldManager = manager();
   Reflect.set(oldManager, method, undefined);
-  const bound = await bindLegacy(legacy(oldManager));
+  const bound = await bindLegacy(oldManager);
   const pending =
     method === "search"
       ? bound.search({ query: "q" })
@@ -495,12 +475,7 @@ it("closes transient legacy managers without closing cached default managers", a
   state.capability.runtime = legacy(oldManager);
   await (await open()).provider!.close();
   expect(oldManager.close).not.toHaveBeenCalled();
-  const result = await getActiveMemoryProviderCore({
-    cfg: {},
-    agentId: "main",
-    context: context().value,
-    purpose: "status",
-  });
+  const result = await open(context(), "status");
   await result.provider!.close();
   expect(oldManager.close).toHaveBeenCalledTimes(1);
 });
@@ -542,6 +517,11 @@ it.each(["before", "during"] as const)(
       fakeSessionOwner.pendingKeys.add(sessionKey);
       fakeSessionOwner.publications.set(sessionKey, publication.promise);
     };
+    const publish = () => {
+      fakeSessionOwner.pendingKeys.delete(sessionKey);
+      fakeSessionOwner.publications.delete(sessionKey);
+      publication.resolve();
+    };
     const openProvider = vi.fn(async () => {
       if (when === "during") {
         admit();
@@ -562,17 +542,13 @@ it.each(["before", "during"] as const)(
       } else {
         await entered.promise;
       }
-      fakeSessionOwner.pendingKeys.delete(sessionKey);
-      fakeSessionOwner.publications.delete(sessionKey);
-      publication.resolve();
+      publish();
       const opened = await result;
       expect(openProvider).toHaveBeenCalledOnce();
       await expect(opened.provider!.health()).resolves.toMatchObject({ status: "ready" });
       await opened.provider!.close();
     } finally {
-      fakeSessionOwner.pendingKeys.delete(sessionKey);
-      fakeSessionOwner.publications.delete(sessionKey);
-      publication.resolve();
+      publish();
       await observed;
       grant.release();
     }
