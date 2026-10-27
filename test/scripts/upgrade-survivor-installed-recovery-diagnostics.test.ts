@@ -181,8 +181,9 @@ it.each([false, true])(
         : {}),
     };
     writeJson(f.run.summary, summary);
-    if (!complete) expect(() => publishJoined(f, 0)).toThrow("success receipt is incomplete");
-    else {
+    if (!complete) {
+      expect(() => publishJoined(f, 0)).toThrow("success receipt is incomplete");
+    } else {
       const report = publishJoined(f, 0);
       expect(report.outcome).toBe("passed");
       expect(report.completedCuts).toEqual(summary.rows);

@@ -24,7 +24,9 @@ try {
       const stat = fs.lstatSync(directory);
       assert(stat.isDirectory() && stat.gid === sharedGid);
       assert.equal(stat.mode & 0o7777, expectedMode);
-      if (owner !== undefined) assert.equal(stat.uid, owner);
+      if (owner !== undefined) {
+        assert.equal(stat.uid, owner);
+      }
     };
     const read = (file, summary = false) => {
       const fd = fs.openSync(
@@ -37,10 +39,14 @@ try {
           stat.isFile() && stat.nlink === 1 && stat.uid === producerUid && stat.gid === sharedGid,
         );
         assert.equal(stat.mode & 0o7777, 0o640);
-        if (summary) assert(stat.size <= 256 * 1024);
+        if (summary) {
+          assert(stat.size <= 256 * 1024);
+        }
         const bytes = Buffer.alloc(summary ? stat.size : 1);
         const length = fs.readSync(fd, bytes);
-        if (summary) assert.equal(length, stat.size);
+        if (summary) {
+          assert.equal(length, stat.size);
+        }
         return bytes.subarray(0, length);
       } finally {
         fs.closeSync(fd);
@@ -60,8 +66,9 @@ try {
       "partial-previous/displacement.out",
       "partial-previous/displacement.err",
       "partial-previous/displacement.fault.json.observed",
-    ])
+    ]) {
       read(path.join(run, file));
+    }
   }
   console.log(
     JSON.stringify({

@@ -894,7 +894,9 @@ function runOwnedShellCommand({
     activeChildren.set(child, resolvedTimeoutKillGraceMs);
     // Only fixed diagnostic finalization may arrive after admission closes.
     // A later signal must still escalate this newly owned cleanup process.
-    if (activeChildrenShutdownPromise) shutdownChildren.push(child);
+    if (activeChildrenShutdownPromise) {
+      shutdownChildren.push(child);
+    }
     let timedOut = false;
     let noOutputTimedOut = false;
     let cancelled: boolean | undefined;
@@ -1339,9 +1341,13 @@ async function prepareOpenClawPackage(baseEnv: NodeJS.ProcessEnv, logDir: string
   console.log(`==> OpenClaw package: ${baseEnv.OPENCLAW_CURRENT_PACKAGE_TGZ}`);
   // Strict tuples were verified before preparation. Local packages need the same
   // owner-recorded digest once, without turning their environment into a partial tuple.
-  if (baseEnv.OPENCLAW_CURRENT_PACKAGE_SHA256) return baseEnv.OPENCLAW_CURRENT_PACKAGE_SHA256;
+  if (baseEnv.OPENCLAW_CURRENT_PACKAGE_SHA256) {
+    return baseEnv.OPENCLAW_CURRENT_PACKAGE_SHA256;
+  }
   const digest = createHash("sha256");
-  for await (const chunk of fs.createReadStream(packageTgz)) digest.update(chunk);
+  for await (const chunk of fs.createReadStream(packageTgz)) {
+    digest.update(chunk);
+  }
   return digest.digest("hex");
 }
 
@@ -1603,7 +1609,9 @@ async function runLane(
       publicationStatus = null;
       publicationError = { cause };
     }
-    if (publicationStatus !== 0) requiredPublicationFailed = true;
+    if (publicationStatus !== 0) {
+      requiredPublicationFailed = true;
+    }
   }
   const status = result.status || (publicationStatus ?? 1);
   const elapsedSeconds = Math.round((Date.now() - startedAt) / 1000);
@@ -1634,7 +1642,9 @@ async function runLane(
   };
   // Keep the observed lane outcome even if publication cannot start or join.
   // Rethrow through the pool's existing fatal/drain path; null is not an exit code.
-  if (publicationError) throw new LanePublicationError(completed, publicationError.cause);
+  if (publicationError) {
+    throw new LanePublicationError(completed, publicationError.cause);
+  }
   return completed;
 }
 
@@ -1746,7 +1756,9 @@ async function runLanePool(
         return id;
       })
       .catch((error: unknown) => {
-        if (error instanceof LanePublicationError) recordResult(error.result);
+        if (error instanceof LanePublicationError) {
+          recordResult(error.result);
+        }
         throw error;
       })
       .finally(() => {

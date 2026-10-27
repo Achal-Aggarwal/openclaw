@@ -223,7 +223,9 @@ function installedRecoveryCurrent(value, sanitize) {
   };
   for (const field of ["startedAt", "elapsedMs"]) {
     if (value[field] !== undefined) {
-      if (!Number.isSafeInteger(value[field]) || value[field] < 0) throw new Error();
+      if (!Number.isSafeInteger(value[field]) || value[field] < 0) {
+        throw new Error();
+      }
       current[field] = value[field];
     }
   }
@@ -2184,14 +2186,17 @@ export function publishInstalledRecoveryDiagnostics(
     typeof timedOut !== "boolean" ||
     !/^[a-f0-9]{64}$/.test(packageSha256) ||
     (timedOut && exitStatus === 0)
-  )
+  ) {
     throw new Error();
+  }
   const coordinates = phaseResult(
     timedOut ? "installed-recovery-timeout" : "installed-recovery",
     exitStatus,
     null,
   );
-  for (const label of Object.keys(omissions)) delete omissions[label];
+  for (const label of Object.keys(omissions)) {
+    delete omissions[label];
+  }
   const sanitize = diagnosticSanitizer(redactSensitiveText, "failed");
   const report = {
     ...coordinates,
@@ -2214,21 +2219,27 @@ export function publishInstalledRecoveryDiagnostics(
       !/^installed-recovery-[A-Za-z0-9]+$/.test(summary?.runDirectory) ||
       JSON.stringify(summary.selectedCuts) !== JSON.stringify([cut]) ||
       (summary.artifactSha256 !== undefined && summary.artifactSha256 !== packageSha256)
-    )
+    ) {
       throw new Error();
+    }
     report.installedRecovery = installedRecoveryProjection(
       captureInstalledRecovery(artifactRoot, ownedPath(artifactRoot, summary.runDirectory)),
       sanitize,
     );
-    if (report.installedRecovery.availability !== "captured") throw new Error();
+    if (report.installedRecovery.availability !== "captured") {
+      throw new Error();
+    }
     if (
       report.installedRecovery.current?.cut !== undefined &&
       report.installedRecovery.current.cut !== null &&
       report.installedRecovery.current.cut !== cut
-    )
+    ) {
       throw new Error();
+    }
     const commands = summary.commands ?? [];
-    if (!Array.isArray(commands) || commands.length > 10) throw new Error();
+    if (!Array.isArray(commands) || commands.length > 10) {
+      throw new Error();
+    }
     report.commands = commands.map((value) => {
       const command = installedRecoveryCurrent(value, sanitize);
       if (
@@ -2237,15 +2248,22 @@ export function publishInstalledRecoveryDiagnostics(
         (command.cut !== null && command.cut !== cut) ||
         command.startedAt === undefined ||
         command.elapsedMs === undefined
-      )
+      ) {
         throw new Error();
+      }
       return command;
     });
     const rows = summary.rows ?? [];
-    if (!Array.isArray(rows) || rows.length > 1) throw new Error();
+    if (!Array.isArray(rows) || rows.length > 1) {
+      throw new Error();
+    }
     const operationId = (value) => {
-      if (typeof value !== "string" || !/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(value))
+      if (
+        typeof value !== "string" ||
+        !/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(value)
+      ) {
         throw new Error();
+      }
       return value;
     };
     report.completedCuts = rows.map((row) => {
@@ -2256,8 +2274,9 @@ export function publishInstalledRecoveryDiagnostics(
         row.installedVersion.length > 128 ||
         typeof row.interruptedPhase !== "string" ||
         !/^[a-z-]{1,40}$/.test(row.interruptedPhase)
-      )
+      ) {
         throw new Error();
+      }
       const projected = {
         cut,
         operationId: operationId(row.operationId),
@@ -2273,7 +2292,9 @@ export function publishInstalledRecoveryDiagnostics(
         "launchersPreserved",
         "fullConfigPreserved",
       ]) {
-        if (row[field] !== true) throw new Error();
+        if (row[field] !== true) {
+          throw new Error();
+        }
         projected[field] = true;
       }
       return projected;
@@ -2287,8 +2308,9 @@ export function publishInstalledRecoveryDiagnostics(
         typeof next.installedVersion !== "string" ||
         next.installedVersion.length > 128 ||
         report.completedCuts.some((row) => row.operationId === next.operationId)
-      )
+      ) {
         throw new Error();
+      }
       report.nextUpdate = {
         exitCode: 0,
         status: "complete",
@@ -2306,8 +2328,9 @@ export function publishInstalledRecoveryDiagnostics(
         report.installedRecovery.current?.name !== "next-update-status" ||
         report.installedRecovery.current.state !== "completed" ||
         report.installedRecovery.current.status !== 0)
-    )
+    ) {
       throw new Error();
+    }
     if (exitStatus === 0) {
       const expected = [
         "displacement",
@@ -2328,11 +2351,14 @@ export function publishInstalledRecoveryDiagnostics(
           (command) =>
             (command.status === 0) !== !["displacement", "retirement"].includes(command.name),
         )
-      )
+      ) {
         throw new Error();
+      }
     }
   } catch {
-    if (exitStatus === 0) throw new Error("Installed recovery success receipt is incomplete");
+    if (exitStatus === 0) {
+      throw new Error("Installed recovery success receipt is incomplete");
+    }
     report.installedRecovery = { availability: "unavailable" };
     report.completedCuts = [];
     report.commands = [];
