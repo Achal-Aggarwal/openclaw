@@ -241,9 +241,13 @@ it.concurrent("honors canonical DTS precedence without overriding custom configs
         ...switches,
       ]);
       expect(result.status, result.stdout + result.stderr).toBe(0);
-      expect(fs.readFileSync(path.join(root, "packages/ai/dist/index.mjs"), "utf8")).toContain(marker);
+      expect(fs.readFileSync(path.join(root, "packages/ai/dist/index.mjs"), "utf8")).toContain(
+        marker,
+      );
       const declaration = path.join(root, "packages/ai/dist/index.d.mts");
-      const contents = fs.existsSync(declaration) ? fs.readFileSync(declaration, "utf8") : undefined;
+      const contents = fs.existsSync(declaration)
+        ? fs.readFileSync(declaration, "utf8")
+        : undefined;
       if (declarations) {
         expect(contents).toContain(JSON.stringify(marker));
       } else {
