@@ -83,6 +83,9 @@ export function ReplyLineView(props: {
               {person()}
             </button>
           </Show>{" "}
+          <Show when={named() && props.line.text}>
+            <span class="chat-reply-attribution__excerpt">{props.line.text}</span>
+          </Show>
           <Show when={!named()}>
             <span class="chat-reply-attribution__unavailable">
               {t("chat.messages.replyOriginalUnavailable")}

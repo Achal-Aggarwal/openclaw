@@ -1274,6 +1274,12 @@ button.chat-reply-attribution__target:disabled {
   cursor: var(--cursor-default);
 }
 
+.chat-reply-attribution__excerpt {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .chat-reply-attribution__unavailable {
   min-width: 0;
   overflow: hidden;
@@ -2029,6 +2035,14 @@ button.chat-reply-attribution__target:disabled {
   .chat-message--reply > :is(.chat-avatar, .chat-avatar-slot),
   .chat-reply-connector {
     display: none;
+  }
+
+  .chat-reply-attribution__excerpt {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    white-space: normal;
+    overflow-wrap: anywhere;
   }
 
   .chat-reply-attribution--reply .chat-reply-attribution__label {
