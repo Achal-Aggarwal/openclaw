@@ -78,7 +78,7 @@ jobs:
         run: |
           set -euo pipefail
           # Keep release-note history without fetching unrelated branches and tags.
-          git fetch --no-tags --unshallow origin "$GITHUB_SHA"
+          git fetch --no-tags --unshallow origin "+$GITHUB_SHA:refs/remotes/origin/main"
 
       - name: Prepare trusted Linux Android tooling
         if: >-
@@ -283,7 +283,7 @@ jobs:
         run: |
           set -euo pipefail
           # The diagnostic branch is unmerged; use the frozen main source, not its dispatch SHA.
-          git fetch --no-tags --unshallow origin "$SOURCE_SHA"
+          git fetch --no-tags --unshallow origin "+$SOURCE_SHA:refs/remotes/origin/main"
           echo "CHECKOUT_SECONDS=$(($(date +%s) - CHECKOUT_STARTED))" >> "$GITHUB_ENV"
 
       - name: Verify full selected history without unrelated refs
@@ -292,14 +292,15 @@ jobs:
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
           test "$(git rev-parse --is-shallow-repository)" = false
-          test -z "$(git for-each-ref --format='%(refname)' refs/remotes refs/tags)"
+          test "$(git for-each-ref --format='%(refname)' refs/remotes refs/tags)" = refs/remotes/origin/main
+          test "$(git rev-parse origin/main)" = "$SOURCE_SHA"
           test "$(git rev-list --count "$SOURCE_SHA")" = 121122
           {
             echo "Sample ${{ matrix.sample }} cold checkout + source history: ${CHECKOUT_SECONDS}s"
             echo '```'
             git count-objects -v
             echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Verify existing main and public baseline fetches
         shell: bash
@@ -307,6 +308,7 @@ jobs:
           set -euo pipefail
           git fetch --no-tags origin refs/heads/main
           git merge-base --is-ancestor "$SOURCE_SHA" FETCH_HEAD
+          echo "Main verification fetch: $(($(date +%s) - CHECKOUT_STARTED - CHECKOUT_SECONDS))s" | tee -a "$GITHUB_STEP_SUMMARY"
           test "$(git ls-remote --refs origin "$BASELINE_REF" | cut -f1)" = "$BASELINE_SHA"
           git fetch --no-tags origin "$BASELINE_REF"
           test "$(git rev-parse FETCH_HEAD)" = "$BASELINE_SHA"
@@ -325,4 +327,5 @@ jobs:
           test "$history_hash" = f281e0046f91e0ccfaa6a7f3e4befda94f25e98822b9fbfe48ec73c08b463d48
           test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
           test -z "$(git status --porcelain)"
-          echo 'Exact source, 121122 ancestors, current-main ancestry, saved public baseline, endpoint diff and first-parent history verified.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Exact source, 121122 ancestors, current-main ancestry, saved public baseline, endpoint diff and first-parent history verified.' | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "Total source preparation: $(($(date +%s) - CHECKOUT_STARTED))s" | tee -a "$GITHUB_STEP_SUMMARY"
