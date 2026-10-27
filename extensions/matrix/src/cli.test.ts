@@ -763,15 +763,7 @@ describe("matrix CLI verification commands", () => {
           : [matrixDevice("stale", false), matrixDevice("current", true)],
       );
       const stages = [bootstrap, ...(profile ? [profile] : []), read];
-      const gatewayActivations: CoreConfig[] = [];
-      const latestCfg: CoreConfig = structuredClone(cfg);
-      latestCfg.messages = { ackReaction: "updated-during-bootstrap" };
-      mutationConfig = latestCfg;
-      mocks.replaceConfig.mockImplementationOnce(
-        async ({ nextConfig }: { nextConfig: CoreConfig }) => {
-          gatewayActivations.push(nextConfig);
-        },
-      );
+      mutationConfig = { ...cfg, messages: { ackReaction: "updated-during-bootstrap" } };
       mockRecoveryKeyStdin("stdin-recovery-key\n");
       const running = runMatrixCli(
         encryptedSetupArgs(
@@ -784,7 +776,7 @@ describe("matrix CLI verification commands", () => {
       try {
         for (const stage of stages) {
           await stage.entered;
-          expect(gatewayActivations).toEqual([]);
+          expect(mocks.replaceConfig).not.toHaveBeenCalled();
           stage.release();
         }
       } finally {
@@ -793,15 +785,14 @@ describe("matrix CLI verification commands", () => {
         }
         await running;
       }
-      expect(gatewayActivations).toHaveLength(1);
-      expect(gatewayActivations[0]).toMatchObject({
+      expect(mocks.replaceConfig).toHaveBeenCalledOnce();
+      const saved = mockCallArg(mocks.replaceConfig).nextConfig;
+      expect(saved).toMatchObject({
         channels: { matrix: { accounts: { ops: { encryption: true } } } },
         messages: { ackReaction: "updated-during-bootstrap" },
       });
       if (command === "account add") {
-        expect(gatewayActivations[0]?.channels?.matrix?.accounts?.ops?.avatarUrl).toBe(
-          "mxc://example.org/avatar",
-        );
+        expect(saved.channels.matrix.accounts.ops.avatarUrl).toBe("mxc://example.org/avatar");
         expectLogs("Matrix verification bootstrap: complete", "Backup version: 7");
         expect(mocks.log.mock.calls.flat().join("\n")).toContain(
           "stale OpenClaw devices detected (stale)",
