@@ -3,8 +3,8 @@ import { beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { createDeferred } from "../../../../../test/helpers/promise.js";
 import { GatewayBrowserClient } from "../../../api/gateway.ts";
 import type { CronJob } from "../../../api/types.ts";
-import { ciAutomationJobSpec } from "../../../lib/session-pr-automation-operation.ts";
 import type { CiAutomationOption } from "../../../lib/session-pr-automation-spec.ts";
+import { createCiAutomationJobFixture } from "../../../lib/session-pr-automation.test-support.ts";
 import {
   createHello as hello,
   createGatewayHarness,
@@ -36,17 +36,11 @@ function inventory(jobs: CronJob[]) {
     snapshotRevision: "inventory",
   };
 }
-function job(sessionId: string, option: CiAutomationOption = "autoFix"): CronJob {
-  return {
-    ...ciAutomationJobSpec({ ...pr, agentId: "main", sessionKey, sessionId }, option),
+const job = (sessionId: string, option: CiAutomationOption = "autoFix") =>
+  createCiAutomationJobFixture({ ...pr, agentId: "main", sessionKey, sessionId }, option, {
     id: option + "-" + sessionId,
-    enabled: true,
-    createdAtMs: 1,
-    updatedAtMs: 1,
-    state: {},
     configRevision: "v1",
-  };
-}
+  });
 
 type WriteReply = Promise<unknown> | ((params: unknown) => Promise<unknown>);
 class Fixture {
@@ -147,8 +141,8 @@ describe("CI automation popup scope", () => {
     const staleRead = createDeferred<ReturnType<typeof inventory>>();
     const fixWrite = createDeferred<CronJob>();
     const mergeWrite = createDeferred<{ job: CronJob }>();
-    const fix = job("first");
-    const merge = job("first", "autoMerge");
+    const fix = await job("first");
+    const merge = await job("first", "autoMerge");
     h.jobs = [fix];
     h.writes = { "cron.update": fixWrite.promise, "cron.add": mergeWrite.promise };
     await h.open();
@@ -170,7 +164,7 @@ describe("CI automation popup scope", () => {
     await h.element.updateComplete;
     h.toggles(false, true);
     expect(h.checkbox("autoArchive").disabled).toBe(false);
-    staleRead.resolve(inventory([job("first")]));
+    staleRead.resolve(inventory([fix]));
     await h.settle();
     h.toggles(false, true);
     expect(h.checkbox()).toBe(fixInput);
@@ -193,6 +187,8 @@ describe("CI automation popup scope", () => {
   });
 
   it("retains a lost-ack error through sibling completion and reconciles without replay", async () => {
+    const fix = await job("first");
+    const merge = await job("first", "autoMerge");
     const fixWrite = createDeferred<{ job: CronJob }>();
     const mergeWrite = createDeferred<{ job: CronJob }>();
     h.writes["cron.add"] = (params) =>
@@ -211,9 +207,9 @@ describe("CI automation popup scope", () => {
     expect(h.root.querySelector<HTMLButtonElement>(".chat-ci__automation-retry")!.disabled).toBe(
       true,
     );
-    h.jobs = [job("first"), job("first", "autoMerge")];
+    h.jobs = [fix, merge];
     h.writes = {};
-    mergeWrite.resolve({ job: job("first", "autoMerge") });
+    mergeWrite.resolve({ job: merge });
     await h.settle();
     expect(h.root.textContent).toContain("Lost acknowledgement");
     h.toggles(true, true);
@@ -246,7 +242,8 @@ describe("CI automation popup scope", () => {
 
   it("ignores a delayed inventory after session replacement", async () => {
     const oldRead = createDeferred<ReturnType<typeof inventory>>();
-    h.jobs = [job("first")];
+    const original = await job("first");
+    h.jobs = [original];
     h.read = oldRead.promise;
     await h.open(false);
     const signal = h.calls("cron.list")[0]?.[2]?.signal;
@@ -257,7 +254,7 @@ describe("CI automation popup scope", () => {
     h.jobs = [];
     h.read = undefined;
     await h.open();
-    oldRead.resolve(inventory([job("first")]));
+    oldRead.resolve(inventory([original]));
     await h.settle();
     expect(h.checkbox().checked).toBe(false);
     expect(h.checkbox().closest("fieldset")?.disabled).toBe(false);
@@ -295,6 +292,7 @@ describe("CI automation popup scope", () => {
   });
 
   it("settles an admitted write while hidden and refreshes when presented again", async () => {
+    const created = await job("first");
     const pending = createDeferred<{ job: CronJob }>();
     h.writes["cron.add"] = pending.promise;
     await h.open();
@@ -308,7 +306,7 @@ describe("CI automation popup scope", () => {
     expect(h.checkbox().disabled).toBe(true);
     expect(h.calls("cron.list")).toHaveLength(1);
     h.element.presented = false;
-    h.jobs = [job("first")];
+    h.jobs = [created];
     pending.resolve({ job: h.jobs[0]! });
     await h.settle();
     expect(h.calls("cron.add")).toHaveLength(1);
@@ -353,7 +351,8 @@ describe("CI automation popup scope", () => {
 
   it("does not apply an old write to a reconnected Gateway or replay it", async () => {
     const pending = createDeferred<CronJob>();
-    h.jobs = [job("first")];
+    const original = await job("first");
+    h.jobs = [original];
     h.writes["cron.update"] = pending.promise;
     await h.open();
     expect(h.checkbox().checked).toBe(true);
@@ -367,7 +366,7 @@ describe("CI automation popup scope", () => {
     await h.settle();
     expect(h.checkbox()).toMatchObject({ checked: true, disabled: false });
     expect(h.checkbox().closest("fieldset")?.disabled).toBe(false);
-    pending.resolve({ ...job("first"), enabled: false });
+    pending.resolve({ ...original, enabled: false });
     await h.settle();
     expect(h.checkbox().checked).toBe(true);
     expect(h.calls("cron.update")).toHaveLength(1);

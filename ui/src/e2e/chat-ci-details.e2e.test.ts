@@ -8,8 +8,8 @@ import {
   SESSION_PULL_REQUESTS_SUBSCRIBE_METHOD,
 } from "../../../src/gateway/control-ui-contract.js";
 import type { CronJob } from "../api/types.ts";
-import { ciAutomationJobSpec } from "../lib/session-pr-automation-operation.ts";
 import type { CiAutomationOption } from "../lib/session-pr-automation-spec.ts";
+import { createCiAutomationJobFixture } from "../lib/session-pr-automation.test-support.ts";
 import { controlUiSessionUrl, installMockGateway } from "../test-helpers/control-ui-e2e.ts";
 import { cronListResponseFixture } from "../test-helpers/cron.ts";
 import {
@@ -43,17 +43,13 @@ function automationInventory(jobs: CronJob[]) {
     snapshotRevision: "ci-automation-inventory",
   });
 }
-function automationJob(option: CiAutomationOption, enabled = true): CronJob {
-  return {
-    ...ciAutomationJobSpec(automationTarget, option),
+const automationJob = (option: CiAutomationOption, enabled = true) =>
+  createCiAutomationJobFixture(automationTarget, option, {
     id: option,
     enabled,
-    createdAtMs: 1,
-    updatedAtMs: 1,
     configRevision: "automation-v1",
     state: { nextRunAtMs: Date.now() + 300_000 },
-  };
-}
+  });
 const pullRequest: ControlUiSessionPullRequest = {
   ...prTarget,
   branch: "feature/ci-details",
@@ -254,8 +250,8 @@ async function expandLinuxJob(page: Page) {
 
 suite.define(() => {
   it("saves selected-PR automation toggles and reconciles an uncertain write", async () => {
-    const fix = automationJob("autoFix");
-    const merge = automationJob("autoMerge", false);
+    const fix = await automationJob("autoFix");
+    const merge = await automationJob("autoMerge", false);
     const { page, gateway, publish } = await setup({ automationJobs: [fix, merge] });
     await openDesktopPullRequestPage(page.locator(".chat-pr").first(), "monitoring");
     const autoFix = page.getByRole("switch", { name: "Auto-fix CI & address comments" });
@@ -294,7 +290,7 @@ suite.define(() => {
       schedule: { kind: "every", everyMs: 300_000 },
       payload: { kind: "agentTurn", message: expect.stringContaining(automationSessionId) },
     });
-    const archive = automationJob("autoArchive");
+    const archive = await automationJob("autoArchive");
     await gateway.setMethodResponse(
       "cron.list",
       automationInventory([disabledFix, merge, archive]),
@@ -342,10 +338,16 @@ suite.define(() => {
     await gateway.deferNext("cron.add");
     await toggle.click();
     const add = await gateway.waitForRequest("cron.add");
-    const merge = automationJob("autoMerge");
-    expect(add.params).toEqual(
-      ciAutomationJobSpec({ ...automationTarget, sessionKey }, "autoMerge"),
-    );
+    const merge = await automationJob("autoMerge");
+    expect(add.params).toMatchObject({
+      name: "Auto-merge when ready: openclaw/openclaw#123456",
+      agentId: "main",
+      sessionKey,
+      owner: { agentId: "main", sessionKey },
+      sessionTarget: `session:${sessionKey}`,
+      enabled: true,
+      payload: { kind: "agentTurn", message: expect.stringContaining('"number":123456') },
+    });
     await gateway.setMethodResponse("cron.list", automationInventory([merge]));
     await gateway.resolveDeferred("cron.add", { job: merge });
     await expect.poll(() => toggle.isChecked()).toBe(true);
@@ -364,7 +366,7 @@ suite.define(() => {
   it("shows stored automation state without checks and enforces read-only access", async () => {
     const { page, gateway, publish } = await setup({
       readOnly: true,
-      automationJobs: [automationJob("autoMerge")],
+      automationJobs: [await automationJob("autoMerge")],
     });
     await publish({ ...pullRequest, checks: undefined });
     await openDesktopPullRequestPage(page.locator(".chat-pr").first(), "monitoring");
@@ -410,7 +412,7 @@ suite.define(() => {
       width,
       height,
       mode,
-      automationJobs: [automationJob("autoFix"), automationJob("autoMerge")],
+      automationJobs: [await automationJob("autoFix"), await automationJob("autoMerge")],
     });
     const mobile = width < 900;
     let menu: Locator;
@@ -493,10 +495,10 @@ suite.define(() => {
         expectedConfigRevision: "automation-v1",
         patch: { enabled: false },
       });
-      const disabledFix = automationJob("autoFix", false);
+      const disabledFix = await automationJob("autoFix", false);
       await gateway.setMethodResponse(
         "cron.list",
-        automationInventory([disabledFix, automationJob("autoMerge")]),
+        automationInventory([disabledFix, await automationJob("autoMerge")]),
       );
       await gateway.resolveDeferred("cron.update", disabledFix);
       await expect.poll(() => autoFix.isEnabled()).toBe(true);

@@ -1,7 +1,7 @@
 import { listen } from "../../../lib/reactive/listener.ts";
 
 export type VideoCompressionRequest = { file: File; maxBytes: number };
-export type VideoCompressionError = "unsupported" | "too-large" | "failed";
+type VideoCompressionError = "unsupported" | "too-large" | "failed";
 export type VideoCompressionResponse =
   | { type: "progress"; progress: number }
   | { type: "ready"; file: File }

@@ -1,12 +1,7 @@
-import { Value } from "typebox/value";
 import { beforeEach, expect, it, vi } from "vitest";
-import { CronAddParamsSchema } from "../../../packages/gateway-protocol/src/schema/cron.js";
 import type { GatewayBrowserClient } from "../api/gateway.ts";
 import type { CronJob, CronJobsListResult } from "../api/types.ts";
-import {
-  ciAutomationJobSpec as jobSpec,
-  setCiAutomationEnabled,
-} from "./session-pr-automation-operation.ts";
+import { setCiAutomationEnabled } from "./session-pr-automation-operation.ts";
 import {
   CI_AUTOMATION_OPTIONS,
   ciAutomationDeclarationKey as declarationKeyFor,
@@ -14,6 +9,10 @@ import {
   type CiAutomationOption,
   type CiAutomationTarget,
 } from "./session-pr-automation-spec.ts";
+import {
+  createCiAutomationJobFixture,
+  readCiAutomationAddParams,
+} from "./session-pr-automation.test-support.ts";
 import { loadCiAutomationJobs } from "./session-pr-automation.ts";
 
 const target: CiAutomationTarget = {
@@ -25,18 +24,8 @@ const target: CiAutomationTarget = {
   number: 42,
 };
 
-function job(option: CiAutomationOption, overrides: Partial<CronJob> = {}): CronJob {
-  return {
-    ...jobSpec(target, option),
-    id: option,
-    enabled: true,
-    createdAtMs: 1,
-    updatedAtMs: 1,
-    state: {},
-    configRevision: "revision-1",
-    ...overrides,
-  };
-}
+const job = (option: CiAutomationOption, overrides: Partial<CronJob> = {}) =>
+  createCiAutomationJobFixture(target, option, overrides);
 
 function page(jobs: CronJob[], overrides: Partial<CronJobsListResult> = {}): CronJobsListResult {
   return {
@@ -77,17 +66,17 @@ const declarationKey = (overrides: Partial<CiAutomationTarget> = {}) =>
 it.each([target.sessionId, "replacement"])(
   "reads all scoped pages for %s without adopting another PR or stale archive",
   async (sessionId) => {
-    const fix = job("autoFix");
-    const merge = job("autoMerge", { enabled: false });
+    const fix = await job("autoFix");
+    const merge = await job("autoMerge", { enabled: false });
     const ignored = [
-      job("autoMerge", {
-        ...jobSpec({ ...target, number: 43 }, "autoMerge"),
+      await createCiAutomationJobFixture({ ...target, number: 43 }, "autoMerge", {
         id: "other-pr",
       }),
-      job("autoArchive", {
-        ...jobSpec({ ...target, sessionId: "old-incarnation" }, "autoArchive"),
-      }),
-      job("autoFix", { declarationKey: "daily-briefing" }),
+      await createCiAutomationJobFixture(
+        { ...target, sessionId: "old-incarnation" },
+        "autoArchive",
+      ),
+      await job("autoFix", { declarationKey: "daily-briefing" }),
     ];
     request
       .mockResolvedValueOnce(page([fix], { total: 5, hasMore: true, nextOffset: 1 }))
@@ -109,20 +98,26 @@ it.each([target.sessionId, "replacement"])(
 
 it.each([
   {
-    pages: [
-      page([job("autoFix")], { total: 2, hasMore: true, nextOffset: 1 }),
+    pages: async () => [
+      page([await job("autoFix")], { total: 2, hasMore: true, nextOffset: 1 }),
       page([], { snapshotRevision: "inventory-2", total: 1, offset: 1 }),
     ],
     error: "inventory changed",
   },
   {
-    pages: [page([], { total: 1, hasMore: true, nextOffset: 0 })],
+    pages: async () => [page([], { total: 1, hasMore: true, nextOffset: 0 })],
     error: "invalid inventory page",
   },
-  { pages: [page([job("autoFix"), job("autoFix", { id: "duplicate" })])], error: "was changed" },
-  { pages: [page([job("autoMerge", { sessionTarget: "session:other" })])], error: "was changed" },
+  {
+    pages: async () => [page([await job("autoFix"), await job("autoFix", { id: "duplicate" })])],
+    error: "was changed",
+  },
+  {
+    pages: async () => [page([await job("autoMerge", { sessionTarget: "session:other" })])],
+    error: "was changed",
+  },
 ])("rejects unsafe inventory: $error", async ({ pages, error }) => {
-  for (const response of pages) {
+  for (const response of await pages()) {
     request.mockResolvedValueOnce(response);
   }
   await expect(load()).rejects.toThrow(error);
@@ -130,16 +125,26 @@ it.each([
 });
 
 it("creates the selected declarative job and keeps its returned identity", async () => {
-  const created = job("autoArchive");
+  const created = await job("autoArchive");
   request.mockResolvedValueOnce({ created: true, job: created });
   expect(await set("autoArchive", true)).toEqual(created);
-  expect(request).toHaveBeenCalledExactlyOnceWith("cron.add", jobSpec(target, "autoArchive"));
+  expect(request).toHaveBeenCalledExactlyOnceWith(
+    "cron.add",
+    expect.objectContaining({
+      name: "Auto-archive on merge or close: example/project#42",
+      agentId: "main",
+      sessionKey: "agent:main:dashboard:ci",
+      owner: { agentId: "main", sessionKey: "agent:main:dashboard:ci" },
+      sessionTarget: "isolated",
+      enabled: true,
+    }),
+  );
 });
 
 it.each(["autoFix", "autoMerge"] as const)(
   "updates %s across reset using its exact revision",
   async (option) => {
-    const current = job(option);
+    const current = await job(option);
     const resetTarget = { ...target, sessionId: "replacement" };
     const disabled = { ...current, enabled: false, configRevision: "revision-2" };
     request.mockResolvedValueOnce(disabled);
@@ -177,9 +182,8 @@ it("bounds declaration keys and separates every ownership dimension and action",
   ];
   const prefixes = [prefix, ...variants.map(declarationKey)];
   expect(new Set(prefixes).size).toBe(prefixes.length);
-  const keys = CI_AUTOMATION_OPTIONS.map(
-    (option) =>
-      jobSpec({ ...target, sessionKey: "long-session:".repeat(200) }, option).declarationKey,
+  const keys = CI_AUTOMATION_OPTIONS.map((option) =>
+    declarationKeyFor({ ...target, sessionKey: "long-session:".repeat(200) }, option),
   );
   expect(new Set(keys).size).toBe(3);
   for (const key of keys) {
@@ -208,9 +212,10 @@ const instructions = {
 };
 it.each(["autoFix", "autoMerge", "autoArchive"] as const)(
   "binds %s to its execution owner and permitted actions",
-  (option) => {
-    const spec = jobSpec(target, option);
-    expect(Value.Check(CronAddParamsSchema, spec)).toBe(true);
+  async (option) => {
+    request.mockResolvedValueOnce({ job: await job(option) });
+    await set(option, true);
+    const spec = readCiAutomationAddParams(request.mock.calls[0]?.[1]);
     expect(spec).toMatchObject({
       agentId: target.agentId,
       sessionKey: target.sessionKey,

@@ -2,7 +2,8 @@ import path from "node:path";
 import { expectDefined } from "@openclaw/normalization-core";
 import { asRecord } from "@openclaw/normalization-core/record-coerce";
 import { beforeEach, expect, it, vi } from "vitest";
-import { ciAutomationJobSpec } from "../../ui/src/lib/session-pr-automation-operation.js";
+import type { GatewayBrowserClient } from "../../ui/src/api/gateway.js";
+import { setCiAutomationEnabled } from "../../ui/src/lib/session-pr-automation-operation.js";
 import type {
   CiAutomationOption,
   CiAutomationTarget,
@@ -159,12 +160,23 @@ async function createFixture(option: CiAutomationOption) {
     isWebchatConnect: () => false,
   });
   const add = async (selected: CiAutomationTarget) => {
-    const definition = { ...ciAutomationJobSpec(selected, option), enabled: false };
-    const respond = vi.fn();
-    await addCron({ ...rpc("cron.add", definition), respond });
-    expect(respond).toHaveBeenCalledWith(true, expect.anything(), undefined);
+    const request = vi
+      .fn<GatewayBrowserClient["request"]>()
+      .mockImplementation(async (method, params) => {
+        expect(method).toBe("cron.add");
+        const respond = vi.fn();
+        await addCron({ ...rpc(method, params as Record<string, unknown>), respond });
+        expect(respond).toHaveBeenCalledWith(true, expect.anything(), undefined);
+        return respond.mock.calls[0]?.[1];
+      });
+    const browserClient = { request } as unknown as GatewayBrowserClient;
+    const created = expectDefined(
+      await setCiAutomationEnabled(browserClient, selected, option, true, undefined),
+      "created recipe",
+    );
+    await creator.context.cron.update(created.id, { enabled: false });
     return expectDefined(
-      (await creator.read()).find((job) => job.declarationKey === definition.declarationKey),
+      (await creator.read()).find((job) => job.id === created.id),
       "persisted recipe",
     );
   };

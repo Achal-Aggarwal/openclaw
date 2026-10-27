@@ -63,7 +63,7 @@ function automationMessage(target: CiAutomationTarget, option: CiAutomationOptio
   return [...common, ...actions[option]].join("\n");
 }
 
-export function ciAutomationJobSpec(target: CiAutomationTarget, option: CiAutomationOption) {
+function ciAutomationJobSpec(target: CiAutomationTarget, option: CiAutomationOption) {
   return {
     declarationKey: ciAutomationDeclarationKey(target, option),
     name: `${ACTION_NAMES[option]}: ${target.owner}/${target.repo}#${target.number}`,

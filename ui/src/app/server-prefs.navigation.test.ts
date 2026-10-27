@@ -3,7 +3,7 @@ import { expect, it, vi } from "vitest";
 import { createDeferred } from "../../../test/helpers/promise.js";
 import { resolveServerUiPrefWriteStatus } from "./server-prefs-controls.ts";
 import { changedServerUiPrefs } from "./server-prefs-intent.ts";
-import { readProfileAppearancePrefs } from "./server-prefs-profile-runtime.ts";
+import { loadProfileAppearancePrefs } from "./server-prefs-profile-runtime.ts";
 import { writeProfileAppearancePrefs } from "./server-prefs-profile-write.runtime.ts";
 import { applyServerUiPrefs, refreshProfileAppearancePrefs } from "./server-prefs-reconcile.ts";
 import {
@@ -305,7 +305,11 @@ it("does not write after an incomplete first read", async () => {
     status: "no_durable_identity",
   }));
   const writer = createServerPrefsWriter(request, scope);
-  expect(await readProfileAppearancePrefs(writer.state.client!, "a")).toBeNull();
+  const state = { appearance: null, requestId: 1 };
+  expect(
+    await loadProfileAppearancePrefs(writer.state.client!, "a", scope, undefined, state, 1),
+  ).toBe(false);
+  expect(state.appearance).toBeNull();
   expect(
     await writeProfileAppearancePrefs(writer.state.client, { sidebarEntries: [] }, () => true, "a"),
   ).toMatchObject({ ok: false, reason: "unavailable" });

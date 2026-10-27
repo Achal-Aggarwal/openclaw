@@ -32,7 +32,7 @@ export function canSyncAppearancePreference(
     : runtimeConfig.canPatch !== false;
 }
 
-export async function readProfileAppearancePrefs(
+async function readProfileAppearancePrefs(
   client: GatewayBrowserClient,
   profileId: string,
 ): Promise<ServerUiPrefs | null> {
