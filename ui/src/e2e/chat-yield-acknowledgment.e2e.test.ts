@@ -12,6 +12,7 @@ import {
 } from "../test-helpers/control-ui-e2e.ts";
 import { textContent } from "./chat-flow.test-support.ts";
 import { createControlUiE2eSuite } from "./control-ui-e2e-suite.test-support.ts";
+import { recordedToolCall } from "./recorded-tool.test-support.ts";
 
 const suite = createControlUiE2eSuite({ name: "Chat yield acknowledgment" });
 
@@ -67,35 +68,25 @@ function scenarioData(scenario: Scenario, now: number) {
     activeRunIds: ["child-run"],
   };
   const done: ChildFacts = { status: "done", hasActiveRun: false, activeRunIds: [] };
-  const children =
-    scenario === "one-waiting"
-      ? [child(1, FIRST, running, now)]
-      : scenario === "three-waiting"
-        ? [
-            child(1, FIRST, running, now),
-            child(
-              2,
-              SECOND,
-              {
-                ...done,
-                endedAt: now - 200_000,
-                agentStatus: {
-                  note: "Needs a decision on the Node minimum",
-                  attention: "hand",
-                  expiresAt: now + 1_800_000,
-                },
-              },
-              now,
-            ),
-            child(3, THIRD, { ...done, endedAt: now - 350_000, runtimeMs: 240_000 }, now),
-          ]
-        : [
-            child(1, FIRST, { ...done, endedAt: now - 2_000 }, now),
-            child(2, SECOND, { ...done, endedAt: now - 200_000 }, now),
-            child(3, THIRD, { ...done, endedAt: now - 350_000 }, now),
-          ];
-  const acknowledgment = scenario === "one-waiting" ? SHORT_ACK : LONG_ACK;
   const resumed = scenario === "resumed";
+  const needsInput: ChildFacts = {
+    agentStatus: {
+      note: "Needs a decision on the Node minimum",
+      attention: "hand",
+      expiresAt: now + 1_800_000,
+    },
+  };
+  const children = [
+    child(1, FIRST, resumed ? { ...done, endedAt: now - 2_000 } : running, now),
+    child(2, SECOND, { ...done, endedAt: now - 200_000, ...(!resumed && needsInput) }, now),
+    child(
+      3,
+      THIRD,
+      { ...done, endedAt: now - 350_000, ...(!resumed && { runtimeMs: 240_000 }) },
+      now,
+    ),
+  ].slice(0, scenario === "one-waiting" ? 1 : 3);
+  const acknowledgment = scenario === "one-waiting" ? SHORT_ACK : LONG_ACK;
   const parent = {
     key: parentKey,
     sessionId: "dependency-updates",
@@ -112,15 +103,10 @@ function scenarioData(scenario: Scenario, now: number) {
   } satisfies GatewaySessionRow;
   const spawns = children.flatMap((row, index) => [
     {
-      role: "assistant",
-      content: [
-        {
-          type: "toolCall",
-          id: `spawn-${index}`,
-          name: "sessions_spawn",
-          arguments: { label: row.label, task: `Review ${row.label}.` },
-        },
-      ],
+      ...recordedToolCall(`spawn-${index}`, "sessions_spawn", {
+        label: row.label,
+        task: `Review ${row.label}.`,
+      }),
       timestamp: now - 590_000 + index * 10,
       __openclaw: { id: `spawn-call-${index}`, seq: 2 + index * 2, runId },
     },
@@ -142,15 +128,7 @@ function scenarioData(scenario: Scenario, now: number) {
     },
     ...spawns,
     {
-      role: "assistant",
-      content: [
-        {
-          type: "toolCall",
-          id: "handoff",
-          name: "sessions_yield",
-          arguments: { acknowledgment, message: PRIVATE },
-        },
-      ],
+      ...recordedToolCall("handoff", "sessions_yield", { acknowledgment, message: PRIVATE }),
       stopReason: "toolUse",
       timestamp: yieldedAt - 1_000,
       __openclaw: { id: "yield-call", seq: 20, runId },
