@@ -1,4 +1,9 @@
-import { defaultRangeExtractor, type Range, Virtualizer } from "@tanstack/virtual-core";
+import {
+  defaultRangeExtractor,
+  type Range,
+  type VirtualItem,
+  Virtualizer,
+} from "@tanstack/virtual-core";
 import { findMcpAppUnmountTargets } from "../../../components/mcp-app-unmount.ts";
 import type { TranscriptRow } from "./chat-transcript-layout.ts";
 import {
@@ -11,12 +16,17 @@ export function extractTranscriptRange(
   rowIndexesByKey: ReadonlyMap<string, number>,
   retainedRowKeys: readonly (string | null)[],
   rows: readonly TranscriptRow[],
+  measuredSizes?: ReadonlyMap<VirtualItem["key"], number>,
 ): number[] {
-  // Measure one completed neighbor before it enters the viewport. Otherwise
-  // its first correction can mount another cold row in the same scroll frame.
+  // Cold neighbors need measurement before entering the viewport. Known-height
+  // completed rows can remain parked instead of doing layout in the scroll frame.
   const indexes = defaultRangeExtractor(range).filter(
     (index) =>
-      !rows[index]!.retainDom || (index >= range.startIndex - 1 && index <= range.endIndex + 1),
+      !rows[index]!.retainDom ||
+      (index >= range.startIndex && index <= range.endIndex) ||
+      (!measuredSizes?.has(rows[index]!.key) &&
+        index >= range.startIndex - 1 &&
+        index <= range.endIndex + 1),
   );
   for (const key of retainedRowKeys) {
     const index = key === null ? undefined : rowIndexesByKey.get(key);

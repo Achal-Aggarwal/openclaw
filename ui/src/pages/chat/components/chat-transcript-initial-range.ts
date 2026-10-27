@@ -33,6 +33,10 @@ export class TranscriptInitialRange {
     return !this.pending && !this.viewportOnly;
   }
 
+  get hasReaderMovement(): boolean {
+    return this.scrollSample.time > 0;
+  }
+
   constructor(
     initialOffset: number | null,
     private readonly virtualizer: () => Virtualizer<HTMLDivElement, HTMLElement>,
