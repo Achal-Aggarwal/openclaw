@@ -294,9 +294,6 @@ export function controlUiStableChunkName(id: string): string | undefined {
     case "ui/src/pages/chat/route-entry.ts":
       // Pending New Session previews must render while the Chat route entry waits.
       return "chat-route-entry";
-    case "ui/src/i18n/locales/en-session-list.ts":
-    case "ui/src/i18n/locales/en-model-account-list.ts":
-      return "control-ui-boot-shared";
     case "ui/src/i18n/locales/en-session-organization.ts":
       // Session management copy follows its lazy consumers, not the older boot capture.
       return "session-management-english";
