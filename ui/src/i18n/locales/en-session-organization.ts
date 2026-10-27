@@ -1,32 +1,33 @@
 import type { TranslationMap } from "../lib/types.ts";
+import { registerSessionListEnglish } from "./en-session-list.ts";
 import { registerSessionOrganizationSharedEnglish } from "./en-session-organization-shared.ts";
 import { en } from "./en.ts";
 
+const sessionList = registerSessionListEnglish.catalog.sessionsView;
 const sharedSessions = registerSessionOrganizationSharedEnglish.catalog.sessionsView;
 const sharedWorktrees = registerSessionOrganizationSharedEnglish.catalog.worktrees;
 
 // Preserve catalog order while shared labels load independently of menu and management copy.
 const enSessionOrganization = {
   sessionsView: {
-    personalGroups: "Personal groups",
-    personalGroupNew: "New personal group",
-    personalGroupEdit: "Edit personal group",
-    personalGroupName: "Group name",
-    personalGroupHint: "Only your layout changes. Sessions and shared groups stay unchanged.",
-    personalGroupEmpty: "Drag sessions here or choose Edit group to add them.",
-    personalGroupSessions: "Sessions",
-    personalGroupSearch: "Search available sessions",
-    personalGroupNoMatches: "No matching sessions in the loaded list.",
-    personalGroupOptions: "Options for personal group {group}",
-    personalGroupEditMenu: "Edit group",
-    personalGroupMoveUp: "Move up",
-    personalGroupMoveDown: "Move down",
-    personalGroupRemove: "Remove personal group",
-    personalGroupRemoved: "Personal group removed. Sessions are unchanged.",
-    personalGroupUnavailable: "Connection changed. Reopen the group to edit it.",
-    personalGroupChanged: "This group changed. Reopen it before saving your edits.",
-    personalGroupCapacity:
-      "Personal groups are full. Remove a group or some sessions before adding more.",
+    personalGroups: sessionList.personalGroups,
+    personalGroupNew: sessionList.personalGroupNew,
+    personalGroupEdit: sessionList.personalGroupEdit,
+    personalGroupName: sessionList.personalGroupName,
+    personalGroupHint: sessionList.personalGroupHint,
+    personalGroupEmpty: sessionList.personalGroupEmpty,
+    personalGroupSessions: sessionList.personalGroupSessions,
+    personalGroupSearch: sessionList.personalGroupSearch,
+    personalGroupNoMatches: sessionList.personalGroupNoMatches,
+    personalGroupOptions: sessionList.personalGroupOptions,
+    personalGroupEditMenu: sessionList.personalGroupEditMenu,
+    personalGroupMoveUp: sessionList.personalGroupMoveUp,
+    personalGroupMoveDown: sessionList.personalGroupMoveDown,
+    personalGroupRemove: sessionList.personalGroupRemove,
+    personalGroupRemoved: sessionList.personalGroupRemoved,
+    personalGroupUnavailable: sessionList.personalGroupUnavailable,
+    personalGroupChanged: sessionList.personalGroupChanged,
+    personalGroupCapacity: sessionList.personalGroupCapacity,
     pullRequestCount: en.sessionsView.pullRequestCount,
     advanced: "Advanced",
     searchGroups: "Search groups",
@@ -68,7 +69,7 @@ const enSessionOrganization = {
     title: sharedSessions.title,
     subtitle: sharedSessions.subtitle,
     store: "Store: {path}",
-    active: "Updated within",
+    active: sessionList.active,
     limit: "Limit",
     createdBy: en.sessionsView.createdBy,
     ownedBy: en.sessionsView.ownedBy,
@@ -99,7 +100,7 @@ const enSessionOrganization = {
     global: "Global",
     unknown: "Unknown",
     sessionState: "Session state",
-    all: "All",
+    all: sessionList.all,
     snooze: "Snooze",
     wakeSession: "Wake session",
     snoozeChooseTime: "Choose another time",
@@ -112,7 +113,7 @@ const enSessionOrganization = {
     snoozeEvening: "This evening",
     snoozeTomorrow: "Tomorrow",
     snoozeNextWeek: "Next week",
-    snoozed: "Snoozed",
+    snoozed: sessionList.snoozed,
     snoozeWakes: en.sessionsView.snoozeWakes,
     snoozeTomorrowTime: en.sessionsView.snoozeTomorrowTime,
     sessionArchived: "Session archived",
