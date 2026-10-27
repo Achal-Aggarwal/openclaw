@@ -790,7 +790,7 @@ describe("doctor config flow", () => {
     plannedActions,
   });
 
-  it.each([
+  it.each<[string, Partial<DoctorConfigPreflightResult>, boolean, boolean?]>([
     ["settled retirement", {}, true],
     ["missing config", {}, false, false],
     ["another config repair", { configChanged: true }, false],
@@ -820,7 +820,7 @@ describe("doctor config flow", () => {
     ],
     ["unsettled preflight", { preflightLegacyStateConfig: undefined }, false],
     ["repair warning", { warnings: ["Unfinished repair"] }, false],
-  ] satisfies Array<[string, Partial<DoctorConfigPreflightResult>, boolean, boolean?]>)(
+  ])(
     "admits retirement with bound session work: %s",
     async (_name, facts, expected, exists = true) => {
       const config: OpenClawConfig = {

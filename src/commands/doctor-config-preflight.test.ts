@@ -140,10 +140,8 @@ describe("runDoctorConfigPreflight", () => {
     async (warningDisposition, expected) => {
       await withDoctorConfigPreflightHome(async (home) => {
         await writeOpenClawConfig(home, { plugins: { enabled: false } });
-        const legacyState = await import("../infra/state-migrations.state-dir.js");
-        vi.spyOn(legacyState, "autoMigrateLegacyStateDir").mockResolvedValue({
-          migrated: false,
-          skipped: false,
+        const retiredState = await import("./doctor-retired-state-repair.js");
+        vi.spyOn(retiredState, "repairRetiredDoctorState").mockResolvedValueOnce({
           changes: [],
           warnings: ["Manual state repair remains"],
           warningDisposition,
