@@ -730,9 +730,8 @@ async function effectiveNpmPreparationAttempt(request, runId, runAttempt) {
     if (!findArtifact(request, runId, name)) {
       continue;
     }
-    const descriptor = (
-      await readArtifact(request, runId, name, "prepared-npm-bundle.json")
-    )?.value;
+    const descriptor = (await readArtifact(request, runId, name, "prepared-npm-bundle.json"))
+      ?.value;
     validatePreparedNpmBundleDescriptor({
       descriptor,
       repository: request.repository,
@@ -746,8 +745,7 @@ async function effectiveNpmPreparationAttempt(request, runId, runAttempt) {
     );
     const matches = artifactAttemptJobs(request, runId, attempt).filter(
       (job) =>
-        String(job.id) === descriptor.producer.jobId &&
-        job.name === descriptor.producer.jobName,
+        String(job.id) === descriptor.producer.jobId && job.name === descriptor.producer.jobName,
     );
     requireValue(matches.length === 1, "Raw npm bundle requires its unique exact producer job.");
     if (matches[0].status === "completed" && matches[0].conclusion === "success") {
@@ -841,12 +839,7 @@ async function waitForArtifact(request, env) {
             toolingSha: request.toolingSha,
           });
           if (
-            assertNpmPreparationExecutionPreserved(
-              request,
-              runId,
-              runAttempt,
-              receipt.producer,
-            )
+            assertNpmPreparationExecutionPreserved(request, runId, runAttempt, receipt.producer)
           ) {
             console.error(
               `Artifact preparation npm identity: job ${receipt.producer.jobId} (attempt ${receipt.producer.runAttempt})`,
