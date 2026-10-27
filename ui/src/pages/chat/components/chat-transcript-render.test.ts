@@ -508,10 +508,10 @@ describe("chat transcript rendering", () => {
     context.gateway.snapshot.hello = gatewayHelloForMethods(["browser.request"]);
     props.applicationContext = context;
     const { container } = await mountThread(props);
-    expect(container.querySelector(".chat-work-group")).not.toBeNull();
-    await waitForSolid(() =>
-      expect(container.querySelectorAll<HTMLElement>("openclaw-browser-tab-card")).toHaveLength(1),
-    );
+    await waitForSolid(() => {
+      expect(container.querySelector(".chat-work-group")).not.toBeNull();
+      expect(container.querySelectorAll<HTMLElement>("openclaw-browser-tab-card")).toHaveLength(1);
+    });
     await vi.waitFor(() =>
       expect(capture).toHaveBeenCalledExactlyOnceWith(
         "browser.request",

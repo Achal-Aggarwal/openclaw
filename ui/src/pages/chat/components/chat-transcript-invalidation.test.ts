@@ -444,7 +444,9 @@ describe("chat transcript invalidation", () => {
       rerender();
       transcript.start();
       await flushDeferredRowPrune();
-      const finalBubble = required(container, '[data-entry-id="settled-final"]');
+      const finalBubble = await waitForSolid(() =>
+        required(container, '[data-entry-id="settled-final"]'),
+      );
       const workToggle = expectDefined(
         finalBubble.closest(".chat-group")?.querySelector(".chat-work-group button"),
         "completed work disclosure",

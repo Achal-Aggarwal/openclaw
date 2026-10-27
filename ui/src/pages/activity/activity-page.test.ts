@@ -414,7 +414,7 @@ describe("ActivityPage gateway lifecycle", () => {
   it("renders selected answer candidates without tool-only facts", async () => {
     await i18n.setLocale("en");
     const { gateway: source, current } = activityGateway();
-    const page = await bindActivity(source);
+    const { container } = await bindActivity(source);
     current().testOptions.onEvent?.(
       createGatewayEvent("agent", {
         stream: "item",
@@ -428,11 +428,11 @@ describe("ActivityPage gateway lifecycle", () => {
         },
       }),
     );
-    await previews(page);
-    const container = page.container;
-    expect(container.querySelector(".activity-entry__tool")?.textContent?.trim()).toBe(
-      "Answer candidate",
-    );
+    await waitForSolid(() => {
+      expect(container.querySelector(".activity-entry__tool")?.textContent?.trim()).toBe(
+        "Answer candidate",
+      );
+    });
     expect(container.querySelector(".activity-entry__text")?.textContent?.trim()).toBe(
       "Selected answer",
     );
