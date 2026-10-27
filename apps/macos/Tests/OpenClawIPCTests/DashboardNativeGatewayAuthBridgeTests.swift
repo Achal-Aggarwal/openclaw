@@ -120,12 +120,15 @@ struct DashboardNativeGatewayAuthBridgeTests {
         "browser-identity",
         "close",
         "replacement",
+        "immediate-reopen",
     ])
     func `WK challenge replies are owned by the native socket and current dashboard document`(
         _ transition: String) async throws
     {
         _ = AppKitTestSupport.application
-        let server = try await DashboardHTTPFixture.start()
+        let server = try await DashboardHTTPFixture.start(
+            html: "<html><script>window.nativeAuthDocument = crypto.randomUUID();</script></html>",
+            contentSecurityPolicy: "default-src 'none'; script-src 'unsafe-inline'")
         defer { server.stop() }
         let controller = DashboardWindowController(
             url: server.url("/control/"),
@@ -165,12 +168,22 @@ struct DashboardNativeGatewayAuthBridgeTests {
             #expect(bootstrap["password"] == nil)
         }
         #expect(controller.currentURL.fragment == nil)
+        let sourceDocument = try #require(try await controller.webView.evaluateJavaScript(
+            "window.nativeAuthDocument") as? String)
+        let holdsRetiredPage = ["close", "replacement", "immediate-reopen"].contains(transition)
         let retirement = DashboardRetirementNavigation()
-        if transition == "close" || transition == "replacement" {
+        retirement.blockAllNavigation = transition == "immediate-reopen"
+        var replacementWindow: NSWindow?
+        var currentRecipient: DashboardWindowController?
+        defer {
+            currentRecipient?.closeDashboard()
+            if currentRecipient == nil { replacementWindow?.close() }
+        }
+        if holdsRetiredPage {
             controller.webView.navigationDelegate = retirement
         }
         defer {
-            if transition == "close" || transition == "replacement" {
+            if holdsRetiredPage {
                 controller.webView.navigationDelegate = nil
                 controller.webView.loadHTMLString("", baseURL: nil)
             }
@@ -193,7 +206,11 @@ struct DashboardNativeGatewayAuthBridgeTests {
             case "provider": controller.documentHost.nativeGatewayAuthProvider = nil
             case "socket": current.setValue(false)
             case "close": controller.closeDashboard()
-            case "replacement": controller.detachWindowForReplacement()?.close()
+            case "replacement": replacementWindow = try #require(controller.detachWindowForReplacement())
+            case "immediate-reopen":
+                controller.closeDashboard()
+                controller.show()
+                #expect(controller.isWindowOpen)
             case "browser-identity": controller
                 .auth = .browserIdentity(gatewayUrl: server.websocketURL().absoluteString)
             default: break
@@ -213,6 +230,44 @@ struct DashboardNativeGatewayAuthBridgeTests {
         } else {
             #expect(received["error"] as? String != nil)
             #expect(received["result"] == nil)
+        }
+        print("""
+        [native-auth-proof] transition=\(transition) result=\(received["result"] != nil) \
+        error=\(received["error"] != nil)
+        """)
+        if holdsRetiredPage {
+            let currentController: DashboardWindowController
+            if transition == "immediate-reopen" {
+                // Observe denial in the resident retired page before committing a real new document.
+                retirement.blockAllNavigation = false
+                controller.webView.navigationDelegate = controller
+                controller.reloadDashboard()
+                currentController = controller
+            } else {
+                let current = DashboardWindowController(
+                    url: server.url("/control/"), auth: controller.auth,
+                    websiteDataStore: .nonPersistent(), windowAutosaveName: "",
+                    reusingWindow: replacementWindow, requestBrowserProfileImportOffer: { _ in false })
+                currentRecipient = current
+                current.documentHost.nativeGatewayAuthProvider = controller.documentHost.nativeGatewayAuthProvider
+                current.show(url: current.currentURL, auth: current.auth)
+                currentController = current
+            }
+            try await DashboardTestWait.document(currentController, "current native credential recipient") {
+                guard let document = try await currentController.webView.evaluateJavaScript(
+                    "window.nativeAuthDocument") as? String
+                else { return false }
+                return document != sourceDocument
+            }
+            let fresh = try #require(try await currentController.webView.callAsyncJavaScript("""
+            return await window.webkit.messageHandlers.OpenClawNativeGatewayAuth.postMessage({
+              id:'request-current', nonce:'challenge', signedAt:123
+            });
+            """, in: nil, contentWorld: .page) as? [String: Any])
+            #expect(fresh["id"] as? String == "request-current")
+            let result = try #require(fresh["result"] as? [String: Any])
+            #expect((result["auth"] as? [String: String])?["deviceToken"] == "native-grant")
+            print("[native-auth-proof] transition=\(transition) current-recipient=new-document completed")
         }
     }
 }
@@ -306,6 +361,7 @@ extension DashboardNativeGatewayAuthBridgeTests {
             grantScript, in: nil, contentWorld: .page) as? [String: Any])
         #expect(reply["result"] != nil)
         #expect(calls.value == 4)
+        print("[native-auth-proof] close-reopen immediate=\(reopenImmediately) completed")
     }
 
     @Test func replacingNativeDashboardRetiresItsOutgoingDocument() async throws {
@@ -337,5 +393,6 @@ extension DashboardNativeGatewayAuthBridgeTests {
         #expect(try await original.webView.evaluateJavaScript("typeof window.retiredFixture") as? String == "undefined")
         #expect(replacement.window === window)
         #expect(replacement.canDeliverNativeCommands)
+        print("[native-auth-proof] replacement-unload completed")
     }
 }
