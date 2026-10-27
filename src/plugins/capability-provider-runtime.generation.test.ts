@@ -415,7 +415,7 @@ describe("capability loading from a Gateway generation", () => {
     expect(fs.existsSync(runtimeImported)).toBe(false);
   });
 
-  it.for([
+  it.for<{ body: string; empty?: true } | { entry: string | number }>([
     { body: "export default { speechProviders: [] };", empty: true },
     { body: "module.exports = { speechProviders: [] };", empty: true },
     { body: 'throw new Error("broken catalog");' },

@@ -219,9 +219,9 @@ describe("subagent registry state", () => {
           const retained = (await read()).get("successor")!;
           expect(retained.generation).toBe(2);
           expect(() => {
-            retained.task = "caller-local change";
+            retained.generation = 3;
           }).toThrow(TypeError);
-          expect((await read()).get("successor")?.task).toBe(successor.task);
+          expect((await read()).get("successor")?.generation).toBe(2);
           publish(runMap(moved), [moved.runId]);
           expect(await ids()).toEqual(["old"]);
           expect(listener).toHaveBeenLastCalledWith(
