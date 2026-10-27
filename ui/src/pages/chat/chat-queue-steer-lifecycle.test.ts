@@ -149,6 +149,7 @@ it.each(["custody", "receipt", "retry", "remount", "deferred", "deferred-remount
         return extractText(message);
       };
       setQueueProps({
+        runId: host.chatRunId,
         canAbort: true,
         queue: host.chatQueue,
         displayQueue: [...buildPendingInputQueueItems(display.queuedInputs), ...display.queue],
@@ -197,14 +198,14 @@ it.each(["custody", "receipt", "retry", "remount", "deferred", "deferred-remount
       };
     };
     try {
-      expect(snapshot()).toEqual({
+      const waiting = {
         thread: [original.content, "Already visible output."],
         queue: [queued.text],
-      });
+      };
+      expect(snapshot()).toEqual(waiting);
       container.querySelector<HTMLButtonElement>(".chat-queue__steer")!.click();
       await requested.promise;
-      const delivered = [original.content, queued.text, "Already visible output."];
-      expect.soft(snapshot(), "request dispatch").toEqual({ thread: delivered, queue: [] });
+      expect.soft(snapshot(), "request dispatch").toEqual(waiting);
       let deferred = false;
       let consumed = false;
       let continued = false;
@@ -252,7 +253,12 @@ it.each(["custody", "receipt", "retry", "remount", "deferred", "deferred-remount
         retry!.click();
         await retryRequested.promise;
         steerProjected = true;
-        expect.soft(snapshot(), "retry retains original run ownership").toEqual(expected());
+        expect
+          .soft(snapshot(), "retry awaits acceptance without replacing the active run")
+          .toEqual({
+            thread: [original.content, "Already visible output. Later output."],
+            queue: [queued.text],
+          });
       }
       (ackMode === "retry" ? retryAck : ack).resolve({
         runId: queued.sendRunId,

@@ -174,9 +174,14 @@ export function shouldRenderQueuedSendInThread(
   item: ChatQueueItem,
   activeRunId?: string | null,
 ): boolean {
-  // A follow-up remains in the tray until custody or consumption owns its display.
-  // Transport attempts alone do not make it part of the active turn.
-  if (activeRunId && (item.sendRunId ?? item.pendingRunId) !== activeRunId) {
+  // Pending follow-ups stay in the tray; rejected inputs retain inline recovery.
+  // Transport attempts alone do not make an input part of the active turn.
+  if (
+    activeRunId &&
+    (item.sendRunId ?? item.pendingRunId) !== activeRunId &&
+    item.sendState !== "failed" &&
+    item.sendState !== "held"
+  ) {
     return false;
   }
   // Page-local submit timing is not persisted; durable attempts keep restored prompts visible.

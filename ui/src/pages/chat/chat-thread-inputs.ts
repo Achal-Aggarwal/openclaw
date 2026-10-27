@@ -28,6 +28,7 @@ type InputBlock = {
 export type ChatInputOrderState = { keys: string[] };
 
 export type ChatInputPlacementProps = {
+  runId?: string | null;
   queue?: ChatQueueItem[];
   initialTurnId?: string;
   pendingInputs?: ChatPendingInputsPage["items"];
