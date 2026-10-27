@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { OpenClawConfig } from "../api.js";
 import { compileMemoryWikiVault } from "./compile.js";
 import type { MemoryWikiPluginConfig } from "./config.js";
-import { renderWikiMarkdown, type WikiClaim } from "./markdown.js";
+import type { WikiClaim } from "./markdown.js";
 import { getMemoryWikiPage, searchMemoryWiki } from "./query.js";
 import { registerSessionlessAgentScopeQueryTests } from "./query.session-scope.test-support.js";
 import { createMemoryWikiTestHarness } from "./test-helpers.js";
@@ -16,18 +16,11 @@ const {
   getActiveMemoryProviderMock,
   isActiveMemoryProviderNativeMock,
   loadMemorySearchSessionStoreMock,
-  resolveDefaultAgentIdMock,
-  resolveSessionAgentIdMock,
 } = vi.hoisted(() => ({
   getActiveMemorySearchManagerMock: vi.fn(),
   getActiveMemoryProviderMock: vi.fn(),
   isActiveMemoryProviderNativeMock: vi.fn(),
   loadMemorySearchSessionStoreMock: vi.fn(),
-  resolveDefaultAgentIdMock: vi.fn(() => "main"),
-  resolveSessionAgentIdMock: vi.fn(({ sessionKey }: { sessionKey?: string }) => {
-    const match = /^agent:([^:]+):/.exec(sessionKey ?? "");
-    return match?.[1] ?? "main";
-  }),
 }));
 
 vi.mock("openclaw/plugin-sdk/memory-host-search", () => ({
@@ -37,11 +30,12 @@ vi.mock("openclaw/plugin-sdk/memory-host-search", () => ({
 }));
 
 vi.mock("openclaw/plugin-sdk/agent-scope-runtime", () => ({
-  resolveSessionAgentIdStrict: resolveSessionAgentIdMock,
+  resolveSessionAgentIdStrict: ({ sessionKey }: { sessionKey?: string }) =>
+    /^agent:([^:]+):/.exec(sessionKey ?? "")?.[1] ?? "main",
 }));
 
 vi.mock("openclaw/plugin-sdk/memory-host-core", () => ({
-  resolveDefaultAgentId: resolveDefaultAgentIdMock,
+  resolveDefaultAgentId: () => "main",
 }));
 
 vi.mock("openclaw/plugin-sdk/memory-core-host-engine-sessions", async (importOriginal) => {
@@ -63,22 +57,6 @@ function claim(id: string, text: string, overrides: Partial<WikiClaim> = {}) {
 
 function relationship(kind: string, note: string) {
   return { targetId: "entity.alice", targetTitle: "Alice", kind, note };
-}
-
-function writeVaultPage(
-  rootDir: string,
-  relativePath: string,
-  title: string,
-  body: string,
-  fields: Record<string, unknown> = {},
-) {
-  const pageType = relativePath.startsWith("entities/") ? "entity" : "source";
-  const id = pageType + "." + path.basename(relativePath, ".md");
-  return fs.writeFile(
-    path.join(rootDir, relativePath),
-    renderWikiMarkdown({ frontmatter: { pageType, id, title, ...fields }, body }),
-    "utf8",
-  );
 }
 
 const { createVault } = createMemoryWikiTestHarness();
@@ -117,8 +95,6 @@ beforeEach(() => {
   loadMemorySearchSessionStoreMock
     .mockReset()
     .mockResolvedValue({ storePath: "(test)", store: {} });
-  resolveDefaultAgentIdMock.mockClear();
-  resolveSessionAgentIdMock.mockClear();
 });
 
 async function createQueryVault(options?: {
@@ -130,14 +106,27 @@ async function createQueryVault(options?: {
     initialize: options?.initialize ?? true,
     config: options?.config,
   });
+  const writePage = (
+    file: string,
+    title: string,
+    body: string,
+    fields: Record<string, unknown> = {},
+  ) => {
+    const pageType = file.startsWith("entities/") ? "entity" : "source";
+    return vault.page(
+      file,
+      { pageType, id: `${pageType}.${path.basename(file, ".md")}`, title, ...fields },
+      body,
+    );
+  };
   return {
     ...vault,
     search: (query: string, opts?: SearchOptions) => searchWiki(vault.config, query, opts),
     searchPaths: async (query: string, opts?: SearchOptions) =>
       (await searchWiki(vault.config, query, opts)).map((result) => result.path),
-    writePage: writeVaultPage.bind(null, vault.rootDir),
+    writePage,
     writeNote: (relativePath: string, title: string, text: string, fields = {}) =>
-      writeVaultPage(vault.rootDir, relativePath, title, `# ${title}\n\n${text}\n`, fields),
+      writePage(relativePath, title, `# ${title}\n\n${text}\n`, fields),
   };
 }
 
@@ -214,9 +203,10 @@ describe("searchMemoryWiki", () => {
 
   it("strips related blocks and structural markers, but retains content and inline prose", async () => {
     const { search, searchPaths, writePage, writeNote } = await createQueryVault();
-    await writeNote(
-      "entities/alpha.md",
-      "Alpha",
+    const page = (name: string, body: string, fields = {}) =>
+      writePage(`entities/${name}.md`, name, body, fields);
+    await page(
+      "alpha",
       "Alpha body.\n\n## Related\n" +
         managedBlock(
           "wiki:related",
@@ -227,17 +217,11 @@ describe("searchMemoryWiki", () => {
     await writeNote("entities/needle-person.md", "Needle Person", "Needle body.", {
       sourceIds: ["source.alpha"],
     });
-
     const markers = `${managedBlock("human")}\n<!-- openclaw:wiki:raw-source -->\n`;
     await Promise.all([
-      writePage(
-        "entities/marker-only.md",
-        "Marker Only",
-        `${managedBlock("wiki:generated")}\n${markers}`,
-      ),
-      writePage(
-        "entities/evidence.md",
-        "Evidence Page",
+      page("marker-only", `${managedBlock("wiki:generated")}\n${markers}`),
+      page(
+        "evidence",
         managedBlock("human", "# Evidence Page\n\nReadable release evidence summary.") + "\n",
         {
           description: "openclaw release evidence",
@@ -249,21 +233,18 @@ describe("searchMemoryWiki", () => {
           ],
         },
       ),
-      writeNote(
-        "entities/marker-heavy.md",
-        "Marker Heavy",
-        `${managedBlock("wiki:generated", "openclaw body reference")}\n${markers}`,
+      page(
+        "marker-heavy",
+        `# Marker Heavy\n\n${managedBlock("wiki:generated", "openclaw body reference")}\n${markers}\n`,
       ),
-      writeNote("entities/clean.md", "Clean", "openclaw openclaw body reference"),
-      writeNote(
-        "entities/managed-content.md",
-        "Managed Content",
-        managedBlock("wiki:generated", "Cobalt content remains searchable."),
+      page("clean", "# Clean\n\nopenclaw openclaw body reference\n"),
+      page(
+        "managed-content",
+        `# Managed Content\n\n${managedBlock("wiki:generated", "Cobalt content remains searchable.")}\n`,
       ),
-      writeNote(
-        "entities/inline-marker.md",
-        "Inline Marker",
-        "The literal <!-- openclaw:wiki:generated:start --> inline-needle stays searchable.",
+      page(
+        "inline-marker",
+        "# Inline Marker\n\nThe literal <!-- openclaw:wiki:generated:start --> inline-needle stays searchable.\n",
       ),
     ]);
     expect(await searchPaths("Needle Person")).toEqual(["entities/needle-person.md"]);
@@ -309,106 +290,75 @@ describe("searchMemoryWiki", () => {
 
   it("routes people through cards and compiled relationships and exposes claim evidence", async () => {
     const { config, search, writeNote } = await createQueryVault();
-    await writeNote("entities/brad.md", "Brad Groux", "Agent card summary.", {
+    await writeNote("entities/pat.md", "Pat", "Card.", {
       entityType: "person",
-      canonicalId: "maintainer.brad-groux",
-      aliases: ["bgroux"],
+      canonicalId: "maintainer.pat",
+      aliases: ["pat-handle"],
       privacyTier: "local-private",
-      personCard: {
-        handles: ["@bgroux"],
-        lane: "Microsoft Teams",
-        askFor: ["Teams and Azure rollout questions"],
-      },
-      bestUsedFor: ["Microsoft ecosystem routing"],
+      personCard: { handles: ["@pat-handle"], lane: "Teams", askFor: ["Teams and Azure"] },
+      bestUsedFor: ["Microsoft"],
       relationships: [
-        relationship("works-with", "Teams escalation buddy"),
-        relationship("collaborates-with", "Azure escalation buddy"),
+        relationship("works-with", "Teams buddy"),
+        relationship("collaborates-with", "Azure buddy"),
       ],
       claims: [
-        claim("claim.brad.teams", "Brad is a strong route for Microsoft Teams questions.", {
+        claim("claim.teams", "Pat knows Teams.", {
           confidence: 0.88,
-          evidence: [
-            {
-              kind: "maintainer-whois",
-              sourceId: "source.maintainers",
-              privacyTier: "local-private",
-            },
-          ],
+          evidence: [{ kind: "whois", sourceId: "source.people", privacyTier: "local-private" }],
         }),
       ],
     });
-    await writeNote(
-      "sources/maintainers.md",
-      "Maintainers Source",
-      "maintainer-whois Teams sample.",
-    );
-    await writeNote("entities/fallback.md", "Fallback Router", "Generic routing note.", {
-      bestUsedFor: ["Azure escalation buddy"],
+    await writeNote("sources/people.md", "People", "whois Teams.");
+    await writeNote("entities/fallback.md", "Fallback", "Generic.", {
+      bestUsedFor: ["Azure buddy"],
     });
     await compileMemoryWikiVault(config);
-
-    const personResults = await search("bgroux", { mode: "find-person" });
-    expect(personResults[0]).toMatchObject({
-      path: "entities/brad.md",
-      canonicalId: "maintainer.brad-groux",
-      aliases: ["bgroux"],
+    expect((await search("pat-handle", { mode: "find-person" }))[0]).toMatchObject({
+      path: "entities/pat.md",
+      canonicalId: "maintainer.pat",
+      aliases: ["pat-handle"],
       privacyTier: "local-private",
       searchMode: "find-person",
     });
-
-    const routeResults = await search("who should I ask about Teams?", {
-      mode: "route-question",
-    });
-    expect(routeResults[0]?.path).toBe("entities/brad.md");
-
-    const claimResults = await search("strong route Teams", { mode: "raw-claim" });
-    expect(claimResults[0]).toMatchObject({
-      path: "entities/brad.md",
-      matchedClaimId: "claim.brad.teams",
+    expect(
+      (await search("who should I ask about Teams?", { mode: "route-question" }))[0]?.path,
+    ).toBe("entities/pat.md");
+    expect((await search("knows Pat Teams", { mode: "raw-claim" }))[0]).toMatchObject({
+      path: "entities/pat.md",
+      matchedClaimId: "claim.teams",
       matchedClaimConfidence: 0.88,
-      evidenceKinds: ["maintainer-whois"],
-      evidenceSourceIds: ["source.maintainers"],
+      evidenceKinds: ["whois"],
+      evidenceSourceIds: ["source.people"],
     });
-
-    const evidenceResults = await search("maintainer-whois", {
-      mode: "source-evidence",
-      maxResults: 5,
-    });
-    expect(evidenceResults.map((result) => result.path)).toContain("sources/maintainers.md");
-    const relationshipResults = await search("who should I ask about Azure escalation buddy?", {
-      mode: "route-question",
-      maxResults: 1,
-    });
-    expect(relationshipResults[0]?.path).toBe("entities/brad.md");
+    expect(
+      (await search("whois", { mode: "source-evidence", maxResults: 5 })).map(
+        (result) => result.path,
+      ),
+    ).toContain("sources/people.md");
+    expect(
+      (
+        await search("who should I ask about Azure buddy?", {
+          mode: "route-question",
+          maxResults: 1,
+        })
+      )[0]?.path,
+    ).toBe("entities/pat.md");
   });
 
   it.each([
-    {
-      name: "oversized structured claims",
-      source: "claim",
-      text: `needle ${"x".repeat(20_000)}`,
-      expected: `needle ${"x".repeat(693)}`,
-    },
-    {
-      name: "UTF-16 surrogate pairs at the snippet boundary",
-      source: "body",
-      text: `needle ${"x".repeat(692)}🤖tail`,
-      expected: `needle ${"x".repeat(692)}`,
-    },
-  ])(
-    "bounds $name before search results reach model context",
-    async ({ source, text, expected }) => {
-      const { search, writePage } = await createQueryVault();
-      await writePage(
-        "entities/bounded-snippet.md",
-        "Bounded Snippet",
-        source === "claim" ? "# Bounded Snippet\n\nUnrelated body.\n" : `# Wiki\n\n${text}\n`,
-        source === "claim" ? { claims: [claim("claim.bounded-snippet", text)] } : {},
-      );
+    ["claim", `needle ${"x".repeat(20_000)}`, `needle ${"x".repeat(693)}`],
+    ["body", `needle ${"x".repeat(692)}🤖tail`, `needle ${"x".repeat(692)}`],
+  ])("bounds %s snippets without splitting surrogate pairs", async (source, text, expected) => {
+    const { search, writePage } = await createQueryVault();
+    await writePage(
+      "entities/bounded-snippet.md",
+      "Bounded Snippet",
+      source === "claim" ? "# Bounded Snippet\n\nUnrelated body.\n" : `# Wiki\n\n${text}\n`,
+      source === "claim" ? { claims: [claim("claim.bounded-snippet", text)] } : {},
+    );
 
-      expect(await search("needle")).toMatchObject([{ snippet: expected }]);
-    },
-  );
+    expect(await search("needle")).toMatchObject([{ snippet: expected }]);
+  });
 
   it("ranks fresh supported claims ahead of stale contested claims", async () => {
     const { searchPaths, writeNote } = await createQueryVault();
@@ -578,9 +528,7 @@ describe("getMemoryWikiPage", () => {
       updatedAt: "2026-04-05T13:00:00.000Z",
     });
 
-    const result = await readWiki(config, "sources/imported-source-alpha.md");
-
-    expect(result).toMatchObject({
+    await expect(readWiki(config, "sources/imported-source-alpha.md")).resolves.toMatchObject({
       corpus: "wiki",
       path: "sources/imported-source-alpha.md",
       sourceType: "memory-unsafe-local",
@@ -700,15 +648,14 @@ describe("wiki corpus bridge page agent scoping", () => {
         agentSessionKey: `agent:${agent}:child-session`,
         sandboxed: true,
       });
-    const normalizedOwner = await readAs("main-daily-note", "main");
-    const denied = await readAs("secondary-daily-note", "main");
-    const allowed = await readAs("secondary-daily-note", "secondary");
-    const unresolved = await readWiki(config, "secondary-daily-note", { sandboxed: true });
-
-    expect(normalizedOwner?.content).toContain("wikiscope marker main");
-    expect(denied).toBeNull();
-    expect(allowed?.content).toContain("wikiscope marker secondary");
-    expect(unresolved).toBeNull();
+    await expect(readAs("main-daily-note", "main")).resolves.toMatchObject({
+      content: expect.stringContaining("wikiscope marker main"),
+    });
+    await expect(readAs("secondary-daily-note", "main")).resolves.toBeNull();
+    await expect(readAs("secondary-daily-note", "secondary")).resolves.toMatchObject({
+      content: expect.stringContaining("wikiscope marker secondary"),
+    });
+    await expect(readWiki(config, "secondary-daily-note", { sandboxed: true })).resolves.toBeNull();
   });
 
   it("filters cross-agent bridge pages out of wiki search results", async () => {
@@ -877,23 +824,16 @@ describe("native provider records", () => {
 
   it("round-trips a record-only result with revision and citations without inventing a path", async () => {
     const input = await createInput();
-    const reference = {
-      providerId: "knowledge",
-      id: "claim:release:42",
-      revision: "r3",
-      fragment: "evidence:1",
-    };
-    const citations = [
-      { label: "Release decision", reference, url: "https://example.test/source/42" },
-    ];
+    const reference = { providerId: "knowledge", id: "claim:42", revision: "r3", fragment: "e:1" };
+    const citations = [{ label: "Release", reference, url: "https://example.test/42" }];
     const provider = useProvider({
       search: vi.fn().mockResolvedValue({
-        hits: [{ reference, excerpt: "Release on Friday", citations, score: 0.9 }],
+        hits: [{ reference, excerpt: "Friday", citations, score: 0.9 }],
       }),
       get: vi.fn().mockResolvedValue({
         status: "ok",
         reference,
-        text: "Release on Friday, after review.",
+        text: "Friday, after review.",
         citations,
         truncated: true,
         from: 2,
@@ -902,19 +842,15 @@ describe("native provider records", () => {
       close: vi.fn(),
     });
     const results = await searchMemoryWiki({ ...input, query: "release" });
-    expect(results).toHaveLength(1);
-    expect(results[0]).toMatchObject({ reference, citations, title: "Release decision" });
+    expect(results).toEqual([expect.objectContaining({ reference, citations, title: "Release" })]);
     expect(results[0]).not.toHaveProperty("path");
-    const lookup = results[0]?.lookup;
-    if (!lookup) {
-      throw new Error("Expected provider lookup");
-    }
+    const lookup = results[0]!.lookup!;
     const record = await getMemoryWikiPage({ ...input, lookup, fromLine: 2, lineCount: 4 });
     expect(provider.get).toHaveBeenCalledExactlyOnceWith({ reference, from: 2, lines: 4 });
     expect(record).toMatchObject({
       reference,
       citations,
-      content: "Release on Friday, after review.",
+      content: "Friday, after review.",
       truncated: true,
     });
     expect(record).not.toHaveProperty("path");

@@ -283,42 +283,34 @@ describe("memory-wiki cli", () => {
     },
   );
 
-  it("preserves structured --body-file I/O errors before changing synthesis", async () => {
-    const { config, read, write } = await createCliVault();
-    const args = ["apply", "synthesis", "Good", "--source-id", "src.manual"];
-    await runWiki(config, [...args, "--body", "Keep this summary."]);
-    const before = await read("syntheses/good.md");
-    const input = await write("body.txt", "Replacement summary.");
-    const bodyPath = await fs.realpath(input);
-    const denied = Object.assign(new Error("Body file read denied"), { code: "EACCES" });
-    const realOpen = fs.open;
-    vi.spyOn(fs, "open").mockImplementation((filePath, flags, mode) => {
-      if (filePath === bodyPath) {
-        return Promise.reject(denied);
-      }
-      return realOpen(filePath, flags, mode);
-    });
-
-    await expect(runWiki(config, [...args, "--body-file", input])).rejects.toBe(denied);
-    expect(await read("syntheses/good.md")).toBe(before);
-  });
-
-  it("rejects blank and invalid UTF-8 --body-file before wiping synthesis", async () => {
+  it.each([
+    ["denied", "Replacement summary."],
+    ["empty", "  \n\n"],
+    ["UTF-8", Buffer.from([0x43, 0x61, 0x66, 0xe9])],
+  ])("rejects %s body files without changing synthesis", async (kind, body) => {
     const { config, read, write } = await createCliVault();
     const args = ["apply", "synthesis", "Good", "--source-id", "src.manual"];
     await runWiki(config, [...args, "--body", "Real summary v1"]);
-    const pagePath = "syntheses/good.md";
-    const before = await read(pagePath);
+    const before = await read("syntheses/good.md");
     expect(before).toContain("Real summary v1");
-
-    for (const [bytes, error] of [
-      [Buffer.from("  \n\n"), /body-file is empty/],
-      [Buffer.from([0x43, 0x61, 0x66, 0xe9]), /must be valid UTF-8/],
-    ] as const) {
-      const bodyPath = await write("body.txt", bytes);
-      await expect(runWiki(config, [...args, "--body-file", bodyPath])).rejects.toThrow(error);
-      expect(await read(pagePath)).toBe(before);
+    const input = await write("body.txt", body);
+    const denied = Object.assign(new Error("Body file read denied"), { code: "EACCES" });
+    if (kind === "denied") {
+      const bodyPath = await fs.realpath(input);
+      const realOpen = fs.open;
+      vi.spyOn(fs, "open").mockImplementation((file, flags, mode) =>
+        file === bodyPath ? Promise.reject(denied) : realOpen(file, flags, mode),
+      );
     }
+    const pending = runWiki(config, [...args, "--body-file", input]);
+    if (kind === "denied") {
+      await expect(pending).rejects.toBe(denied);
+    } else {
+      await expect(pending).rejects.toThrow(
+        kind === "empty" ? /body-file is empty/ : /must be valid UTF-8/,
+      );
+    }
+    expect(await read("syntheses/good.md")).toBe(before);
   });
 
   it("forwards --agent through every bridge Gateway call", async () => {
@@ -766,12 +758,7 @@ describe("memory-wiki cli", () => {
 
     await updateExportReply(exportDir, "Updated: window seats now.");
 
-    let importError: unknown;
-    try {
-      await vault.import();
-    } catch (error) {
-      importError = error;
-    }
+    const importError = await vault.import().catch((error: unknown) => error);
     const message = importError instanceof Error ? importError.message : "";
     const failedRunId = message.match(/chatgpt-[a-f0-9]{12}/u)?.[0];
     expect(failedRunId).toBeDefined();
