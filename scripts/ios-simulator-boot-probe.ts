@@ -39,6 +39,7 @@ process.on("SIGTERM", cancel);
 process.on("SIGINT", cancel);
 const operations: Record<string, unknown>[] = [];
 const snapshots: Record<string, unknown>[] = [];
+let runtimeLabels = new Map<string, string>();
 const proof: Record<string, unknown> = {
   schema: 1,
   kind: "simulator-boot-probe",
@@ -106,12 +107,15 @@ type CensusRow = {
   birthSec: number;
   birthUsec: number;
   roleHint: string;
+  labelHint?: string;
   userNs?: number;
   systemNs?: number;
   threads?: number;
   runningThreads?: number;
 };
 type BootSnapshot = {
+  stage: string;
+  receivedAtMs: number;
   bootCycle: "cold" | "warm";
   sample: number;
   startedMs: number;
@@ -121,7 +125,8 @@ type BootSnapshot = {
   hostAfter?: ReturnType<typeof host>;
   rows: CensusRow[];
 };
-const startObserver = async () => {
+const collectCensus = async (stage: "before-boot" | "after-headroom") => {
+  phase = `census-${stage}`;
   const cycle = bootCycle;
   const hints = new Map<string, string>();
   for (const role of roles) {
@@ -129,6 +134,7 @@ const startObserver = async () => {
     hints.set(short, hints.has(short) ? "other" : role);
   }
   let baselineSeen = false;
+  let observerPassed = false;
   let ready!: () => void;
   const baseline = new Promise<void>((resolve) => {
     ready = resolve;
@@ -136,11 +142,14 @@ const startObserver = async () => {
   let buffer = "";
   let active: BootSnapshot | undefined;
   let byPid = new Map<number, CensusRow>();
+  let labelHints = new Map<number, string>();
   let bytes = 0;
   const observeLine = (line: string) => {
     const fields = line.split("\t");
     if (fields[0] === "BEGIN") {
       active = {
+        stage,
+        receivedAtMs: Date.now(),
         bootCycle: cycle,
         sample: Number(fields[1]),
         startedMs: Number(fields[2]),
@@ -149,6 +158,7 @@ const startObserver = async () => {
       };
       snapshots.push(active);
       byPid = new Map();
+      labelHints = new Map();
     } else if (active && fields[0] === "CENSUS") {
       const row: CensusRow = {
         pid: Number(fields[1]),
@@ -159,6 +169,19 @@ const startObserver = async () => {
       };
       active.rows.push(row);
       byPid.set(row.pid, row);
+      const label = runtimeLabels.get(fields[5] ?? "");
+      if (label) {
+        labelHints.set(row.pid, label);
+      }
+    } else if (active && fields[0] === "CENSUS_END") {
+      // Restrict public runtime metadata hints to direct simulator launchd children.
+      for (const row of active.rows) {
+        const label = labelHints.get(row.pid);
+        if (label && byPid.get(row.parentPid)?.roleHint === "launchd_sim") {
+          row.labelHint = label;
+        }
+      }
+      labelHints.clear();
     } else if (active && fields[0] === "QUERY") {
       active.pendingPid = Number(fields[1]);
     } else if (active && fields[0] === "TASK") {
@@ -205,8 +228,10 @@ const startObserver = async () => {
     },
   }).then(
     (code) => {
+      observerPassed = code === 0;
       operations.push({
         name: "boot-census",
+        stage,
         bootCycle: cycle,
         outcome: code === 0 ? "passed" : "failed",
         ms: Math.round(performance.now() - started),
@@ -219,6 +244,7 @@ const startObserver = async () => {
       }
       operations.push({
         name: "boot-census",
+        stage,
         bootCycle: cycle,
         outcome: "failed",
         ms: Math.round(performance.now() - started),
@@ -231,6 +257,10 @@ const startObserver = async () => {
     await Promise.race([baseline, sleep(15_000, undefined, { signal: readinessAbort.signal })]);
     if (!baselineSeen) {
       throw new Error("observer-baseline-unavailable");
+    }
+    await observerDone;
+    if (!observerPassed) {
+      throw new Error("observer-failed");
     }
   } finally {
     readinessAbort.abort();
@@ -361,6 +391,32 @@ try {
     throw new Error("runtime-missing");
   }
   proof.runtime = runtime.identifier;
+  if (typeof runtime.runtimeRoot !== "string" || !path.isAbsolute(runtime.runtimeRoot)) {
+    throw new Error("runtime-root-missing");
+  }
+  runtimeLabels = new Map(
+    JSON.parse(
+      await command("runtime-job-labels", "python3", [
+        "-c",
+        `import json, pathlib, plistlib, re, sys
+from collections import defaultdict
+root = pathlib.Path(sys.argv[1])
+buckets = defaultdict(set)
+for directory in ("System/Library/LaunchDaemons", "System/Library/LaunchAgents"):
+    for file in (root / directory).glob("*.plist"):
+        data = plistlib.loads(file.read_bytes())
+        args = data.get("ProgramArguments") or []
+        program = data.get("Program") or (args[0] if args else "")
+        label = data.get("Label", "")
+        name = pathlib.PurePosixPath(program).name
+        if re.fullmatch(r"[A-Za-z0-9_.+-]{1,160}", name) and re.fullmatch(r"com\\.apple\\.[A-Za-z0-9_.-]{1,120}", label):
+            buckets[name[:16]].add(label)
+print(json.dumps([[name, next(iter(labels))] for name, labels in buckets.items() if len(labels) == 1]))`,
+        runtime.runtimeRoot,
+      ]),
+    ),
+  );
+  proof.runtimeLabelHintCount = runtimeLabels.size;
   phase = "gateway-install";
   const gateway = await prepareIOSReleaseGateway({
     targetSha,
@@ -393,10 +449,20 @@ try {
   }
   for (const cycle of ["cold"] as const) {
     bootCycle = cycle;
-    await startObserver();
+    await collectCensus("before-boot");
     await command("simulator-boot", "xcrun", ["simctl", "boot", udid]);
     await command("simulator-ready", "xcrun", ["simctl", "bootstatus", udid, "-b"], 180_000);
-    await waitForCpuHeadroom();
+    let headroomFailure: unknown;
+    try {
+      await waitForCpuHeadroom();
+    } catch (error) {
+      headroomFailure = error;
+    }
+    await collectCensus("after-headroom");
+    if (headroomFailure) {
+      phase = "host-headroom";
+      throw new Error("host-headroom-unavailable", { cause: headroomFailure });
+    }
     await rpc("after-boot-setup-status");
     await rpc("after-boot-setup-code", true);
     await observerDone;
