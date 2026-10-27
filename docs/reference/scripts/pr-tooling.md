@@ -7,6 +7,37 @@ title: "PR wrapper tooling"
 
 # PR wrapper tooling
 
+## Bind an operation to reviewed wrapper code
+
+Use the additive global option before the subcommand when an operation must use
+an exact reviewed wrapper revision:
+
+```bash
+scripts/pr --expect-wrapper-revision <full-reviewed-OID> review-init <PR>
+```
+
+The value must be a full lowercase Git commit OID, not a branch or abbreviated
+SHA. Each fresh invocation compares it once with the native
+`refs/remotes/origin/main` selection. A mismatch or missing selection refuses before
+canonical substitution or dependency materialization. This is an expectation,
+not an alternative source selector; it does not fetch or move a ref.
+
+Both canonical and linked entrypoints use a verified snapshot in this mode,
+even when their local wrapper bytes match. The checked revision survives the
+snapshot and supervisor handoffs without rereading the moving ref. An anchor
+without this handoff contract refuses before dependency materialization.
+Reentry rejects Git checkouts and verifies the snapshot bytes against the checked
+revision; matching environment values alone cannot admit an in-place wrapper.
+`--dev-wrapper` does not relax the expectation. Without the option, existing
+wrapper selection is unchanged.
+
+Pass the option separately to every operation. Keep the selected dependency
+installation intact through completion; snapshotting wrapper code does not
+freeze package contents. The option does not approve a PR, waive an operation
+lock, or permit an unlanded wrapper to admit its own use.
+
+## Supervision and dependencies
+
 - Supervised PR operations disable automatic Git maintenance through inherited process configuration, preserving repository settings. Explicit maintenance must still join before completion. PR source fetches also disable automatic maintenance: fetching one PR does not authorize repository-wide pruning of unrelated worktree metadata.
 
 - `scripts/pr` serializes review, prepare, and merge operations per PR across linked worktrees; `scripts/pr gc` skips active or indeterminate locks. Its subcommand classification table is the canonical wrapper trust boundary: a mismatched local wrapper may run only a classified `advisory` subcommand with `--dev-wrapper` or `OPENCLAW_PR_DEV_WRAPPER=1`; classified `landing` subcommands always require canonical/origin-main wrapper code. A worktree whose wrapper differs from origin/main (stale base or wrapper-editing branch) loudly substitutes the canonical checkout's wrapper when that checkout is clean and byte-identical to fetched `refs/remotes/origin/main`; it refuses only when no anchor-matching wrapper is available. A successful command return is the trusted synchronous-completion contract: every PR-state-mutating child must be joined before returning, and such work must never daemonize or explicitly escape both the operation group and lock-notification FD. Release on clean exit requires the leader's completion marker; an escaped descendant that merely holds the notify pipe then produces a loud warned release instead of retention (#124583). A failed command auto-releases while its explicit pre-side-effect validation marker remains active, or after side effects when it exits on its own (status 1-127, no signal) and the full drain observes its group dead and every notification-pipe holder gone; that leaves only the fd-closing escapee residual a clean exit already accepts. Interruptions, lingering group work, a still-open pipe, and controller loss stay locked because detached children cannot be disproved. After verifying no child tools remain, use the reported exact-OID `scripts/pr lock-recover` command. Never bypass or delete these refs manually.

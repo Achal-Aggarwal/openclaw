@@ -95,11 +95,26 @@ dev_wrapper_opt_in=0
 if [ "${OPENCLAW_PR_DEV_WRAPPER:-}" = "1" ]; then
   dev_wrapper_opt_in=1
 fi
-if [ "${1-}" = "--dev-wrapper" ]; then
-  dev_wrapper_opt_in=1
-  export OPENCLAW_PR_DEV_WRAPPER=1
-  shift
-fi
+expected_wrapper_revision=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --dev-wrapper)
+      dev_wrapper_opt_in=1
+      export OPENCLAW_PR_DEV_WRAPPER=1
+      shift
+      ;;
+    --expect-wrapper-revision)
+      if [ -n "$expected_wrapper_revision" ] || [ "$#" -lt 2 ] ||
+        ! [[ "$2" =~ ^([0-9a-f]{40}|[0-9a-f]{64})$ ]]; then
+        echo "--expect-wrapper-revision requires one full lowercase commit OID." >&2
+        exit 2
+      fi
+      expected_wrapper_revision="$2"
+      shift 2
+      ;;
+    *) break ;;
+  esac
+done
 requested_subcommand="${1-}"
 
 # This bootstrap cannot load helpers from an unverified extracted tree.
@@ -289,11 +304,41 @@ pr_wrapper_components=(scripts/pr scripts/pr-lib)
 # re-selection: the running bytes ARE the anchor, and the temp copy has no git
 # context of its own to select against.
 if [ -n "${OPENCLAW_PR_ANCHOR_REPO_ROOT:-}" ]; then
+  # PR_EXPECTED_WRAPPER_REVISION_HANDOFF_V1
+  # Both exec handoffs retain the checked OID and CLI expectation. A missing
+  # half must refuse before dependencies, never reselect a moving shared ref.
+  if [ -n "$expected_wrapper_revision" ] || [ -n "${OPENCLAW_PR_ANCHOR_EXPECTED_REVISION:-}" ]; then
+    if [ -z "$expected_wrapper_revision" ] ||
+      [ "${OPENCLAW_PR_ANCHOR_EXPECTED_REVISION:-}" != "$expected_wrapper_revision" ]; then
+      echo "scripts/pr expected wrapper revision handoff is missing or mismatched." >&2
+      exit 1
+    fi
+  fi
   if ! pr_git -C "$OPENCLAW_PR_ANCHOR_REPO_ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     echo "OPENCLAW_PR_ANCHOR_REPO_ROOT is not a git work tree: $OPENCLAW_PR_ANCHOR_REPO_ROOT" >&2
     exit 1
   fi
   canonical_repo_root="$OPENCLAW_PR_ANCHOR_REPO_ROOT"
+  if [ -n "$expected_wrapper_revision" ]; then
+    # Ambient strings cannot turn a fresh checkout into snapshot reentry.
+    # Verify the immutable closure again; creator/FD identity owns cleanup only.
+    if pr_git -C "$script_parent_dir" rev-parse --git-dir >/dev/null 2>&1; then
+      echo "scripts/pr expected wrapper revision handoff requires a snapshot, not a Git checkout." >&2
+      exit 1
+    fi
+    if ! expected_inventory=$(pr_git -C "$canonical_repo_root" show "$expected_wrapper_revision:scripts/pr-lib/wrapper-components.txt" 2>/dev/null); then
+      echo "scripts/pr cannot verify the expected wrapper snapshot inventory." >&2
+      exit 1
+    fi
+    while IFS= read -r wrapper_component; do
+      pr_wrapper_components+=("$wrapper_component")
+    done <<< "$expected_inventory"
+    if ! pr_batch_wrapper_git verify "$canonical_repo_root" "$expected_wrapper_revision" \
+      "$script_parent_dir/.." "${pr_wrapper_components[@]}"; then
+      echo "scripts/pr expected wrapper snapshot does not match the checked revision." >&2
+      exit 1
+    fi
+  fi
   # Older parents pin only their own dependency set. The anchored child owns
   # completing its installation before any loader, supervisor, or lock starts.
   pr_materialize_dependencies "$script_parent_dir/pr-lib/materialize-dependencies.mjs" \
@@ -301,7 +346,16 @@ if [ -n "${OPENCLAW_PR_ANCHOR_REPO_ROOT:-}" ]; then
 elif common_git_dir=$(pr_git -C "$script_parent_dir" rev-parse --path-format=absolute --git-common-dir 2>/dev/null); then
   canonical_repo_root="$(dirname "$common_git_dir")"
   canonical_self="$canonical_repo_root/scripts/$(basename "${BASH_SOURCE[0]}")"
-  if [ "$script_self" != "$canonical_self" ] && [ -x "$canonical_self" ]; then
+  if [ -n "$expected_wrapper_revision" ]; then
+    # Compare the native selection once; the operator cannot select another ref.
+    anchor_commit=$(pr_git -C "$script_parent_dir" rev-parse --verify refs/remotes/origin/main^{commit} 2>/dev/null || true)
+    if [ "$anchor_commit" != "$expected_wrapper_revision" ]; then
+      echo "scripts/pr expected wrapper revision $expected_wrapper_revision; native origin/main selection is ${anchor_commit:-unavailable}." >&2
+      exit 1
+    fi
+  fi
+  if [ -n "$expected_wrapper_revision" ] ||
+    { [ "$script_self" != "$canonical_self" ] && [ -x "$canonical_self" ]; }; then
     linked_inventory=$(pr_git -C "$script_parent_dir" show HEAD:scripts/pr-lib/wrapper-components.txt)
     while IFS= read -r wrapper_component; do
       pr_wrapper_components+=("$wrapper_component")
@@ -317,7 +371,7 @@ elif common_git_dir=$(pr_git -C "$script_parent_dir" rev-parse --path-format=abs
     canonical_wrapper_revision=$(
       pr_git -C "$canonical_repo_root" rev-parse "${pr_wrapper_components[@]/#/HEAD:}" 2>/dev/null || true
     )
-    if [ -n "$linked_wrapper_revision" ] &&
+    if [ -z "$expected_wrapper_revision" ] && [ -n "$linked_wrapper_revision" ] &&
       [ "$linked_wrapper_revision" = "$canonical_wrapper_revision" ] &&
       pr_git -C "$canonical_repo_root" diff --quiet HEAD -- "${pr_wrapper_components[@]/#/:(top)}"; then
       exec "$canonical_self" "$@"
@@ -328,7 +382,9 @@ elif common_git_dir=$(pr_git -C "$script_parent_dir" rev-parse --path-format=abs
     # does not need the materialized dependency context.
     # refs/remotes/... explicitly: bare "origin/main" is a DWIM name that a
     # local branch or tag named origin/main could shadow, spoofing the anchor.
-    anchor_commit=$(pr_git -C "$script_parent_dir" rev-parse --verify refs/remotes/origin/main^{commit} 2>/dev/null || true)
+    if [ -z "$expected_wrapper_revision" ]; then
+      anchor_commit=$(pr_git -C "$script_parent_dir" rev-parse --verify refs/remotes/origin/main^{commit} 2>/dev/null || true)
+    fi
     anchor_wrapper_revision=""
     if [ -n "$anchor_commit" ] &&
       anchor_inventory=$(pr_git -C "$script_parent_dir" show "$anchor_commit:scripts/pr-lib/wrapper-components.txt" 2>/dev/null); then
@@ -352,14 +408,17 @@ elif common_git_dir=$(pr_git -C "$script_parent_dir" rev-parse --path-format=abs
     fi
     # Node resolves helper imports from their source directory, not the Git owner.
     # Reuse the verified materializer for code-only linked PR operations.
-    if [ "$linked_matches_anchor" != "1" ] ||
+    if [ -n "$expected_wrapper_revision" ] || [ "$linked_matches_anchor" != "1" ] ||
       { is_locked_pr_command "$requested_subcommand" && [ ! -d "$script_parent_dir/../node_modules" ]; }; then
       wrapper_route_reason="differs from origin/main"
       if [ "$linked_matches_anchor" = "1" ]; then
         wrapper_route_reason="matches origin/main but has no node_modules directory"
       fi
+      if [ -n "$expected_wrapper_revision" ]; then
+        wrapper_route_reason="requires verified snapshot $expected_wrapper_revision"
+      fi
       requested_classification=$(pr_subcommand_classification "$requested_subcommand" 2>/dev/null || true)
-      if [ "$linked_matches_anchor" != "1" ] && [ "$dev_wrapper_opt_in" = "1" ] && [ "$requested_classification" = "advisory" ]; then
+      if [ -z "$expected_wrapper_revision" ] && [ "$linked_matches_anchor" != "1" ] && [ "$dev_wrapper_opt_in" = "1" ] && [ "$requested_classification" = "advisory" ]; then
         if [ "${OPENCLAW_PR_DEV_WRAPPER_BANNER_SHOWN:-}" != "1" ]; then
           local_head_revision=$(pr_git -C "$script_parent_dir" rev-parse HEAD 2>/dev/null || printf 'unknown')
           echo "WARNING: running local scripts/pr revision $local_head_revision via dev-wrapper opt-in." >&2
@@ -375,7 +434,7 @@ elif common_git_dir=$(pr_git -C "$script_parent_dir" rev-parse --path-format=abs
         # changes relative to main. When the canonical checkout is byte-identical
         # to the fetched origin/main anchor, exec-ing it runs exactly the trusted
         # anchor code; announce the substitution so it is never silent.
-        if [ -n "$anchor_wrapper_revision" ] &&
+        if [ -z "$expected_wrapper_revision" ] && [ -n "$anchor_wrapper_revision" ] &&
           [ "$canonical_wrapper_revision" = "$anchor_wrapper_revision" ] &&
           pr_git -C "$canonical_repo_root" diff --quiet HEAD -- "${anchor_components[@]/#/:(top)}"; then
           echo "scripts/pr wrapper in this worktree $wrapper_route_reason; running the canonical checkout's wrapper (matches the origin/main trust anchor): $canonical_repo_root" >&2
@@ -412,6 +471,11 @@ elif common_git_dir=$(pr_git -C "$script_parent_dir" rev-parse --path-format=abs
               anchor_extraction_valid=1
             fi
           fi
+          if [ "$anchor_extraction_valid" = "1" ] && [ -n "$expected_wrapper_revision" ] &&
+            ! grep -q '^  # PR_EXPECTED_WRAPPER_REVISION_HANDOFF_V1$' "$anchor_exec_dir/scripts/pr"; then
+            echo "scripts/pr selected anchor does not support the expected wrapper revision handoff." >&2
+            anchor_extraction_valid=0
+          fi
           if [ "$anchor_extraction_valid" = "1" ] &&
             grep -q "OPENCLAW_PR_ANCHOR_REPO_ROOT" "$anchor_exec_dir/scripts/pr" 2>/dev/null; then
             # Only third-party tooling comes from the selected installed tree.
@@ -432,7 +496,11 @@ elif common_git_dir=$(pr_git -C "$script_parent_dir" rev-parse --path-format=abs
             # supervisor may retire it after the entire operation has drained.
             # Older anchors without that handoff retain OS temp-reaping behavior.
             echo "scripts/pr wrapper in this worktree $wrapper_route_reason; running wrapper code materialized from the refs/remotes/origin/main trust anchor at revision $(pr_git -C "$script_parent_dir" rev-parse --short "$anchor_commit")." >&2
+            if [ -n "$expected_wrapper_revision" ]; then
+              set -- --expect-wrapper-revision "$expected_wrapper_revision" "$@"
+            fi
             OPENCLAW_PR_ANCHOR_REPO_ROOT="$canonical_repo_root" \
+              OPENCLAW_PR_ANCHOR_EXPECTED_REVISION="$expected_wrapper_revision" \
               OPENCLAW_PR_ANCHOR_CREATOR_PID="$$" OPENCLAW_PR_ANCHOR_FD=9 \
               exec "$anchor_exec_dir/scripts/pr" "$@"
           fi
@@ -464,6 +532,9 @@ elif common_git_dir=$(pr_git -C "$script_parent_dir" rev-parse --path-format=abs
       fi
     fi
   fi
+elif [ -n "$expected_wrapper_revision" ]; then
+  echo "scripts/pr cannot select the expected wrapper revision outside a Git work tree." >&2
+  exit 1
 fi
 
 # Keep the verified owner available after cleanup removes a linked wrapper.
@@ -509,6 +580,9 @@ if [ "${1-}" = "gc" ] || is_locked_pr_command "${1-}"; then
     unset OPENCLAW_PR_LOCK_NOTIFY_FD
     unset OPENCLAW_PR_LOCK_SUPERVISOR_PID
     command -v node >/dev/null 2>&1 || { echo "Missing required command: node" >&2; exit 1; }
+    if [ -n "$expected_wrapper_revision" ]; then
+      set -- --expect-wrapper-revision "$expected_wrapper_revision" "$@"
+    fi
     exec node "$script_parent_dir/pr-lib/process-group-runner.mjs" "$canonical_repo_root" "$script_self" "$@"
   fi
 fi
@@ -519,7 +593,7 @@ source "$script_parent_dir/lib/plain-gh.sh"
 usage() {
   cat <<USAGE
 Usage:
-  scripts/pr [--dev-wrapper] <subcommand> ...
+  scripts/pr [--dev-wrapper] [--expect-wrapper-revision <full-OID>] <subcommand> ...
   scripts/pr ls
   scripts/pr gc [--pr <number>] [--dry-run]
   scripts/pr lock-recover <PR> <OWNER_OID> --confirmed-no-running-tools
@@ -583,6 +657,8 @@ Usage:
 
   --dev-wrapper permits a mismatched local wrapper only for subcommands
   classified advisory. OPENCLAW_PR_DEV_WRAPPER=1 is equivalent.
+  --expect-wrapper-revision compares the native origin/main selection once
+  and requires its verified snapshot. It never overrides source selection.
 
 Required commands: git, gh, jq, rg (ripgrep), pnpm, node.
 When macOS blocks ps, PR operation locks require Python 3 with ctypes on PATH.
