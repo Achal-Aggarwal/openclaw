@@ -1198,7 +1198,9 @@ describe("runGatewayLoop", () => {
     "exits instead of restarting when %s arrives while an in-place restart drains",
     async (stopSignal) => {
       const closing = createDeferred();
-      const close = vi.fn(async () => { await closing.promise; });
+      const close = vi.fn(async () => {
+        await closing.promise;
+      });
 
       await withIsolatedSignals(async ({ captureSignal }) => {
         const completeBoot = vi.fn();
