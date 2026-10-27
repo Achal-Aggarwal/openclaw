@@ -62,7 +62,7 @@ it("keeps maintenance and active commands owned until the committed viewport set
 
 it.each([
   {
-    name: "delivers native offsets without checking end geometry when no end command is active",
+    name: "records native end geometry before delivering offsets to the renderer",
     logicalDrift: false,
   },
   {
@@ -71,9 +71,16 @@ it.each([
   },
 ])("$name", ({ logicalDrift }) => {
   const element = document.createElement("div");
-  const readGeometry = vi.fn(() => 100);
+  let delivered = false;
+  const geometryReads: boolean[] = [];
   for (const key of ["scrollHeight", "clientHeight"]) {
-    Object.defineProperty(element, key, { configurable: true, get: readGeometry });
+    Object.defineProperty(element, key, {
+      configurable: true,
+      get: () => {
+        geometryReads.push(delivered);
+        return key === "scrollHeight" ? 120 : 100;
+      },
+    });
   }
   const virtualizer = new Virtualizer<HTMLDivElement, HTMLElement>({
     count: 0,
@@ -86,16 +93,22 @@ it.each([
   virtualizer.scrollElement = element;
   virtualizer.targetWindow = window;
   const state = new TranscriptOffsetState();
+  const endAnchor = new TranscriptEndAnchor(() => {});
   const onOffset = vi.fn();
   const order: string[] = [];
-  const deliver = vi.fn(() => order.push("virtualizer"));
+  const recordedEnd: boolean[] = [];
+  const deliver = vi.fn((offset: number) => {
+    delivered = true;
+    recordedEnd.push(endAnchor.isRecordedEnd(offset));
+    order.push("virtualizer");
+  });
   const onNativeScroll = vi.fn(() => order.push("pane"));
   onTestFinished(
     observeTranscriptOffset(
       {
         state,
         getScrollElement: () => element,
-        endAnchor: new TranscriptEndAnchor(() => {}),
+        endAnchor,
         prependAnchor: new TranscriptPrependAnchor(new Map(), vi.fn()),
         canFollowEnd: () => false,
         isProgrammaticScroll: () => false,
@@ -112,12 +125,16 @@ it.each([
     ),
   );
   order.length = 0;
+  delivered = false;
+  geometryReads.length = 0;
+  recordedEnd.length = 0;
   element.scrollTop = 20;
   element.dispatchEvent(new Event("scroll"));
   expect(order).toEqual(["composer", "pane", "virtualizer"]);
   expect(deliver).toHaveBeenCalledWith(20, true);
   expect(onOffset).toHaveBeenCalledOnce();
-  expect(readGeometry).not.toHaveBeenCalled();
+  expect(recordedEnd).toEqual([true]);
+  expect(geometryReads).toEqual([false, false]);
   const nested = document.createElement("div");
   element.append(nested);
   order.length = 0;
@@ -184,7 +201,7 @@ it.each([
           cancelScroll: vi.fn(),
           onLayoutCorrection: (before, after) => endAnchor.recordLayoutCorrection(before, after),
           invalidate: vi.fn(),
-          onOffset: () => endAnchor.recordViewport(element),
+          onOffset: vi.fn(),
           onReaderScroll: (towardEnd) => handleChatScrollTakeover(policy, towardEnd),
           onComposerLayout: vi.fn(),
         },

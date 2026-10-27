@@ -251,6 +251,8 @@ export function observeTranscriptOffset(
       touching: owner.state.touching,
       programmatic,
     });
+    // Record the arriving viewport before row rendering dirties native layout.
+    owner.endAnchor.recordViewport(element);
     callback(offset, scrolling);
     owner.onOffset(programmatic ? 0 : delta);
     // Range/isScrolling and pane follow policy already invalidate themselves.

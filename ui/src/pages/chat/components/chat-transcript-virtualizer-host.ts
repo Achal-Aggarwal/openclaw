@@ -245,7 +245,6 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
             invalidate,
             onOffset: (readerDelta) => {
               // Nested or canceled input must not admit offscreen measurements.
-              this.endAnchor.recordViewport(this.scrollElement);
               return readerDelta ? this.initialRange.recordReaderMovement(readerDelta) : undefined;
             },
             onComposerLayout: (changed) => this.commitComposerResize(changed),
