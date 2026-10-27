@@ -26,6 +26,15 @@ import { getGatewayShutdownCleanupSignal } from "../process/gateway-work-admissi
 import { normalizeAgentId } from "../routing/session-key.js";
 import { runInDetachedAsyncContext } from "../shared/detached-async-context.js";
 import { resolveGlobalSingleton } from "../shared/global-singleton.js";
+import {
+  assertAgentCreationClaimAccess,
+  assertAgentCreationClaimAliases,
+} from "./agent-creation-claim.js";
+import { assertAgentDatabaseAdmitted } from "./agent-database-admission.js";
+import {
+  assertAgentDeletionCleanupAliases,
+  assertAgentDeletionDatabaseCleanupAccess,
+} from "./agent-deletion-cleanup.js";
 import { createAgentDatabaseHandleCloser } from "./openclaw-agent-db-close.js";
 import type {
   OpenClawAgentDatabase,
@@ -51,17 +60,21 @@ import {
 import {
   assertSupportedAgentSchemaVersion,
   readExistingAgentSchemaMeta,
-} from "./openclaw-agent-db-schema-helpers.js";
+} from "./openclaw-agent-db-schema-read.js";
 import {
   clearOpenClawAgentDatabaseValidationCache,
   invalidateOpenClawAgentDatabaseValidation,
   type OpenClawAgentDatabaseValidation,
 } from "./openclaw-agent-db-validation-cache.js";
 import {
+  isSameOpenClawAgentDatabasePath,
+  resolveOpenClawAgentSqlitePath,
+} from "./openclaw-agent-db.paths.js";
+import {
   getOpenClawDatabaseMaintenanceScope,
   observeOpenClawDatabaseMaintenanceResource,
 } from "./openclaw-state-db-async-lifecycle.js";
-import { OPENCLAW_SQLITE_BUSY_TIMEOUT_MS } from "./openclaw-state-db.js";
+import { OPENCLAW_SQLITE_BUSY_TIMEOUT_MS } from "./openclaw-state-db-contract.js";
 
 const agentDbLog = createSubsystemLogger("state/agent-db");
 const OPENCLAW_AGENT_DB_SLOW_OPEN_MS = 1_000;
@@ -125,6 +138,34 @@ export function registerAgentDatabaseHandle(
 ): void {
   cache.leases.set(database.path, { leaseId, env });
   cache.databases.set(database.path, database);
+}
+
+/** Return the matching live cache entry without materializing a database. */
+export function getOpenClawAgentDatabaseIfOpen(
+  options: OpenClawAgentDatabaseOptions,
+): OpenClawAgentDatabase | undefined {
+  const agentId = normalizeAgentId(options.agentId);
+  assertAgentDatabaseAdmitted(agentId, { env: options.env });
+  const pathname = resolveOpenClawAgentSqlitePath({ ...options, agentId });
+  const database = cache.databases.get(pathname);
+  if (!database?.db.isOpen) {
+    assertAgentDeletionCleanupAliases(options, isSameOpenClawAgentDatabasePath);
+    assertAgentCreationClaimAliases(options);
+    return undefined;
+  }
+  if (cache.failures.has(pathname)) {
+    throw cache.failures.get(pathname);
+  }
+  if (database.agentId !== agentId) {
+    throw new Error(
+      `OpenClaw agent database ${pathname} is already open for agent ${database.agentId}; requested agent ${agentId}.`,
+    );
+  }
+  assertAgentDeletionDatabaseCleanupAccess(database, options);
+  assertAgentCreationClaimAccess(database, options);
+  observeOpenClawDatabaseMaintenanceResource(database.db);
+  refreshAgentDatabaseIdleTimer(database);
+  return database;
 }
 
 /** Queue a non-throwing runtime publication on the outer database commit edge. */

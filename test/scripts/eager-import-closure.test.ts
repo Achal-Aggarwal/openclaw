@@ -459,6 +459,16 @@ it("resolves runtime aliases and import/require conditions without following dec
 
 it.each([
   {
+    name: "agent database readers",
+    dynamic: false,
+    entrypoints: ["src/state/openclaw-agent-db-readonly.ts"],
+    deferredOwners: [
+      "src/state/openclaw-agent-db.ts",
+      "src/state/openclaw-agent-db-schema.ts",
+      "src/state/openclaw-agent-db-schema-helpers.ts",
+    ],
+  },
+  {
     name: "native update authority",
     dynamic: false,
     entrypoints: [
