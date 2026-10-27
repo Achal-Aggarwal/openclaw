@@ -157,25 +157,29 @@ Regular stable publication to npm `latest` requests `Windows Gateway Store Reque
 after GitHub activation, through both `OpenClaw Release Publish` and `OpenClaw
 Release Button`. The detached request builds the exact signed Gateway source in
 `openclaw/openclaw-windows-packaging`, checks both the payload and the independently
-selected MSIX release identity, then dispatches that build's existing Microsoft
-Store publisher. Beta and extended-stable do not request Store publication.
-No sideload signing or packaging GitHub release is requested.
+selected MSIX release identity, then requests `windows-store-publish.yml` on
+`openclaw/releases` `main` with `product=gateway` and that build's `run_id`.
+Beta and extended-stable do not request Store publication. No sideload signing or
+packaging GitHub release is requested.
 
-The release GitHub App must be installed on core and packaging with Actions write,
-Contents read, and Variables read. Keep packaging's effective `MSSTORE_ENABLED`
-unset or disabled (including inherited organization variables): its automatic
-`workflow_run` publisher would submit before this caller
-checks the exact-source snapshot. Store credentials and the `microsoft-store`
-environment policy remain in packaging; this handoff does not add reviewer rules
-or move publishing to `openclaw/releases`.
+The release GitHub App must be installed on core, packaging, and releases with
+Actions write and Contents read. The central publisher owns source run/attempt,
+artifact, and bundle-hash validation, Store credentials, and the
+`microsoft-store-gateway` environment requiring release-manager approval. Its
+workflow and publisher code require release-manager review. This handoff depends
+on that publisher and the coordinated retirement of packaging's direct and
+automatic Store publishers; it does not retain a second publishing path or
+`MSSTORE_ENABLED` policy. Before enabling the handoff, configure central protection
+and Store federation and revoke the old repository's Store federation.
 
-A successful request means the Store publisher was dispatched, not that Microsoft
-accepted or certified the update. Follow the linked packaging publisher and its
-`openclaw-gateway-store-submission-evidence` commit receipt. Core/npm publication
-does not wait for MSIX builds or Store acceptance. Repeated publication reuses the
-original request, including failed requests. Recover its retained packaging/Store
-run IDs through the downstream native workflows; do not rerun the entire request
-or start a duplicate after an ambiguous dispatch. Evidence is retained for 90 days.
+A successful request means the central publisher was dispatched; release-manager
+approval and Microsoft acceptance remain pending. Follow the linked releases run
+for approval and its Store commit receipt; certification and public availability
+need separate verification. Core/npm publication does not wait for MSIX builds,
+approval, or Store acceptance. Repeated publication reuses the original request,
+including failed requests. Recover its retained packaging build and central Store
+run IDs rather than rerunning the entire request or starting a duplicate after an
+ambiguous dispatch. Evidence is retained for 90 days.
 
 ## Windows Hub
 

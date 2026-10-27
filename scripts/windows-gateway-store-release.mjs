@@ -14,9 +14,10 @@ import { classifyReleaseTrain, parseReleaseVersion } from "./lib/release-version
 
 const core = "openclaw/openclaw";
 const packaging = "openclaw/openclaw-windows-packaging";
+const releases = "openclaw/releases";
 const requestWorkflow = "windows-gateway-store.yml";
 const buildWorkflow = "gateway-msix.yml";
-const storeWorkflow = "submit-microsoft-store.yml";
+const storeWorkflow = "windows-store-publish.yml";
 const { RELEASE_TAG: tag = "", RELEASE_SHA: sha = "", GITHUB_RUN_ID: currentId } = process.env;
 const titlePrefix = `Windows Gateway Store Request [${tag}] source=`;
 const title = `${titlePrefix}${sha}`;
@@ -59,7 +60,6 @@ function collection(endpoint, key) {
   const fields = {
     workflow_runs: "{id,run_number,event,head_branch,display_title,status,conclusion}",
     artifacts: "{name,expired}",
-    variables: '{name,value:(if .name == "MSSTORE_ENABLED" then .value else null end)}',
   };
   const values = [];
   // Bound each subprocess response, not just the number of records: full run
@@ -159,21 +159,6 @@ function dispatch(repository, workflow, inputs) {
     "Dispatch acceptance is unconfirmed. Inspect existing runs; do not blindly redispatch.",
   );
   return id;
-}
-
-function requireManualStoreMode() {
-  // Repository values override shared organization variables in the publisher.
-  const variables = new Map(
-    [
-      ...collection(`repos/${packaging}/actions/organization-variables`, "variables"),
-      ...collection(`repos/${packaging}/actions/variables`, "variables"),
-    ].map(({ name, value }) => [name, value]),
-  );
-  // Match the automatic publisher's case-insensitive GitHub expression.
-  requireValue(
-    variables.get("MSSTORE_ENABLED")?.toLowerCase() !== "true",
-    "Packaging MSSTORE_ENABLED must remain disabled for the exact-source handoff; its automatic publisher would duplicate this request.",
-  );
 }
 
 function verifyBuild(run, expectedHead) {
@@ -300,7 +285,6 @@ async function main() {
     !previous,
     `A prior request owns this Gateway release: ${runUrl(core, previous?.id)}. Recover its downstream runs instead.`,
   );
-  requireManualStoreMode();
   const packagingHead = api(`repos/${packaging}/git/ref/heads/main`).object.sha;
   authorize(requestWorkflow);
   record({ state: "build-dispatch-attempted", packagingHead });
@@ -313,13 +297,12 @@ async function main() {
   report(`Gateway MSIX build: ${runUrl(packaging, buildId)}`);
   const run = await awaitBuild(buildId, packagingHead);
   verifySource(buildId, run);
-  requireManualStoreMode();
   authorize(requestWorkflow);
-  record({ state: "store-dispatch-attempted" });
-  const storeId = dispatch(packaging, storeWorkflow, { run_id: buildId });
-  record({ state: "store-requested", storeRunId: storeId });
+  record({ state: "store-dispatch-attempted", storeRepository: releases });
+  const storeId = dispatch(releases, storeWorkflow, { product: "gateway", run_id: buildId });
+  record({ state: "store-approval-pending", storeRunId: storeId });
   report(
-    `Gateway Store publisher: ${runUrl(packaging, storeId)}. Follow its commit receipt; certification and public availability are not yet verified.`,
+    `Gateway Store approval request: ${runUrl(releases, storeId)}. Release-manager approval and Microsoft acceptance remain pending; certification and public availability are not yet verified.`,
   );
 }
 

@@ -16,6 +16,7 @@ const nativeProcess =
 
 const core = "openclaw/openclaw";
 const packaging = "openclaw/openclaw-windows-packaging";
+const releases = "openclaw/releases";
 const sha = "a".repeat(40);
 const tooling = "b".repeat(40);
 const packagingHead = "c".repeat(40);
@@ -33,9 +34,6 @@ type Fixture = {
   previous?: Record<string, unknown>[];
   source?: Record<string, unknown>;
   build?: Record<string, unknown>;
-  automatic?: boolean | string;
-  organizationAutomatic?: boolean | string;
-  automaticAfterBuild?: string;
   largeHistory?: boolean;
   incompleteHistory?: boolean;
   expiredBundle?: boolean;
@@ -66,7 +64,6 @@ async function run(mode: "request" | "publish", fixture: Fixture = {}) {
     mode === "request" ? "openclaw-release-publish.yml" : "windows-gateway-store.yml";
   let requestCancelled = false;
   let buildPending = fixture.cancelDuringBuildWait ?? false;
-  let buildObserved = false;
   pauseBuild.mockImplementation(async () => {
     requestCancelled = fixture.cancelDuringBuildWait ?? false;
   });
@@ -122,7 +119,7 @@ async function run(mode: "request" | "publish", fixture: Fixture = {}) {
       dispatches.push({ endpoint, body: JSON.parse(options.input) });
       const id = endpoint.includes("gateway-msix.yml")
         ? 51
-        : endpoint.includes("submit-microsoft-store")
+        : endpoint.includes("windows-store-publish.yml")
           ? 61
           : 41;
       return JSON.stringify(fixture.ambiguousStore && id === 61 ? {} : { workflow_run_id: id });
@@ -191,20 +188,6 @@ async function run(mode: "request" | "publish", fixture: Fixture = {}) {
           },
         );
       }
-    } else if (
-      endpoint.includes("/actions/variables") ||
-      endpoint.includes("/actions/organization-variables")
-    ) {
-      const automatic = endpoint.includes("/organization-variables")
-        ? fixture.organizationAutomatic
-        : buildObserved
-          ? (fixture.automaticAfterBuild ?? fixture.automatic)
-          : fixture.automatic;
-      value = {
-        items:
-          automatic === undefined ? [] : [{ name: "MSSTORE_ENABLED", value: String(automatic) }],
-        total_count: automatic === undefined ? 0 : 1,
-      };
     } else if (endpoint.endsWith("/git/ref/heads/main")) {
       value = { object: { sha: packagingHead } };
     } else if (endpoint.endsWith("/actions/runs/51")) {
@@ -220,7 +203,6 @@ async function run(mode: "request" | "publish", fixture: Fixture = {}) {
         ...fixture.build,
       };
       buildPending = false;
-      buildObserved = true;
     } else if (endpoint.includes("/artifacts?")) {
       value = {
         items: [
@@ -282,7 +264,7 @@ describe("Gateway Store release handoff", () => {
     },
   );
 
-  it("builds the exact payload and submits only that successful run", async () => {
+  it("builds the exact payload and requests central approval for only that successful run", async () => {
     const result = await run("publish");
     expect(result.status).toBe(0);
     expect(result.dispatches).toEqual([
@@ -294,52 +276,28 @@ describe("Gateway Store release handoff", () => {
         },
       },
       {
-        endpoint: `repos/${packaging}/actions/workflows/submit-microsoft-store.yml/dispatches`,
-        body: { ref: "main", inputs: { run_id: "51" } },
+        endpoint: `repos/${releases}/actions/workflows/windows-store-publish.yml/dispatches`,
+        body: { ref: "main", inputs: { product: "gateway", run_id: "51" } },
       },
     ]);
     expect(result.evidence).toMatchObject({
-      state: "store-requested",
+      state: "store-approval-pending",
       buildRunId: "51",
       storeRunId: "61",
+      storeRepository: releases,
     });
+    expect(console.log).toHaveBeenCalledWith(
+      expect.stringContaining(`https://github.com/${releases}/actions/runs/61`),
+    );
+    expect(console.log).toHaveBeenCalledWith(
+      expect.stringContaining("Release-manager approval and Microsoft acceptance remain pending"),
+    );
   });
 
   it("does not buffer oversized irrelevant run metadata while checking replay history", async () => {
     const result = await run("request", { largeHistory: true });
     expect(result.status).toBe(0);
     expect(result.evidence).toMatchObject({ state: "requested", requestRunId: "41" });
-  });
-
-  it("honors a repository override disabling inherited automatic Store submission", async () => {
-    const result = await run("publish", { organizationAutomatic: "TrUe", automatic: "FaLsE" });
-    expect(result.status).toBe(0);
-    expect(result.evidence).toMatchObject({ state: "store-requested", storeRunId: "61" });
-  });
-
-  it.each([
-    { automatic: "TRUE" },
-    { automatic: "True" },
-    { organizationAutomatic: "TRUE" },
-    { organizationAutomatic: "TrUe" },
-    { organizationAutomatic: false, automatic: "True" },
-  ])("rejects mixed-case automatic Store submission before any dispatch: %j", async (fixture) => {
-    const result = await run("publish", fixture);
-    expect(result.status).toBe(1);
-    expect(result.dispatches).toEqual([]);
-    expect(console.error).toHaveBeenCalledWith(
-      expect.stringContaining("MSSTORE_ENABLED must remain disabled"),
-    );
-  });
-
-  it("does not request Store submission when automatic mode becomes mixed-case true during the build", async () => {
-    const result = await run("publish", { automaticAfterBuild: "TrUe" });
-    expect(result.status).toBe(1);
-    expect(result.dispatches).toHaveLength(1);
-    expect(result.evidence).toMatchObject({ state: "building", buildRunId: "51" });
-    expect(console.error).toHaveBeenCalledWith(
-      expect.stringContaining("MSSTORE_ENABLED must remain disabled"),
-    );
   });
 
   it.each([
@@ -374,8 +332,6 @@ describe("Gateway Store release handoff", () => {
   });
 
   it.each([
-    { automatic: true },
-    { organizationAutomatic: true },
     { current: { status: "cancelled" } },
     { current: { run_attempt: 2 } },
     {

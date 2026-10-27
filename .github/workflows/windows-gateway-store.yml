@@ -40,7 +40,7 @@ jobs:
         with:
           node-version: "24.22.1"
           package-manager-cache: false
-      - name: Create cross-repository packaging request token
+      - name: Create cross-repository build and approval request token
         id: packaging_token
         uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3
         with:
@@ -50,9 +50,9 @@ jobs:
           repositories: |
             openclaw
             openclaw-windows-packaging
+            releases
           permission-actions: write
           permission-contents: read
-          permission-variables: read
       - name: Build the published source and request its Store submission
         env:
           GH_TOKEN: ${{ steps.packaging_token.outputs.token }}
