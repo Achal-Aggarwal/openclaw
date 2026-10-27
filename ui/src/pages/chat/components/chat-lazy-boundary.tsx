@@ -10,7 +10,6 @@ export function ChatLazyBoundary(props: {
   children: Element;
   fallback?: Element;
   onClose?: () => void;
-  onRetry?: () => void;
 }) {
   return (
     <Errored
@@ -19,11 +18,7 @@ export function ChatLazyBoundary(props: {
           error={error()}
           stale={isStaleChunkImportError(error())}
           onRetry={() =>
-            isStaleChunkImportError(error())
-              ? void retryStaleChunkReloadWhenReachable()
-              : props.onRetry
-                ? props.onRetry()
-                : reset()
+            isStaleChunkImportError(error()) ? void retryStaleChunkReloadWhenReachable() : reset()
           }
           onClose={props.onClose}
           inline

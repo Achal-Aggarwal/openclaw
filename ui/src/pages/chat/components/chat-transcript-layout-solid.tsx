@@ -1,5 +1,19 @@
 import { dynamic, render, type JSX } from "@solidjs/web";
-import { createMemo, createSignal, For, onSettled, runWithOwner, Show } from "solid-js";
+import {
+  createMemo,
+  createSignal,
+  Errored,
+  For,
+  Loading,
+  onSettled,
+  runWithOwner,
+  Show,
+} from "solid-js";
+import {
+  isStaleChunkImportError,
+  retryStaleChunkReloadWhenReachable,
+} from "../../../app/stale-chunk-reload.ts";
+import { LazyViewError } from "../../../components/solid/lazy-view-error.tsx";
 import { PRESENTATION_CHANGED_EVENT, type PresentationBinding } from "../../../lib/presentation.ts";
 import { ApplicationProvider } from "../../../lib/reactive/context.ts";
 import { elementRef } from "../../../lib/reactive/element-ref.ts";
@@ -33,9 +47,36 @@ export type TranscriptPreparation = {
   retry: () => void;
 };
 
-function PreparationCompletion(props: { completion: Promise<void> }) {
-  const completed = createMemo(() => props.completion.then(() => null));
-  return <>{completed()}</>;
+function PreparationCompletion(props: { pending: TranscriptPreparation; placeholder: boolean }) {
+  const completed = createMemo(() => props.pending.completion.then(() => null));
+  return (
+    <Errored
+      fallback={(error) => (
+        <LazyViewError
+          error={error()}
+          stale={isStaleChunkImportError(error())}
+          onRetry={() =>
+            isStaleChunkImportError(error())
+              ? void retryStaleChunkReloadWhenReachable()
+              : props.pending.retry()
+          }
+          inline
+        />
+      )}
+    >
+      <Loading
+        fallback={
+          props.placeholder ? (
+            <div class="chat-group" role="status">
+              {t("common.loading")}
+            </div>
+          ) : undefined
+        }
+      >
+        {completed()}
+      </Loading>
+    </Errored>
+  );
 }
 
 function NativeRow(props: { value: NativeTranscriptView }): JSX.Element {
@@ -389,18 +430,7 @@ export class ChatTranscriptRenderer {
                           "z-index": "1",
                         }}
                       >
-                        <ChatLazyBoundary
-                          onRetry={() => pending.retry()}
-                          fallback={
-                            this.placeholder ? (
-                              <div class="chat-group" role="status">
-                                {t("common.loading")}
-                              </div>
-                            ) : undefined
-                          }
-                        >
-                          <PreparationCompletion completion={pending.completion} />
-                        </ChatLazyBoundary>
+                        <PreparationCompletion pending={pending} placeholder={this.placeholder} />
                       </div>
                     )}
                   </Show>

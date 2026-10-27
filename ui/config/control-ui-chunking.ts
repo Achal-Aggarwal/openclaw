@@ -91,7 +91,11 @@ export function controlUiStableChunkName(id: string): string | undefined {
     case "ui/src/pages/chat/components/chat-notice-view.tsx":
     case "ui/src/pages/chat/components/chat-run-failure-notice.tsx":
       // Common factories download together; Rolldown keeps their lazy initializers separate.
-      return "chat-transcript-content";
+      return "chat-interaction-runtime";
+    case "ui/src/pages/chat/chat-transcript-prewarm.ts":
+    case "ui/src/pages/chat/components/chat-divider.tsx":
+    case "ui/src/components/solid/markdown-html.tsx":
+      return "control-ui-boot-chat";
     case "ui/src/pages/chat/components/chat-realtime-controls.tsx":
       return "chat-transcript-realtime";
     case "ui/src/pages/chat/components/chat-forwarded-attribution.tsx":
