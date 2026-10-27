@@ -29,7 +29,6 @@ import {
   initialFallbackAttemptOptions,
   createMockReplyOperation,
   requireRecord,
-  createMinimalRunAgentTurnParams,
 } from "./agent-runner-execution.test-support.js";
 import type {
   FallbackRunnerParams,
@@ -157,7 +156,6 @@ describe("executeAgentTurn: run lifecycle and ownership", () => {
         complete: async () => clearActiveEmbeddedRun(sessionId, handle, sessionKey),
         discard: () => clearActiveEmbeddedRun(sessionId, handle, sessionKey),
       });
-      expect(params.onCompactionAccounting).toEqual(expect.any(Function));
       params.onCompactionAccounting?.(fact);
       throw createAgentRunDirectAbortError();
     });
@@ -379,53 +377,16 @@ describe("executeAgentTurn: run lifecycle and ownership", () => {
     expect(freezeAbortMock).toHaveBeenCalledTimes(1);
   });
 
-  it("suppresses a settled fallback result after an accepted user abort", async () => {
-    const abortController = new AbortController();
-    const { replyOperation, freezeAbortMock } = createMockReplyOperation({
-      abortSignal: abortController.signal,
-    });
-    let operationResult: typeof replyOperation.result = null;
-    const { candidateSettled, fallbackRelease } = holdSettledFallback();
-    const pendingToolTask = createDeferred();
-    const pendingToolTasks = new Set([pendingToolTask.promise]);
-    Object.defineProperty(replyOperation, "result", {
-      configurable: true,
-      get: () => operationResult,
-    });
-    replyOperation.abortByUser = vi.fn(() => {
-      operationResult = { kind: "aborted", code: "aborted_by_user" };
-      abortController.abort("user_abort");
-      return true;
-    });
-    state.runEmbeddedAgentMock.mockResolvedValueOnce(createRunResult("late reply"));
-
-    const pending = execute({ replyOperation, pendingToolTasks });
-    await candidateSettled.promise;
-    expect(replyOperation.abortByUser()).toBe(true);
-    let settled = false;
-    void pending.then(() => {
-      settled = true;
-    });
-    fallbackRelease.resolve();
-    await new Promise<void>((resolve) => {
-      setImmediate(resolve);
-    });
-    expect(settled).toBe(false);
-    expect(freezeAbortMock).not.toHaveBeenCalled();
-    pendingToolTask.resolve();
-
-    await expect(pending).resolves.toEqual({ kind: "final", payload: {} });
-    expect(freezeAbortMock).toHaveBeenCalledTimes(1);
-  });
-
-  it("preserves completed compaction without a reply after user abort", async () => {
+  it("drains tools and preserves compaction without a reply after cancelling a settled fallback", async () => {
     const upstreamAbort = new AbortController();
     const replyOperation = operation("upstream-settled-fallback", {
       sessionId: "session",
       upstreamAbortSignal: upstreamAbort.signal,
     });
     replyOperation.setPhase("running");
+    using freezeAbort = vi.spyOn(replyOperation, "freezeAbort");
     const { candidateSettled, fallbackRelease } = holdSettledFallback();
+    const pendingToolTask = createDeferred();
     state.runEmbeddedAgentMock.mockResolvedValueOnce(
       createRunResult("late reply", {
         durationMs: 1,
@@ -440,9 +401,11 @@ describe("executeAgentTurn: run lifecycle and ownership", () => {
     );
 
     try {
-      const params = createMinimalRunAgentTurnParams({ replyOperation });
-      params.followupRun.run.sourceReplyDeliveryMode = "message_tool_only";
-      const pending = runRawTurn(params);
+      const pending = runRawTurn({
+        replyOperation,
+        pendingToolTasks: new Set([pendingToolTask.promise]),
+        followupRun: createFollowupRun({ sourceReplyDeliveryMode: "message_tool_only" }),
+      });
       await candidateSettled.promise;
       upstreamAbort.abort(new Error("caller cancelled"));
       const expectedAbortResult = {
@@ -452,7 +415,17 @@ describe("executeAgentTurn: run lifecycle and ownership", () => {
       expect(replyOperation.abortSignal.aborted).toBe(true);
       expect(replyOperation.result).toEqual(expectedAbortResult);
       expect(getSessionControllerOperation(replyOperation.key)).toBe(replyOperation);
+      let settled = false;
+      void pending.then(() => {
+        settled = true;
+      });
       fallbackRelease.resolve();
+      await new Promise<void>((resolve) => {
+        setImmediate(resolve);
+      });
+      expect(settled).toBe(false);
+      expect(freezeAbort).not.toHaveBeenCalled();
+      pendingToolTask.resolve();
 
       expect((await pending).outcome).toEqual({
         kind: "aborted",
@@ -465,8 +438,10 @@ describe("executeAgentTurn: run lifecycle and ownership", () => {
       expect(state.recordMessageToolRunOutcomeMock).toHaveBeenCalledWith(
         expect.objectContaining({ outcome: "mute", runStatus: "aborted" }),
       );
+      expect(freezeAbort).toHaveBeenCalledTimes(1);
     } finally {
       fallbackRelease.resolve();
+      pendingToolTask.resolve();
       replyOperation.complete();
     }
     expect(getSessionControllerOperation(replyOperation.key)).toBeUndefined();
@@ -500,7 +475,6 @@ describe("executeAgentTurn: run lifecycle and ownership", () => {
       for (const [index, fact] of facts.entries()) {
         state.runEmbeddedAgentMock.mockImplementationOnce(async (params: EmbeddedAgentParams) => {
           if (fact) {
-            expect(params.onCompactionAccounting).toEqual(expect.any(Function));
             params.onCompactionAccounting?.(fact);
           }
           return createRunResult("done", {

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createAdmittedRunOperatorAuthority } from "../../agents/admitted-run-context.js";
+import type { AuthProfileStore } from "../../agents/auth-profiles/types.js";
 import { getContextWindowCaches } from "../../agents/context-cache.js";
 import { loadProviderScopedThinkingCatalog } from "../../agents/model-catalog.runtime.js";
 import type { ModelCatalogSnapshot } from "../../agents/model-catalog.types.js";
@@ -63,12 +64,7 @@ vi.mock("./session-entry-persistence.js", () => ({
 }));
 
 const authMocks = vi.hoisted(() => {
-  const state: {
-    store: {
-      version: 1;
-      profiles: Record<string, { type: "api_key"; provider: string; key: string }>;
-    };
-  } = { store: { version: 1, profiles: {} } };
+  const state: { store: AuthProfileStore } = { store: { version: 1, profiles: {} } };
   const prepareAuthProfileProvider = vi.fn(async (): Promise<{ provider: string | undefined }> => ({
     provider: undefined,
   }));

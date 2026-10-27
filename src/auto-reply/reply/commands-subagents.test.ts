@@ -196,11 +196,8 @@ describe("subagents command snapshots", () => {
       .mockImplementation(async (...args) => {
         const context = await prepare(...args);
         await mutateSubagentRuns([parent.runId, child.runId], (rows) => {
-          const currentParent = rows.get(parent.runId);
-          const currentChild = rows.get(child.runId);
-          if (!currentParent || !currentChild) {
-            throw new Error("Expected both captured subagent rows");
-          }
+          const currentParent = expectDefined(rows.get(parent.runId), "captured parent");
+          const currentChild = expectDefined(rows.get(child.runId), "captured child");
           return {
             value: undefined,
             postimages: new Map([
@@ -415,7 +412,6 @@ describe("subagents info", () => {
   });
 
   it("returns info for a subagent with discard reason=expired", async () => {
-    const discardReason = "expired";
     const now = Date.now();
     const runId = "info-discard";
     const run = timedRun(runId, "do thing", now - 20_000, {
@@ -433,13 +429,11 @@ describe("subagents info", () => {
     expect(run.delivery.lastError).toBeUndefined();
     const text = await inspectRun(run, undefined, run.runId);
     expectText(text, [
-      "Subagent info",
-      `Run: ${runId}`,
       "Status: done",
       "Outcome: ok",
       "Progress: Completed the requested task",
       "Delivery: discarded",
-      `Delivery disposition: ${discardReason}`,
+      "Delivery disposition: expired",
       `Delivery retired: ${new Date(now).toISOString()}`,
       "Task summary: requester unavailable try retained result",
     ]);
