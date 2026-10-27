@@ -445,8 +445,11 @@ it("keeps warming in the reader's direction through opposite size compensation",
   const beforeResize = view.container.scrollTop;
   emitTranscriptResize(first, 800, 500);
   await settle();
-  expect(view.container.scrollTop).toBeGreaterThan(beforeResize);
   const rendered = view.renderRow.mock.calls.length;
+  await view.frame(1, false);
+  expect(view.container.scrollTop).toBeGreaterThan(beforeResize);
+  await view.task();
+  await view.frame(1, false);
   await view.task();
   const warmed = view.renderRow.mock.calls
     .slice(rendered)
@@ -551,6 +554,7 @@ it("prepares ahead during scrolling and waits for measurement before admitting a
   await view.frame(8);
   await view.scrollTo(1);
   await view.frame();
+  await view.frame(1, false);
   await view.scrollTo(4);
   const activeIndexes = () =>
     [...view.container.querySelectorAll<HTMLElement>("[data-index]:not([data-prepared-row])")].map(
@@ -571,6 +575,11 @@ it("prepares ahead during scrolling and waits for measurement before admitting a
   expect(view.renderRow.mock.calls).toHaveLength(rendered + 1);
   emitTranscriptResize(preparing!, 800, 100);
   await settle();
+  // A scroll-frame ResizeObserver receipt must not trigger another Solid
+  // layout pass until the next frame admits its measured geometry.
+  expect(view.container.querySelectorAll("[data-preparing-row]")).toHaveLength(1);
+  expect(view.renderRow.mock.calls).toHaveLength(rendered + 1);
+  await view.frame(1, false);
   expect(view.container.querySelectorAll("[data-preparing-row]")).toHaveLength(0);
   await view.frame(1, false);
   expect(view.renderRow.mock.calls).toHaveLength(rendered + 2);
@@ -626,6 +635,7 @@ it("materializes one predicted row between scroll frames and uses the latest vie
 
   emitTranscriptResize(prepared!, 800, 100);
   await settle();
+  await view.frame(1, false);
   await view.scrollTo(6);
   const afterScroll = transcriptRows(view.container);
   await view.frame(1, false);
