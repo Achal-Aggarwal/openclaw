@@ -59,8 +59,8 @@ async function storeJob(job: CronJob) {
   return { storePath, job };
 }
 
-function makeState(storePath: string) {
-  return createCronServiceState({
+function serviceDeps(storePath: string) {
+  return {
     scheduler: createTestGatewayScheduler(),
     nowMs: () => Date.now(),
     storePath,
@@ -68,8 +68,9 @@ function makeState(storePath: string) {
     log: logger,
     enqueueSystemEvent: vi.fn(),
     runIsolatedAgentJob: vi.fn(),
-  });
+  };
 }
+const makeState = (storePath: string) => createCronServiceState(serviceDeps(storePath));
 
 function receipts(storePath: string, jobId: string) {
   return openOpenClawStateDatabase()
@@ -350,13 +351,11 @@ it.each(["present", "absent"] as const)(
         .prepare("SELECT name FROM sqlite_schema WHERE name = 'cron_run_trigger_state_retirements'")
         .get();
     const readRetirements = () =>
-      runOpenClawStateWriteTransaction(({ db }) => ({
-        edited: isCronRunTriggerStateRetiredInDatabase({ database: db, handle: editedReceipt }),
-        untouched: isCronRunTriggerStateRetiredInDatabase({
-          database: db,
-          handle: untouchedReceipt,
-        }),
-      }));
+      runOpenClawStateWriteTransaction(({ db }) =>
+        [editedReceipt, untouchedReceipt].map((handle) =>
+          isCronRunTriggerStateRetiredInDatabase({ database: db, handle }),
+        ),
+      );
     const retire = () =>
       runOpenClawStateWriteTransaction(({ db }) => {
         retireCronRunTriggerStateInDatabase({ database: db, handle: editedReceipt });
@@ -380,7 +379,7 @@ it.each(["present", "absent"] as const)(
       const previousTable =
         storage === "present" ? { name: "cron_run_trigger_state_retirements" } : undefined;
       expect(table()).toEqual(previousTable);
-      expect(readRetirements()).toEqual({ edited: false, untouched: false });
+      expect(readRetirements()).toEqual([false, false]);
       expect(table()).toEqual(previousTable);
 
       expect(() =>
@@ -394,12 +393,12 @@ it.each(["present", "absent"] as const)(
       ).toThrow("cron edit did not commit");
 
       expect(table()).toEqual(previousTable);
-      expect(readRetirements()).toEqual({ edited: false, untouched: false });
+      expect(readRetirements()).toEqual([false, false]);
       retire();
       expect(database.db.prepare("PRAGMA user_version").get()).toEqual(schemaVersion);
 
       await reopen();
-      expect(readRetirements()).toEqual({ edited: true, untouched: false });
+      expect(readRetirements()).toEqual([true, false]);
       expect(
         receipts(storePath, editedJob.id).filter(({ status }) => status === "running"),
       ).toEqual([{ receiptId: editedReceipt.receiptId, status: "running", error: null }]);
@@ -525,11 +524,8 @@ it("keeps the pending terminal receipt within 64 rows until reconciliation relea
   });
   const makeService = (cronEnabled = true) =>
     new CronService({
-      scheduler: createTestGatewayScheduler(),
-      nowMs: () => Date.now(),
-      storePath,
+      ...serviceDeps(storePath),
       cronEnabled,
-      log: logger,
       enqueueSystemEvent() {},
       runIsolatedAgentJob: vi.fn(async () => ({ status: "ok" as const })),
       runCommandJob,

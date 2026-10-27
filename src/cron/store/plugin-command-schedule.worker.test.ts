@@ -22,7 +22,7 @@ import {
   PLUGIN_COMMAND_SCHEDULE_MESSAGE,
   type PluginCommandScheduleHost,
 } from "../plugin-command-schedule.types.js";
-import type { CronJob, CronJobCreate, CronStoredJob } from "../types.js";
+import type { CronJob, CronJobCreate, CronJobPatch, CronStoredJob } from "../types.js";
 import type { CronJobMutation } from "./job-mutations.types.js";
 import { readCronRunHistoryCandidates } from "./read-only.js";
 import {
@@ -68,6 +68,15 @@ const mutate = (storeKey: string, jobMutation: CronJobMutation, nowMs = now + 1)
     type: "cron.mutateJobs",
     input: { storeKey, jobMutation, snapshot: { nowMs } },
   });
+type AddOptions = Extract<CronJobMutation, { kind: "add" }>["options"];
+const addCommand = (storeKey: string, input: CronJobCreate, options: AddOptions, nowMs = now + 1) =>
+  mutate(storeKey, { kind: "add", input, options }, nowMs);
+const updateCommand = (id: string, patch: CronJobPatch): CronJobMutation => ({
+  kind: "update",
+  id,
+  patch,
+  options: { captured: false },
+});
 const commandCreate = (id: string, declarationKey = "plugin:watcher:" + id): CronJobCreate => ({
   id,
   declarationKey,
@@ -83,14 +92,22 @@ const commandCreate = (id: string, declarationKey = "plugin:watcher:" + id): Cro
 async function createCommand(
   storeKey: string,
   input: CronJobCreate,
-  options: Extract<CronJobMutation, { kind: "add" }>["options"],
+  options: AddOptions,
   nowMs = now + 1,
 ) {
-  const result = await mutate(storeKey, { kind: "add", input, options }, nowMs);
+  const result = await addCommand(storeKey, input, options, nowMs);
   if (!("outcome" in result)) {
     throw new Error("Expected command creation");
   }
   return result.outcome.store.jobs;
+}
+async function requestCommand(label: string, job: CronStoredJob) {
+  const queue = await store(label, [job]);
+  await queue.request([scheduled(queue.storeKey, job, now)]);
+  return queue;
+}
+function expectBudget(job: CronStoredJob | undefined, enabled: boolean, runs: number) {
+  expect(job).toMatchObject({ enabled, state: { pluginCommandRuns: runs } });
 }
 const previous = "1:previous-boot";
 const restartedHost = {
@@ -154,31 +171,21 @@ it("charges only an activated launch, retires on the final charge, and never ref
   });
   expect(preparing.launches).toEqual([]);
   expect(preparing.preparing.map(({ job }) => job.id)).toEqual([command.id]);
-  expect((await queue.read()).jobs[1]).toMatchObject({
-    enabled: true,
-    state: { pluginCommandRuns: 0 },
-  });
+  expectBudget((await queue.read()).jobs[1], true, 0);
   const launched = await queue.drain();
   expect(launched.launches).toHaveLength(1);
-  // The last allowed attempt still launches, but the same transaction disarms the schedule.
   expect(launched.launches[0]?.job).toMatchObject({
     enabled: false,
     state: { pluginCommandRuns: 1, runningAtMs: now + 1 },
   });
   expect(launched.launches[0]?.job.state.nextRunAtMs).toBeUndefined();
   const stored = (await queue.read()).jobs[1]!;
-  expect(stored).toMatchObject({
-    enabled: false,
-    state: { pluginCommandRuns: 1 },
-  });
+  expectBudget(stored, false, 1);
   expect(stored.state.nextRunAtMs).toBeUndefined();
   expect((await queue.drain()).launches).toEqual([]);
   await queue.recover();
   const recovered = (await queue.read()).jobs[1]!;
-  expect(recovered).toMatchObject({
-    enabled: false,
-    state: { pluginCommandRuns: 1 },
-  });
+  expectBudget(recovered, false, 1);
   expect(recovered.state.runningAtMs).toBeUndefined();
   // A retired command schedule cannot be force-run back into another attempt.
   const retry = requestFor(recovered, { receiptId: "cron:request:after-crash", mode: "force" });
@@ -237,9 +244,8 @@ it.each([
 
 it("re-arms a restartable schedule onto the matching loaded plugin inside its claim", async () => {
   const host = restartedHost;
-  const launch = async (label: string, job: CronStoredJob, hosts: (typeof host)[]) => {
-    const queue = await store(label, [job]);
-    await queue.request([scheduled(queue.storeKey, job, now)]);
+  const launch = async (label: string, job: CronStoredJob, hosts: PluginCommandScheduleHost[]) => {
+    const queue = await requestCommand(label, job);
     return { queue, drained: await queue.drain([], 1, false, hosts) };
   };
 
@@ -254,19 +260,14 @@ it("re-arms a restartable schedule onto the matching loaded plugin inside its cl
     pluginIncarnation: host.pluginIncarnation,
     sourceDigest: "digest-a",
   };
-  // The re-arm, the budget check and the monotonic charge commit in one claim.
+  const chargedState = { pluginCommandRuns: 2, pluginCommandBinding: binding };
   expect(drained.launches[0]?.job).toMatchObject({
     enabled: true,
-    state: { pluginCommandRuns: 2, pluginCommandBinding: binding },
-    // The envelope keeps the released shape and its original facts.
+    state: chargedState,
     pluginCommand: restartable("rearm").pluginCommand,
   });
-  expect((await queue.read()).jobs[0]?.state).toMatchObject({
-    pluginCommandRuns: 2,
-    pluginCommandBinding: binding,
-  });
-  // A second claim while the occurrence runs, as a racing recovery or force request would, cannot
-  // launch it again or move the binding.
+  expect((await queue.read()).jobs[0]?.state).toMatchObject(chargedState);
+  // A racing claim cannot launch or rebind the running occurrence.
   const racing = requestFor((await queue.read()).jobs[0]!, {
     receiptId: "cron:request:race",
     mode: "force",
@@ -275,22 +276,16 @@ it("re-arms a restartable schedule onto the matching loaded plugin inside its cl
   expect(
     (await queue.drain([], 1, false, [{ ...host, pluginIncarnation: "other" }])).launches,
   ).toEqual([]);
-  // Recovery after a crash never refunds the attempt and keeps the restart binding.
   await queue.recover();
-  expect((await queue.read()).jobs[0]?.state).toMatchObject({
-    pluginCommandRuns: 2,
-    pluginCommandBinding: binding,
-  });
+  expect((await queue.read()).jobs[0]?.state).toMatchObject(chargedState);
 
-  // Without the same plugin build and command loaded, the claim retires it before any attempt.
   for (const [label, hosts] of [
     ["no-plugin", []],
     ["other-version", [{ ...host, pluginVersion: "2.0.0" }]],
     ["other-source", [{ ...host, pluginSource: "/plugins/other/index.js" }]],
-    // The same location and metadata, but different loaded code.
     ["other-code", [{ ...host, sourceDigest: "digest-b" }]],
     ["command-gone", [{ ...host, commands: ["other-command"] }]],
-  ] satisfies Array<[string, (typeof host)[]]>) {
+  ] satisfies Array<[string, PluginCommandScheduleHost[]]>) {
     const refused = await launch(label, restartable(label), hosts);
     expect(refused.drained.launches).toEqual([]);
     expect(refused.drained.skipped).toMatchObject([
@@ -313,10 +308,8 @@ it.each([
     ...restartable(started ? "interrupted-started" : "interrupted-unstarted"),
     schedule: { kind: "every", everyMs: 60_000, anchorMs: now },
   } satisfies CronStoredJob;
-  const host = restartedHost;
-  const queue = await store(job.id, [job]);
-  await queue.request([scheduled(queue.storeKey, job, now)]);
-  const first = await queue.drain([], 1, false, [host]);
+  const queue = await requestCommand(job.id, job);
+  const first = await queue.drain([], 1, false, [restartedHost]);
   expect(first.launches).toHaveLength(1);
   if (started) {
     // The occurrence passed its delivery fence, so its command may have run.
@@ -325,7 +318,6 @@ it.each([
       input: { storeKey: queue.storeKey, handle: first.launches[0]!.runReceipt, snapshot: {} },
     });
   }
-  // The Gateway dies mid-occurrence; the next process recovers the abandoned receipt.
   await queue.recover();
   const recovered = (await queue.read()).jobs[0]!;
   expect(recovered.state).toMatchObject({ pluginCommandRuns: 1 });
@@ -333,16 +325,14 @@ it.each([
   const retryAtMs = recovered.state.startupCatchupAtMs;
   if (started) {
     expect(retryAtMs).toBeUndefined();
-    // It waits for the next regular slot instead.
     expect(recovered.state.nextRunAtMs).toBeGreaterThanOrEqual(now + 60_000);
     return;
   }
-  // Only an occurrence that never reached its command is retried, once, as a charged attempt.
   expect(retryAtMs).toBeGreaterThan(now);
   expect(recovered.state.nextRunAtMs).toBe(retryAtMs);
   const retry = scheduled(queue.storeKey, recovered, retryAtMs!);
   await queue.request([retry, retry], retryAtMs);
-  const retried = await queue.drain([], 1, false, [host]);
+  const retried = await queue.drain([], 1, false, [restartedHost]);
   expect(retried.launches).toHaveLength(1);
   expect(retried.launches[0]?.job.state.pluginCommandRuns).toBe(2);
 });
@@ -351,32 +341,19 @@ it("bounds active command schedules per plugin and parent; retired schedules do 
   const key = fixture.statePath("cron", "active-cap.json");
   const options = { captured: false, pluginCommand: pluginCommandSchedule(now) };
   const add = (index: number) =>
-    mutate(key, {
-      kind: "add",
-      input: commandCreate("cap-" + index, "plugin:watcher:cap:" + index),
-      options,
-    });
+    addCommand(key, commandCreate("cap-" + index, "plugin:watcher:cap:" + index), options);
   for (let index = 0; index < MAX_ACTIVE_PLUGIN_COMMAND_SCHEDULES_PER_PARENT; index += 1) {
     await add(index);
   }
   await expect(add(100)).rejects.toThrow(/limited to 8 active jobs per plugin and parent/);
   // Another parent has its own budget.
-  await mutate(key, {
-    kind: "add",
-    input: commandCreate("other-parent", "plugin:watcher:other-parent"),
-    options: {
-      captured: false,
-      pluginCommand: pluginCommandSchedule(now, {
-        parent: { agentId: "main", sessionKey: "agent:main:other", sessionId: "other" },
-      }),
-    },
+  await addCommand(key, commandCreate("other-parent", "plugin:watcher:other-parent"), {
+    captured: false,
+    pluginCommand: pluginCommandSchedule(now, {
+      parent: { agentId: "main", sessionKey: "agent:main:other", sessionId: "other" },
+    }),
   });
-  await mutate(key, {
-    kind: "update",
-    id: "cap-0",
-    patch: { enabled: false },
-    options: { captured: false },
-  });
+  await mutate(key, updateCommand("cap-0", { enabled: false }));
   await expect(add(101)).resolves.toMatchObject({ outcome: { changed: true } });
 });
 
@@ -420,14 +397,10 @@ it("counts schedules a restart can re-arm; schedules that can never run do not h
   ).flat();
   const queue = await store("stale-cap", seed);
   const add = (id: string) =>
-    mutate(queue.storeKey, {
-      kind: "add",
-      input: commandCreate(id, "plugin:watcher:" + id),
-      options: {
-        captured: false,
-        pluginCommand: pluginCommandSchedule(now),
-        pluginCommandSourceDigest: "digest-a",
-      },
+    addCommand(queue.storeKey, commandCreate(id), {
+      captured: false,
+      pluginCommand: pluginCommandSchedule(now),
+      pluginCommandSourceDigest: "digest-a",
     });
   for (let index = 0; index < MAX_ACTIVE_PLUGIN_COMMAND_SCHEDULES_PER_PARENT / 2; index += 1) {
     await expect(add("current-" + index)).resolves.toMatchObject({ outcome: { changed: true } });
@@ -439,7 +412,6 @@ it("counts schedules a restart can re-arm; schedules that can never run do not h
   const enabled = stored.jobs.filter((job) => job.enabled).map((job) => job.id);
   expect(enabled).toHaveLength(6 * MAX_ACTIVE_PLUGIN_COMMAND_SCHEDULES_PER_PARENT);
   expect(enabled).not.toContain("current-overflow");
-  // Every schedule this host accepts records restart continuity, privately in job state.
   expect(stored.jobs.find((job) => job.id === "current-0")?.state.pluginCommandBinding).toEqual({
     hostProcessId: currentPluginCommandHostProcessId(),
     pluginIncarnation: "synthetic-plugin-incarnation",
@@ -453,12 +425,11 @@ it("keeps a schedule accepted without captured plugin source bound to its Gatewa
     captured: false,
     pluginCommand: pluginCommandSchedule(now, { hostProcessId: previous }),
   });
-  // No code identity, so no restart continuity: it ends with the process that accepted it.
   expect(job!.state.pluginCommandBinding).toBeUndefined();
-  const queue = await store("no-source-digest", [
-    { ...job!, state: { ...job!.state, nextRunAtMs: now } },
-  ]);
-  await queue.request([scheduled(queue.storeKey, job!, now)]);
+  const queue = await requestCommand("no-source-digest", {
+    ...job!,
+    state: { ...job!.state, nextRunAtMs: now },
+  });
   const drained = await queue.drain([], 1, false, [restartedHost]);
   expect(drained.launches).toEqual([]);
   expect(drained.skipped).toMatchObject([
@@ -480,11 +451,7 @@ it("keeps an identical declaration and consumed counter unchanged; refuses rewri
   await queue.cancel([request.receiptId], "superseded");
   const before = await queue.read();
   expect(before.jobs[0]?.state.pluginCommandRuns).toBe(1);
-  const duplicate = await mutate(key, {
-    kind: "add",
-    input: { ...input, id: "ignored-retry-id" },
-    options,
-  });
+  const duplicate = await addCommand(key, { ...input, id: "ignored-retry-id" }, options);
   expect(duplicate).toMatchObject({ outcome: { changed: false, store: before } });
   const rewrites: CronJobMutation[] = [
     { kind: "add", input: { ...input, name: "Different" }, options },
@@ -495,13 +462,8 @@ it("keeps an identical declaration and consumed counter unchanged; refuses rewri
       options: { ...options, pluginCommand: pluginCommandSchedule(now, { maxRuns: 100 }) },
     },
     { kind: "add", input, options: { captured: false } },
-    { kind: "update", id: current.id, patch: { enabled: true }, options: { captured: false } },
-    {
-      kind: "update",
-      id: current.id,
-      patch: { payload: { kind: "command", argv: ["echo", "changed"] } },
-      options: { captured: false },
-    },
+    updateCommand(current.id, { enabled: true }),
+    updateCommand(current.id, { payload: { kind: "command", argv: ["echo", "changed"] } }),
   ];
   for (const mutation of rewrites) {
     await expect(mutate(key, mutation)).rejects.toThrow(/plugin command/);
@@ -509,22 +471,19 @@ it("keeps an identical declaration and consumed counter unchanged; refuses rewri
   }
   await queue.update(current.id, { enabled: false });
   const disabled = (await queue.read()).jobs[0]!;
-  expect(disabled.enabled).toBe(false);
-  expect(disabled.state.pluginCommandRuns).toBe(1);
+  expectBudget(disabled, false, 1);
   expect(disabled.pluginCommand).toEqual(before.jobs[0]?.pluginCommand);
   // Disable withdraws unattended authority: a manual force run cannot spend the last attempt.
   const forced = requestFor(disabled, { receiptId: "cron:request:disabled", mode: "force" });
   expect((await queue.request([forced])).rejected).toMatchObject([{ reason: "job-ineligible" }]);
   expect((await queue.read()).jobs[0]?.state.pluginCommandRuns).toBe(1);
-  await expect(mutate(key, { kind: "add", input, options })).rejects.toThrow(
-    /cannot be changed or rearmed/,
-  );
+  await expect(addCommand(key, input, options)).rejects.toThrow(/cannot be changed or rearmed/);
 });
 
 it("rejects caller-authored run accounting on ordinary add and update paths", async () => {
   const key = fixture.statePath("cron", "authored-state.json");
   const input = { ...queueJob("ordinary", now), state: { lastRunAtMs: now, pluginCommandRuns: 0 } };
-  await expect(mutate(key, { kind: "add", input, options: { captured: false } })).rejects.toThrow(
+  await expect(addCommand(key, input, { captured: false })).rejects.toThrow(
     /private launch accounting/,
   );
   const queue = await store("authored-state", [queueJob("ordinary", now)]);
@@ -562,11 +521,7 @@ const releasedEnvelope = z.strictObject({
 
 type Row = { enabled: number; payload_kind: string; job_json: string; state_json: string };
 
-/**
- * The released reader's occurrence claim for a command schedule, applied to the stored row: it
- * selects `pluginCommand` rows, decodes the strict envelope, keeps job state as an opaque record,
- * and retires a schedule whose envelope names another Gateway process, writing that state back.
- */
+// Frozen reader: strict envelope, opaque state, process-bound retirement at occurrence time.
 async function claimWithReleasedReader(storeKey: string, jobId: string, occurrence: boolean) {
   const hostProcessId = "2:released-boot";
   return await withStateDatabase((db) => {
@@ -622,20 +577,12 @@ async function claimAfterRestart(
   const requested = await queue.request([request]);
   return { requested, drained: await queue.drain([request], 1, false, hosts), job };
 }
-
-it("an older reader ignores restart continuity and ends the schedule; upgrading never revives it", async () => {
-  const queue = await acceptedBeforeRestart("rolled-back");
-  // Rollback: the released Gateway starts as another process and reaches the occurrence.
-  const released = await claimWithReleasedReader(queue.storeKey, "rolled-back", true);
-  expect(released.retired).toBe(true);
-  // It decoded the unchanged envelope and carried continuity along as opaque job state.
-  expect(released.envelope).toMatchObject({ hostProcessId: previous, maxRuns: 3 });
-  expect(released.state).toMatchObject({
-    pluginCommandRuns: 0,
-    pluginCommandBinding: { hostProcessId: previous },
-  });
-  // Upgrading again: the retired schedule is terminal even with its plugin loaded.
-  const { requested, drained, job } = await claimAfterRestart(queue);
+async function expectRestartRetired(
+  queue: Awaited<ReturnType<typeof acceptedBeforeRestart>>,
+  hosts: PluginCommandScheduleHost[] = [host],
+  receiptId = "cron:request:after-restart",
+) {
+  const { requested, drained, job } = await claimAfterRestart(queue, hosts, receiptId);
   expect(job.enabled).toBe(false);
   expect(requested.accepted).toEqual([]);
   expect(drained.launches).toEqual([]);
@@ -643,11 +590,22 @@ it("an older reader ignores restart continuity and ends the schedule; upgrading 
     enabled: false,
     state: { pluginCommandRuns: 0, pluginCommandBinding: { hostProcessId: previous } },
   });
+}
+
+it("an older reader ignores restart continuity and ends the schedule; upgrading never revives it", async () => {
+  const queue = await acceptedBeforeRestart("rolled-back");
+  const released = await claimWithReleasedReader(queue.storeKey, "rolled-back", true);
+  expect(released.retired).toBe(true);
+  expect(released.envelope).toMatchObject({ hostProcessId: previous, maxRuns: 3 });
+  expect(released.state).toMatchObject({
+    pluginCommandRuns: 0,
+    pluginCommandBinding: { hostProcessId: previous },
+  });
+  await expectRestartRetired(queue);
 });
 
 it("a schedule an older reader never reached is re-armed after upgrading again", async () => {
   const queue = await acceptedBeforeRestart("untouched");
-  // The released Gateway loads the row without error but stops before its next occurrence.
   const released = await claimWithReleasedReader(queue.storeKey, "untouched", false);
   expect(released.retired).toBe(false);
   const { drained } = await claimAfterRestart(queue);
@@ -663,30 +621,16 @@ it("a schedule an older reader never reached is re-armed after upgrading again",
 });
 
 it("a reader without bundled build identities ends a core-bundled schedule; the same build never revives it", async () => {
-  // A core-bundled plugin's code identity is its exact loaded build, in the released binding field.
   const bundled = { ...host, sourceDigest: "bundled-build:" + "b".repeat(64) };
   const queue = await acceptedBeforeRestart("bundled-rolled-back", bundled.sourceDigest);
-  // Rollback: a Gateway with restart continuity but no bundled identities lists no loaded host for
-  // core-bundled plugins, so its claim finds no matching code and retires the schedule.
+  // A reader without bundled identities cannot match the accepting build.
   const rolledBack = await claimAfterRestart(queue, [], "cron:request:rolled-back");
   expect(rolledBack.drained.launches).toEqual([]);
   expect((await queue.read()).jobs[0]).toMatchObject({
     enabled: false,
     state: { pluginCommandRuns: 0, pluginCommandBinding: { hostProcessId: previous } },
   });
-  // Upgrading again onto the accepting build: the retired schedule stays ended.
-  const { requested, drained, job } = await claimAfterRestart(
-    queue,
-    [bundled],
-    "cron:request:bundled-upgraded-again",
-  );
-  expect(job.enabled).toBe(false);
-  expect(requested.accepted).toEqual([]);
-  expect(drained.launches).toEqual([]);
-  expect((await queue.read()).jobs[0]).toMatchObject({
-    enabled: false,
-    state: { pluginCommandRuns: 0 },
-  });
+  await expectRestartRetired(queue, [bundled], "cron:request:bundled-upgraded-again");
 });
 
 const jobIds = (runs: CronQueuedRun[]) => runs.map(({ job }) => job.id);
