@@ -220,6 +220,11 @@ suite.define(() => {
     const mira = sessionPerson("profile-mira", "Mira");
     const states: Array<[string, Record<string, unknown>]> = [
       ["idle", {}],
+      // Owner filtering admits older actor IDs without Person-group identity metadata.
+      [
+        "legacy-owner",
+        { owner: { actor: { type: "human", id: patrick.id, label: patrick.label } } },
+      ],
       ["unread", { unread: true }],
       ["running", { hasActiveRun: true, status: "running", activeRunIds: ["run-1"] }],
       ["parent", { hasActiveRun: true, status: "running", childSessions: ["agent:main:child"] }],
@@ -285,7 +290,9 @@ suite.define(() => {
     }
     const group = page.locator(".sidebar-recent-sessions");
     if (grouping === "Person") {
-      await group.locator(".sidebar-recent-sessions__group--inline-owner").waitFor();
+      await group
+        .locator('.sidebar-recent-sessions__group--inline-owner[data-session-section^="person:"]')
+        .waitFor();
     }
     const row = (id: string) => group.locator(`[data-session-key="agent:main:${id}"]`);
     await row("running").locator(".session-glyph__ring").waitFor();
@@ -312,12 +319,14 @@ suite.define(() => {
       page.locator(".sidebar-session-toolbar").evaluate(geometry),
       page.locator(".sidebar-sessions > .personal-session-groups").evaluate(geometry),
     ]);
-    const [idle, unread, running] = await Promise.all([
+    const [idle, legacyOwner, unread, running] = await Promise.all([
       rowGeometry("idle"),
+      rowGeometry("legacy-owner"),
       rowGeometry("unread"),
       rowGeometry("running"),
     ]);
     expect(personalGroups.top - toolbar.bottom).toBe(4);
+    expect(legacyOwner.text?.left).toBeCloseTo(idle.text?.left ?? 0, 5);
     if (grouping === "Person") {
       expect(idle.top - personalGroups.bottom).toBe(8);
     }
