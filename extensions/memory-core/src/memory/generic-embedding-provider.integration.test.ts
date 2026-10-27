@@ -13,6 +13,8 @@ import { createEmbeddingProvider, resolveEmbeddingProviderIndexIdentity } from "
 import { MemoryManagerEmbeddingOps } from "./manager-embedding-ops.js";
 
 type CapturedRequest = {
+  method: string | undefined;
+  url: string | undefined;
   headers: IncomingMessage["headers"];
   body: Record<string, unknown>;
   rawBody: string;
@@ -41,7 +43,7 @@ async function startEmbeddingServer(options?: {
       try {
         const rawBody = await readText(req);
         const body = JSON.parse(rawBody) as Record<string, unknown>;
-        requests.push({ headers: req.headers, body, rawBody });
+        requests.push({ method: req.method, url: req.url, headers: req.headers, body, rawBody });
         if (options?.authorization && req.headers.authorization !== options.authorization) {
           respond(401, { error: { message: "Invalid fixture credential" } });
           return;
@@ -86,6 +88,34 @@ function createQianfanConfig(baseUrl: string): OpenClawConfig {
         qianfan: { api: "openai-completions", baseUrl, models: [] },
       },
     },
+  };
+}
+
+function createMemoryEmbeddingOptions(overrides?: {
+  provider?: string;
+  model?: string;
+  baseUrl?: string;
+  outputDimensionality?: number;
+}) {
+  return {
+    config: { plugins: { enabled: false } } as OpenClawConfig,
+    agentDir: "/tmp/openclaw-agent",
+    provider: overrides?.provider ?? "openai-compatible",
+    fallback: "none",
+    model: overrides?.model ?? "text-embedding-bge-m3",
+    inputType: "default",
+    queryInputType: "query",
+    documentInputType: "document",
+    remote: {
+      baseUrl: overrides?.baseUrl,
+      apiKey: "fixture-token",
+      headers: {
+        Authorization: "Bearer destination-header",
+        "x-api-key": "hidden",
+        "x-deployment": "tenant-a",
+      },
+    },
+    outputDimensionality: overrides?.outputDimensionality ?? 3,
   };
 }
 
