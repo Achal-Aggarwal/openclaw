@@ -56,11 +56,7 @@ describe("candidate-owned full release dispatch entry point", () => {
     expect(dispatches(f)).toEqual([P]);
   });
   it("advances main-selected P to a verified descendant before the admission POST", () => {
-    const f = createDispatchFixture({
-      candidateOwned: true,
-      advanceMainBeforeAdmission: 3,
-      omitAdmissionWorkflowSha: true,
-    });
+    const f = createDispatchFixture({ candidateOwned: true, advanceMainBeforeAdmission: 3 });
     const result = f.run();
     expect(result.status, result.stderr).toBe(0);
     expect(dispatches(f)).toEqual([P, Q]);
@@ -81,7 +77,7 @@ describe("candidate-owned full release dispatch entry point", () => {
 
   it("refuses to override an explicitly pinned admission workflow SHA", () => {
     const f = createDispatchFixture({ candidateOwned: true, advanceMainBeforeAdmission: 1 });
-    const result = f.run();
+    const result = f.run(["--pin-admission-workflow"]);
     expectDispatchFailure(result, "Admission tooling ref moved before dispatch");
     expect(result.stdout).not.toContain("Admission P advanced with main");
     expect(dispatches(f)).toEqual([]);
@@ -106,11 +102,7 @@ describe("candidate-owned full release dispatch entry point", () => {
   });
 
   it("refuses main that keeps moving past the admission advance bound", () => {
-    const f = createDispatchFixture({
-      candidateOwned: true,
-      advanceMainBeforeAdmission: 4,
-      omitAdmissionWorkflowSha: true,
-    });
+    const f = createDispatchFixture({ candidateOwned: true, advanceMainBeforeAdmission: 4 });
     const result = f.run();
     expectDispatchFailure(result, "Admission tooling ref moved before dispatch");
     expect(dispatches(f)).toEqual([]);
