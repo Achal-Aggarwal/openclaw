@@ -198,12 +198,8 @@ suite.define(() => {
               await page.waitForFunction(() => window.warmConnectIdentityPending === true);
               await transcript.waitFor();
               await page.getByRole("link", { name: "Linked mission", exact: true }).waitFor();
-              observations.push({
-                face,
-                reload,
-                stage: "cached-before-connect",
-                trace: await page.evaluate(() => window.warmConnectSocketTrace),
-              });
+              const trace = await page.evaluate(() => window.warmConnectSocketTrace);
+              observations.push({ face, reload, stage: "cached-before-connect", trace });
             } finally {
               await page.evaluate(() => window.releaseWarmConnectIdentity?.());
             }
