@@ -214,16 +214,17 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
         // Initial placement and held history still reconcile before paint.
         view.options.useAnimationFrameWithResizeObserver = redraw;
         // Read while measured layout is clean; a native clamp needs its rows now.
-        const { threadInnerElement: inner, headerHeight: top } = this;
+        const { threadInnerElement: inner, headerHeight: top, offsetState } = this;
         const moved = redraw && inner && this.layout.commitRange(inner, view.getTotalSize() + top);
         // An uncompensated measurement can share the next reader frame. Native
         // scroll compensation and OpenClaw's pending anchors must land together.
+        const defer = redraw && !(moved || this.canAutoFollow() || offsetState.hasPendingAnchor);
         this.presentation.commitChange(
           () => {
             (redraw ? (this.renderPreviousRows ?? invalidate) : invalidate)();
             this.scheduleEndReconcile(view.getTotalSize());
           },
-          redraw && !sync && !moved && !this.canAutoFollow() && !this.offsetState.hasPendingAnchor,
+          defer && (offsetState.measuringOffset ? "microtask" : !sync),
         );
       },
       count: 0,
@@ -268,18 +269,18 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
     // Initial placement owns compensation; an estimated end is not a native scroll target.
     this.virtualizer.shouldAdjustScrollPositionOnItemSizeChange = () => false;
     // A boot re-anchor can precede its native extent; only reader geometry may override it.
-    const beforeMeasure = () => this.initialRange.reading && this.offsetState.syncNativeOffset?.();
+    const syncOffset = () => this.initialRange.reading && this.offsetState.syncNativeOffset?.(true);
     this.presentation = createTranscriptPresentation(
       () => this.scrollElement,
       this.virtualizer,
       () => this.rowRefs.elements,
-      beforeMeasure,
+      syncOffset,
       this.layout.measureRow,
     );
     this.rowRefs = new TranscriptRowRefs(this.virtualizer, {
       isCurrentRow: (element, key) =>
         this.initialRange.rowIndexes.has(key) && this.contentElement?.contains(element) === true,
-      beforeMeasure,
+      beforeMeasure: syncOffset,
       onMount: () => this.queueLayout(),
     });
     this.scrollRestoreHost = {

@@ -503,6 +503,40 @@ it("commits uncompensated extents while coalescing reader row updates", async ()
   expect(viewport.scrollTop).toBe(480);
 });
 
+it("renders a measurement read-back once with the completed row geometry", async () => {
+  const { host, session, viewport, virtualizer } = await mountPane();
+  scrollReader(viewport, 480);
+  const inner = requireElement(host, ".chat-thread-inner");
+  const height = Number.parseFloat(inner.style.height);
+  const row = requireElement(host, '.chat-virtual-row[data-index="6"]');
+  const render = vi.spyOn(session["renderer"], "render");
+  const paint = vi.fn();
+  const frame = requestAnimationFrame(paint);
+  try {
+    // The compositor can advance before the next native scroll event arrives.
+    viewport.scrollTop = 600;
+    row.style.height = "180px";
+    const entry: ResizeObserverEntry = {
+      target: row,
+      borderBoxSize: [{ inlineSize: 800, blockSize: 180 }],
+      contentBoxSize: [{ inlineSize: 800, blockSize: 180 }],
+      devicePixelContentBoxSize: [],
+      contentRect: row.getBoundingClientRect(),
+    };
+    virtualizer.resizeItem(6, virtualizer.options.measureElement(row, entry, virtualizer));
+    expect(virtualizer.scrollOffset).toBe(600);
+    expect(render).not.toHaveBeenCalled();
+    await Promise.resolve();
+    flush();
+    expect(render).toHaveBeenCalledOnce();
+    expect(Number.parseFloat(inner.style.height)).toBe(height + 60);
+    expect(viewport.scrollTop).toBe(600);
+    expect(paint).not.toHaveBeenCalled();
+  } finally {
+    cancelAnimationFrame(frame);
+  }
+});
+
 it("commits rows before paint when an uncompensated extent shrink clamps the reader", async () => {
   const { host, viewport, virtualizer } = await mountPane(false, 360, geometryMessages(6));
   scrollReader(viewport, viewport.scrollHeight - viewport.clientHeight);
