@@ -31,7 +31,10 @@ import {
 } from "./chat-pane.test-support.ts";
 import { createSessionCapabilityFixture } from "./chat-session-capability.test-support.ts";
 import { selectedChatSessionRow } from "./chat-state-route.ts";
-import { renderPaneHeaderInto } from "./components/chat-pane-header.test-support.ts";
+import {
+  renderPaneHeaderInto,
+  selectNativeMenu,
+} from "./components/chat-pane-header.test-support.ts";
 import { PaneHeaderView } from "./components/chat-pane-header.tsx";
 import {
   installTranscriptDomMocks,
@@ -132,7 +135,12 @@ describe("chat pane session menu boundary", () => {
     });
     flush();
     const header = mounted.container;
-    pane.beginHeaderRename(row);
+    await selectNativeMenu(header.querySelector("openclaw-chat-header-session-menu")!, "rename");
+    expect(pane.headerPresentation.renameSession).toEqual({
+      key: row.key,
+      sessionId: row.sessionId,
+      label: row.label,
+    });
     flush();
     const input = header.querySelector<HTMLInputElement>(".chat-pane__session-title-input")!;
     expect(input.value).toBe("Current conversation");

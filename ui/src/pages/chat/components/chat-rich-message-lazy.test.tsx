@@ -2,14 +2,13 @@
 
 import { createSignal, For } from "solid-js";
 import { expect, it, onTestFinished, vi } from "vitest";
-import { createDeferred } from "../../../../../test/helpers/promise.js";
 import { mountSolid } from "../../../test-helpers/mount-solid.ts";
 import { flush, waitForSolid } from "../../../test-helpers/solid-settle.ts";
 import { createAsyncQuestionPresentation } from "./chat-async-question.ts";
+import { createHeldImport } from "./chat-lazy-import.test-support.ts";
 import { GroupedMessage } from "./chat-message-bubble-view.tsx";
-import { MessageGroupContent } from "./chat-message-group-view.tsx";
 import { prepareChatMessageRender } from "./chat-message-markdown-view.tsx";
-import { createMessageGroup, createToolResultMessage } from "./chat-message.test-support.ts";
+import { createToolResultMessage } from "./chat-message.test-support.ts";
 
 it("keeps ordinary transcript text synchronous", () => {
   const view = mountSolid(() => (
@@ -23,79 +22,22 @@ it("keeps ordinary transcript text synchronous", () => {
   expect(view.container.querySelector(".chat-text")?.textContent?.trim()).toBe("Ready immediately");
 });
 
-it("keeps ordinary message-group text synchronous", () => {
-  const group = createMessageGroup(
-    { role: "assistant", content: "Ready inside the run." },
-    "assistant",
-  );
-  const view = mountSolid(() => (
-    <MessageGroupContent group={group} options={{ showReasoning: false }} />
-  ));
-  onTestFinished(view.unmount);
-  expect(view.container.querySelector(".chat-text")?.textContent?.trim()).toBe(
-    "Ready inside the run.",
-  );
-});
-
-it("keeps transcript frame text synchronous and current", async () => {
-  const { nativeRows } = await import("./chat-transcript-rows.ts");
-  const Frame = nativeRows.frame;
-  const frameFor = (text: string) => ({
-    kind: "agent-run-frame" as const,
-    key: "retained-frame",
-    runId: "retained-run",
-    boundaryId: "retained-boundary",
-    outcome: { kind: "completed" as const, actionOwner: null },
-    parts: [createMessageGroup({ role: "assistant", content: text, timestamp: 1 }, "assistant")],
-  });
-  const [frame, setFrame] = createSignal(frameFor("Earlier text"));
-  const view = mountSolid(() => (
-    <Frame
-      frame={frame()}
-      options={{
-        streamOptions: {},
-        renderGroupOptions: () => ({ isStreaming: false, showReasoning: false }),
-        isWorkExpanded: () => false,
-        onToggleWork: () => {},
-      }}
-    />
-  ));
-  onTestFinished(view.unmount);
-  flush();
-  expect(view.container.querySelector(".chat-text")?.textContent?.trim()).toBe("Earlier text");
-  setFrame(frameFor("Current text"));
-  flush();
-  expect(view.container.querySelector(".chat-text")?.textContent?.trim()).toBe("Current text");
-  expect(view.container.textContent).not.toContain("Earlier text");
-});
-
 it("retains Markdown through rich-content and image import retries and uses current callbacks", async () => {
-  const richFirst = createDeferred();
-  const richRetry = createDeferred();
-  const imageFirst = createDeferred();
-  const imageRetry = createDeferred();
-  const loadRich = vi.fn(() => richFirst.promise);
-  const loadImages = vi.fn(() => imageFirst.promise);
+  const richFirst = createHeldImport<typeof import("./chat-message-bubble-rich.tsx")>();
+  const richRetry = createHeldImport<typeof import("./chat-message-bubble-rich.tsx")>();
+  const imageFirst = createHeldImport<typeof import("./chat-message-images-solid.tsx")>();
+  const imageRetry = createHeldImport<typeof import("./chat-message-images-solid.tsx")>();
+  const loadRich = vi.fn(richFirst.load);
+  const loadImages = vi.fn(imageFirst.load);
   const holdRichImport = () => {
-    // Control chunk delivery without replacing the production component or its exports.
-    vi.doMock(import("./chat-message-bubble-rich.tsx"), async (original) => {
-      await loadRich();
-      return original();
-    });
+    vi.doMock(import("./chat-message-bubble-rich.tsx"), loadRich);
   };
   const holdImageImport = () => {
-    vi.doMock(import("./chat-message-images-solid.tsx"), async (original) => {
-      await loadImages();
-      return original();
-    });
+    vi.doMock(import("./chat-message-images-solid.tsx"), loadImages);
   };
   holdRichImport();
   holdImageImport();
   onTestFinished(() => {
-    richFirst.resolve();
-    richRetry.resolve();
-    imageFirst.resolve();
-    imageRetry.resolve();
     vi.doUnmock("./chat-message-bubble-rich.tsx");
     vi.doUnmock("./chat-message-images-solid.tsx");
   });
@@ -137,12 +79,12 @@ it("retains Markdown through rich-content and image import retries and uses curr
   expect(view.container.querySelector(".chat-text p")).toBe(paragraph);
   expect(view.container.querySelector(".chat-message-image")).toBeNull();
   expect(loadImages).not.toHaveBeenCalled();
-  richFirst.reject(new Error("Rich message chunk could not load"));
+  richFirst.ready.reject(new Error("Rich message chunk could not load"));
   await waitForSolid(() => expect(view.container.querySelector('[role="alert"]')).not.toBeNull());
   expect(view.container.querySelector(".chat-text")).toBe(text);
   expect(view.container.querySelector(".chat-text p")).toBe(paragraph);
 
-  loadRich.mockReturnValue(richRetry.promise);
+  loadRich.mockImplementation(richRetry.load);
   holdRichImport();
   view.container.querySelector<HTMLButtonElement>(".lazy-view-error__action")!.click();
   await waitForSolid(() => {
@@ -151,17 +93,17 @@ it("retains Markdown through rich-content and image import retries and uses curr
     expect(view.container.querySelector('[role="alert"]')).not.toBeNull();
   });
   expect(view.container.querySelector(".chat-text p")).toBe(paragraph);
-  richRetry.resolve();
+  richRetry.ready.resolve();
   await waitForSolid(() => {
     expect(loadImages).toHaveBeenCalledOnce();
     expect(view.container.querySelector('[role="alert"]')).toBeNull();
   });
-  imageFirst.reject(new Error("Image renderer chunk could not load"));
+  imageFirst.ready.reject(new Error("Image renderer chunk could not load"));
   await waitForSolid(() => expect(view.container.querySelector('[role="alert"]')).not.toBeNull());
   expect(view.container.querySelector(".chat-text")).toBe(text);
   expect(view.container.querySelector(".chat-text p")).toBe(paragraph);
 
-  loadImages.mockReturnValue(imageRetry.promise);
+  loadImages.mockImplementation(imageRetry.load);
   holdImageImport();
   view.container.querySelector<HTMLButtonElement>(".lazy-view-error__action")!.click();
   await waitForSolid(() => {
@@ -180,7 +122,7 @@ it("retains Markdown through rich-content and image import retries and uses curr
   ]);
   flush();
   expect(view.container.querySelector(".chat-text p")).toBe(paragraph);
-  imageRetry.resolve();
+  imageRetry.ready.resolve();
   await waitForSolid(() =>
     expect(view.container.querySelector<HTMLImageElement>(".chat-message-image")?.src).toBe(
       "https://example.com/current-image.png",

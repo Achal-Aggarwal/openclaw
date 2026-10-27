@@ -22,6 +22,7 @@ import { createSessionCapabilityFixture } from "../chat-session-capability.test-
 import type { ChatPageHost } from "../chat-state-host.ts";
 import { openSlot } from "../sidebar-layout.ts";
 import {
+  chatPaneHeaderMobileDetails,
   chatPaneHeaderSessionRow as row,
   chatPaneHeaderSharing,
   chatPaneHeaderSessionMenu,
@@ -139,14 +140,9 @@ describe("chat pane header", () => {
       const { container, update } = mountHeader({
         mergedChrome: true,
         workspaceLabel,
-        detailsControl: {
-          chat: undefined,
-          elements: {},
-          mobile: true,
-          mobileHost: createChatMobileHostFixture("header-workspace-identity"),
-          presentation: true,
-          setRef: vi.fn(),
-        },
+        detailsControl: chatPaneHeaderMobileDetails(
+          createChatMobileHostFixture("header-workspace-identity"),
+        ),
       });
       await waitForSolid(() =>
         expect(container.querySelector(".agent-chat__header--mobile")).not.toBeNull(),
@@ -228,36 +224,6 @@ describe("chat pane header", () => {
     expect(container.querySelector(".chat-pane__close")).toBeNull();
     await selectNativeMenu(menu, "compact:open-view");
     expect(menu.querySelector('[data-value="layout:close-pane"]')).toBeNull();
-  });
-
-  it("applies a menu rename to the authoritative pane through its presentation projection", async () => {
-    const { pane, state } = createTestChatPane({
-      client: createTestGatewayClient(async () => ({})),
-    });
-    const session = row({ key: state.sessionKey, sessionId: "rename-owner", label: "Original" });
-    const owner = getPaneTestRuntime(pane);
-    const { container } = mountHeader({
-      sessionMenuAction: {
-        ...chatPaneHeaderSessionMenu(),
-        onAction: undefined,
-        actionSource: {
-          readOwner: () => owner,
-          readRow: () => session,
-          stopDisabledReason: undefined,
-          workspaceRoot: "/repo/openclaw",
-        },
-      },
-    });
-    const menu = container.querySelector("openclaw-chat-header-session-menu")!;
-
-    await selectNativeMenu(menu, "rename");
-
-    expect(pane.headerPresentation.renameSession).toEqual({
-      key: session.key,
-      sessionId: session.sessionId,
-      label: session.label,
-    });
-    expect(pane.headerPresentation.renameValue).toBe("Original");
   });
 
   it("continues in terminal through native actions when no composition action handles it", async () => {
@@ -432,14 +398,9 @@ describe("chat pane header", () => {
     const { container } = mountHeader({
       narrow: true,
       mergedChrome: true,
-      detailsControl: {
-        chat: undefined,
-        elements: {},
-        mobile: true,
-        mobileHost: createChatMobileHostFixture("header-public-indicator"),
-        presentation: true,
-        setRef: vi.fn(),
-      },
+      detailsControl: chatPaneHeaderMobileDetails(
+        createChatMobileHostFixture("header-public-indicator"),
+      ),
       publicAccessIndicator: chatPaneHeaderSharing({
         state: {
           loading: false,
@@ -825,14 +786,7 @@ it("publishes the active header while retaining mobile chrome across desktop tra
   const mounted = mountHeader({
     mergedChrome: false,
     onHeaderRef: nativeHeader.onHeaderRef,
-    detailsControl: {
-      chat: undefined,
-      elements: {},
-      mobile: true,
-      mobileHost,
-      presentation: true,
-      setRef: vi.fn(),
-    },
+    detailsControl: chatPaneHeaderMobileDetails(mobileHost),
   });
   expect(mounted.container.querySelector(".agent-chat__header--mobile")).toBeNull();
   await waitForSolid(() =>

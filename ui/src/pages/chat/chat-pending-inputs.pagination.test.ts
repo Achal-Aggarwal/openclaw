@@ -30,22 +30,16 @@ import {
 } from "./chat-pending-inputs.ts";
 import { retireDeliveredQueuedUserTurn } from "./chat-send-support.runtime.ts";
 import { handlePageGatewayEvent } from "./chat-state-events.test-support.ts";
-import { resetChatViewState } from "./chat-view-state.test-support.ts";
+import { resetChatViewTestState } from "./chat-view-reset.test-support.ts";
 import { renderChatView } from "./chat-view.test-helpers.ts";
-import {
-  installTranscriptDomMocks,
-  resetTranscriptTestDom,
-} from "./components/chat-transcript.test-support.ts";
+import { installTranscriptDomMocks } from "./components/chat-transcript.test-support.ts";
 import { cacheChatSessionSnapshot } from "./session-message-cache.ts";
 
 beforeEach(() => {
   installTranscriptDomMocks();
   vi.stubGlobal("sessionStorage", createStorageMock());
 });
-afterEach(() => {
-  resetChatViewState();
-  resetTranscriptTestDom();
-});
+afterEach(resetChatViewTestState);
 
 function queuedInput(id: string, acceptedAt: number, messageId?: string, runId = id) {
   return {

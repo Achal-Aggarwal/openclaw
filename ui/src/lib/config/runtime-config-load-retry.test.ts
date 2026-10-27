@@ -28,7 +28,16 @@ describe("runtime config load retries", () => {
       setTimeout(resolve, 0);
     });
 
-  it("releases loading after a failed display read so the editor can be explicitly reloaded", async () => {
+  it.each([
+    {
+      name: "releases loading after a failed display read so the editor can be explicitly reloaded",
+      reload: "discard",
+    },
+    {
+      name: "keeps reload available when editing opens after a failed display read",
+      reload: "refresh",
+    },
+  ] as const)("$name", async ({ reload }) => {
     vi.useFakeTimers();
     const request = vi
       .fn()
@@ -48,7 +57,9 @@ describe("runtime config load retries", () => {
       expect(observed).toEqual({ loading: false, error: "temporarily unavailable" });
       expect(state.configLoading).toBe(false);
 
-      await runtimeConfig.discardDraft({ reloadOnly: true });
+      await (reload === "discard"
+        ? runtimeConfig.discardDraft({ reloadOnly: true })
+        : runtimeConfig.refresh());
       expect(request).toHaveBeenCalledTimes(2);
       expect(state.configForm).toEqual({ count: 1 });
       expect(state.configSnapshot?.hash).toBe("recovered");
@@ -143,27 +154,4 @@ describe("runtime config load retries", () => {
       }
     },
   );
-
-  it("keeps reload available when editing opens after a failed display read", async () => {
-    vi.useFakeTimers();
-    const request = vi
-      .fn()
-      .mockRejectedValueOnce(new Error("gateway restarting"))
-      .mockResolvedValue(makeSnapshot());
-    const { runtimeConfig, state } = createConfigCapabilityHarness(request);
-    try {
-      await runtimeConfig.ensureDisplayLoaded();
-      await runtimeConfig.ensureLoaded();
-      expect(state.configLoading).toBe(false);
-      expect(request).toHaveBeenCalledOnce();
-
-      await runtimeConfig.refresh();
-      expect(state.configSnapshot?.hash).toBe("hash-1");
-      expect(state.configLoading).toBe(false);
-      expect(request).toHaveBeenCalledTimes(2);
-    } finally {
-      runtimeConfig.dispose();
-      vi.useRealTimers();
-    }
-  });
 });

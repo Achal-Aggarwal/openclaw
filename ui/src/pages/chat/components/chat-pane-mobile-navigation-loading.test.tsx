@@ -4,6 +4,7 @@ import { createActiveSessionPlacement } from "../../../test-helpers/session-plac
 import { waitForSolid } from "../../../test-helpers/solid-settle.ts";
 import { createChatMobileHostFixture } from "../chat-mobile-host.test-support.ts";
 import {
+  chatPaneHeaderMobileDetails,
   chatPaneHeaderSessionMenu,
   chatPaneHeaderSessionRow,
   mountChatPaneHeader,
@@ -38,7 +39,7 @@ it("retains the latest mobile navigation during loading and drops retired pane i
       open: true,
       destination: { area: "details" },
     });
-    const detailsControl: NonNullable<ChatPaneHeaderProps["detailsControl"]> = {
+    const detailsControl = chatPaneHeaderMobileDetails(host, {
       chat: {
         sessionKey: session.key,
         currentAgentId: "main",
@@ -46,13 +47,8 @@ it("retains the latest mobile navigation during loading and drops retired pane i
         messages: [],
         gatewayScope: {},
       },
-      elements: {},
-      mobile: true,
       nativePresentation: "mobile",
-      mobileHost: host,
-      presentation: true,
-      setRef: vi.fn(),
-    };
+    });
     const onMove = vi.fn<NonNullable<ChatPaneHeaderProps["onMobilePlacementMove"]>>(
       async (present) => {
         present({

@@ -1,20 +1,16 @@
 /* @vitest-environment jsdom */
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { waitForSolid } from "../../test-helpers/solid-settle.ts";
-import { resetChatViewState } from "./chat-view-state.test-support.ts";
+import { resetChatViewTestState } from "./chat-view-reset.test-support.ts";
 import { createTestTranscript, renderChatView } from "./chat-view.test-helpers.ts";
 import {
   flushDeferredRowPrune,
   installTranscriptDomMocks,
-  resetTranscriptTestDom,
 } from "./components/chat-transcript.test-support.ts";
 import { saveChatSessionScrollPosition } from "./scroll.ts";
 
 beforeEach(installTranscriptDomMocks);
-afterEach(() => {
-  resetChatViewState();
-  resetTranscriptTestDom();
-});
+afterEach(resetChatViewTestState);
 
 type Startup = NonNullable<NonNullable<Parameters<typeof renderChatView>[0]>["placementStartup"]>;
 function startup(phase: Startup["phase"], overrides: Partial<Startup> = {}): Startup {

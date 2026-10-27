@@ -8,6 +8,7 @@ import { createChatMobileHostFixture } from "../chat-mobile-host.test-support.ts
 import type { ChatMobileHost } from "../chat-mobile-host.ts";
 import { offlineDeviceSession } from "../chat-pane.test-support.ts";
 import {
+  chatPaneHeaderMobileDetails,
   chatPaneHeaderSessionMenu,
   mountChatPaneHeader,
   selectNativeMenu,
@@ -33,14 +34,7 @@ it("adopts mobile chrome on first use without replacing shared Details or native
     sessionMenuAction: chatPaneHeaderSessionMenu(),
     runAction: { onAbort },
     onOpenDetails,
-    detailsControl: {
-      chat: undefined,
-      elements: {},
-      mobile: true,
-      mobileHost,
-      presentation: true,
-      setRef: vi.fn(),
-    },
+    detailsControl: chatPaneHeaderMobileDetails(mobileHost),
   });
   const details = mounted.container.querySelector("openclaw-chat-details");
   const menu = mounted.container.querySelector("openclaw-chat-header-session-menu")!;
@@ -132,14 +126,7 @@ it("retains the People page and lookup across native host replacement and deskto
       refreshHost();
     },
   });
-  const detailsControl = {
-    chat: undefined,
-    elements: {},
-    mobile: true,
-    mobileHost,
-    presentation: true,
-    setRef: vi.fn(),
-  };
+  const detailsControl = chatPaneHeaderMobileDetails(mobileHost);
   const mounted = mountHeader({
     mergedChrome: true,
     detailsControl,

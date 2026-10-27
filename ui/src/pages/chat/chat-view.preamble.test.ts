@@ -4,19 +4,15 @@ import type { ChatStreamSegment } from "../../lib/chat/chat-types.ts";
 import { waitForSolid } from "../../test-helpers/solid-settle.ts";
 import { createComposerContainer } from "./chat-composer.test-support.ts";
 import { message, nativeMessage, queued, signedText } from "./chat-thread-fixtures.test-support.ts";
-import { resetChatViewState } from "./chat-view-state.test-support.ts";
+import { resetChatViewTestState } from "./chat-view-reset.test-support.ts";
 import { renderChatInto } from "./chat-view.test-helpers.ts";
 import {
   flushDeferredRowPrune,
   installTranscriptDomMocks,
-  resetTranscriptTestDom,
 } from "./components/chat-transcript.test-support.ts";
 
 beforeEach(installTranscriptDomMocks);
-afterEach(() => {
-  resetChatViewState();
-  resetTranscriptTestDom();
-});
+afterEach(resetChatViewTestState);
 
 const runId = "run-preamble";
 const activeTool = message("toolResult", "Read complete.", undefined, {

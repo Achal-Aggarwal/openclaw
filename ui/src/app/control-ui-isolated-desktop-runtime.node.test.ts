@@ -444,54 +444,23 @@ it("prioritizes route and common interaction hints, retaining saved Context byte
   expect(fixture.events).toEqual(["common", "online", "draftWrite"]);
   expect((await fixture.load.outboxPayload!()).value).toBe("common");
   expect(fixture.events).toEqual(["common", "online", "draftWrite", "outboxPayload"]);
+  const expectedEvents = ["common", "online", "draftWrite", "outboxPayload"];
   expect((await fixture.load.placement!()).value).toBe("placement");
-  expect(fixture.events).toEqual([
-    "common",
-    "online",
-    "draftWrite",
-    "outboxPayload",
-    "placement-dependency",
-    "placement",
-  ]);
+  expectedEvents.push("placement-dependency", "placement");
+  expect(fixture.events).toEqual(expectedEvents);
   // A default-open Details section must not evaluate future tool/send/search modules.
   expect((await fixture.load.subagents!()).value).toBe("common");
-  expect(fixture.events).toEqual([
-    "common",
-    "online",
-    "draftWrite",
-    "outboxPayload",
-    "placement-dependency",
-    "placement",
-    "subagents",
-  ]);
+  expectedEvents.push("subagents");
+  expect(fixture.events).toEqual(expectedEvents);
   expect((await fixture.load.liveEvents!()).value).toBe("common");
-  expect(fixture.events).toEqual([
-    "common",
-    "online",
-    "draftWrite",
-    "outboxPayload",
-    "placement-dependency",
-    "placement",
-    "subagents",
-    "liveEvents",
-  ]);
+  expectedEvents.push("liveEvents");
+  expect(fixture.events).toEqual(expectedEvents);
   expect((await fixture.load.toolFamily!()).value).toBe("common");
   expect(fixture.events).not.toContain("toolPresentation");
   expect((await fixture.load.toolPresentation!()).value).toBe("common");
   expect((await fixture.load.runFrame!()).value).toBe("common");
-  expect(fixture.events).toEqual([
-    "common",
-    "online",
-    "draftWrite",
-    "outboxPayload",
-    "placement-dependency",
-    "placement",
-    "subagents",
-    "liveEvents",
-    "toolFamily",
-    "toolPresentation",
-    "runFrame",
-  ]);
+  expectedEvents.push("toolFamily", "toolPresentation", "runFrame");
+  expect(fixture.events).toEqual(expectedEvents);
   // Common preloaded interactions do not initialize optional families.
   for (const name of ["search", "contextBreakdown", "headerOperations", "command"]) {
     expect(fixture.events).not.toContain(name);

@@ -3,18 +3,12 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { waitForSolid } from "../../test-helpers/solid-settle.ts";
 import { createComposerContainer } from "./chat-composer.test-support.ts";
-import { resetChatViewState } from "./chat-view-state.test-support.ts";
+import { resetChatViewTestState } from "./chat-view-reset.test-support.ts";
 import { renderChatInto, requireElement } from "./chat-view.test-helpers.ts";
-import {
-  installTranscriptDomMocks,
-  resetTranscriptTestDom,
-} from "./components/chat-transcript.test-support.ts";
+import { installTranscriptDomMocks } from "./components/chat-transcript.test-support.ts";
 
 beforeEach(installTranscriptDomMocks);
-afterEach(() => {
-  resetChatViewState();
-  resetTranscriptTestDom();
-});
+afterEach(resetChatViewTestState);
 
 describe("cloud worker disk-space notice", () => {
   it("updates persistent disk guidance and clears it after recovery", async () => {

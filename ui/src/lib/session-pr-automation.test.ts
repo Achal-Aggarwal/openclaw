@@ -124,23 +124,6 @@ it.each([
   expect(request.mock.calls.every(([method]) => method === "cron.list")).toBe(true);
 });
 
-it("creates the selected declarative job and keeps its returned identity", async () => {
-  const created = await job("autoArchive");
-  request.mockResolvedValueOnce({ created: true, job: created });
-  expect(await set("autoArchive", true)).toEqual(created);
-  expect(request).toHaveBeenCalledExactlyOnceWith(
-    "cron.add",
-    expect.objectContaining({
-      name: "Auto-archive on merge or close: example/project#42",
-      agentId: "main",
-      sessionKey: "agent:main:dashboard:ci",
-      owner: { agentId: "main", sessionKey: "agent:main:dashboard:ci" },
-      sessionTarget: "isolated",
-      enabled: true,
-    }),
-  );
-});
-
 it.each(["autoFix", "autoMerge"] as const)(
   "updates %s across reset using its exact revision",
   async (option) => {
@@ -211,11 +194,16 @@ const instructions = {
   ],
 };
 it.each(["autoFix", "autoMerge", "autoArchive"] as const)(
-  "binds %s to its execution owner and permitted actions",
+  "creates %s with its returned identity, execution owner and permitted actions",
   async (option) => {
-    request.mockResolvedValueOnce({ job: await job(option) });
-    await set(option, true);
+    const created = await job(option);
+    request.mockResolvedValueOnce({ job: created });
+    expect(await set(option, true)).toEqual(created);
+    expect(request).toHaveBeenCalledExactlyOnceWith("cron.add", expect.anything());
     const spec = readCiAutomationAddParams(request.mock.calls[0]?.[1]);
+    if (option === "autoArchive") {
+      expect(spec.name).toBe("Auto-archive on merge or close: example/project#42");
+    }
     expect(spec).toMatchObject({
       agentId: target.agentId,
       sessionKey: target.sessionKey,

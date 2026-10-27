@@ -3,36 +3,32 @@
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { waitForSolid } from "../../test-helpers/solid-settle.ts";
 import { waitForFast } from "../../test-helpers/wait-for.ts";
-import { resetChatViewState } from "./chat-view-state.test-support.ts";
+import { resetChatViewTestState } from "./chat-view-reset.test-support.ts";
 import { renderChatView, requireElement } from "./chat-view.test-helpers.ts";
 import { installChatComposerPickerDismissal } from "./components/chat-picker-overlay.ts";
-import {
-  installTranscriptDomMocks,
-  resetTranscriptTestDom,
-} from "./components/chat-transcript.test-support.ts";
+import { installTranscriptDomMocks } from "./components/chat-transcript.test-support.ts";
 import {
   workspaceConflictPathForDisplay,
   workspaceResultConflictFromTranscript,
 } from "./workspace-conflict.ts";
 
-beforeEach(() => {
+const writeText = vi.fn().mockResolvedValue(undefined);
+
+beforeEach(async () => {
+  // These tests exercise notices after their optional owner has loaded.
+  await import("./chat-view-notices-content.tsx");
+  writeText.mockClear();
+  vi.stubGlobal("navigator", { clipboard: { writeText } });
   onTestFinished(installChatComposerPickerDismissal(document));
   installTranscriptDomMocks();
 });
 
-afterEach(() => {
-  resetChatViewState();
-  resetTranscriptTestDom();
-});
+afterEach(resetChatViewTestState);
 
 describe("chat run error", () => {
   it.each(["run", "request"])(
     "strips only the decorative prefix from a %s error display and copies the raw diagnostic",
     async (source) => {
-      // Compile the optional notice owner before testing its presentation.
-      await import("./chat-view-notices-content.tsx");
-      const writeText = vi.fn().mockResolvedValue(undefined);
-      vi.stubGlobal("navigator", { clipboard: { writeText } });
       const diagnostic =
         "⚠️ 🛠️ Error:  gateway disconnected near 🧭\n  indented\tdetail\n<img src=x onerror=alert(1)>\nFinal diagnostic line  ";
       const renderedDiagnostic =
@@ -85,8 +81,6 @@ describe("chat run error", () => {
   );
 
   it.each([true])("keeps startup Retry owned by retryable=%s", async (retryable) => {
-    const writeText = vi.fn().mockResolvedValue(undefined);
-    vi.stubGlobal("navigator", { clipboard: { writeText } });
     const onRetrySessionPlacementStartup = vi.fn();
     const container = renderChatView({
       placementStartup: {
@@ -145,9 +139,6 @@ describe("cloud workspace conflict notice", () => {
   };
 
   it("bounds conflict guidance and copies the selected path recovery command", async () => {
-    await import("./chat-view-notices-content.tsx");
-    const writeText = vi.fn().mockResolvedValue(undefined);
-    vi.stubGlobal("navigator", { clipboard: { writeText } });
     const onDismissWorkspaceConflict = vi.fn();
     const container = renderChatView({
       workspaceConflict: conflict,

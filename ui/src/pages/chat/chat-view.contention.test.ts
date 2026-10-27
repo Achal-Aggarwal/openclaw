@@ -2,19 +2,13 @@
 
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { waitForSolid } from "../../test-helpers/solid-settle.ts";
-import { resetChatViewState } from "./chat-view-state.test-support.ts";
+import { resetChatViewTestState } from "./chat-view-reset.test-support.ts";
 import { getComposerTextarea, renderChatView } from "./chat-view.test-helpers.ts";
-import {
-  installTranscriptDomMocks,
-  resetTranscriptTestDom,
-} from "./components/chat-transcript.test-support.ts";
+import { installTranscriptDomMocks } from "./components/chat-transcript.test-support.ts";
 
 beforeEach(installTranscriptDomMocks);
 
-afterEach(() => {
-  resetChatViewState();
-  resetTranscriptTestDom();
-});
+afterEach(resetChatViewTestState);
 
 const workingStatus = (container: HTMLElement) =>
   container.querySelector(".chat-working-indicator__status")?.textContent;

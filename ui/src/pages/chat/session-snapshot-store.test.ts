@@ -346,22 +346,13 @@ describe("persistent chat session snapshots", () => {
     { transcriptMetadata: null },
     { messageReactions: { message: [{}] } },
     { progressCard: {} },
+    { historyState: { stateRevision: "invalid" } },
   ])("rejects malformed optional payloads alongside a retained board: %j", async (payload) => {
     const value = boardSnapshot(sessionKey, "retained board");
     await seed(value);
     await putRawRecord({
       ...envelope(sessionKey, value),
       snapshot: { ...value, ...payload },
-    });
-    expect(await new SessionSnapshotStore().read(sessionKey)).toBeNull();
-  });
-
-  it("rejects malformed persisted history alongside a valid board", async () => {
-    const value = boardSnapshot(sessionKey, "retained board");
-    await seed(value);
-    await putRawRecord({
-      ...envelope(sessionKey, value),
-      snapshot: { ...value, historyState: { stateRevision: "invalid" } },
     });
     expect(await new SessionSnapshotStore().read(sessionKey)).toBeNull();
   });
@@ -743,25 +734,26 @@ describe("persistent chat session snapshots", () => {
     expect(await new SessionSnapshotStore().read(sessionKey)).toEqual(value);
   });
 
-  it("keeps every operation non-fatal when IndexedDB is unavailable or throws", async () => {
-    vi.stubGlobal("indexedDB", undefined);
-    const unavailable = new SessionSnapshotStore();
-    unavailable.write(key("agent:main:none"), snapshot("none"));
-    await expect(unavailable.flush()).resolves.toBeUndefined();
-    await expect(unavailable.read(key("agent:main:none"))).resolves.toBeNull();
-    await expect(unavailable.delete(key("agent:main:none"))).resolves.toBeUndefined();
-    vi.stubGlobal("indexedDB", {
-      open: () => {
-        throw new DOMException("denied", "SecurityError");
+  it.each([
+    ["is unavailable", undefined],
+    [
+      "throws",
+      {
+        open: () => {
+          throw new DOMException("denied", "SecurityError");
+        },
+        deleteDatabase: () => {
+          throw new DOMException("denied", "SecurityError");
+        },
       },
-      deleteDatabase: () => {
-        throw new DOMException("denied", "SecurityError");
-      },
-    });
-    const denied = new SessionSnapshotStore();
-    denied.write(key("agent:main:denied"), snapshot("denied"));
-    await expect(denied.flush()).resolves.toBeUndefined();
-    await expect(denied.read(key("agent:main:denied"))).resolves.toBeNull();
+    ],
+  ])("keeps every operation non-fatal when IndexedDB %s", async (_mode, indexedDB) => {
+    vi.stubGlobal("indexedDB", indexedDB);
+    const store = new SessionSnapshotStore();
+    store.write(sessionKey, snapshot());
+    await expect(store.flush()).resolves.toBeUndefined();
+    await expect(store.read(sessionKey)).resolves.toBeNull();
+    await expect(store.delete(sessionKey)).resolves.toBeUndefined();
     await expect(clearStoredChatSnapshots()).resolves.toBeUndefined();
   });
 });

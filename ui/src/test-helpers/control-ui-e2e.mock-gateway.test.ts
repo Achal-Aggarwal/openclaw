@@ -111,72 +111,89 @@ it("answers core boot and post-transcript requests under strict admission", asyn
   });
 });
 
-it("acknowledges core PR replacement sets before socket-scoped snapshots", async ({
-  gatewayPage,
-}) => {
-  const fixture = createControlUiCoreBootFixture("selected", "fixture-boot");
-  gatewayPage.execute(createControlUiMockGatewayInitScript());
-  gatewayPage.execute(fixture.initScript);
-  const first = gatewayPage.connect();
-  await flushMockTimers();
-  first.send("initial", "controlUi.sessionPullRequests.subscribe", {
-    sessionKeys: ["selected", "active"],
-    passiveSessionKeys: ["selected", "passive"],
-  });
-  await flushMockTimers();
-  expect(first.frames.filter((frame) => frame.event !== "connect.challenge")).toEqual([
-    { type: "res", id: "initial", ok: true, payload: { subscribed: true } },
-    expect.objectContaining({
-      type: "event",
-      event: "controlUi.sessionPullRequests.changed",
-      payload: {
-        sessions: {
-          selected: {
-            status: "ready",
-            pullRequests: [],
-            rateLimited: false,
-            repository: { owner: "example", repo: "boot-fixture" },
-            branch: { owner: "example", repo: "boot-fixture", branch: "fixture/core-boot" },
-          },
-          active: { status: "ready", pullRequests: [], rateLimited: false },
-          passive: { status: "ready", pullRequests: [], rateLimited: false },
-        },
+it.for([false, true])(
+  "acknowledges core PR replacement sets before socket-scoped snapshots (sidebar=%s)",
+  async (sidebarPresentation, { gatewayPage }) => {
+    const sidebar = {
+      status: "ready" as const,
+      pullRequests: [],
+      rateLimited: false,
+      repository: { owner: "example", repo: "sidebar-fixture" },
+    };
+    const fixture = createControlUiCoreBootFixture(
+      "selected",
+      "fixture-boot",
+      sidebarPresentation ? { active: sidebar } : undefined,
+    );
+    gatewayPage.execute(createControlUiMockGatewayInitScript());
+    gatewayPage.execute(fixture.initScript);
+    const first = gatewayPage.connect();
+    await flushMockTimers();
+    first.send("initial", "controlUi.sessionPullRequests.subscribe", {
+      sessionKeys: ["selected", "active"],
+      passiveSessionKeys: ["selected", "passive"],
+    });
+    await flushMockTimers();
+    const sessions = {
+      selected: {
+        status: "ready",
+        pullRequests: [],
+        rateLimited: false,
+        repository: { owner: "example", repo: "boot-fixture" },
+        branch: { owner: "example", repo: "boot-fixture", branch: "fixture/core-boot" },
       },
-    }),
-  ]);
-  let offset = first.frames.length;
-  first.send("replacement", "controlUi.sessionPullRequests.subscribe", { sessionKeys: ["next"] });
-  await flushMockTimers();
-  expect(first.frames.slice(offset)).toEqual([
-    { type: "res", id: "replacement", ok: true, payload: { subscribed: true } },
-    expect.objectContaining({
-      type: "event",
-      payload: { sessions: { next: { status: "ready", pullRequests: [], rateLimited: false } } },
-    }),
-  ]);
-  offset = first.frames.length;
-  first.send("unsubscribe", "controlUi.sessionPullRequests.subscribe", { sessionKeys: [] });
-  await flushMockTimers();
-  expect(first.frames.slice(offset)).toEqual([
-    { type: "res", id: "unsubscribe", ok: true, payload: { subscribed: false } },
-  ]);
-  offset = first.frames.length;
-  const second = gatewayPage.connect();
-  await flushMockTimers();
-  second.send("reconnect", "controlUi.sessionPullRequests.subscribe", {
-    sessionKeys: ["selected"],
-  });
-  await flushMockTimers();
-  expect(first.frames).toHaveLength(offset);
-  expect(second.frames.filter((frame) => frame.event !== "connect.challenge")).toEqual([
-    { type: "res", id: "reconnect", ok: true, payload: { subscribed: true } },
-    expect.objectContaining({
-      type: "event",
-      event: "controlUi.sessionPullRequests.changed",
-      payload: { sessions: { selected: expect.objectContaining({ status: "ready" }) } },
-    }),
-  ]);
-});
+      active: sidebarPresentation
+        ? sidebar
+        : { status: "ready", pullRequests: [], rateLimited: false },
+      passive: { status: "ready", pullRequests: [], rateLimited: false },
+    };
+    const snapshots = sidebarPresentation
+      ? Object.entries(sessions).map(([key, snapshot]) => ({ [key]: snapshot }))
+      : [sessions];
+    expect(first.frames.filter((frame) => frame.event !== "connect.challenge")).toEqual([
+      { type: "res", id: "initial", ok: true, payload: { subscribed: true } },
+      ...snapshots.map((sessions) =>
+        expect.objectContaining({
+          type: "event",
+          event: "controlUi.sessionPullRequests.changed",
+          payload: { sessions },
+        }),
+      ),
+    ]);
+    let offset = first.frames.length;
+    first.send("replacement", "controlUi.sessionPullRequests.subscribe", { sessionKeys: ["next"] });
+    await flushMockTimers();
+    expect(first.frames.slice(offset)).toEqual([
+      { type: "res", id: "replacement", ok: true, payload: { subscribed: true } },
+      expect.objectContaining({
+        type: "event",
+        payload: { sessions: { next: { status: "ready", pullRequests: [], rateLimited: false } } },
+      }),
+    ]);
+    offset = first.frames.length;
+    first.send("unsubscribe", "controlUi.sessionPullRequests.subscribe", { sessionKeys: [] });
+    await flushMockTimers();
+    expect(first.frames.slice(offset)).toEqual([
+      { type: "res", id: "unsubscribe", ok: true, payload: { subscribed: false } },
+    ]);
+    offset = first.frames.length;
+    const second = gatewayPage.connect();
+    await flushMockTimers();
+    second.send("reconnect", "controlUi.sessionPullRequests.subscribe", {
+      sessionKeys: ["selected"],
+    });
+    await flushMockTimers();
+    expect(first.frames).toHaveLength(offset);
+    expect(second.frames.filter((frame) => frame.event !== "connect.challenge")).toEqual([
+      { type: "res", id: "reconnect", ok: true, payload: { subscribed: true } },
+      expect.objectContaining({
+        type: "event",
+        event: "controlUi.sessionPullRequests.changed",
+        payload: { sessions: { selected: expect.objectContaining({ status: "ready" }) } },
+      }),
+    ]);
+  },
+);
 
 it("serves protocol-valid empty Custodian history without method advertisement", async ({
   gatewayPage,

@@ -166,7 +166,7 @@ it("retires durable delivery receipts from the run owner without bridge prop ref
   expect(readChatOutboxRecovery(host).entries).toEqual([]);
 });
 
-it("clears a failed restore on retry and admits one review before Solid flushes", async () => {
+it("retries failed action and storage loads before admitting one recovery review", async () => {
   const dialogs = createModalDialogTestFixture();
   const cancellation = new AbortController();
   onTestFinished(async () => {
@@ -205,14 +205,31 @@ it("clears a failed restore on retry and admits one review before Solid flushes"
     }),
   );
   await waitForSolid(() => expect(composer.querySelector("textarea")?.value).toBe(""));
-  recoveryIo.readDraft.mockResolvedValueOnce({ status: "storage-failed" });
-  fixture.button("restore").click();
-  await waitForSolid(() => {
-    expect(fixture.element.querySelector(".chat-outbox-recovery__error")?.textContent).toBe(
-      t("chat.outboxRecoveryStorageFailed"),
+  for (const failure of ["action", "storage"] as const) {
+    if (failure === "action") {
+      // mock-isolation: Reject only the action chunk; discovery and recovery storage stay real.
+      vi.doMock("./chat-outbox-recovery-actions.ts", () => {
+        throw new Error("Synthetic recovery actions unavailable");
+      });
+    } else {
+      vi.doUnmock("./chat-outbox-recovery-actions.ts");
+      recoveryIo.readDraft.mockResolvedValueOnce({ status: "storage-failed" });
+    }
+    fixture.button("restore").click();
+    await waitForSolid(() => {
+      expect(
+        fixture.element.querySelector('.chat-outbox-recovery__error[role="alert"]')?.textContent,
+      ).toBe(t("chat.outboxRecoveryStorageFailed"));
+      expect(fixture.button("restore").disabled).toBe(false);
+    });
+    expect(fixture.element.querySelector(".chat-outbox-recovery__preview")?.textContent).toBe(
+      "Saved input for explicit review",
     );
-    expect(fixture.button("restore").disabled).toBe(false);
-  });
+    expect(readChatOutboxRecovery(fixture.host).entries).toHaveLength(1);
+    expect(fixture.host.chatMessage).toBe("");
+    expect(fixture.restored).not.toHaveBeenCalled();
+    expect(recoveryIo.confirm).not.toHaveBeenCalled();
+  }
   fixture.button("restore").click();
   fixture.button("restore").click();
   await waitForSolid(() => {
@@ -241,6 +258,7 @@ it("clears a failed restore on retry and admits one review before Solid flushes"
   await waitForSolid(() => {
     expect(fixture.restored).toHaveBeenCalledOnce();
     expect(fixture.element.querySelector(".chat-outbox-recovery-row")).toBeNull();
+    expect(fixture.element.querySelector('[role="alert"]')).toBeNull();
   });
   const stored = readStoredOutboxStore(sessionStorage, storageTargetForComposer(fixture.host));
   expect(stored.sessions["agent:main:main\u0000agent:main"]?.draft).toBe(
@@ -318,53 +336,5 @@ it("admits one recovery review after a held action import outlives its first own
   } finally {
     release.resolve();
     confirmation.resolve(false);
-  }
-});
-
-it("keeps recovery rows after an action import fails and restores on retry", async () => {
-  const started = createDeferred();
-  const loading = createDeferred<typeof import("./chat-outbox-recovery-actions.ts")>();
-  // mock-isolation: Fail only the action chunk; recovery discovery and storage remain real.
-  vi.doMock("./chat-outbox-recovery-actions.ts", () => {
-    started.resolve();
-    return loading.promise;
-  });
-  const fixture = await mountRecovery();
-  try {
-    fixture.button("restore").click();
-    await started.promise;
-    loading.reject(new Error("Synthetic recovery actions unavailable"));
-    await waitForSolid(() => {
-      expect(fixture.element.querySelector('[role="alert"]')?.textContent).toBe(
-        t("chat.outboxRecoveryStorageFailed"),
-      );
-      expect(fixture.element.querySelector(".chat-outbox-recovery__preview")?.textContent).toBe(
-        "Saved input for explicit review",
-      );
-      expect(fixture.button("restore").disabled).toBe(false);
-    });
-    expect(readChatOutboxRecovery(fixture.host).entries).toHaveLength(1);
-    expect(fixture.host.chatMessage).toBe("");
-    expect(fixture.restored).not.toHaveBeenCalled();
-    expect(recoveryIo.confirm).not.toHaveBeenCalled();
-
-    vi.doUnmock("./chat-outbox-recovery-actions.ts");
-    recoveryIo.confirm.mockResolvedValue(true);
-    fixture.button("restore").click();
-    await waitForSolid(() => {
-      expect(fixture.restored).toHaveBeenCalledOnce();
-      expect(fixture.element.querySelector(".chat-outbox-recovery-row")).toBeNull();
-      expect(fixture.element.querySelector('[role="alert"]')).toBeNull();
-    });
-    expect(recoveryIo.confirm).toHaveBeenCalledOnce();
-    expect(
-      readStoredOutboxStore(sessionStorage, storageTargetForComposer(fixture.host)).sessions[
-        "agent:main:main\u0000agent:main"
-      ]?.draft,
-    ).toBe("Saved input for explicit review");
-    expect(readChatOutboxRecovery(fixture.host).entries).toEqual([]);
-    expect(fixture.request).not.toHaveBeenCalled();
-  } finally {
-    loading.reject(new Error("Synthetic recovery action cleanup"));
   }
 });

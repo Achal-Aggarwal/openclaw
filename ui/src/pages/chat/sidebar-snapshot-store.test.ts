@@ -45,6 +45,11 @@ const read = (store: SidebarSnapshotStore, current = scope) =>
 const write = (store: SidebarSnapshotStore, value = model, current = scope) =>
   store.writeSidebar(key(current), value, validate);
 const sessionKey = `scope:${JSON.stringify([scope.gatewayScope, scope.recoveryScope])}\u0000agent:main:cedar`;
+const transcript = {
+  messages: ["Retained conversation"],
+  pagination: { hasMore: false as const },
+  sessionId: "cedar",
+};
 
 const stores: SidebarSnapshotStore[] = [];
 function createStore() {
@@ -142,11 +147,6 @@ it.each([1, 2, 3])(
     for (const current of profiles) {
       await store.writeSidebar(key(current), sidebarSnapshot, parseSidebarSnapshot);
     }
-    const transcript = {
-      messages: ["Retained conversation"],
-      pagination: { hasMore: false as const },
-      sessionId: "cedar",
-    };
     const transcripts = new SessionSnapshotStore();
     transcripts.write(sessionKey, transcript);
     await transcripts.flush();
@@ -190,18 +190,13 @@ it("prunes oldest records by count, UTF-8 bytes, and age", async () => {
 
 it("removes only the evicted transcript", async () => {
   const transcripts = new SessionSnapshotStore();
-  const snapshot = {
-    messages: ["synthetic"],
-    pagination: { hasMore: false as const },
-    sessionId: "cedar",
-  };
   const retained = `${sessionKey}-retained`;
-  transcripts.write(sessionKey, snapshot);
-  transcripts.write(retained, snapshot);
+  transcripts.write(sessionKey, transcript);
+  transcripts.write(retained, transcript);
   await transcripts.flush();
   await deleteStoredChatSnapshot(sessionKey, "cache-eviction");
   expect(await transcripts.read(sessionKey)).toBeNull();
-  expect(await transcripts.read(retained)).toEqual(snapshot);
+  expect(await transcripts.read(retained)).toEqual(transcript);
 });
 
 it.each(["profile", "account", "session", "cache-eviction", "all"] as const)(

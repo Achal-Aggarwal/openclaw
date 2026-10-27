@@ -394,18 +394,13 @@ const interactive = (lines = 41) => {
   return render(`\`\`\`json\n${json}\n\`\`\``, { codeBlockInteraction: "interactive" });
 };
 
-it("requires a prepared JSON parser for interactive Markdown code blocks", () => {
+it("rejects interactive Markdown without a prepared JSON parser", () => {
   const parser = createMarkdownParser();
   const source = '```json\n{"answer":42}\n```';
 
   expect(() => parser.render(source, { codeBlockInteraction: "interactive" })).toThrow(
     "interactive rendering requires a prepared JSON parser",
   );
-
-  const fragment = htmlFragment(
-    parser.render(source, { codeBlockInteraction: "interactive", jsonParser: parseMarkdownJson }),
-  );
-  expect(fragment.querySelector(".code-block-json-tree")).not.toBeNull();
 });
 
 it.each([true, false])("keeps code literal without HTML children (block art=%s)", (blockArt) => {

@@ -1,6 +1,6 @@
 /* @vitest-environment jsdom */
 
-import { onSettled } from "solid-js";
+import { createSignal, onSettled } from "solid-js";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { hasToolMessageDemand } from "../../../lib/chat/tool-message-demand.ts";
 import { prepareChatHistoryFixture } from "../../../test-helpers/chat-activity-fixtures.ts";
@@ -9,7 +9,6 @@ import { flush, waitForSolid } from "../../../test-helpers/solid-settle.ts";
 import { attachHistoryActivity } from "../chat-history-request.ts";
 import { createTestTranscript } from "../chat-view.test-helpers.ts";
 import { mountTestTranscript } from "../test-helpers/chat-transcript-native.tsx";
-import { AgentRunFrame } from "./chat-agent-run-frame.tsx";
 import { createChatThreadHarness } from "./chat-message-native.test-support.tsx";
 import {
   createAssistantMessage,
@@ -19,7 +18,7 @@ import {
 } from "./chat-message.test-support.ts";
 import { ChatTranscriptRenderer } from "./chat-transcript-layout-solid.tsx";
 import { GuardedTranscriptItem } from "./chat-transcript-render-guard.ts";
-import type { NativeTranscriptView } from "./chat-transcript-rows.ts";
+import { nativeRows, type NativeTranscriptView } from "./chat-transcript-rows.ts";
 import {
   installTranscriptDomMocks,
   resetTranscriptTestDom,
@@ -36,6 +35,19 @@ function row(key: string, view: NativeTranscriptView): TestContentRow {
 
 const group = (role: "user" | "assistant", content: string, timestamp: number) =>
   createMessageGroup({ role, content, timestamp }, role);
+
+function firstCommittedRow<T>(
+  read: (row: HTMLElement | null) => T,
+  selector = ".chat-virtual-row",
+) {
+  let value: T | undefined;
+  vi.stubGlobal("openclawRenderLifecycleTestHook", (host: object, phase: string) => {
+    if (host instanceof ChatTranscriptRenderer && phase === "commit" && value === undefined) {
+      value = read(host.columnElement?.querySelector<HTMLElement>(selector) ?? null);
+    }
+  });
+  return () => value;
+}
 
 it("commits the first tool history row fully through the public chat thread", async () => {
   const history = attachHistoryActivity(
@@ -58,26 +70,13 @@ it("commits the first tool history row fully through the public chat thread", as
   const container = document.body.appendChild(document.createElement("div"));
   const transcript = createTestTranscript(paneId);
   const thread = createChatThreadHarness(container, transcript);
-  let firstCommittedActivity: { summary: string | null; failure: string | null } | null | undefined;
-  vi.stubGlobal(
-    "openclawRenderLifecycleTestHook",
-    (host: object, phase: "invalidate" | "commit") => {
-      if (
-        !(host instanceof ChatTranscriptRenderer) ||
-        phase !== "commit" ||
-        firstCommittedActivity !== undefined
-      ) {
-        return;
-      }
-      const committedRow = host.columnElement?.querySelector(".chat-virtual-row");
-      firstCommittedActivity = committedRow
-        ? {
-            summary:
-              committedRow.querySelector(".chat-activity-group__summary")?.textContent ?? null,
-            failure: committedRow.querySelector(".chat-tool-failure")?.textContent ?? null,
-          }
-        : null;
-    },
+  const firstCommittedActivity = firstCommittedRow((row) =>
+    row
+      ? {
+          summary: row.querySelector(".chat-activity-group__summary")?.textContent ?? null,
+          failure: row.querySelector(".chat-tool-failure")?.textContent ?? null,
+        }
+      : null,
   );
   try {
     thread.render(
@@ -86,8 +85,8 @@ it("commits the first tool history row fully through the public chat thread", as
       }),
     );
     await waitForSolid(() => {
-      expect(firstCommittedActivity?.summary).toContain("1 read");
-      expect(firstCommittedActivity?.failure).toBe("1 failed");
+      expect(firstCommittedActivity()?.summary).toContain("1 read");
+      expect(firstCommittedActivity()?.failure).toBe("1 failed");
     });
   } finally {
     transcript.dispose();
@@ -107,22 +106,9 @@ it("commits a plain cached session update fully with its first transcript row", 
   const update = createMessageGroup(message, "assistant", {
     senderSession: { sessionKey: "agent:main:source", label: "Source conversation" },
   });
-  let firstCommittedRow: string | null | undefined;
-  vi.stubGlobal(
-    "openclawRenderLifecycleTestHook",
-    (host: object, phase: "invalidate" | "commit") => {
-      if (
-        !(host instanceof ChatTranscriptRenderer) ||
-        phase !== "commit" ||
-        firstCommittedRow !== undefined
-      ) {
-        return;
-      }
-      const committedRow = host.columnElement?.querySelector(
-        '.chat-virtual-row[data-virtual-row-key="cached-session"]',
-      );
-      firstCommittedRow = committedRow?.textContent ?? null;
-    },
+  const firstCommit = firstCommittedRow(
+    (row) => row?.textContent ?? null,
+    '.chat-virtual-row[data-virtual-row-key="cached-session"]',
   );
   const view = await mountTestTranscript("cached-session", [
     row("cached-session", {
@@ -132,19 +118,28 @@ it("commits a plain cached session update fully with its first transcript row", 
     }),
   ]);
   try {
-    expect(firstCommittedRow).toContain("Source conversation");
-    expect(firstCommittedRow).toContain("The cached session update");
+    expect(firstCommit()).toContain("Source conversation");
+    expect(firstCommit()).toContain("The cached session update");
   } finally {
     view.transcript.dispose();
   }
 });
 
-it("commits a cached run's message body with its row shell", () => {
+it("commits a cached run's message body with its row shell and keeps it current", () => {
   const container = document.body.appendChild(document.createElement("div"));
-  const answer = createMessageGroup(
-    { role: "assistant", content: "The cached run answer", timestamp: 3 },
-    "assistant",
-  );
+  const Frame = nativeRows.frame;
+  const frameFor = (text: string) => {
+    const answer = group("assistant", text, 3);
+    return {
+      kind: "agent-run-frame" as const,
+      key: "run:cached",
+      runId: "cached",
+      boundaryId: "boundary",
+      outcome: { kind: "completed" as const, actionOwner: answer.messages[0]! },
+      parts: [answer],
+    };
+  };
+  const [frame, setFrame] = createSignal(frameFor("The cached run answer"));
   let firstCommit: string | null = null;
   const view = mountSolid(
     () => {
@@ -153,15 +148,8 @@ it("commits a cached run's message body with its row shell", () => {
         firstCommit = container.textContent;
       });
       return (
-        <AgentRunFrame
-          frame={{
-            kind: "agent-run-frame",
-            key: "run:cached",
-            runId: "cached",
-            boundaryId: "boundary",
-            outcome: { kind: "completed", actionOwner: answer.messages[0]! },
-            parts: [answer],
-          }}
+        <Frame
+          frame={frame()}
           options={{
             streamOptions: {},
             renderGroupOptions: () => ({ showReasoning: false }),
@@ -174,8 +162,15 @@ it("commits a cached run's message body with its row shell", () => {
     { container },
   );
   try {
+    expect(container.querySelector(".chat-text")?.textContent?.trim()).toBe(
+      "The cached run answer",
+    );
     flush();
     expect(firstCommit).toContain("The cached run answer");
+    setFrame(frameFor("Current run answer"));
+    flush();
+    expect(container.querySelector(".chat-text")?.textContent?.trim()).toBe("Current run answer");
+    expect(container.textContent).not.toContain("The cached run answer");
   } finally {
     view.unmount();
     container.remove();

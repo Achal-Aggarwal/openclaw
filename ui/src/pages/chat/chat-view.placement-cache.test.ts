@@ -7,18 +7,12 @@ import { waitForSolid } from "../../test-helpers/solid-settle.ts";
 import { createComposerContainer } from "./chat-composer.test-support.ts";
 import { nativeMessage } from "./chat-thread-fixtures.test-support.ts";
 import * as chatThread from "./chat-thread.ts";
-import { resetChatViewState } from "./chat-view-state.test-support.ts";
+import { resetChatViewTestState } from "./chat-view-reset.test-support.ts";
 import { createChatProps, renderChatInto, renderChatPropsInto } from "./chat-view.test-helpers.ts";
-import {
-  installTranscriptDomMocks,
-  resetTranscriptTestDom,
-} from "./components/chat-transcript.test-support.ts";
+import { installTranscriptDomMocks } from "./components/chat-transcript.test-support.ts";
 
 beforeEach(installTranscriptDomMocks);
-afterEach(() => {
-  resetChatViewState();
-  resetTranscriptTestDom();
-});
+afterEach(resetChatViewTestState);
 
 describe("chat transcript cache", () => {
   it("reuses loaded history across fresh placement statuses and invalidates changed queue inputs", () => {

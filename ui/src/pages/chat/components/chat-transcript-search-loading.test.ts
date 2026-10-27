@@ -1,24 +1,14 @@
 /* @vitest-environment jsdom */
 import { expect, it, onTestFinished, vi } from "vitest";
-import { createDeferred } from "../../../../../test/helpers/promise.js";
 import { flush, waitForSolid } from "../../../test-helpers/solid-settle.ts";
 import { createReactiveDraftHarness, getComposerTextarea } from "../chat-view.test-helpers.ts";
+import { createHeldImport } from "./chat-lazy-import.test-support.ts";
 
 it("retires a pending search and preserves the composer through the next search", async () => {
-  const entered = createDeferred();
-  const ready = createDeferred();
-  const load = vi.fn(async () => {
-    entered.resolve();
-    await ready.promise;
-    return vi.importActual<typeof import("./chat-transcript-search-content.tsx")>(
-      "./chat-transcript-search-content.tsx",
-    );
-  });
-  // mock-isolation: Delay the real search chunk to exercise close/reopen before it settles.
-  vi.doMock("./chat-transcript-search-content.tsx", load);
+  const held = createHeldImport<typeof import("./chat-transcript-search-content.tsx")>();
+  vi.doMock(import("./chat-transcript-search-content.tsx"), held.load);
   const platform = vi.spyOn(navigator, "platform", "get").mockReturnValue("MacIntel");
   onTestFinished(() => {
-    ready.resolve();
     platform.mockRestore();
     vi.doUnmock("./chat-transcript-search-content.tsx");
   });
@@ -48,16 +38,16 @@ it("retires a pending search and preserves the composer through the next search"
         cancelable: true,
       }),
     );
-  expect(load).not.toHaveBeenCalled();
+  expect(held.load).not.toHaveBeenCalled();
   toggleSearch();
-  await entered.promise;
+  await held.entered.promise;
   expect(container.querySelector(".agent-chat__search-bar")).toBeNull();
   expect(getComposerTextarea(container)).toBe(composer);
   expect(composer.value).toBe("Keep this draft");
 
   toggleSearch();
   flush();
-  ready.resolve();
+  held.ready.resolve();
   await vi.dynamicImportSettled();
   expect(container.querySelector(".agent-chat__search-bar")).toBeNull();
   expect(getComposerTextarea(container)).toBe(composer);
@@ -73,5 +63,5 @@ it("retires a pending search and preserves the composer through the next search"
   expect(container.querySelector(".agent-chat__search-bar")).toBeNull();
   expect(composer.value).toBe("Keep this draft");
   expect(getComposerTextarea(container)).toBe(composer);
-  expect(load).toHaveBeenCalledOnce();
+  expect(held.load).toHaveBeenCalledOnce();
 });

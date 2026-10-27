@@ -5,7 +5,7 @@ import type { GatewaySessionRow } from "../../api/types.ts";
 import type { ExecApprovalRequest } from "../../app/exec-approval.ts";
 import type { SolidBridgeElement } from "../../lib/solid-bridge.ts";
 import { flush, waitForSolid } from "../../test-helpers/solid-settle.ts";
-import { resetChatViewState } from "./chat-view-state.test-support.ts";
+import { resetChatViewTestState } from "./chat-view-reset.test-support.ts";
 import {
   createTestTranscript,
   renderChatInto,
@@ -14,15 +14,11 @@ import {
 } from "./chat-view.test-helpers.ts";
 import {
   installTranscriptDomMocks,
-  resetTranscriptTestDom,
   resizeObservers,
 } from "./components/chat-transcript.test-support.ts";
 
 beforeEach(() => installTranscriptDomMocks());
-afterEach(() => {
-  resetChatViewState();
-  resetTranscriptTestDom();
-});
+afterEach(resetChatViewTestState);
 
 function expectFooterContext(container: Element, surface: Element) {
   const shell = requireElement(container, ".agent-chat__composer-shell", "composer shell");

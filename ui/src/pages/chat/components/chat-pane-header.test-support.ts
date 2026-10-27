@@ -76,6 +76,21 @@ export function chatPaneHeaderSharing(
   };
 }
 
+export function chatPaneHeaderMobileDetails(
+  mobileHost: NonNullable<ChatPaneHeaderProps["detailsControl"]>["mobileHost"],
+  patch: Partial<NonNullable<ChatPaneHeaderProps["detailsControl"]>> = {},
+): NonNullable<ChatPaneHeaderProps["detailsControl"]> {
+  return {
+    chat: undefined,
+    elements: {},
+    mobile: true,
+    mobileHost,
+    presentation: true,
+    setRef: vi.fn(),
+    ...patch,
+  };
+}
+
 async function settleNativeMenu() {
   flush();
   await Promise.resolve();

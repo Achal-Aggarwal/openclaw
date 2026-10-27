@@ -8,6 +8,82 @@ import {
   controlUiStableChunkName,
 } from "../../config/control-ui-chunking.ts";
 
+type FixtureModule = readonly [
+  id: string,
+  dependencies?: readonly string[],
+  lazy?: readonly string[],
+  styles?: readonly string[],
+];
+
+function fixtureSources(modules: FixtureModule[], styles: [string, string][] = []) {
+  const sources = new Map(styles);
+  const source = (
+    dependencies: readonly string[],
+    lazy: readonly string[],
+    css: readonly string[],
+  ) =>
+    [
+      ...dependencies.map(
+        (id, index) => `import * as dependency${index} from ${JSON.stringify(id)};`,
+      ),
+      ...css.map((id) => `import ${JSON.stringify(id)};`),
+      `export const value = [${dependencies.map((_, index) => `dependency${index}`).join(",")}];`,
+      `export const load = [${lazy.map((id) => `() => import(${JSON.stringify(id)})`).join(",")}];`,
+    ].join("\n");
+  for (const [id, dependencies = [], lazy = [], css = []] of modules) {
+    sources.set(id, source(dependencies, lazy, css));
+    for (const dependency of [...dependencies, ...lazy]) {
+      if (!sources.has(dependency)) {
+        sources.set(dependency, source([], [], []));
+      }
+    }
+  }
+  return sources;
+}
+
+async function buildChunkFixture(
+  sources: Map<string, string>,
+  entry: string,
+  codeSplitting = controlUiCodeSplitting,
+) {
+  const result = await build({
+    configFile: false,
+    publicDir: false,
+    logLevel: "silent",
+    plugins: [
+      {
+        name: "chunking-fixture",
+        enforce: "pre",
+        resolveId: (id) => (sources.has(id) ? id : null),
+        load: (id) => sources.get(id) ?? null,
+      },
+    ],
+    build: {
+      write: false,
+      minify: false,
+      rolldownOptions: {
+        input: entry,
+        preserveEntrySignatures: "allow-extension",
+        output: { codeSplitting, strictExecutionOrder: true },
+      },
+    },
+  });
+  if (Array.isArray(result) || !("output" in result)) {
+    throw new Error("Expected one in-memory build");
+  }
+  const chunks = result.output.filter((asset) => asset.type === "chunk");
+  const staticImports = (fileName: string, visited = new Set<string>()): Set<string> => {
+    if (!visited.has(fileName)) {
+      visited.add(fileName);
+      for (const imported of chunks.find((chunk) => chunk.fileName === fileName)!.imports) {
+        staticImports(imported, visited);
+      }
+    }
+    return visited;
+  };
+  return { output: result.output, chunks, staticImports };
+}
+
 describe("Control UI build chunking", () => {
   it("keeps optional parsing and device signing outside the eager graph", async () => {
     const zod = new URL("../../node_modules/zod/index.js", import.meta.url).pathname;
@@ -25,59 +101,14 @@ describe("Control UI build chunking", () => {
     const motion = new URL("../components/mascot-animator.ts", import.meta.url).pathname;
     const channels = new URL("../lib/channels/index.ts", import.meta.url).pathname;
     const entry = "\0config-parser-fixture";
-    const sources = new Map([
-      [
-        entry,
-        `export { validate } from ${JSON.stringify(zod)}; export { canCall } from ${JSON.stringify(gatewayMethods)}; export { signal } from ${JSON.stringify(solid)}; export { pending } from ${JSON.stringify(verdict)}; export const warm = () => import(${JSON.stringify(json5)}); export const sign = () => import(${JSON.stringify(signer)}); export const render = () => import(${JSON.stringify(markdown)}); export const animate = () => import(${JSON.stringify(motion)}); export const openChannels = () => import(${JSON.stringify(channels)});`,
-      ],
-      [zod, "export const validate = () => true;"],
-      [json5, "export const parse = () => ({});"],
-      [gatewayMethods, "export const canCall = () => true;"],
-      [solid, "export const signal = () => 1;"],
-      [verdict, "export const pending = () => false;"],
-      [signer, "export const sign = () => 'signature';"],
-      [motion, "export class MascotAnimator {}"],
-      [channels, "export const createChannelCapability = () => ({});"],
-      [markdown, `export { decode as render } from ${JSON.stringify(entities)};`],
-      [entities, "export const decode = () => 'decoded';"],
+    const sources = fixtureSources([
+      [entry, [zod, gatewayMethods, solid, verdict], [json5, signer, markdown, motion, channels]],
+      [markdown, [entities]],
     ]);
-    const result = await build({
-      configFile: false,
-      publicDir: false,
-      logLevel: "silent",
-      plugins: [
-        {
-          name: "config-parser-fixture",
-          enforce: "pre",
-          resolveId: (id) => (sources.has(id) ? id : null),
-          load: (id) => sources.get(id) ?? null,
-        },
-      ],
-      build: {
-        write: false,
-        minify: false,
-        rolldownOptions: {
-          input: entry,
-          preserveEntrySignatures: "allow-extension",
-          output: { codeSplitting: controlUiCodeSplitting, strictExecutionOrder: true },
-        },
-      },
-    });
-    if (Array.isArray(result) || !("output" in result)) {
-      throw new Error("Expected one in-memory build");
-    }
-    const chunks = result.output.filter((asset) => asset.type === "chunk");
+    const { chunks, staticImports } = await buildChunkFixture(sources, entry);
     const entryChunk = chunks.find((chunk) => chunk.isEntry)!;
     const parserChunk = chunks.find((chunk) => json5 in chunk.modules)!;
-    const dependencies = new Set<string>();
-    const visit = (file: string) => {
-      if (dependencies.has(file)) {
-        return;
-      }
-      dependencies.add(file);
-      chunks.find((chunk) => chunk.fileName === file)?.imports.forEach(visit);
-    };
-    visit(entryChunk.fileName);
+    const dependencies = staticImports(entryChunk.fileName);
     expect(dependencies.has(parserChunk.fileName)).toBe(false);
     expect(entryChunk.dynamicImports).toContain(parserChunk.fileName);
     const signerChunk = chunks.find((chunk) => signer in chunk.modules)!;
@@ -173,202 +204,107 @@ describe("Control UI build chunking", () => {
     const optionalStyle = modulePath("../components/kbd.css");
     const inlineStyle = `${optionalStyle}?inline`;
     const entry = "\0cold-load-fixture";
-    const sources = new Map([
+    const sources = fixtureSources(
       [
-        entry,
-        `export const chat = () => import(${JSON.stringify(chat)}); export const newSession = () => import(${JSON.stringify(newSessionEntry)}); export const devices = () => import(${JSON.stringify(devices)}); export const sessions = () => import(${JSON.stringify(sessions)}); export const cron = () => import(${JSON.stringify(cron)}); export const talk = () => import(${JSON.stringify(talk)}); export const plugins = () => import(${JSON.stringify(pluginLoader)}); export const mutate = () => import(${JSON.stringify(mutations)}); export const copy = () => import(${JSON.stringify(copy)}); export const online = () => import(${JSON.stringify(online)}); export const deliver = () => import(${JSON.stringify(delivery)}); export const payloads = () => import(${JSON.stringify(payloads)}); export const live = () => import(${JSON.stringify(live)}); export const tools = () => import(${JSON.stringify(tools)}); export const automation = () => import(${JSON.stringify(automation)});`,
-      ],
-      [
-        frame,
-        `import { stream } from ${JSON.stringify(stream)}; import { recap } from ${JSON.stringify(recap)}; export const frame = stream + recap;`,
-      ],
-      [
-        stream,
-        `import { working } from ${JSON.stringify(working)}; export const stream = working + "stream";`,
-      ],
-      [
-        working,
-        `import { brand } from ${JSON.stringify(branding)}; import { retry } from ${JSON.stringify(retry)}; export const working = brand + retry;`,
-      ],
-      [
-        branding,
-        `import { phrase } from ${JSON.stringify(workingPhrase)}; import { surprise } from ${JSON.stringify(surprise)}; export const brand = phrase + surprise;`,
-      ],
-      [workingPhrase, 'export const phrase = "phrase";'],
-      [retry, 'export const retry = "retry";'],
-      [surprise, 'export const surprise = "surprise";'],
-      [recap, 'export const recap = "recap";'],
-      [newSessionEntry, `export { NewSession, modal } from ${JSON.stringify(newSession)};`],
-      [
-        chat,
-        `export { frame } from ${JSON.stringify(frame)}; import ${JSON.stringify(sharedStyle)}; import ${JSON.stringify(transcriptStyle)}; import { label } from ${JSON.stringify(sharedUi)}; import { action } from ${JSON.stringify(pluginActions)}; import { patch } from ${JSON.stringify(mutations)}; export { version } from ${JSON.stringify(inlineView)}; export { skeleton } from ${JSON.stringify(skeleton)}; export class Chat { label = patch(action(label)); } export const openPanel = () => import(${JSON.stringify(optional)}); export const reset = () => import(${JSON.stringify(reset)}); export const rich = () => import(${JSON.stringify(rich)}); export const details = () => import(${JSON.stringify(details)}); export { registerBoard } from ${JSON.stringify(boardLabels)};`,
-      ],
-      [
-        newSession,
-        `import ${JSON.stringify(sidebarStyle)}; import ${JSON.stringify(transcriptStyle)}; import { label } from ${JSON.stringify(sharedUi)}; export { modal } from ${JSON.stringify(modal)}; export class NewSession { label = label; }`,
-      ],
-      [reset, `export { modal } from ${JSON.stringify(modal)};`],
-      [modal, `export { modal } from ${JSON.stringify(modalView)};`],
-      [
-        modalView,
-        `import css from ${JSON.stringify(modalStyle)}; import scroll from ${JSON.stringify(modalScrollStyle)}; export const modal = css + scroll;`,
-      ],
-      [modalStyle, ".modal-fixture { color: purple; }"],
-      [modalScrollStyle, ".modal-scroll-fixture { overflow: hidden; }"],
-      [
-        optional,
-        `import ${JSON.stringify(optionalStyle)}; import { hubTabs } from ${JSON.stringify(hubTabs)}; import { link } from ${JSON.stringify(settingsUi)}; import { subtitle } from ${JSON.stringify(routeSubtitles)}; export const panel = hubTabs() + link + subtitle;`,
-      ],
-      [devices, 'export const page = "devices-page";'],
-      [
-        sessions,
-        `import { header } from ${JSON.stringify(hubHeader)}; import { workspace } from ${JSON.stringify(settingsWorkspace)}; import { select } from ${JSON.stringify(settingsSelect)}; export function render() { return header() + workspace + select; }`,
-      ],
-      [
-        hubHeader,
-        `import { hubTabs } from ${JSON.stringify(hubTabs)}; import { link } from ${JSON.stringify(settingsUi)}; import { subtitle } from ${JSON.stringify(routeSubtitles)}; export function header() { return hubTabs() + link + subtitle; }`,
-      ],
-      [
-        hubTabs,
-        `import { tabs } from ${JSON.stringify(tabs)}; export function hubTabs() { return tabs; }`,
-      ],
-      [
-        tabs,
-        `import { tabState } from ${JSON.stringify(tabState)}; import { pendingFocus } from ${JSON.stringify(pendingFocus)}; import { shadowStyles } from ${JSON.stringify(shadowStyles)}; export const tabs = tabState + pendingFocus + shadowStyles;`,
-      ],
-      [tabState, 'export const tabState = "state";'],
-      [pendingFocus, 'export const pendingFocus = "focus";'],
-      [shadowStyles, 'export const shadowStyles = "styles";'],
-      [settingsUi, 'export const link = "learn-more";'],
-      [settingsWorkspace, 'export const workspace = "workspace";'],
-      [settingsSelect, 'export const select = "select";'],
-      [routeSubtitles, 'export const subtitle = "route";'],
-      [cronRunLink, 'export const runLink = "run-link";'],
-      [
-        cron,
-        `import { header } from ${JSON.stringify(hubHeader)}; import { workspace } from ${JSON.stringify(settingsWorkspace)}; import { view } from ${JSON.stringify(cronView)}; export { detail } from ${JSON.stringify(cronView)}; export function render() { return header() + workspace + view(); }`,
+        [
+          entry,
+          [],
+          [
+            chat,
+            newSessionEntry,
+            devices,
+            sessions,
+            cron,
+            talk,
+            pluginLoader,
+            mutations,
+            copy,
+            online,
+            delivery,
+            payloads,
+            live,
+            tools,
+            automation,
+          ],
+        ],
+        [frame, [stream, recap]],
+        [stream, [working]],
+        [working, [branding, retry]],
+        [branding, [workingPhrase, surprise]],
+        [newSessionEntry, [newSession]],
+        [
+          chat,
+          [frame, sharedUi, pluginActions, mutations, inlineView, skeleton, boardLabels],
+          [optional, reset, rich, details],
+          [sharedStyle, transcriptStyle],
+        ],
+        [newSession, [sharedUi, modal], [], [sidebarStyle, transcriptStyle]],
+        [reset, [modal]],
+        [modal, [modalView]],
+        [modalView, [modalStyle, modalScrollStyle]],
+        [optional, [hubTabs, settingsUi, routeSubtitles], [], [optionalStyle]],
+        [sessions, [hubHeader, settingsWorkspace, settingsSelect]],
+        [hubHeader, [hubTabs, settingsUi, routeSubtitles]],
+        [hubTabs, [tabs]],
+        [tabs, [tabState, pendingFocus, shadowStyles]],
+        [cron, [hubHeader, settingsWorkspace, cronView]],
+        [cronView, [cronRunLink], [cronDetail]],
+        [talk, [skeleton]],
+        [skeleton, [skeletonStyle]],
+        [sharedUi, [inlineStyle]],
+        [pluginLoader, [pluginActions, inlineView]],
+        [mutations, [receipts, creation]],
+        [receipts, [unread]],
+        [live, [diff, preamble]],
+        [tools, [richGroup]],
+        [rich, [], [tools, permission]],
+        [automation, [automationSpec, automationView], [automationDetails, automationOperation]],
+        [automationView, [automationCopy]],
+        [automationDetails, [automationCopy]],
+        [automationOperation, [automationSpec]],
       ],
       [
-        cronView,
-        `import { runLink } from ${JSON.stringify(cronRunLink)}; export function view() { return "overview" + runLink; } export const detail = () => import(${JSON.stringify(cronDetail)});`,
+        [modalStyle, ".modal-fixture { color: purple; }"],
+        [modalScrollStyle, ".modal-scroll-fixture { overflow: hidden; }"],
+        [skeletonStyle, ".skeleton-fixture { color: purple; }"],
+        [sharedStyle, ".shared-fixture { color: red; }"],
+        [transcriptStyle, ".transcript-fixture { color: green; }"],
+        [sidebarStyle, ".sidebar-fixture { color: blue; }"],
+        [optionalStyle, ".optional-fixture { color: orange; }"],
+        [inlineStyle, ".optional-fixture { color: orange; }"],
       ],
-      [cronDetail, 'export const detail = "lazy-editor";'],
-      [talk, `export { skeleton } from ${JSON.stringify(skeleton)};`],
-      [skeleton, `import css from ${JSON.stringify(skeletonStyle)}; export const skeleton = css;`],
-      [skeletonStyle, ".skeleton-fixture { color: purple; }"],
-      [sharedUi, `import inline from ${JSON.stringify(inlineStyle)}; export const label = inline;`],
-      [pluginActions, "export const action = (label) => label;"],
-      [
-        pluginLoader,
-        `export { action } from ${JSON.stringify(pluginActions)}; export { version } from ${JSON.stringify(inlineView)};`,
-      ],
-      [inlineView, "export const version = (value) => Number.isInteger(value);"],
-      [
-        mutations,
-        `export { patch } from ${JSON.stringify(receipts)}; export { create } from ${JSON.stringify(creation)};`,
-      ],
-      [creation, "export const create = () => 'created';"],
-      [receipts, `export { patch } from ${JSON.stringify(unread)};`],
-      [unread, "export const patch = (value) => value;"],
-      [copy, "export const copy = () => 'copied';"],
-      [online, "export const online = () => 'online';"],
-      [delivery, "export const deliver = () => 'delivered';"],
-      [payloads, "export const prepare = () => 'payload';"],
-      [
-        live,
-        `import { diff } from ${JSON.stringify(diff)}; import { preamble } from ${JSON.stringify(preamble)}; export const live = () => diff() + preamble();`,
-      ],
-      [tools, `export { tools } from ${JSON.stringify(richGroup)};`],
-      [richGroup, "export const tools = () => 'tools';"],
-      [
-        rich,
-        `export const render = () => 'rich'; export const tools = () => import(${JSON.stringify(tools)}); export const permission = () => import(${JSON.stringify(permission)});`,
-      ],
-      [details, "export const render = () => 'details';"],
-      [boardLabels, "export const registerBoard = () => 'board labels';"],
-      [
-        automation,
-        `export { match } from ${JSON.stringify(automationSpec)}; export { view } from ${JSON.stringify(automationView)}; export const details = () => import(${JSON.stringify(automationDetails)}); export const write = () => import(${JSON.stringify(automationOperation)});`,
-      ],
-      [
-        automationView,
-        `import { label } from ${JSON.stringify(automationCopy)}; export const view = () => label();`,
-      ],
-      [
-        automationDetails,
-        `import { label } from ${JSON.stringify(automationCopy)}; export const details = () => label();`,
-      ],
-      [automationCopy, "export const label = () => 'automation';"],
-      [automationSpec, "export const match = () => 'automation';"],
-      [automationOperation, `export { match as write } from ${JSON.stringify(automationSpec)};`],
-      [permission, "export const render = () => 'permission';"],
-      [diff, "export const diff = () => 'diff';"],
-      [preamble, "export const preamble = () => 'preamble';"],
-      [sharedStyle, ".shared-fixture { color: red; }"],
-      [transcriptStyle, ".transcript-fixture { color: green; }"],
-      [sidebarStyle, ".sidebar-fixture { color: blue; }"],
-      [optionalStyle, ".optional-fixture { color: orange; }"],
-      [inlineStyle, ".optional-fixture { color: orange; }"],
-    ]);
-    const result = await build({
-      configFile: false,
-      publicDir: false,
-      logLevel: "silent",
-      plugins: [
-        {
-          name: "cold-load-fixture",
-          enforce: "pre",
-          resolveId: (id) => (sources.has(id) ? id : null),
-          load: (id) => sources.get(id) ?? null,
-        },
-      ],
-      build: {
-        write: false,
-        minify: false,
-        rolldownOptions: {
-          input: entry,
-          preserveEntrySignatures: "allow-extension",
-          output: {
-            codeSplitting: {
-              ...controlUiCodeSplitting,
-              // A stale capture must not pull a lazy page into the shared boot chunk.
-              groups: controlUiCodeSplitting.groups.map((group) => ({
-                ...group,
-                // Exercise grouping below the production chunk-size floor.
-                minSize: 0,
-                ...(group.name === "control-ui-boot-shared"
-                  ? {
-                      // Fixture sharing is independent of changing production captures.
-                      test: (id: string) =>
-                        [
-                          devices,
-                          sharedUi,
-                          sharedStyle,
-                          sidebarStyle,
-                          mutations,
-                          receipts,
-                          creation,
-                          unread,
-                        ].includes(id) || group.test(id),
-                    }
-                  : {}),
-                ...(group.name === "control-ui-boot-shared-styles"
-                  ? {
-                      test: (id: string) =>
-                        id === sharedStyle || id === sidebarStyle || group.test(id),
-                    }
-                  : {}),
-              })),
-            },
-            strictExecutionOrder: true,
-          },
-        },
-      },
+    );
+    const { output, chunks, staticImports } = await buildChunkFixture(sources, entry, {
+      ...controlUiCodeSplitting,
+      // A stale capture must not pull a lazy page into the shared boot chunk.
+      groups: controlUiCodeSplitting.groups.map((group) => ({
+        ...group,
+        // Exercise grouping below the production chunk-size floor.
+        minSize: 0,
+        ...(group.name === "control-ui-boot-shared"
+          ? {
+              // Fixture sharing is independent of changing production captures.
+              test: (id: string) =>
+                [
+                  devices,
+                  sharedUi,
+                  sharedStyle,
+                  sidebarStyle,
+                  mutations,
+                  receipts,
+                  creation,
+                  unread,
+                ].includes(id) || group.test(id),
+            }
+          : {}),
+        ...(group.name === "control-ui-boot-shared-styles"
+          ? {
+              test: (id: string) => id === sharedStyle || id === sidebarStyle || group.test(id),
+            }
+          : {}),
+      })),
     });
-    if (Array.isArray(result) || !("output" in result)) {
-      throw new Error("Expected one in-memory build");
-    }
-    const styles = result.output
+    const styles = output
       .filter((asset) => asset.type === "asset")
       .filter((asset) => asset.fileName.endsWith(".css"));
     expect(styles).toHaveLength(2);
@@ -376,18 +312,8 @@ describe("Control UI build chunking", () => {
     expect(sharedStyles).toMatchObject({ source: expect.stringContaining(".sidebar-fixture") });
     expect(sharedStyles).toMatchObject({ source: expect.stringContaining(".transcript-fixture") });
     expect(sharedStyles?.source).not.toContain(".optional-fixture");
-    const chunks = result.output.filter((asset) => asset.type === "chunk");
     const chatChunk = chunks.find((chunk) => chat in chunk.modules)!;
     const newSessionChunk = chunks.find((chunk) => newSession in chunk.modules)!;
-    const staticImports = (fileName: string, visited = new Set<string>()): Set<string> => {
-      if (!visited.has(fileName)) {
-        visited.add(fileName);
-        for (const imported of chunks.find((chunk) => chunk.fileName === fileName)!.imports) {
-          staticImports(imported, visited);
-        }
-      }
-      return visited;
-    };
     expect(staticImports(chatChunk.fileName)).not.toContain(newSessionChunk.fileName);
     expect(staticImports(newSessionChunk.fileName)).not.toContain(chatChunk.fileName);
     const modalChunk = chunks.find((chunk) => modalView in chunk.modules)!;
@@ -471,7 +397,7 @@ describe("Control UI build chunking", () => {
     expect(staticImports(entryChunk.fileName)).not.toContain(liveChunk.fileName);
     expect(liveChunk.fileName).toBe(toolChunk.fileName);
     const boot = collectControlUiBootAssets(
-      Object.fromEntries(result.output.map((asset) => [asset.fileName, asset])),
+      Object.fromEntries(output.map((asset) => [asset.fileName, asset])),
     );
     expect(boot.presentationOnly.chat).toContain(richChunk.fileName);
     expect(copyChunk.fileName).toBe(sharedChunk.fileName);
