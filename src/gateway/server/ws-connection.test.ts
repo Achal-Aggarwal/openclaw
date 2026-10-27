@@ -149,14 +149,18 @@ let connectionWork: GatewayConnectionWork;
 let logWsControl: ReturnType<typeof makeLogger>;
 const socketCleanups: Array<() => Promise<void>> = [];
 
-async function connectWs(params: Omit<Parameters<typeof attachForTest>[0], "attach"> = {}) {
-  attachForTest({
+function attachWs(params: Omit<Parameters<typeof attachForTest>[0], "attach"> = {}) {
+  return attachForTest({
     attach: attachConnection,
     socket,
     clients,
     ...params,
     options: { connectionWork, ...params.options, logWsControl: logWsControl as never },
   });
+}
+
+async function connectWs(params: Omit<Parameters<typeof attachForTest>[0], "attach"> = {}) {
+  attachWs(params);
   await vi.dynamicImportSettled();
   return attachMessage.mock.calls[0]![0];
 }
@@ -841,13 +845,7 @@ it("aggregates native refusal warnings across reconnects without hiding other cl
     vi.setSystemTime(at);
     const next = makeSocket();
     next["_socket"].remotePort = 30000 + at / 1000;
-    attachForTest({
-      attach: attachConnection,
-      socket: next,
-      clients,
-      headers: { ...headers, ...extraHeaders },
-      options: { connectionWork, logWsControl: logWsControl as never },
-    });
+    attachWs({ socket: next, headers: { ...headers, ...extraHeaders } });
     next.emit("close", code, Buffer.from(reason));
     await vi.dynamicImportSettled();
   };
@@ -916,15 +914,13 @@ it("aggregates native refusals received over real WebSocket close frames", async
   for (const at of [0, 1_000, 30_000]) {
     vi.setSystemTime(at);
     const pair = await openSocketPair();
-    attachForTest({
-      attach: attachConnection,
+    attachWs({
       socket: pair.socket as unknown as TestSocket,
       requestSocket: pair.request.socket,
       headers: {
         origin: "http://127.0.0.1:19001",
         "user-agent": "native-refusal-transport-test",
       },
-      options: { connectionWork, logWsControl: logWsControl as never },
     });
     const closed = once(pair.socket, "close");
     pair.peer.close(4008, "native authorization unavailable");
