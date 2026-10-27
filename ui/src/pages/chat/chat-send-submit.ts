@@ -706,7 +706,6 @@ export async function handleSendChat(
       {
         yieldToInput: admittedDurably && Boolean(submissionAction),
         isCurrent: submissionOwnerIsCurrent,
-        allowActiveRunSend,
         pendingSettings,
       },
       (deliveryItem) =>

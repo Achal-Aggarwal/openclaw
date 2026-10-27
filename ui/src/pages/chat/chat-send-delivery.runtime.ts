@@ -6,7 +6,7 @@ import {
   INTERRUPTED_SETTINGS_WAIT_ERROR,
   sameQueuedDeliveryVersion,
 } from "../../lib/chat/outbox-store-codec.ts";
-import { chatOutboxDeliveryKey, storedChatOutboxScopeKey } from "../../lib/chat/outbox-store.ts";
+import { storedChatOutboxScopeKey } from "../../lib/chat/outbox-store.ts";
 import { isAgentRuntimeRestrictionErrorDetails } from "../../lib/protocol-validators.generated/session-input.js";
 import { scopedAgentIdForSession, visibleSessionMatches } from "../../lib/sessions/navigation.ts";
 import { generateUUID } from "../../lib/uuid.ts";
@@ -206,7 +206,8 @@ export async function sendPreparedChatQueueItem(
         allowNativeRecovery && isVisible()
           ? captureChatNativeRuntimeRecovery(host, route)
           : undefined;
-      let steerSubmission: ReturnType<ChatHost["chatSubmissions"]["retain"]>;
+      const submittedSteerTargetRunId =
+        prepared.queueMode === "steer" && isVisible() ? host.chatRunId : null;
       const buildSubmittedUserMessage = (steerTargetRunId?: string) =>
         buildLocalUserMessage(
           {
@@ -252,32 +253,6 @@ export async function sendPreparedChatQueueItem(
           : expectedLeafEntryId === undefined && sendingItem.sessionId
             ? null
             : expectedLeafEntryId;
-        if (prepared.queueMode === "steer" && isVisible() && host.chatRunId) {
-          const steerTargetRunId = host.chatRunId;
-          const projectedMessage = buildSubmittedUserMessage(steerTargetRunId);
-          if (projectedMessage) {
-            steerSubmission = host.chatSubmissions.retain({
-              kind: "delivered",
-              deliveryKey: chatOutboxDeliveryKey(host, scope, runId),
-              owner: host.client!,
-              sessionKey,
-              agentId: prepared.agentId,
-              sessionId: prepared.sessionId ?? host.currentSessionId ?? undefined,
-              pendingRunId: runId,
-              message: projectedMessage,
-            });
-            reduceChatSessionProjection(
-              host,
-              { type: "sendPending", runId, message: projectedMessage },
-              {
-                scope: readChatSessionProjectionScope(host, {
-                  sessionKey,
-                  agentId: prepared.agentId,
-                }),
-              },
-            );
-          }
-        }
         const ack = await requestChatSend(host, {
           message,
           workContext: prepared.workContext,
@@ -303,9 +278,6 @@ export async function sendPreparedChatQueueItem(
             return "pending";
           }
           const error = formatTerminalChatSendAckError(ack, "chat");
-          if (steerSubmission) {
-            steerSubmission.pending = false;
-          }
           // Release in-flight ownership before publishing Retry; an immediate click
           // must not see this completed send as the run that blocks its replacement.
           finishScopedChatSending(host, scope);
@@ -356,10 +328,13 @@ export async function sendPreparedChatQueueItem(
         // Memory-only admission has no stored row and retains its local projection.
         const inputConsumed = ack.status === "ok" && ack.messageSeq !== undefined;
         const projectedMessage =
-          storageMode === "memory" && !inputConsumed ? buildSubmittedUserMessage() : null;
+          storageMode === "memory" && !inputConsumed
+            ? buildSubmittedUserMessage(submittedSteerTargetRunId ?? undefined)
+            : null;
         if (storageMode === "durable" || inputConsumed) {
           const retirement = await retireDeliveredQueuedUserTurn(host, runId, scope, {
             inputConsumed,
+            steerTargetRunId: submittedSteerTargetRunId ?? undefined,
           });
           if (retirement === "stale" || !requestConnectionIsCurrent()) {
             return "pending";
@@ -447,9 +422,6 @@ export async function sendPreparedChatQueueItem(
       } catch (err) {
         if (!requestConnectionIsCurrent()) {
           return "pending";
-        }
-        if (steerSubmission) {
-          steerSubmission.pending = false;
         }
         if (prepared.queueMode === "steer" && isVisible()) {
           // The retained outbox row owns pending and rejected-delivery feedback.

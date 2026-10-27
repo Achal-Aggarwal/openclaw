@@ -162,7 +162,11 @@ export function retireDeliveredQueuedUserTurn(
   host: ChatHost,
   runId: string | undefined,
   scope: StoredChatOutboxScope,
-  options?: { retainUntilConsumed?: boolean; inputConsumed?: boolean },
+  options?: {
+    retainUntilConsumed?: boolean;
+    inputConsumed?: boolean;
+    steerTargetRunId?: string;
+  },
 ): DeliveredTurnRetirement | Promise<DeliveredTurnRetirement> {
   const client = host.client;
   const owner = client ?? host;
@@ -252,6 +256,7 @@ export function retireDeliveredQueuedUserTurn(
         ...stored,
         attachments,
         runId: stored.sendRunId,
+        steerTargetRunId: options?.steerTargetRunId,
       },
       "complete",
     );

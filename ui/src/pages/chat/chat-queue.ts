@@ -119,6 +119,17 @@ export function excludeComposerAttachments(
   return attachments.filter((attachment) => !retainedIds.has(attachment.id));
 }
 
+export function canDiscardQueuedMessage(item: ChatQueueItem): boolean {
+  return (
+    item.sendState === "failed" ||
+    item.sendState === "held" ||
+    (!item.pendingRunId &&
+      (item.sendAttempts ?? 0) === 0 &&
+      item.sendState !== "sending" &&
+      item.sendState !== "executing-command")
+  );
+}
+
 export function removeQueuedMessage(
   host: ChatQueueScopedSessionHost,
   id: string,

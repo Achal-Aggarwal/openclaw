@@ -66,10 +66,21 @@ describe("chat composer steering queue", () => {
     const onQueueSteer = vi.fn();
     const container = renderQueue({
       canAbort: true,
-      queue: [waiting("steer-1", 1, { queueMode: "steer", sendState: "waiting-idle" })],
+      runId: "active-run",
+      queue: [
+        waiting("sending", 0, { sendRunId: "future-run", sendState: "sending", sendAttempts: 1 }),
+        waiting("steer-1", 1, { queueMode: "steer", sendState: "waiting-idle" }),
+      ],
       onQueueSteer,
     });
 
+    const rows = all(container, "item");
+    expect(rows.map((row) => row.getAttribute("data-chat-queue-item"))).toEqual([
+      "sending",
+      "steer-1",
+    ]);
+    expect(find(rows[0], "remove")).toBeNull();
+    expect(find(rows[1], "remove")).not.toBeNull();
     expect(find(container, "badge")).toBeNull();
     const steerButton = find(container, "steer");
     expect(steerButton?.textContent?.trim()).toBe(t("chat.queue.steer"));

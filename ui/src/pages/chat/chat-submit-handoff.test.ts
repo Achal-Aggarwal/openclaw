@@ -32,6 +32,20 @@ import { applySessionMessagePayload } from "./session-message-apply.ts";
 type TestChatHost = ReturnType<typeof makeChatHost>;
 const requireRecord = createRequireRecord("object", "expected-label");
 
+function submittedRows(host: TestChatHost) {
+  return buildChatItems(
+    createProps({
+      messages: host.chatMessages,
+      queue: host.chatQueue,
+      pendingInputs: getChatPendingInputs(host)?.page.items,
+      runId: host.chatRunId,
+      runWorking: true,
+    }),
+  ).flatMap((item) =>
+    item.kind === "group" ? item.messages.map(({ message }) => extractText(message)) : [],
+  );
+}
+
 beforeEach(() => {
   installOutboxBrowserStorage();
   vi.stubGlobal("sessionStorage", createStorageMock());
@@ -71,18 +85,7 @@ describe("chat submission handoff", () => {
         },
       },
     });
-    const rows = () =>
-      buildChatItems(
-        createProps({
-          messages: host.chatMessages,
-          queue: host.chatQueue,
-          pendingInputs: getChatPendingInputs(host)?.page.items,
-          runId: host.chatRunId,
-          runWorking: true,
-        }),
-      ).flatMap((item) =>
-        item.kind === "group" ? item.messages.map(({ message }) => extractText(message)) : [],
-      );
+    const rows = () => submittedRows(host);
     await loadChatHistory(host);
     expect(rows()).toEqual(["Original request"]);
     const sending = handleSendChat(host, "Later steer", { followUpMode: "steer" });
@@ -90,10 +93,11 @@ describe("chat submission handoff", () => {
     const steer = expectDefined(host.chatQueue.at(-1), "steer submission");
     ack.resolve({ runId: steer.sendRunId, status: "accepted" });
     try {
-      expect(rows()).toEqual(["Original request", "Later steer"]);
+      expect(rows()).toEqual(["Original request"]);
     } finally {
       await sending;
     }
+    expect(rows()).toEqual(["Original request", "Later steer"]);
     applyChatPendingInputs(host, {
       items: [
         ...pendingInputs.items,
@@ -137,17 +141,18 @@ describe("chat submission handoff", () => {
     }
   });
 
-  it("queues identical messages from distinct user actions while coalescing re-entry", async () => {
+  it("queues distinct follow-ups and discards only the untransmitted action", async () => {
     const sent = createDeferred<unknown>();
     const host = makeChatHost({
+      chatRunId: "active-run",
       requestHandlers: { "chat.send": () => sent.promise },
     });
     const firstAction = new Event("submit");
     const secondAction = new Event("submit");
 
-    const first = handleSendChat(host, "same prompt", undefined, firstAction);
-    const reentry = handleSendChat(host, "same prompt", undefined, firstAction);
-    const second = handleSendChat(host, "same prompt", undefined, secondAction);
+    const first = handleSendChat(host, "same prompt", { followUpMode: "steer" }, firstAction);
+    const reentry = handleSendChat(host, "same prompt", { followUpMode: "steer" }, firstAction);
+    const second = handleSendChat(host, "same prompt", { followUpMode: "steer" }, secondAction);
 
     await waitForFast(() =>
       expect(host.request.mock.calls.filter(([method]) => method === "chat.send")).toHaveLength(1),
@@ -155,8 +160,16 @@ describe("chat submission handoff", () => {
     expect(host.chatQueue).toHaveLength(2);
     expect(host.chatQueue.map((item) => item.text)).toEqual(["same prompt", "same prompt"]);
 
-    sent.resolve({ runId: host.chatQueue[0]?.sendRunId, status: "started" });
-    await Promise.all([first, reentry, second]);
+    try {
+      expect(submittedRows(host)).toEqual([]);
+      expect(removeQueuedMessage(host, host.chatQueue[1]!.id, { discard: true })).toBe("removed");
+    } finally {
+      sent.resolve({ runId: host.chatQueue[0]?.sendRunId, status: "started" });
+      await Promise.all([first, reentry, second]);
+    }
+    expect(host.request.mock.calls.filter(([method]) => method === "chat.send")).toHaveLength(1);
+    expect(host.request.mock.calls.some(([method]) => method === "chat.abort")).toBe(false);
+    expect(host.chatRunId).toBe("active-run");
   });
 
   async function submitAcrossBrowserInput(
@@ -238,7 +251,7 @@ describe("chat submission handoff", () => {
         ]);
         expect(host.chatQueue.every((item) => item.sendState === "waiting-idle")).toBe(true);
       }
-      expect(handoffState).toBe(submitting ? "submitting" : "waiting-idle");
+      expect(handoffState).toBe("waiting-idle");
       expect(host.chatQueue.find((item) => item.id === predecessorSnapshot.id)).toEqual(
         predecessorSnapshot,
       );
