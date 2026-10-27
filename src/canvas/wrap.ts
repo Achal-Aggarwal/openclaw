@@ -4,6 +4,14 @@ import { WIDGET_BASE_STYLES } from "../shared/widget-base-styles.js";
 import { WIDGET_MEDIA_SOURCES } from "../shared/widget-media.js";
 import { WIDGET_THEME_MESSAGE_TYPE, WIDGET_THEME_TOKENS } from "../shared/widget-theme.js";
 
+const WIDGET_BODY_HEIGHT =
+  "Math.ceil(Math.max(b.scrollHeight,b.offsetHeight,b.getBoundingClientRect().height))";
+// The existing post-render chat-host message confirms geometry in saved documents, too.
+export const WIDGET_SIZE_CONFIRMATION_HTML =
+  "<script>(()=>{const parent=window.parent;const post=parent.postMessage.bind(parent);" +
+  'addEventListener("message",event=>{if(event.source!==parent||event.data?.type!=="openclaw:widget-chat-host"||event.data.measure!==true)return;' +
+  `const b=document.body;if(b){const height=${WIDGET_BODY_HEIGHT};if(height)post({type:"openclaw:widget-size",height},"*");}});})();</script>`;
+
 type WidgetDocumentOptions = {
   connectOrigins?: readonly string[];
   scriptOrigins?: readonly string[];
@@ -29,7 +37,7 @@ export function buildWidgetDocument(
     // documentElement.scrollHeight reports the viewport for short content, so
     // measure the body box, which tracks the actual widget height.
     "let last=0;const report=()=>{const b=document.body;if(!b)return;" +
-    "const h=Math.ceil(Math.max(b.scrollHeight,b.offsetHeight,b.getBoundingClientRect().height));" +
+    `const h=${WIDGET_BODY_HEIGHT};` +
     'if(h&&h!==last){last=h;post({type:"openclaw:widget-size",height:h},"*");}};' +
     "listen('load',report);new ResizeObserver(report).observe(document.body);" +
     "setTimeout(report,50);setTimeout(report,500);})();</script>";

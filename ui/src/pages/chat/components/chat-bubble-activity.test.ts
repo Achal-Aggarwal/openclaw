@@ -4,7 +4,7 @@ import type { OpenClawCanvasWidgetView } from "../../../components/canvas-widget
 import { createApplicationContextProvider } from "../../../test-helpers/application-context.ts";
 import { mountSolid } from "../../../test-helpers/solid-render.tsx";
 import { waitForSolid } from "../../../test-helpers/solid-settle.ts";
-import { createInitializationContext } from "../chat-pane.test-support.ts";
+import { createInitializationContext } from "../chat-application-context.test-support.ts";
 import { createTestTranscript } from "../chat-view.test-helpers.ts";
 import { render, renderChatThread } from "../test-helpers/chat-transcript-native.tsx";
 import { agentEvent, createHost, useToolStreamFakeTimers } from "../tool-stream.test-helpers.ts";

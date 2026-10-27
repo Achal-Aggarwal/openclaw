@@ -44,6 +44,7 @@ const task = (id: string, title: string, createdAt = Date.now()) => ({
 async function installStartupGateway(page: Page) {
   const config = { tools: { swarm: { enabled: true } } };
   return installMockGateway(page, {
+    subscriptionInitialHistory: false,
     sessionKey,
     sessions: [ownedSession(sessionKey, "Selected conversation")],
     historyMessages: [{ role: "assistant", content: historyText }],
@@ -250,7 +251,7 @@ suite.define(() => {
           },
         ],
       });
-      await page.getByRole("button", { name: "Filter & sort", exact: true }).click();
+      await page.getByRole("button", { name: /^Filter & sort · /, exact: true }).click();
       await chooseSidebarMenuOption(page, "Status", "Archived");
       await closeSidebarMenu(page);
       await gateway.waitForRequest("sessions.list", {

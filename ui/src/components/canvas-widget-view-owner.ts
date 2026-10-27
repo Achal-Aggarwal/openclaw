@@ -44,7 +44,7 @@ export type CanvasWidgetViewProps = {
   messageTimestamp?: number;
   title: string;
   preferredHeight?: number;
-  onHeightChange?: (height: number) => void;
+  onHeightChange?: (height: number | null, settled?: boolean) => number | undefined;
   connectionGeneration: number;
   presentationActive: boolean;
   allowScripts: boolean;
@@ -80,6 +80,7 @@ export function createCanvasWidget(
     sandboxGeneration: 0,
     pending: false,
   };
+  let reportedHeight: number | undefined;
   let activeBinding: ViewBinding | undefined;
   let sandboxHost: WidgetSandboxHost | undefined;
   let promptPort: MessagePort | undefined;
@@ -195,7 +196,7 @@ export function createCanvasWidget(
     promptPort = undefined;
     releaseTheme?.();
     releaseTheme = undefined;
-    state.contentHeight = undefined;
+    reportedHeight = state.contentHeight = undefined;
   }
 
   function sameOwner(binding: ViewBinding | undefined): binding is ViewBinding {
@@ -262,6 +263,7 @@ export function createCanvasWidget(
       return;
     }
     if (!hasOperatorSelfReadAccess(gateway.snapshot.hello?.auth ?? null)) {
+      props.onHeightChange?.(null, true);
       state.accessDenied = true;
       state.error = t("board.widget.accessDenied");
       return;
@@ -331,6 +333,7 @@ export function createCanvasWidget(
             previous.sandboxPort !== view.sandboxPort ||
             previous.sandboxOrigin !== view.sandboxOrigin)
         ) {
+          props.onHeightChange?.(null, true);
           clearSandbox();
           state.runtimeError = "";
           state.resourceError = false;
@@ -367,6 +370,7 @@ export function createCanvasWidget(
           return;
         }
         // A definitive denial or missing document retires cached content and its ports.
+        props.onHeightChange?.(null, true);
         state.view = undefined;
         clearSandbox();
         state.pending = false;
@@ -438,6 +442,7 @@ export function createCanvasWidget(
       onError: (error) => {
         clearSandbox();
         state.error = formatUiError(error);
+        props.onHeightChange?.(null, true);
         notify();
       },
       onReadyTimeout: () => {
@@ -462,12 +467,18 @@ export function createCanvasWidget(
       return;
     }
     postWidgetTheme(frame, sandboxOrigin);
-    frame.contentWindow?.postMessage({ type: "openclaw:widget-chat-host" }, sandboxOrigin);
+    const hostState = { type: "openclaw:widget-chat-host", measure: reportedHeight !== undefined };
+    frame.contentWindow?.postMessage(hostState, sandboxOrigin);
     // Saved widget documents use this bridge for unconsumed wheel input.
     frame.contentWindow?.postMessage(
       { type: "openclaw:widget-board-host", nonce: scrollNonce },
       sandboxOrigin,
     );
+  }
+
+  function reportHeight(height: number): void {
+    reportedHeight = height;
+    state.contentHeight = props.onHeightChange?.(height, sandboxHost?.rendered) ?? height;
   }
 
   const handleMessage = (event: Event): void => {
@@ -534,6 +545,8 @@ export function createCanvasWidget(
       if (!props.presentationActive || !props.sessionKey || typeof data.message !== "string") {
         return;
       }
+      state.contentHeight = reportedHeight;
+      props.onHeightChange?.(null, true);
       // Download/rejection failures are not evidence that agent-authored code is
       // broken. Keep a local recovery action, never wake the agent to rewrite it.
       const validated = validatedBinding;
@@ -588,8 +601,7 @@ export function createCanvasWidget(
       Number.isFinite(data.height) &&
       data.height > 0
     ) {
-      state.contentHeight = Math.min(8000, Math.max(48, Math.trunc(data.height)));
-      props.onHeightChange?.(state.contentHeight);
+      reportHeight(Math.min(8000, Math.max(48, Math.trunc(data.height))));
       notify();
     }
     if (data?.type === "openclaw:widget-bridge-ready") {
