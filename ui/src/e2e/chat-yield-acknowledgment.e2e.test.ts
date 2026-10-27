@@ -297,12 +297,17 @@ suite.define(() => {
       expect(await toggle.getAttribute("aria-expanded")).toBe("false");
       await toggle.click();
       await rule.locator("li").first().waitFor();
-      await capture(page, "resumed", pane, [prompt, answer]);
+      await capture(page, "resumed", pane, [prompt, toggle, answer]);
       await thread
         .locator(".chat-group.assistant .chat-text p")
         .filter({ hasText: "Something to know before landing" })
         .waitFor();
       expect(squash(await toggle.textContent())).toBe("Resumed · 9m 32s later · 3 sessions");
+      // oxlint-disable-next-line unicorn/prefer-dom-node-text-content -- Verify CSS-transformed text, not source copy.
+      expect(squash(await toggle.innerText())).toBe("Resumed · 9m 32s Later · 3 Sessions");
+      expect(await toggle.evaluate((element) => getComputedStyle(element).textTransform)).toBe(
+        "capitalize",
+      );
       expect(await toggle.getAttribute("aria-expanded")).toBe("true");
       expect((await rule.locator("li").allTextContents()).map(squash)).toEqual([
         `${FIRST} Done`,
