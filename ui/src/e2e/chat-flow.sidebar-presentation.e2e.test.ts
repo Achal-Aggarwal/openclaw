@@ -2,6 +2,7 @@ import type { Locator, Page } from "playwright";
 import { expect, it } from "vitest";
 import {
   chatMessage,
+  captureUiProof,
   newChatPage,
   chatSessionListResponse,
   createChatFlowE2eSuite,
@@ -56,10 +57,7 @@ function rowLayout(locator: Locator) {
   });
 }
 
-function expectStandaloneUnreadLayout(
-  layout: Awaited<ReturnType<typeof rowLayout>>,
-  nameLeft: number,
-) {
+function expectUnreadLayout(layout: Awaited<ReturnType<typeof rowLayout>>, nameLeft: number) {
   const { unread, lead, name } = layout;
   expect(unread).toMatchObject({ width: 7, height: 7 });
   for (const [start, end] of [
@@ -70,7 +68,7 @@ function expectStandaloneUnreadLayout(
     expect(unread[start]).toBeGreaterThanOrEqual(lead[start]);
     expect(unread[end]).toBeLessThanOrEqual(lead[end]);
   }
-  expect(name.right).toBeLessThanOrEqual(lead.left);
+  expect(lead.right).toBeLessThanOrEqual(name.left);
   expect(name.left).toBeCloseTo(nameLeft, 1);
 }
 
@@ -277,6 +275,7 @@ suite.define(() => {
           controlsLeft: actions.getBoundingClientRect().left,
         };
       });
+      await captureUiProof(suite, page, "sidebar-presentation", `${direction}-title.png`);
       expect(geometry.right).toBeLessThanOrEqual(geometry.controlsLeft + 1);
       // At the endpoint, even the final glyph is inside the opaque part of the mask.
       await expect
@@ -454,7 +453,8 @@ suite.define(() => {
     expect(badgeBox.y).toBeGreaterThanOrEqual(layout.name.bottom - 1);
     expect(layout.name.right).toBeGreaterThan(badgeBox.x);
     expect(badgeBox.y + badgeBox.height / 2).toBeCloseTo(subtitleBox.y + subtitleBox.height / 2, 1);
-    expectStandaloneUnreadLayout(layout, plain.nameLeft);
+    await captureUiProof(suite, page, "sidebar-presentation", "unread-layout.png");
+    expectUnreadLayout(layout, plain.nameLeft);
     expect(await busyRow.locator(".session-row-state").count()).toBe(0);
     expect(layout.atoms).toHaveLength(1);
     for (const atom of layout.atoms) {
@@ -466,7 +466,7 @@ suite.define(() => {
       }
     }
 
-    // Long titles must not crush the standalone unread dot or trailing metadata.
+    // Long titles must not crush either the leading unread dot or trailing metadata.
     const longRow = sessionRow(page, longKey);
     const longLayout = await rowLayout(longRow);
     expect(longLayout.singleLine).toBe(true);
@@ -475,7 +475,7 @@ suite.define(() => {
     const intrinsicAtomWidth = longLayout.atoms.reduce((sum, atom) => sum + atom.width, 0);
     expect(intrinsicAtomWidth).toBeGreaterThan(0);
     expect(longLayout.endcap.width).toBeGreaterThanOrEqual(intrinsicAtomWidth);
-    expectStandaloneUnreadLayout(longLayout, plain.nameLeft);
+    expectUnreadLayout(longLayout, plain.nameLeft);
 
     const unreadRow = sessionRow(page, unreadKey);
     const unreadBadge = unreadRow.locator(

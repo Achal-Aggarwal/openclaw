@@ -69,6 +69,8 @@ registerChatSessionEnglish();
 const emptyTranscriptItems: [] = [];
 
 export class ChatPaneRuntime extends ChatPaneLayoutRender {
+  private readonly widgetLayout = createChatWidgetLayout();
+
   render(
     readProviderReview?: () => ChatProviderReviewOwner | undefined,
     readRealtimeTalkConversation?: ChatProps["readRealtimeTalkConversation"],
@@ -121,6 +123,8 @@ export class ChatPaneRuntime extends ChatPaneLayoutRender {
     );
     const currentAgentId = resolveChatAgentId(state);
     this.composerCapabilities?.synchronize(state, currentAgentId);
+    const sessionScope = scopedAgentParamsForSession(state, state.sessionKey);
+    const widgetTarget = { sessionKey: state.sessionKey, ...sessionScope };
     const catalogKey = parseCatalogSessionKey(state.sessionKey);
     const catalog = catalogKey !== null;
     const selectedAgent = this.context.agents.state.agentsList?.agents.find(
@@ -308,11 +312,7 @@ export class ChatPaneRuntime extends ChatPaneLayoutRender {
       (catalog
         ? catalogCanContinue
         : !disabledReason &&
-          !(
-            selectedSessionArchived ||
-            selectedSession?.restartRecoveryStatus === "tombstoned" ||
-            placementComposer.blocksSend
-          ));
+          !(selectedSessionArchived || restartRecoveryTombstoned || placementComposer.blocksSend));
     const canWriteProgressCard = composerConnected && !sessionParticipationBlocked && hasWriteScope;
     const typingEnabled =
       multiIdentity &&
@@ -653,15 +653,12 @@ export class ChatPaneRuntime extends ChatPaneLayoutRender {
       onRewindMessage: selectedSessionArchived ? undefined : sessionActionCallbacks.onRewindMessage,
       agentsList: state.agentsList,
       currentAgentId,
-      fullMessageAgentId: scopedAgentParamsForSession(state, state.sessionKey).agentId,
+      fullMessageAgentId: sessionScope.agentId,
       loadFullAssistantMessage: createSidebarFullMessageLoader(state, this.context.gateway),
       onSessionSelect: (next) => this.onPaneSessionChange?.(this.paneId, next),
       canvasPluginSurfaceUrl: state.canvasPluginSurfaceUrl,
       boardProvider: board.provider,
-      widgetLayout: createChatWidgetLayout(state.chatMessagesBySession, state, {
-        sessionKey: state.sessionKey,
-        ...scopedAgentParamsForSession(state, state.sessionKey),
-      }),
+      widgetLayout: this.widgetLayout(state.chatMessagesBySession, state, widgetTarget),
       onOpenSidebar: state.handleOpenSidebar,
       onRequestOpenImage: state.beginImageOpen,
       onOpenImage: state.handleOpenImage,

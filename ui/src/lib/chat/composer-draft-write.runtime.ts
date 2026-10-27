@@ -106,6 +106,9 @@ export async function writeDurableComposerDraft(
       ...(draft.modelSelection ? { modelSelection: draft.modelSelection } : {}),
       attachments: draft.attachments,
       ...(draft.questionDrafts?.length ? { questionDrafts: draft.questionDrafts } : {}),
+      ...(draft.selectionAnnotations?.length
+        ? { selectionAnnotations: draft.selectionAnnotations }
+        : {}),
       updatedAt: now,
       writeId: options.writeId,
     };
@@ -153,6 +156,13 @@ async function retireDurableDraftInStore(
     await retireDurableDraftInStore(
       store,
       { ...scope, scopeKey: `questions:v1:${scope.scopeKey}` },
+      minimumRevision,
+      retireBeforeRevision,
+      now,
+    );
+    await retireDurableDraftInStore(
+      store,
+      { ...scope, scopeKey: `comments:v1:${scope.scopeKey}` },
       minimumRevision,
       retireBeforeRevision,
       now,

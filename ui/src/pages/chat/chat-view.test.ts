@@ -553,6 +553,7 @@ describe("retained input navigation", () => {
       onQueueMove,
     });
 
+    await vi.dynamicImportSettled();
     await waitForSolid(() =>
       expect(container.querySelectorAll(".chat-queue__item")).toHaveLength(2),
     );

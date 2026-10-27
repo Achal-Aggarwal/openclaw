@@ -188,15 +188,15 @@ suite.define(() => {
           ui.bounds(state),
         ]);
 
-      // A glyph-less row keeps its compact ring in the trailing state slot.
-      // Artwork retains the separate leading slot.
+      // A glyph-less row draws the compact 12px ring centered in its 20px lead
+      // slot; the title keeps its 8px distance from the slot, not from the ring.
       expect(restingGlyphBounds.width).toBeCloseTo(20, 1);
       expect(restingStateBounds.width).toBeCloseTo(12, 1);
       expect(restingStateBounds.x + restingStateBounds.width / 2).toBeCloseTo(
         restingGlyphBounds.x + restingGlyphBounds.width / 2,
         1,
       );
-      expect(ui.right(restingNameBounds)).toBeLessThanOrEqual(restingGlyphBounds.x);
+      expect(restingNameBounds.x - ui.right(restingGlyphBounds)).toBeCloseTo(8, 1);
       expect(ui.right(restingGlyphBounds)).toBeLessThanOrEqual(ui.right(restingRowBounds));
 
       await ui.forEachActionMode(page, row, [state, pin, menu], async () => {

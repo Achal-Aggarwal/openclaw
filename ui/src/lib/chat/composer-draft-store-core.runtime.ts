@@ -82,7 +82,8 @@ export function isActiveDraft(record: StoredDurableComposerDraft): boolean {
     record.replyTarget ||
     record.modelSelection ||
     record.attachments.length > 0 ||
-    record.questionDrafts?.length,
+    record.questionDrafts?.length ||
+    record.selectionAnnotations?.length,
   );
 }
 
@@ -103,6 +104,7 @@ export function tombstone(
     questionDrafts: undefined,
     updatedAt: now,
     writeId: `fence:${revision}`,
+    selectionAnnotations: undefined,
   };
 }
 
@@ -156,6 +158,7 @@ export function isLegacyChatDraft(record: StoredDurableComposerDraft): boolean {
   return (
     !record.scopeKey.startsWith(CHAT_SCOPE_PREFIX) &&
     !record.scopeKey.startsWith("questions:v1:") &&
+    !record.scopeKey.startsWith("comments:v1:") &&
     record.scopeKey.includes("\u0000agent:") &&
     isActiveDraft(record)
   );

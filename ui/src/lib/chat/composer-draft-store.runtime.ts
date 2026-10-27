@@ -122,6 +122,9 @@ export async function readDurableComposerDraft(
         ...(current.modelSelection ? { modelSelection: current.modelSelection } : {}),
         attachments: current.attachments,
         ...(current.questionDrafts?.length ? { questionDrafts: current.questionDrafts } : {}),
+        ...(current.selectionAnnotations?.length
+          ? { selectionAnnotations: current.selectionAnnotations }
+          : {}),
       },
     };
   });
