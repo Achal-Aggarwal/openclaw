@@ -459,7 +459,7 @@ describe("ActivityPage gateway lifecycle", () => {
     const first = activityGateway();
     const page = await bindActivity(first.gateway);
     first.current().testOptions.onEvent?.(toolEvent("old"));
-    expect(await previews(page)).toEqual(["old output"]);
+    await expect.poll(() => previews(page)).toEqual(["old output"]);
     page.dispose();
     const next = activityGateway();
     const replacement = await bindActivity(next.gateway);
