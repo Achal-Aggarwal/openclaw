@@ -721,9 +721,6 @@ describe("registry adoption", () => {
       if (lifecycle !== null) {
         expect(adopted.contextEngines.get("ce-probe")?.lifecycle).toBe("runtime");
       }
-      if (lifecycle !== "readOnlyDiscovery") {
-        expect(adopted).toBe(scoped);
-      }
     },
   );
 

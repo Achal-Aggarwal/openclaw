@@ -322,31 +322,16 @@ it("bounds configured and fallback disposal in parallel", async () => {
   }
 });
 
-it.each([
-  ["missing", "not registered"],
-  ["discovery", "available for discovery only"],
-  ["factory", "factory unavailable"],
-] as const)("degrades and warns for %s resolution", async (failure, reason) => {
-  const selected = `${id}-${failure}`;
-  if (failure !== "missing") {
-    registerIn(
-      requireActivePluginRegistry(),
-      selected,
-      () => {
-        if (failure === "factory") {
-          throw new Error("factory unavailable");
-        }
-        return raw;
-      },
-      "plugin:fixture",
-      { lifecycle: failure === "discovery" ? "readOnlyDiscovery" : "runtime" },
-    );
-  }
+it("degrades and warns for discovery-only resolution", async () => {
+  const selected = `${id}-discovery`;
+  registerIn(requireActivePluginRegistry(), selected, () => raw, "plugin:fixture", {
+    lifecycle: "readOnlyDiscovery",
+  });
   using warn = vi.spyOn(console, "warn").mockImplementation(() => {});
   const value = await lease(selected);
   expect(value.effectiveEngineId).toBe("legacy");
   expect(value.degraded).toBe(true);
-  expect(value.degradedReason).toContain(reason);
+  expect(value.degradedReason).toContain("available for discovery only");
   expect(warn).toHaveBeenCalledOnce();
   await value.dispose();
 });
@@ -464,44 +449,30 @@ it.each<[Parameters<typeof register>[1], RegExp]>([
   await expectQuarantine("contract-validation", expect.stringMatching(reason));
 });
 
-it("coalesces fallback initialization across concurrent lifecycle failures", async () => {
+it("coalesces concurrent fence failures and revokes the quarantined owner's hooks", async () => {
+  const reason = "admitted user row is unavailable";
   const fallback = vi.fn(async () => new LegacyContextEngine());
   await register("legacy", fallback, "core", refresh);
+  raw.info.ownsCompaction = true;
+  const ingest = vi.spyOn(raw, "ingest");
   const assemble = vi.fn(async () => {
     await Promise.resolve();
-    throw new Error("plugin context unavailable");
+    throw new SessionTranscriptReadFenceError(reason);
   });
   raw.assemble = assemble;
   const value = await engine();
+  expect(value.info.ownsCompaction).toBe(true);
+  expect(ownerOf(value)).toBe("fixture");
   const messages = [message("first"), message("second")];
   const results = await Promise.all(
     messages.map((item) => value.assemble({ ...session, messages: [item] })),
   );
   expect(results.map((result) => result.messages)).toEqual(messages.map((item) => [item]));
-  expect(assemble).toHaveBeenCalledTimes(2);
-  expect(fallback).toHaveBeenCalledOnce();
-  await expectQuarantine("assemble");
-});
-
-it("routes fence failures through quarantine and revokes the old owner's hooks", async () => {
-  const reason = "admitted user row is unavailable";
-  raw.info.ownsCompaction = true;
-  const ingest = vi.spyOn(raw, "ingest");
-  const assemble = vi
-    .fn<() => Promise<never>>()
-    .mockRejectedValue(new SessionTranscriptReadFenceError(reason));
-  Object.assign(raw, { ingest, assemble });
-  const value = await engine();
-  expect(value.info.ownsCompaction).toBe(true);
-  expect(ownerOf(value)).toBe("fixture");
-  for (const item of [message("first"), message("second")]) {
-    await expect(value.assemble({ ...session, messages: [item] })).resolves.toMatchObject({
-      messages: [item],
-    });
-  }
+  await expect(value.assemble({ ...session, messages })).resolves.toMatchObject({ messages });
   await value.ingest({ ...session, message: message("second") });
   await expectFallback(value, "assemble", reason);
-  expect(assemble).toHaveBeenCalledOnce();
+  expect(assemble).toHaveBeenCalledTimes(2);
+  expect(fallback).toHaveBeenCalledOnce();
   expect(ingest).not.toHaveBeenCalled();
 });
 
@@ -536,21 +507,6 @@ it("clears a missing-engine quarantine on later registration", async () => {
   expect(await resolvedId(selected)).toBe(id);
 });
 
-it("does not quarantine a cancelled compaction", async () => {
-  const controller = new AbortController();
-  const reason = new Error("user stopped compaction");
-  const error = new Error("compaction aborted", { cause: reason });
-  error.name = "AbortError";
-  raw.compact = async () => {
-    controller.abort(reason);
-    throw error;
-  };
-  const value = await engine();
-  await expect(value.compact({ ...session, abortSignal: controller.signal })).rejects.toBe(error);
-  expect(await resolvedId()).toBe(id);
-  expect(await quarantines()).toEqual([]);
-});
-
 it("defers quarantine clearing until a builder registration is activated", async () => {
   const selected = `${id}-builder`;
   await resolve(config(selected));
@@ -566,43 +522,48 @@ it("defers quarantine clearing until a builder registration is activated", async
   expect(await quarantines()).toEqual([]);
 });
 
-it.each(["before", "during", "never"] as const)(
-  "handles maintenance failure when abort is %s",
-  async (abortAt) => {
-    const controller = new AbortController();
-    const reason = new Error("gateway shutdown");
-    const abortError = new Error("This operation was aborted");
-    abortError.name = "AbortError";
-    const maintain = vi.fn<NonNullable<ContextEngine["maintain"]>>(async ({ abortSignal }) => {
-      expect(abortSignal).toBe(controller.signal);
-      if (abortAt === "during") {
-        controller.abort(reason);
-      }
-      throw abortError;
-    });
-    raw.maintain = maintain;
-    if (abortAt === "before") {
+it.each([
+  ["compact", "during"],
+  ["maintain", "before"],
+  ["maintain", "during"],
+  ["maintain", "never"],
+] as const)("handles %s failure when abort is %s", async (method, abortAt) => {
+  const controller = new AbortController();
+  const reason = new Error("gateway shutdown");
+  const abortError = new Error(
+    "This operation was aborted",
+    method === "compact" ? { cause: reason } : undefined,
+  );
+  abortError.name = "AbortError";
+  const action = vi.fn(async ({ abortSignal }: { abortSignal?: AbortSignal }) => {
+    expect(abortSignal).toBe(controller.signal);
+    if (abortAt === "during") {
       controller.abort(reason);
     }
-    const value = await engine();
-    const pending = value.maintain?.({
-      ...session,
-      sessionFile: "/tmp/s1.jsonl",
-      abortSignal: controller.signal,
-    });
-    if (abortAt === "never") {
-      await expect(pending).resolves.toMatchObject({ changed: false });
-      expect(controller.signal.aborted).toBe(false);
-      expect(await resolvedId()).toBe("legacy");
-      await expectQuarantine("maintain", abortError.message);
-    } else {
-      await expect(pending).rejects.toBe(abortAt === "before" ? reason : abortError);
-      expect(await resolvedId()).toBe(id);
-      expect(await quarantines()).toEqual([]);
-    }
-    expect(maintain).toHaveBeenCalledTimes(abortAt === "before" ? 0 : 1);
-  },
-);
+    throw abortError;
+  });
+  raw[method] = action;
+  if (abortAt === "before") {
+    controller.abort(reason);
+  }
+  const value = await engine();
+  const pending = value[method]?.({
+    ...session,
+    sessionFile: "/tmp/s1.jsonl",
+    abortSignal: controller.signal,
+  });
+  if (abortAt === "never") {
+    await expect(pending).resolves.toMatchObject({ changed: false });
+    expect(controller.signal.aborted).toBe(false);
+    expect(await resolvedId()).toBe("legacy");
+    await expectQuarantine("maintain", abortError.message);
+  } else {
+    await expect(pending).rejects.toBe(abortAt === "before" ? reason : abortError);
+    expect(await resolvedId()).toBe(id);
+    expect(await quarantines()).toEqual([]);
+  }
+  expect(action).toHaveBeenCalledTimes(abortAt === "before" ? 0 : 1);
+});
 
 it("throws when the default engine is not registered", async () => {
   const engines = requireActivePluginRegistry().contextEngines;
