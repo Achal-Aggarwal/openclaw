@@ -258,11 +258,8 @@ describe("full-release-validation-at-sha", () => {
   it("requires an exact admission SHA when main is explicitly pinned", () => {
     rejectArgs(["--pin-admission-workflow"], "requires a full --admission-workflow-sha");
     expect(
-      parseArgs([
-        "--admission-workflow-sha",
-        "b".repeat(40),
-        "--pin-admission-workflow",
-      ]).pinAdmissionWorkflow,
+      parseArgs(["--admission-workflow-sha", "b".repeat(40), "--pin-admission-workflow"])
+        .pinAdmissionWorkflow,
     ).toBe(true);
   });
 
