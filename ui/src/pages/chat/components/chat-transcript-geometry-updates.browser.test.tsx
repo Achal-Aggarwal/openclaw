@@ -330,9 +330,9 @@ it("retains the accepted history-header space while a touch holds the older row 
 });
 
 it.each([
-  { offset: null, rowHeight: 120, cachedRows: 100, expected: [95, 96, 97, 98, 99] },
-  { offset: 3600, rowHeight: 120, cachedRows: 100, expected: [28, 29, 30, 31, 32, 33, 34] },
-  { offset: null, rowHeight: 128, cachedRows: 3, expected: [96, 97, 98, 99] },
+  { offset: null, rowHeight: 120, cachedRows: 100, expected: [94, 95, 96, 97, 98, 99] },
+  { offset: 3600, rowHeight: 120, cachedRows: 100, expected: [27, 28, 29, 30, 31, 32, 33, 34, 35] },
+  { offset: null, rowHeight: 128, cachedRows: 3, expected: [95, 96, 97, 98, 99] },
 ])(
   "commits the cached initial window with $cachedRows footprints and $rowHeight px rows at $offset",
   async ({ offset, rowHeight, cachedRows, expected }) => {
@@ -593,7 +593,7 @@ it("commits uncompensated extents while coalescing reader row updates", async ()
   expect(viewport.scrollTop).toBe(480);
 });
 
-it("renders a measurement read-back once with the completed row geometry", async () => {
+it("defers uncompensated measurement read-back until the next frame", async () => {
   const { host, session, viewport, virtualizer } = await mountPane();
   scrollReader(viewport, 480);
   const inner = requireElement(host, ".chat-thread-inner");
@@ -618,10 +618,19 @@ it("renders a measurement read-back once with the completed row geometry", async
     expect(render).not.toHaveBeenCalled();
     await Promise.resolve();
     flush();
+    expect(render).not.toHaveBeenCalled();
+    expect(paint).not.toHaveBeenCalled();
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    flush();
     expect(render).toHaveBeenCalledOnce();
     expect(Number.parseFloat(inner.style.height)).toBe(height + 60);
     expect(viewport.scrollTop).toBe(600);
-    expect(paint).not.toHaveBeenCalled();
+    const bounds = viewport.getBoundingClientRect();
+    const visible = [...host.querySelectorAll<HTMLElement>(".chat-virtual-row")]
+      .map((element) => element.getBoundingClientRect())
+      .filter((rect) => rect.bottom > bounds.top && rect.top < bounds.bottom);
+    expect(Math.min(...visible.map((rect) => rect.top))).toBeLessThanOrEqual(bounds.top);
+    expect(Math.max(...visible.map((rect) => rect.bottom))).toBeGreaterThanOrEqual(bounds.bottom);
   } finally {
     cancelAnimationFrame(frame);
   }

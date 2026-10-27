@@ -108,7 +108,6 @@ export function createTranscriptPresentation(
   measureRow = measureTranscriptRow,
 ) {
   const redraw = {};
-  let pendingCommit: (() => void) | null = null;
   let resizeOffsetSynced = false;
   const readConnectedRows = (): (() => boolean) | null => {
     const apply = readConnectedTranscriptRows(scrollElement(), virtualizer, rowElements());
@@ -121,28 +120,15 @@ export function createTranscriptPresentation(
   };
 
   const presentation = {
-    commitChange(commit: () => void, defer: boolean | "microtask") {
-      if (defer === "microtask" || (defer && pendingCommit)) {
-        cancelLayout(redraw);
-        if (!pendingCommit) {
-          // Read-back and measured sizes share one snapshot before paint.
-          queueMicrotask(() => {
-            const pending = pendingCommit;
-            pendingCommit = null;
-            pending?.();
-          });
-        }
-        pendingCommit = commit;
-      } else if (defer) {
+    commitChange(commit: () => void, defer: boolean) {
+      if (defer) {
         scheduleLayout(redraw, () => commit);
       } else {
-        pendingCommit = null;
         cancelLayout(redraw);
         commit();
       }
     },
     cancelChange() {
-      pendingCommit = null;
       cancelLayout(redraw);
     },
     measureElement(element: HTMLElement, entry: ResizeObserverEntry | undefined) {

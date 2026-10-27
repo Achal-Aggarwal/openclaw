@@ -213,15 +213,15 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
         // Read while measured layout is clean; a native clamp needs its rows now.
         const { threadInnerElement: inner, headerHeight: top, offsetState } = this;
         const moved = redraw && inner && this.layout.commitRange(inner, view.getTotalSize() + top);
-        // An uncompensated measurement can share the next reader frame. Native
-        // scroll compensation and OpenClaw's pending anchors must land together.
+        // An uncompensated measurement can share the next reader frame, including
+        // its native offset read-back. Input and anchor corrections stay immediate.
         const defer = redraw && !(moved || this.canAutoFollow() || offsetState.hasPendingAnchor);
         this.presentation.commitChange(
           () => {
             (redraw ? (this.renderPreviousRows ?? invalidate) : invalidate)();
             this.scheduleEndReconcile(view.getTotalSize());
           },
-          defer && (offsetState.measuringOffset ? "microtask" : !sync),
+          defer && (offsetState.measuringOffset || !sync),
         );
       },
       count: 0,
