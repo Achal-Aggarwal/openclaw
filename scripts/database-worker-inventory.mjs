@@ -3914,8 +3914,7 @@ export function loadInventorySources(root = defaultRoot, ref = "", staged = fals
         /\.(?:ts|tsx|js|mjs|mts|cts|cjs)$/.test(file) &&
         !excluded.test(file) &&
         !testSuites.has(file),
-    )
-    .toSorted();
+    );
   return snapshot
     ? loadRatchetSources(root, sourceFiles, ref)
     : new Map(sourceFiles.map((file) => [file, fs.readFileSync(path.join(root, file), "utf8")]));

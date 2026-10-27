@@ -5,6 +5,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { main } from "../../scripts/check-database-worker-ratchet.mts";
 import { inventory, loadInventorySources } from "../../scripts/database-worker-inventory.mjs";
 import * as databaseWorkerCompat from "../../scripts/lib/database-worker-compat.mts";
+import { baseInventory } from "../../scripts/lib/database-worker-inventory-cache.mts";
 import { useAutoCleanupTempDirTracker } from "../helpers/temp-dir.js";
 
 const tempDirs = useAutoCleanupTempDirTracker(afterEach);
@@ -151,9 +152,13 @@ it("discovers matching portable current, staged and historical sources without u
     "src/.boundary-stubs/protocol.d.ts",
     "src/z-runtime.ts",
   ].map((file) => [file, sources[file]]);
-  expect([...loadInventorySources(root)]).toEqual(expected);
-  expect([...loadInventorySources(root, "", true)]).toEqual(expected);
-  expect([...loadInventorySources(root, "HEAD")]).toEqual(expected);
+  for (const actual of [
+    loadInventorySources(root),
+    loadInventorySources(root, "", true),
+    loadInventorySources(root, "HEAD"),
+  ]) {
+    expect([...actual].toSorted(([left], [right]) => left.localeCompare(right))).toEqual(expected);
+  }
 });
 
 it("includes untracked ordinary and hidden sources while respecting ignored generated files", () => {
@@ -164,11 +169,33 @@ it("includes untracked ordinary and hidden sources while respecting ignored gene
   write("src/untracked.ts", "export {};\n");
   write("src/.hidden/untracked.ts", "export {};\n");
   write("src/generated/ignored.ts", "export {};\n");
-  expect([...loadInventorySources(root).keys()]).toEqual([
+  expect([...loadInventorySources(root).keys()].toSorted()).toEqual([
     "src/.hidden/untracked.ts",
     "src/runtime.ts",
     "src/untracked.ts",
   ]);
+});
+
+it("reuses equal source maps across insertion order while validating fresh current sources", () => {
+  const { root, write, errors } = fixture({
+    "src/a-runtime.ts": "executeSqliteQueryTakeFirstSync(query);\n",
+    "src/z-runtime.ts": "executeSqliteQuerySync(query);\n",
+  });
+  const historical = loadInventorySources(root, "HEAD");
+  const reversed = new Map([...historical].toReversed());
+  expect([...reversed.keys()]).not.toEqual([...historical.keys()]);
+  const rows = inventory(root, "", false, reversed);
+  expect(rows).toEqual(inventory(root, "", false, historical));
+  const inspect = vi.spyOn(databaseWorkerCompat, "inspectDatabaseWorkerBoundaries");
+  expect(baseInventory(root, "HEAD", { sources: reversed, rows })).toEqual(rows);
+  expect(inspect).not.toHaveBeenCalled();
+
+  write(
+    "src/.hidden/writer.ts",
+    "export function write() { scope.execute({ type: 'machineState.write' }); }",
+  );
+  expect(main(root, ["--base", "HEAD"])).toBe(1);
+  expectError(errors, "machineState.write credential writes require the host publication adapter");
 });
 
 it("reuses identical source snapshots while keeping head analysis fresh and invalidating changed bases", () => {
