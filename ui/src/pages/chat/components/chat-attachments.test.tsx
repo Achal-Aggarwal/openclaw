@@ -283,6 +283,7 @@ describe("chat attachment read failures", () => {
       await vi.waitFor(() => expect(StubFileReader.heldReads).toHaveLength(2));
       StubFileReader.heldReads[first]!();
       await waitForSolid(() => expect(h.reads.pendingReads).toBe(1));
+      expect(h.attachments).toHaveLength(1);
       StubFileReader.heldReads[second]!();
       await h.done.promise;
       expect(h.attachments.map(({ fileName }) => fileName)).toEqual(["first.png", "second.png"]);
@@ -696,34 +697,6 @@ it("retains focused pasted-text actions when a peer read completes and uses curr
   expect(previousDraftChange).not.toHaveBeenCalled();
   expect(currentDraftChange).toHaveBeenCalledExactlyOnceWith("Current draft\n\nRestored text");
   expect(h.attachments.map(({ fileName }) => fileName)).toEqual(["peer.png"]);
-});
-
-it("keeps admission order when preview props lag completed attachment reads", async () => {
-  vi.stubGlobal("FileReader", StubFileReader);
-  onTestFinished(() => {
-    vi.unstubAllGlobals();
-  });
-  StubFileReader.failNames = new Set();
-  StubFileReader.heldReads = [];
-  const h = readFixture([], () =>
-    preview.update({ ...h.props, attachments: [], readRevision: {} }),
-  );
-  const preview = mountSolid(AttachmentPreview, {
-    ...h.props,
-    attachments: [],
-    readRevision: {},
-  });
-  onTestFinished(preview.dispose);
-  StubFileReader.heldNames = new Set(["first.png", "second.png"]);
-  h.append([imageFile("first.png", "one"), imageFile("second.png", "two")]);
-  await vi.waitFor(() => expect(StubFileReader.heldReads).toHaveLength(2));
-  const [first, second] = StubFileReader.heldReads;
-  expectDefined(first, "first read")();
-  flush();
-  expect(h.attachments).toHaveLength(1);
-  expectDefined(second, "second read")();
-  await h.done.promise;
-  expect(h.attachments.map(({ fileName }) => fileName)).toEqual(["first.png", "second.png"]);
 });
 
 describe("attachment removal names", () => {

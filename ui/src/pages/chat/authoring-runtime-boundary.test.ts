@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, onTestFinished, vi } from "vitest";
-import { awaitGateBeforeSettlement, createDeferred } from "../../../../test/helpers/promise.ts";
+import { awaitGateBeforeSettlement } from "../../../../test/helpers/promise.ts";
 import type { ChatQueueItem } from "../../lib/chat/chat-types.ts";
 import {
   discardDurableComposerRecovery,
@@ -12,6 +12,7 @@ import {
   writeDurableComposerDraft,
 } from "../../lib/chat/composer-draft-store.runtime.ts";
 import { releaseChatAttachmentPayloads } from "./attachment-payload-store.ts";
+import { createHeldImport } from "./components/chat-lazy-import.test-support.ts";
 import { useChatSendBrowserFixture } from "./outbox-browser.test-support.ts";
 import { prepareOutboxPayload, type Host } from "./outbox-payloads.ts";
 
@@ -70,20 +71,14 @@ it("retains queued attachment input when its payload chunk fails to load", async
 });
 
 it("does not persist a queued attachment under an account selected during chunk loading", async () => {
-  const started = createDeferred();
-  const release = createDeferred();
-  // mock-isolation: Delay the real module so ownership can change before evaluation.
-  vi.doMock(import("./outbox-payloads.runtime.ts"), async (importOriginal) => {
-    started.resolve();
-    await release.promise;
-    return importOriginal();
-  });
+  const held = createHeldImport<typeof import("./outbox-payloads.runtime.ts")>();
+  vi.doMock(import("./outbox-payloads.runtime.ts"), held.load);
   const { host, item } = queuedAttachment();
   const pending = prepareOutboxPayload(host, item);
   try {
-    await awaitGateBeforeSettlement(started.promise, pending, "Payload import was bypassed");
+    await awaitGateBeforeSettlement(held.entered.promise, pending, "Payload import was bypassed");
     host.client = { recoveryScope: "replacement-account", recoveryScopeReady: true };
-    release.resolve();
+    held.ready.resolve();
     await expect(pending).resolves.toEqual({ status: "failed", reason: "unavailable" });
     expect(item.attachmentPayload).toBeUndefined();
 
@@ -93,7 +88,7 @@ it("does not persist a queued attachment under an account selected during chunk 
       update: { attachmentPayload: { recoveryScope: "replacement-account" } },
     });
   } finally {
-    release.resolve();
+    held.ready.resolve();
     await pending;
   }
 });
@@ -163,17 +158,9 @@ it.each(["restore", "discard"] as const)(
   "preserves a saved draft when its owner retires while the %s chunk is loading",
   async (operation) => {
     const source = await savedRecovery();
-    const started = createDeferred();
-    const release = createDeferred();
-    // mock-isolation: Hold the real recovery engine, preserving its authority checks and writes.
-    vi.doMock(
-      import("../../lib/chat/composer-draft-recovery.runtime.ts"),
-      async (importOriginal) => {
-        started.resolve();
-        await release.promise;
-        return importOriginal();
-      },
-    );
+    const held =
+      createHeldImport<typeof import("../../lib/chat/composer-draft-recovery.runtime.ts")>();
+    vi.doMock(import("../../lib/chat/composer-draft-recovery.runtime.ts"), held.load);
     let current = true;
     const change = () =>
       operation === "restore"
@@ -181,9 +168,13 @@ it.each(["restore", "discard"] as const)(
         : discardDurableComposerRecovery(owner, source, () => current);
     const pending = change();
     try {
-      await awaitGateBeforeSettlement(started.promise, pending, "Recovery import was bypassed");
+      await awaitGateBeforeSettlement(
+        held.entered.promise,
+        pending,
+        "Recovery import was bypassed",
+      );
       current = false;
-      release.resolve();
+      held.ready.resolve();
       await expect(pending).resolves.toEqual({ status: "conflict" });
       await expect(readDurableComposerDraft(legacyScope)).resolves.toEqual({
         status: "found",
@@ -205,7 +196,7 @@ it.each(["restore", "discard"] as const)(
         });
       }
     } finally {
-      release.resolve();
+      held.ready.resolve();
       await pending;
     }
   },

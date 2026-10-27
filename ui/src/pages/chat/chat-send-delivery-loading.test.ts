@@ -1,10 +1,11 @@
 // @vitest-environment node
 import { afterEach, expect, it, vi } from "vitest";
-import { awaitGateBeforeSettlement, createDeferred } from "../../../../test/helpers/promise.ts";
+import { awaitGateBeforeSettlement } from "../../../../test/helpers/promise.ts";
 import { listStoredChatOutboxes } from "../../lib/chat/outbox-store-projection.ts";
 import { makeChatHost, requestCalls } from "./chat-host.test-support.ts";
 import { readQueuedMessageById, removeQueuedMessage, updateQueuedMessage } from "./chat-queue.ts";
 import { handleSendChat } from "./chat-send-submit.ts";
+import { createHeldImport } from "./components/chat-lazy-import.test-support.ts";
 import { useChatSendBrowserFixture } from "./outbox-browser.test-support.ts";
 
 useChatSendBrowserFixture();
@@ -40,14 +41,8 @@ it("admits the canonical row before a failed delivery import and retains it for 
 });
 
 it("keeps consecutive admissions synchronous and respects removal while delivery loads", async () => {
-  const started = createDeferred();
-  const release = createDeferred();
-  // mock-isolation: Hold the real execution module after the outbox owns both rows.
-  vi.doMock(import("./chat-send-delivery.runtime.ts"), async (importOriginal) => {
-    started.resolve();
-    await release.promise;
-    return importOriginal();
-  });
+  const held = createHeldImport<typeof import("./chat-send-delivery.runtime.ts")>();
+  vi.doMock(import("./chat-send-delivery.runtime.ts"), held.load);
   const host = makeChatHost({
     chatMessage: "First prompt",
     requestHandlers: { "chat.send": { status: "ok", messageSeq: 1 } },
@@ -62,10 +57,10 @@ it("keeps consecutive admissions synchronous and respects removal while delivery
   expect(host.chatMessage).toBe("");
   host.chatMessage = "Unsubmitted third prompt";
   try {
-    await awaitGateBeforeSettlement(started.promise, first, "Delivery import was bypassed");
+    await awaitGateBeforeSettlement(held.entered.promise, first, "Delivery import was bypassed");
     expect(requestCalls(host.request, "chat.send")).toEqual([]);
     expect(removeQueuedMessage(host, stored[0]!.id, { discard: true })).toBe("removed");
-    release.resolve();
+    held.ready.resolve();
     await Promise.all([first, second]);
     expect(requestCalls(host.request, "chat.send")).toHaveLength(1);
     expect(requestCalls(host.request, "chat.send")[0]?.[1]).toMatchObject({
@@ -73,7 +68,7 @@ it("keeps consecutive admissions synchronous and respects removal while delivery
     });
     expect(host.chatMessage).toBe("Unsubmitted third prompt");
   } finally {
-    release.resolve();
+    held.ready.resolve();
     await Promise.all([first, second]);
     host.sessions.dispose();
   }
@@ -82,25 +77,23 @@ it("keeps consecutive admissions synchronous and respects removal while delivery
 it.each(["row", "connection"] as const)(
   "does not dispatch after the admitted %s changes during code loading",
   async (changed) => {
-    const started = createDeferred();
-    const release = createDeferred();
-    // mock-isolation: Preserve the real engine while delaying its first available implementation.
-    vi.doMock(import("./chat-send-delivery.runtime.ts"), async (importOriginal) => {
-      started.resolve();
-      await release.promise;
-      return importOriginal();
-    });
+    const held = createHeldImport<typeof import("./chat-send-delivery.runtime.ts")>();
+    vi.doMock(import("./chat-send-delivery.runtime.ts"), held.load);
     const host = makeChatHost({ chatMessage: "Original prompt", requestHandlers: {} });
     const sending = handleSendChat(host);
     const stored = listStoredChatOutboxes(host)[0]?.queue[0];
     try {
-      await awaitGateBeforeSettlement(started.promise, sending, "Delivery import was bypassed");
+      await awaitGateBeforeSettlement(
+        held.entered.promise,
+        sending,
+        "Delivery import was bypassed",
+      );
       if (changed === "row") {
         updateQueuedMessage(host, stored!.id, (row) => ({ ...row, text: "Replacement prompt" }));
       } else {
         host.connectionEpoch += 1;
       }
-      release.resolve();
+      held.ready.resolve();
       await sending;
       expect(requestCalls(host.request, "chat.send")).toEqual([]);
       expect(readQueuedMessageById(host, stored!.id)).toMatchObject({
@@ -109,7 +102,7 @@ it.each(["row", "connection"] as const)(
         sendState: "waiting-idle",
       });
     } finally {
-      release.resolve();
+      held.ready.resolve();
       await sending;
       host.sessions.dispose();
     }
