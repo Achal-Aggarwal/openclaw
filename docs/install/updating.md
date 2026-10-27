@@ -62,6 +62,17 @@ are reported by the scheduler without restarting the Gateway.
 
 **Updates always work** (`openclaw update` finishes best effort everywhere). Changes to update, Doctor, service lifecycle, migrations, plugin loading: state their update behavior. Installed updater runs first, can't be patched; candidate fixes key on markers shipped drivers set; existing operator state = input. Recoverable hiccups → recorded warnings; back up before mutating, let rollback restore it; refuse only for named data risk with previous Gateway kept running. Timeouts and budgets: generous, derived from measured state, sized for slow hardware. Proof: published-driver × candidate cell.
 
+The managed update helper owns recovery when its updater exits by signal or
+without a readable result after parking the Gateway. Its staged runtime keeps
+bookkeeping available while the installed package is missing. An untouched
+publication preparation is retired and the verified original Gateway restored;
+an interrupted publication completes the recorded candidate, runs post-core
+repair as the same update's continuation, then restarts and verifies the managed
+Gateway. Update history records rollback, success with recovery, or an actionable
+failure. Lost ownership, named data risk, and unverifiable runtime identity still
+keep the Gateway stopped. The helper that starts the update must contain this
+change; staging a newer candidate cannot repair an older helper.
+
 During overlapping Gateway restarts, config recovery reads health facts through
 the same isolated read-only transaction used for startup plugin metadata while
 the previous database owner is verified alive. It avoids copying unrelated

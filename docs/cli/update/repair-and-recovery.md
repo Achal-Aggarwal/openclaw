@@ -373,6 +373,17 @@ from the new installation before restarting through the service manager.
 
 ## `update repair`
 
+If the managed update helper is still alive after its updater dies, it recovers
+the parked Gateway automatically. It restores a verified original installation
+when activation never started, or completes an interrupted package publication
+and runs post-core repair before restarting the verified candidate. Its private
+staged runtime survives a missing installed package and records a terminal result
+in `openclaw update status`. This requires the helper that started the update to
+contain the recovery fix. `update repair` remains the backstop if the helper also
+dies, such as after a reboot or a process-group kill. Recorded data risk, lost
+ownership, or failed identity checks still require operator attention; inspect
+`openclaw update status` and `openclaw gateway status --deep` before restarting.
+
 If state ownership or a maintenance lock is held, repair refuses before that
 maintenance and reports `Stop the Gateway first (openclaw gateway stop)`. Stop
 the Gateway for the same profile/state directory before retrying.
