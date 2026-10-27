@@ -95,16 +95,18 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
       behavior: this.offsetState.scrollCommand?.behavior ?? "auto",
     });
   private readonly reconcileEnd = () => {
-    if (!this.connected || this.offsetState.pendingInteractionAnchor) {
-      return;
+    if (this.connected && !this.offsetState.pendingInteractionAnchor) {
+      this.commitComposerResize(true);
+      // Initial layout owns positioning until the visible range is measured.
+      if (!this.initialRange.pending) {
+        this.endAnchor.reconcile(
+          this.scrollElement,
+          this.canAutoFollow(),
+          this.offsetState.pendingScrollOffset !== null || this.offsetState.touchActive,
+          this.followEnd,
+        );
+      }
     }
-    this.commitComposerResize(true);
-    this.endAnchor.reconcile(
-      this.scrollElement,
-      this.canAutoFollow(),
-      this.offsetState.pendingScrollOffset !== null || this.offsetState.touchActive,
-      this.followEnd,
-    );
   };
   private readonly scrollRestoreHost: TranscriptScrollRestoreHost;
   private readonly messageReveal = new ChatMessageReveal(this.messageElements.elements);
@@ -212,9 +214,8 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
         // Initial placement and held history still reconcile before paint.
         view.options.useAnimationFrameWithResizeObserver = redraw;
         // Read while measured layout is clean; a native clamp needs its rows now.
-        const { threadInnerElement: inner, headerHeight } = this;
-        const moved =
-          redraw && inner && this.layout.commitRange(inner, view.getTotalSize() + headerHeight);
+        const { threadInnerElement: inner, headerHeight: top } = this;
+        const moved = redraw && inner && this.layout.commitRange(inner, view.getTotalSize() + top);
         // An uncompensated measurement can share the next reader frame. Native
         // scroll compensation and OpenClaw's pending anchors must land together.
         this.presentation.commitChange(
@@ -752,7 +753,6 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
     if (!this.initialRange.pending || !this.rowKeys.length || !this.scrollElement?.clientHeight) {
       return;
     }
-    this.syncViewportGeometry();
     const measured = this.presentation.measureRows();
     if ((this.initialRange.pending && this.initialRange.extend(this.scrollElement)) || measured) {
       this.invalidate();
