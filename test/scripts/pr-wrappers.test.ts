@@ -1,6 +1,7 @@
 // PR wrapper tests cover maintainer helper command delegation.
 import { spawnSync } from "node:child_process";
 import {
+  accessSync,
   chmodSync,
   constants as fsConstants,
   cpSync,
@@ -368,17 +369,48 @@ describe("scripts/pr wrappers", () => {
   itPosix("fails loudly at preflight when ripgrep is unavailable", () => {
     const fixture = makeMismatchedWrapperRepo();
     rmSync(join(fixture.bin, "rg"));
-    for (const command of ["bash", "basename", "dirname", "git", "gh", "jq", "pnpm", "node"]) {
+    for (const command of [
+      "bash",
+      "basename",
+      "dirname",
+      "readlink",
+      "git",
+      "gh",
+      "jq",
+      "pnpm",
+      "node",
+    ]) {
       rmSync(join(fixture.bin, command), { force: true });
       symlinkSync(resolveCommand(command), join(fixture.bin, command));
     }
+
+    // Keep guarded Git first and preserve its backend discovery order without
+    // exposing the host PATH (which would make ripgrep available again).
+    const gitPaths: string[] = [];
+    for (const [index, directory] of (process.env.PATH ?? "").split(delimiter).entries()) {
+      const candidate = join(directory, "git");
+      try {
+        if (!statSync(candidate).isFile()) {
+          continue;
+        }
+        accessSync(candidate, fsConstants.X_OK);
+      } catch {
+        continue;
+      }
+      const gitPath = join(fixture.root, `git-path-${index}`);
+      mkdirSync(gitPath);
+      symlinkSync(realpathSync(candidate), join(gitPath, "git"));
+      gitPaths.push(gitPath);
+    }
+    expect(gitPaths.length).toBeGreaterThan(0);
+    expect(realpathSync(join(gitPaths[0]!, "git"))).toBe(realpathSync(join(fixture.bin, "git")));
 
     const result = spawnSync(join(fixture.canonical, "scripts", "pr"), ["ls"], {
       cwd: fixture.canonical,
       encoding: "utf8",
       env: {
         ...fixture.env,
-        PATH: fixture.bin,
+        PATH: [fixture.bin, ...gitPaths].join(delimiter),
       },
     });
 
@@ -909,9 +941,16 @@ describe("scripts/pr wrappers", () => {
     },
   );
 
-  itPosix.each(["canonical", "linked", "matching-linked"])(
-    "keeps one expected snapshot through both handoffs from %s despite later selector writes",
-    (route) => {
+  itPosix.each(
+    ["canonical", "linked", "matching-linked"].flatMap((route) =>
+      ["external", "repository-local", "symlinked-repository-local"].map((temporaryRoot) => ({
+        route,
+        temporaryRoot,
+      })),
+    ),
+  )(
+    "keeps one expected snapshot through both handoffs from $route with $temporaryRoot TMPDIR despite later selector writes",
+    ({ route, temporaryRoot }) => {
       const fixture = makeMismatchedWrapperRepo({
         toolingOnly: true,
         dispatchBody:
@@ -924,6 +963,15 @@ describe("scripts/pr wrappers", () => {
         fixture.git(fixture.linked, ["checkout", "--detach", expected]);
         parkCanonicalOffAnchor(fixture);
         linkPrWrapperDependencies(fixture.linked);
+      }
+      const caller = route === "canonical" ? fixture.canonical : fixture.linked;
+      const snapshotParent =
+        temporaryRoot === "external" ? fixture.root : join(caller, ".local", "tmp");
+      mkdirSync(snapshotParent, { recursive: true });
+      let temporaryDirectory = snapshotParent;
+      if (temporaryRoot === "symlinked-repository-local") {
+        temporaryDirectory = join(fixture.root, "temporary-alias");
+        symlinkSync(snapshotParent, temporaryDirectory, "dir");
       }
       const selectedGit = join(fixture.root, "selected-git");
       const selections = join(fixture.root, "wrapper-selections");
@@ -947,7 +995,6 @@ describe("scripts/pr wrappers", () => {
         ].join("\n"),
         { mode: 0o755 },
       );
-      const caller = route === "canonical" ? fixture.canonical : fixture.linked;
       const result = spawnSync(
         join(caller, "scripts/pr"),
         ["--expect-wrapper-revision", expected, "ci-dispatch", "123"],
@@ -956,6 +1003,7 @@ describe("scripts/pr wrappers", () => {
           encoding: "utf8",
           env: {
             ...fixture.env,
+            TMPDIR: temporaryDirectory,
             OPENCLAW_PR_GIT: selectedGit,
             PR_TEST_REAL_GIT: resolveCommand("git"),
             PR_TEST_SELECTIONS: selections,
@@ -966,7 +1014,9 @@ describe("scripts/pr wrappers", () => {
         },
       );
       expect(result.status, result.stdout + result.stderr).toBe(0);
-      expect(result.stdout).toContain("executed-wrapper=" + fixture.root + "/openclaw-pr-anchor.");
+      expect(result.stdout).toContain(
+        "executed-wrapper=" + realpathSync(snapshotParent) + "/openclaw-pr-anchor.",
+      );
       expect(result.stdout).toContain("checked-revision=" + expected);
       expect(result.stdout).not.toContain("unexpected-canonical-wrapper");
       expect(result.stderr).not.toContain("running the canonical checkout's wrapper");
@@ -976,7 +1026,7 @@ describe("scripts/pr wrappers", () => {
       ).toBe(fixture.localRevision);
       // The existing creator/FD supervisor owns completed-drain snapshot cleanup.
       expect(
-        readdirSync(fixture.root).filter((name) => name.startsWith("openclaw-pr-anchor.")),
+        readdirSync(snapshotParent).filter((name) => name.startsWith("openclaw-pr-anchor.")),
       ).toEqual([]);
     },
   );

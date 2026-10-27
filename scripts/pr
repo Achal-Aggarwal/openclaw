@@ -322,9 +322,15 @@ if [ -n "${OPENCLAW_PR_ANCHOR_REPO_ROOT:-}" ]; then
   if [ -n "$expected_wrapper_revision" ]; then
     # Ambient strings cannot turn a fresh checkout into snapshot reentry.
     # Verify the immutable closure again; creator/FD identity owns cleanup only.
-    if pr_git -C "$script_parent_dir" rev-parse --git-dir >/dev/null 2>&1; then
-      echo "scripts/pr expected wrapper revision handoff requires a snapshot, not a Git checkout." >&2
-      exit 1
+    # A repository-local TMPDIR gives a verified snapshot an enclosing Git
+    # worktree. Reject only an actual checkout root, including symlink aliases.
+    snapshot_root="$(cd "$script_parent_dir/.." && pwd -P)"
+    if snapshot_checkout_root=$(pr_git -C "$snapshot_root" rev-parse --show-toplevel 2>/dev/null); then
+      snapshot_checkout_root="$(cd "$snapshot_checkout_root" && pwd -P)"
+      if [ "$snapshot_checkout_root" = "$snapshot_root" ]; then
+        echo "scripts/pr expected wrapper revision handoff requires a snapshot, not a Git checkout." >&2
+        exit 1
+      fi
     fi
     if ! expected_inventory=$(pr_git -C "$canonical_repo_root" show "$expected_wrapper_revision:scripts/pr-lib/wrapper-components.txt" 2>/dev/null); then
       echo "scripts/pr cannot verify the expected wrapper snapshot inventory." >&2
