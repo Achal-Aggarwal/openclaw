@@ -413,17 +413,8 @@ export function inspectDatabaseWorkerBoundaries(
   });
   const { checker, program } = session.project;
   const forwarded = new Map<Symbol, Symbol>();
-  // Compiler aliases are immutable; prepared binding overrides are applied separately.
-  const aliasTargets = new Map<Symbol, Symbol>();
   const resolveSymbol = (symbol: Symbol | undefined): Symbol | undefined => {
-    let target = symbol;
-    if (symbol && symbol.flags & SymbolFlags.Alias) {
-      target = aliasTargets.get(symbol);
-      if (!target) {
-        target = checker.getAliasedSymbol(symbol);
-        aliasTargets.set(symbol, target);
-      }
-    }
+    const target = session.resolveAlias(symbol);
     return target && (forwarded.get(target) ?? target);
   };
   const operationName = (node: ts.Node) => {
@@ -569,7 +560,7 @@ export function inspectDatabaseWorkerBoundaries(
     return { file, source };
   });
   if (validateCredentialWriters) {
-    violations.push(...inspectPersonalCredentialWriters(sources, checker));
+    violations.push(...inspectPersonalCredentialWriters(sources, session));
   }
   // Follow named kernels from the reviewed boundaries. A symbol reference from
   // outside this closure (or an escaped callback) will make that kernel live.
@@ -724,6 +715,7 @@ export function inspectDatabaseWorkerBoundaries(
       expandedMembers.add(member.node);
     }
     const symbols = references.length ? checker.getSymbolAtLocation(references) : [];
+    session.prepareAliases(symbols);
     for (const raw of symbols) {
       const symbol = resolveSymbol(raw);
       if (!symbol || examined.has(symbol) || registered.has(symbol)) {
@@ -1012,6 +1004,7 @@ export function inspectDatabaseWorkerBoundaries(
     };
     source.forEachChild(visit);
     const symbols = references.length ? checker.getSymbolAtLocation(references) : [];
+    session.prepareAliases(symbols);
     compiledAccesses.clear();
     const pendingAccesses = new Set<ts.Expression>();
     for (const [index, node] of references.entries()) {

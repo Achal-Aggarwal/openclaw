@@ -8,6 +8,8 @@ import {
   type Diagnostic,
   type Project,
   type Snapshot,
+  type Symbol as CompilerSymbol,
+  SymbolFlags,
 } from "typescript/sync";
 
 export type NativeTypeScriptSource = { fileName: string; text: string };
@@ -68,14 +70,48 @@ export function createNativeTypeScriptProject(options: ProjectOptions) {
     throw error;
   }
   let closed = false;
+  // Both policy scans consume this immutable project. Share compiler facts only;
+  // each scan still applies its own prepared binding overrides afterwards.
+  const aliasTargets = new Map<CompilerSymbol, CompilerSymbol>();
+  const assertOpen = () => {
+    if (closed) {
+      throw new Error("Native TypeScript project is closed");
+    }
+  };
+  const prepareAliases = (symbols: readonly (CompilerSymbol | undefined)[]) => {
+    assertOpen();
+    const missing = [...new Set(symbols)].filter(
+      (symbol): symbol is CompilerSymbol =>
+        symbol !== undefined &&
+        (symbol.flags & SymbolFlags.Alias) !== 0 &&
+        !aliasTargets.has(symbol),
+    );
+    const targets = api.batch(
+      ...missing.map((symbol) => project.checker.getAliasedSymbol.gen(symbol)),
+    );
+    for (const [index, symbol] of missing.entries()) {
+      aliasTargets.set(symbol, targets[index]!);
+    }
+  };
+  const resolveAlias = (symbol: CompilerSymbol | undefined) => {
+    assertOpen();
+    if (!symbol || !(symbol.flags & SymbolFlags.Alias)) {
+      return symbol;
+    }
+    if (!aliasTargets.has(symbol)) {
+      prepareAliases([symbol]);
+    }
+    return aliasTargets.get(symbol)!;
+  };
   const close = () => {
     if (closed) {
       return;
     }
     closed = true;
+    aliasTargets.clear();
     api.close();
   };
-  return { api, snapshot, project, close, [Symbol.dispose]: close };
+  return { api, snapshot, project, prepareAliases, resolveAlias, close, [Symbol.dispose]: close };
 }
 
 /** The async transport keeps its child referenced while close ends the server's input. */
