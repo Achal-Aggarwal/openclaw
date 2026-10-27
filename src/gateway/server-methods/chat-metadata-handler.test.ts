@@ -157,9 +157,18 @@ describe("chat metadata ownership", () => {
   ] as const)(
     "keeps saved-session placement readiness scoped to includeModels=$includeModels",
     async ({ includeModels, first }, { signal }) => {
-      await withMetadataFixture(async (fixture) => {
+      await withOpenClawTestState({ scenario: "minimal" }, async () => {
+        const fixture = createPersonalMetadataFixture([SESSION_READ_SCOPE]);
+        using _ = { [Symbol.dispose]: (await prepareUserProfileCatalog()).release };
         const sessionKey = "agent:main:placement-readiness";
-        await fixture.saveSession(sessionKey);
+        await upsertSessionEntryCore(
+          { agentId: "main", sessionKey },
+          {
+            sessionId: "placement-readiness",
+            updatedAt: 1,
+            createdActor: { type: "human", source: "profile", id: fixture.owner.id },
+          },
+        );
         const harness = createChatMetadataHarness(fixture.config);
         let placementPrepared = false;
         fixture.context.readChatMetadata = (scope) => {
@@ -182,11 +191,11 @@ describe("chat metadata ownership", () => {
         });
         const abort = () => release.resolve();
         signal.addEventListener("abort", abort, { once: true });
-        let request: ReturnType<typeof fixture.dispatch> | undefined;
+        let request: ReturnType<typeof dispatchMetadata> | undefined;
         try {
           await harness.runtime.refresh();
           const started = performance.now();
-          request = fixture.dispatch({ sessionKey, includeModels }, signal);
+          request = dispatchMetadata(fixture, { sessionKey, includeModels }, signal);
           const winner = await Promise.race([
             request.pending.then(() => "response"),
             entered.promise.then(() => "placement"),
