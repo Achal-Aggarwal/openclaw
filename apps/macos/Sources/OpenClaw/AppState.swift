@@ -115,12 +115,13 @@ final class AppState {
                 bundleLocationAllowsPersistentIntegration: self.bundleLocationAllowsPersistentIntegration)
             else { return }
             guard let manager = self.launchAtLoginManager else { return }
+            let previous = oldValue
             self.launchAtLoginError = nil
             self.launchAtLoginTask = manager.set(
                 enabled: self.launchAtLogin, bundlePath: Bundle.main.bundlePath)
             { [weak self] enabled, error in
                 guard let self else { return }
-                self.hydrateLaunchAtLogin(enabled)
+                self.hydrateLaunchAtLogin(enabled ?? previous)
                 self.launchAtLoginError = error
                 NotificationCenter.default.post(name: .openclawDeviceSettingsChanged, object: nil)
             }

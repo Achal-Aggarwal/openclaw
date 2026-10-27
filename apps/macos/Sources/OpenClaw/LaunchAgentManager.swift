@@ -46,7 +46,7 @@ final class LaunchAgentManager {
         enabled: Bool,
         bundlePath: String,
         profile: AppProfile = .current,
-        onResult: (@MainActor (Bool, String?) -> Void)? = nil) -> Task<Bool, Never>
+        onResult: (@MainActor (Bool?, String?) -> Void)? = nil) -> Task<Bool, Never>
     {
         // Reserve user-event order before creating async work; startup hydration
         // cannot overwrite a choice while its launchctl operation is pending.
@@ -102,7 +102,7 @@ final class LaunchAgentManager {
         enabled: Bool,
         bundlePath: String,
         profile: AppProfile,
-        generation: UInt64) async -> (enabled: Bool, error: String?)?
+        generation: UInt64) async -> (enabled: Bool?, error: String?)?
     {
         guard self.generation == generation else { return nil }
         guard !profile.isActive else {
@@ -116,9 +116,9 @@ final class LaunchAgentManager {
             try await Self.persist(enabled: enabled, bundlePath: bundlePath, plistURL: self.plistURL)
         } catch {
             Self.logger.error("login-agent persistence failed: \(error.localizedDescription, privacy: .public)")
-            let current = await Self.readStatus(
-                plistURL: self.plistURL, profile: profile, runLaunchctl: self.runLaunchctl)
-            return (current, String(localized:
+            // Persistence must succeed before any launchctl operation, including a status probe.
+            // Leave reconciliation with the caller's previous value when no state was observed.
+            return (nil, String(localized:
                 "Could not save Launch at Login. Check permissions for ~/Library/LaunchAgents and try again."))
         }
         guard self.generation == generation else { return nil }
@@ -154,7 +154,7 @@ final class LaunchAgentManager {
     }
 
     private func failedChange(
-        command: String, status: Int32, previousPlist: Data?) async -> (enabled: Bool, error: String?)
+        command: String, status: Int32, previousPlist: Data?) async -> (enabled: Bool?, error: String?)
     {
         var message = String(localized:
             "Could not enable Launch at Login. Check OpenClaw in System Settings → General → Login Items and try again.")

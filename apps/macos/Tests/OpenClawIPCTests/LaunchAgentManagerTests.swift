@@ -66,14 +66,19 @@ struct LaunchAgentManagerTests {
             await calls.record(arguments)
             return 0
         }
+        var observed: Bool? = true
+        var failure: String?
         let applied = await manager.set(
             enabled: true,
             bundlePath: "/Applications/OpenClaw.app",
-            profile: AppProfile(environment: [:])).value
+            profile: AppProfile(environment: [:]),
+            onResult: { observed = $0; failure = $1 }).value
 
         #expect(!applied)
         #expect(await calls.arguments.isEmpty)
         #expect(try String(contentsOf: blocker, encoding: .utf8) == "original")
+        #expect(observed == nil)
+        #expect(failure != nil)
     }
 
     @Test(arguments: ["bootstrap", "kickstart"], [Int32(5), Int32(-1)])
