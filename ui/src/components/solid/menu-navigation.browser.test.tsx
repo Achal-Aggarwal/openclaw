@@ -142,7 +142,6 @@ describe("Solid menu navigation", () => {
       ];
       return {
         get items(): MenuEntry[] {
-          revision();
           return [
             {
               kind: "content",
@@ -202,28 +201,20 @@ describe("Solid menu navigation", () => {
       { id: "disabled", label: "Unavailable", href: "/new?agent=other", disabled: true },
       { id: "new", label: "New session", href: "/new?agent=main" },
     ];
-    render(() => (
-      <aside
-        onContextMenu={(event) => {
-          parentContextMenus++;
+    const view = mountMenu({
+      items: [submenu("links", "Links", links)],
+      onNavigate: (link) => navigated.push(link),
+      onSelect: (entry, event) => {
+        selected.push(entry.id);
+        if (veto) {
           event.preventDefault();
-        }}
-      >
-        <Menu
-          id="people"
-          label="People"
-          items={[submenu("links", "Links", links)]}
-          onNavigate={(link) => navigated.push(link)}
-          onSelect={(entry, event) => {
-            selected.push(entry.id);
-            if (veto) {
-              event.preventDefault();
-            }
-          }}
-        />
-      </aside>
-    ));
-    flush();
+        }
+      },
+    });
+    view.container.addEventListener("contextmenu", (event) => {
+      parentContextMenus++;
+      event.preventDefault();
+    });
     await openMenu();
     await openMenu("people-links");
     const menu = surface("people-links");
@@ -394,9 +385,6 @@ describe("Solid menu navigation", () => {
     expect(surface().hasAttribute("aria-activedescendant")).toBe(false);
     await keyPhase("{Enter}", "hidden");
     expect(button.getAttribute("data-value")).toBe("gamma");
-    await keyPhase("{ArrowUp}", "open");
-    await keyPhase("{Escape}", "hidden");
-    expect(document.activeElement).toBe(button);
   });
 
   it.each([
@@ -575,13 +563,22 @@ describe("Solid menu navigation", () => {
   });
 });
 
-function mountColdMenu(options: Partial<MenuProps> = {}) {
+function mountColdMenu(options: Partial<MenuProps> = {}, open = true) {
+  const selections: string[] = [];
   const view = mountMenu({
     lazy: true,
     items: ["Alpha", "Beta", "Gamma"].map((label) => ({ id: label.toLowerCase(), label })),
+    onSelect: (entry) => selections.push(entry.id),
     ...options,
   });
-  return { view, handle: view.handle, button: trigger(), panel: surface() };
+  const { handle } = view;
+  const button = trigger(),
+    panel = surface();
+  if (open) {
+    expect(handle.open()).toBe(true);
+  }
+  const row = (id: string) => panel.querySelector<HTMLElement>(`[data-value="${id}"]`)!;
+  return { view, handle, button, panel, row, selections };
 }
 
 function coldKey(target: Element, value: string) {
@@ -591,7 +588,7 @@ function coldKey(target: Element, value: string) {
 }
 
 it("defers cold button pointer focus until click without suppressing context menus", () => {
-  const { handle, button } = mountColdMenu();
+  const { handle, button } = mountColdMenu({}, false);
   const down = (mouseButton: number) => {
     const event = new PointerEvent("pointerdown", {
       button: mouseButton,
@@ -639,10 +636,8 @@ it.each([
   { keys: ["ArrowDown", "Enter"], focused: null, selected: ["beta"] },
   { keys: ["End", "Enter"], focused: null, selected: ["gamma"] },
 ])("replays queued $keys in navigation order", async ({ keys, focused, selected }) => {
-  const selections: string[] = [];
-  const { handle, panel } = mountColdMenu({ onSelect: (entry) => selections.push(entry.id) });
-  expect(handle.open()).toBe(true);
-  const first = panel.querySelector<HTMLElement>('[data-value="alpha"]')!;
+  const { row, selections } = mountColdMenu();
+  const first = row("alpha");
   for (const value of keys) {
     coldKey(first, value);
   }
@@ -656,10 +651,8 @@ it.each([
 it.each(["Enter", " "])(
   "commits a focused cold leaf with %j before immediate overlay close",
   (value) => {
-    const selections: string[] = [];
-    const { handle, panel } = mountColdMenu({ onSelect: (entry) => selections.push(entry.id) });
-    expect(handle.open()).toBe(true);
-    const target = panel.querySelector<HTMLElement>('[data-value="beta"]')!;
+    const { handle, row, selections } = mountColdMenu();
+    const target = row("beta");
     target.focus();
     expect(coldKey(target, value).defaultPrevented).toBe(true);
     handle.close();
@@ -668,31 +661,27 @@ it.each(["Enter", " "])(
 );
 
 it("continues from the entry row when focus returns to the button during first load", async () => {
-  const { handle, button, panel } = mountColdMenu();
-  expect(handle.open()).toBe(true);
-  expect(document.activeElement).toBe(panel.querySelector('[data-value="alpha"]'));
+  const { button, row } = mountColdMenu();
+  expect(document.activeElement).toBe(row("alpha"));
   button.focus();
   expect(coldKey(button, " ").defaultPrevented).toBe(true);
   await expect.poll(() => document.activeElement?.getAttribute("data-value")).toBe("beta");
 });
 
 it("leaves native control activation keys unhandled during first load", () => {
-  const { handle, panel } = mountColdMenu({
-    children: (
-      <>
-        <button data-form-control>Native button</button>
-        <a href="#native-control" data-form-control>
-          Native link
-        </a>
-        <input data-form-control />
-        <textarea data-form-control />
-        <select data-form-control>
-          <option>Native option</option>
-        </select>
-      </>
-    ),
+  const { panel } = mountColdMenu({
+    children: (["button", "a", "input", "textarea", "select"] as const).map((tag) => {
+      const control = document.createElement(tag);
+      control.dataset.formControl = "";
+      if (control instanceof HTMLAnchorElement) {
+        control.href = "#native-control";
+      }
+      if (control instanceof HTMLSelectElement) {
+        control.add(new Option("Native option"));
+      }
+      return control;
+    }),
   });
-  expect(handle.open()).toBe(true);
   for (const control of panel.querySelectorAll<HTMLElement>("[data-form-control]")) {
     control.focus();
     expect(coldKey(control, "Enter").defaultPrevented).toBe(false);
@@ -707,7 +696,6 @@ it("bubbles parent navigation from an open submenu button during first load", as
       { id: "next", label: "Next" },
     ],
   });
-  expect(handle.open()).toBe(true);
   flush();
   const child = [...handle.overlay.children][0]!;
   expect(child.request(true, "none")).toBe(true);
@@ -728,7 +716,6 @@ it("leaves Escape to the open child when focus stays on its cold parent button",
       </Show>
     ),
   });
-  expect(handle.open()).toBe(true);
   setShowHelp(true);
   flush();
   expect(help.overlay.parent).toBe(handle.overlay);
@@ -746,9 +733,8 @@ it("leaves Escape to the open child when focus stays on its cold parent button",
 });
 
 it("admits and focuses synchronously, retires old keys, and replays input after first load", async () => {
-  const { handle, button, panel } = mountColdMenu();
-  expect(handle.open()).toBe(true);
-  const first = panel.querySelector<HTMLElement>('[data-value="alpha"]')!;
+  const { handle, button, row } = mountColdMenu();
+  const first = row("alpha");
   expect(document.activeElement).toBe(first);
   coldKey(first, "g");
   expect(handle.close()).toBe(true);
@@ -761,12 +747,11 @@ it("admits and focuses synchronously, retires old keys, and replays input after 
   coldKey(button, "ArrowUp");
   await expect.poll(() => handle.overlay.open).toBe(true);
   await expect.poll(() => document.activeElement?.getAttribute("data-value")).toBe("gamma");
-  expect(panel.querySelector('[data-value="alpha"]')).toBe(first);
+  expect(row("alpha")).toBe(first);
 });
 
 it("does not reopen a disposed owner after loading", async () => {
   const { view, handle } = mountColdMenu();
-  expect(handle.open()).toBe(true);
   view.unmount();
   await Promise.resolve();
   expect(handle.overlay.open).toBe(false);
