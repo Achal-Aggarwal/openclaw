@@ -26,6 +26,7 @@ export class TranscriptInitialRange {
   private idleStep = 1;
   private scrollSample = { time: 0, distance: 0, velocity: 0, direction: -1 };
   private viewportOnly = false;
+  private cachedWindow = false;
 
   get reading(): boolean {
     return !this.pending && !this.viewportOnly;
@@ -36,6 +37,7 @@ export class TranscriptInitialRange {
     private readonly virtualizer: () => Virtualizer<HTMLDivElement, HTMLElement>,
     private readonly normalRange: (range: Range, indexes: ReadonlyMap<string, number>) => number[],
     private readonly invalidate: () => void,
+    private readonly cachedRowSize: (index: number) => number,
     private readonly canPrepare: () => boolean,
     private readonly measure: (
       element: HTMLElement,
@@ -47,6 +49,40 @@ export class TranscriptInitialRange {
   }
 
   extract(range: Range): number[] {
+    const height = this.pending ? this.viewportRowHeight(this.virtualizer().scrollElement) : 0;
+    if (height > 0) {
+      let startIndex = range.startIndex;
+      if (this.tailRows) {
+        const virtualizer = this.virtualizer();
+        startIndex = range.count - 1;
+        let covered = this.cachedRowSize(startIndex);
+        while (startIndex > 0 && covered > 0 && covered < height) {
+          const size = this.cachedRowSize(--startIndex);
+          if (!size) {
+            break;
+          }
+          covered += size + virtualizer.options.gap;
+        }
+      }
+      const cachedRange = {
+        ...range,
+        startIndex,
+        endIndex: this.tailRows ? range.count - 1 : range.endIndex,
+      };
+      let indexes = this.normalRange(cachedRange, this.rowIndexes);
+      const cachedWindow = indexes.every((index) => this.cachedRowSize(index) > 0);
+      if (!cachedWindow && this.tailRows) {
+        indexes = this.normalRange({ ...cachedRange, overscan: 0 }, this.rowIndexes);
+      }
+      if (indexes.length && indexes.every((index) => this.cachedRowSize(index) > 0)) {
+        // Exact-width footprints cover the viewport and overscan; no measurement ladder is needed.
+        if (this.tailRows) {
+          this.tailRows = range.count - indexes[0]!;
+        }
+        this.cachedWindow = cachedWindow;
+        return indexes;
+      }
+    }
     if (!this.tailRows) {
       const indexes = new Set(this.normalRange(range, this.rowIndexes));
       for (const key of this.preparedRowKeys) {
@@ -88,6 +124,13 @@ export class TranscriptInitialRange {
       : [];
   }
 
+  private viewportRowHeight(element: HTMLDivElement | null): number {
+    // Bottom padding fills the same part of the viewport for cached and measured rows.
+    return element
+      ? element.clientHeight - (Number.parseFloat(getComputedStyle(element).paddingBottom) || 0)
+      : 0;
+  }
+
   private refresh(): void {
     const virtualizer = this.virtualizer();
     virtualizer.setOptions({
@@ -103,9 +146,8 @@ export class TranscriptInitialRange {
       !(
         this.tailRows > 0 &&
         this.tailRows < virtualizer.options.count &&
-        virtualizer.getVirtualItems().reduce((height, row) => height + row.size, 0) +
-          (Number.parseFloat(getComputedStyle(element).paddingBottom) || 0) <
-          element.clientHeight
+        virtualizer.getVirtualItems().reduce((height, row) => height + row.size, 0) <
+          this.viewportRowHeight(element)
       )
     ) {
       return false;
@@ -133,7 +175,7 @@ export class TranscriptInitialRange {
 
   complete(): void {
     if (this.pending) {
-      this.finish(true);
+      this.finish(!this.cachedWindow);
     }
   }
 

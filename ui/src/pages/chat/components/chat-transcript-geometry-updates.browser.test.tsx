@@ -11,6 +11,7 @@ import "../../../styles/chat.ts";
 import { ChatPaneRuntime } from "../chat-pane-render.ts";
 import { createPaneTestHost } from "../chat-pane.test-support.ts";
 import { saveChatSessionScrollPosition } from "../scroll.ts";
+import type { ChatWidgetLayout } from "../session-message-cache.ts";
 import type { ChatThreadProps } from "./chat-thread-interactions.ts";
 import { ChatThread } from "./chat-thread-view.tsx";
 import type { ChatTranscript } from "./chat-transcript-controller.ts";
@@ -47,11 +48,14 @@ class GeometryPane extends ChatPaneRuntime {
   fixtureHistory = false;
   fixtureMessages: unknown[] = [];
   private rowHeight = 120;
+  private fixtureWidgetLayout?: ChatWidgetLayout;
 
   initialize(
     context: ApplicationContext,
     followEnd = false,
     rowHeight = followEnd ? 360 : 120,
+    widgetLayout?: ChatWidgetLayout,
+    scrollTop = 0,
     messages?: unknown[],
   ) {
     projectChatFields(this, ["fixtureStream", "fixtureHistory", "fixtureMessages"]);
@@ -59,9 +63,10 @@ class GeometryPane extends ChatPaneRuntime {
     this.paneId = "geometry-render";
     this.sessionKey = "agent:main:geometry-render";
     this.rowHeight = rowHeight;
+    this.fixtureWidgetLayout = widgetLayout;
     this.fixtureMessages = messages ?? geometryMessages(100);
     saveChatSessionScrollPosition(this.paneId, this.sessionKey, {
-      scrollTop: 0,
+      scrollTop,
       anchorToEnd: followEnd,
     });
   }
@@ -84,6 +89,7 @@ class GeometryPane extends ChatPaneRuntime {
             historyPagination: this.fixtureHistory
               ? { hasMore: true, loading: false, onShowEarlier: () => {} }
               : undefined,
+            widgetLayout: this.fixtureWidgetLayout,
           }),
           rowHeight: this.rowHeight,
         },
@@ -191,7 +197,13 @@ it("publishes native scroll policy and row position in one Solid update", async 
   ]);
 });
 
-async function mountPane(followEnd = false, rowHeight?: number, messages?: unknown[]) {
+async function mountPane(
+  followEnd = false,
+  rowHeight?: number,
+  widgetLayout?: ChatWidgetLayout,
+  scrollTop = 0,
+  messages?: unknown[],
+) {
   const fixture = createMountedPanes([
     { key: "agent:main:geometry-render", kind: "direct", updatedAt: 1 },
   ]);
@@ -202,7 +214,7 @@ async function mountPane(followEnd = false, rowHeight?: number, messages?: unkno
   });
   pane = createPaneTestHost("test-transcript-geometry-pane", GeometryPane);
   Object.assign(pane, { render: pane.renderGeometry.bind(pane) });
-  pane.initialize(fixture.context, followEnd, rowHeight, messages);
+  pane.initialize(fixture.context, followEnd, rowHeight, widgetLayout, scrollTop, messages);
   pane.style.cssText = "display: block; width: 800px";
   document.body.append(pane.element);
   await pane.updateComplete;
@@ -317,6 +329,72 @@ it("retains the accepted history-header space while a touch holds the older row 
   expect(Math.abs(retained.getBoundingClientRect().top - top)).toBeLessThanOrEqual(2);
 });
 
+it.each([
+  { offset: null, rowHeight: 120, cachedRows: 100, expected: [95, 96, 97, 98, 99] },
+  { offset: 3600, rowHeight: 120, cachedRows: 100, expected: [28, 29, 30, 31, 32, 33, 34] },
+  { offset: null, rowHeight: 128, cachedRows: 3, expected: [96, 97, 98, 99] },
+])(
+  "commits the cached initial window with $cachedRows footprints and $rowHeight px rows at $offset",
+  async ({ offset, rowHeight, cachedRows, expected }) => {
+    const cachedHeight = (key: string) =>
+      key.startsWith("row:v1:") && Number(/geometry-row-(\d+):/.exec(key)?.[1]) >= 100 - cachedRows
+        ? rowHeight
+        : undefined;
+    const windows: number[][] = [];
+    const observer = new MutationObserver(() => {
+      const active = [
+        ...document.querySelectorAll<HTMLElement>(".chat-virtual-row:not([data-prepared-row])"),
+      ].map((row) => Number(row.dataset.index));
+      if (active.length && active.join() !== windows.at(-1)?.join()) {
+        windows.push(active);
+      }
+    });
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ["data-prepared-row"],
+    });
+    try {
+      const { viewport } = await mountPane(
+        offset === null,
+        rowHeight,
+        {
+          read: cachedHeight,
+          readRows: () => {
+            const layout = expectDefined(pane?.session, "mounted transcript session").layout;
+            return Object.fromEntries(
+              layout.rows.flatMap((_, index) => {
+                const key = layout["rowLayoutKey"](index);
+                return key && cachedHeight(key) ? [[key, rowHeight]] : [];
+              }),
+            );
+          },
+          write: () => {},
+          writeRows: () => {},
+          invalidateRow: () => {},
+        },
+        offset ?? 0,
+      );
+      expect(
+        windows.filter((rows) => rows.length > 0).length,
+        JSON.stringify(windows),
+      ).toBeLessThanOrEqual(cachedRows === 100 ? 2 : 3);
+      if (cachedRows === 3) {
+        expect(windows.find((rows) => rows.length > 1)).toEqual([97, 98, 99]);
+      }
+      expect(windows.at(-1)).toEqual(expected);
+      if (offset === null) {
+        expect(viewport.scrollHeight - viewport.clientHeight - viewport.scrollTop).toBe(0);
+      } else {
+        expect(viewport.scrollTop).toBe(offset);
+      }
+    } finally {
+      observer.disconnect();
+    }
+  },
+);
+
 it.each([120, 360, 1200])(
   "prepares only the tail window while initial %ipx rows settle",
   async (rowHeight) => {
@@ -375,7 +453,13 @@ it("parks retained rows without layout and restores their resized geometry and n
     timestamp: index + 1,
     __openclaw: { id: `geometry-row-${index}` },
   }));
-  const { host, viewport, session, virtualizer } = await mountPane(false, 120, messages);
+  const { host, viewport, session, virtualizer } = await mountPane(
+    false,
+    120,
+    undefined,
+    0,
+    messages,
+  );
   const row = requireElement(host, '.chat-virtual-row[data-index="1"]');
   // Other fixture rows have fixed heights. This row uses its real Markdown
   // height so the narrower pane must produce a new browser measurement.
@@ -438,7 +522,13 @@ it("parks retained rows without layout and restores their resized geometry and n
 });
 
 it("reconciles the streaming end only when native row geometry changes", async () => {
-  const { host, viewport, virtualizer } = await mountPane(true, 360, geometryMessages(6));
+  const { host, viewport, virtualizer } = await mountPane(
+    true,
+    360,
+    undefined,
+    0,
+    geometryMessages(6),
+  );
   host.fixtureStream = "Initial streaming text";
   await settleLayout();
   // Finish background measurements before attributing changes to live text.
@@ -538,7 +628,13 @@ it("renders a measurement read-back once with the completed row geometry", async
 });
 
 it("commits rows before paint when an uncompensated extent shrink clamps the reader", async () => {
-  const { host, viewport, virtualizer } = await mountPane(false, 360, geometryMessages(6));
+  const { host, viewport, virtualizer } = await mountPane(
+    false,
+    360,
+    undefined,
+    0,
+    geometryMessages(6),
+  );
   scrollReader(viewport, viewport.scrollHeight - viewport.clientHeight);
   await settleLayout();
   const last = requireElement(host, '.chat-virtual-row[data-index="5"]');
