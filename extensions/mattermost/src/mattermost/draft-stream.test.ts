@@ -21,6 +21,7 @@ type DraftStreamOptions = Omit<
   "client" | "channelId"
 > & {
   request?: MattermostClient["request"];
+  beforeRequest?: (path: string) => Promise<void>;
 };
 
 function createDraftStreamFixture(options: DraftStreamOptions = {}): {
@@ -29,7 +30,7 @@ function createDraftStreamFixture(options: DraftStreamOptions = {}): {
   requestMock: ReturnType<typeof vi.fn<MattermostClient["request"]>>;
   stream: ReturnType<typeof createMattermostDraftStream>;
 } {
-  const { request, ...streamOptions } = options;
+  const { request, beforeRequest, ...streamOptions } = options;
   const calls: RequestRecord[] = [];
   let nextId = 1;
   const requestImpl: MattermostClient["request"] = async <T>(
@@ -37,6 +38,7 @@ function createDraftStreamFixture(options: DraftStreamOptions = {}): {
     init?: RequestInit,
   ): Promise<T> => {
     calls.push({ path, init });
+    await beforeRequest?.(path);
     if (path === "/posts") {
       return { id: `post-${nextId++}` } as T;
     }
@@ -111,6 +113,28 @@ function createProviderPostFixture(
 }
 
 describe("createMattermostDraftStream", () => {
+  it("waits a throttle window after a slow preview send before the next edit", async () => {
+    vi.useFakeTimers();
+    const releaseCreate = createDeferred<void>();
+    const { calls, stream } = createDraftStreamFixture({
+      throttleMs: 1200,
+      beforeRequest: (path) => (path === "/posts" ? releaseCreate.promise : Promise.resolve()),
+    });
+    try {
+      stream.update("Working");
+      await vi.advanceTimersByTimeAsync(0);
+      stream.update("Working on it");
+      await vi.advanceTimersByTimeAsync(2500);
+      releaseCreate.resolve();
+      await vi.advanceTimersByTimeAsync(1199);
+      expect(calls.map(({ path }) => path)).toEqual(["/posts"]);
+
+      await vi.advanceTimersByTimeAsync(1);
+      expect(calls.map(({ path }) => path)).toEqual(["/posts", "/posts/post-1/patch"]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
   it("creates a preview post and updates it on later changes", async () => {
     const { calls, stream } = createDraftStreamFixture({ rootId: "root-1" });
 

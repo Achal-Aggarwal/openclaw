@@ -161,6 +161,7 @@ export function createMattermostDraftStream(params: {
     seal: sealLifecycle,
   } = createFinalizableDraftLifecycle({
     throttleMs,
+    coalesceInFlight: true,
     state: streamState,
     sendOrEditStreamMessage,
     readMessageId: () => currentGeneration.postId,
