@@ -96,13 +96,14 @@ suite.define(() => {
             await captureFrame(suite.artifactDir, "sidebar.png", sidebar, [owner]);
           }
           const toolbarBox = await page.locator(".sidebar-session-toolbar").boundingBox();
-          const firstRowBox = await page
-            .locator(".sidebar-sessions .sidebar-recent-session")
+          // Personal groups (#181680) place a heading before the session rows.
+          const firstHeadingBox = await page
+            .locator(".sidebar-sessions .sidebar-recent-sessions__head")
             .first()
             .boundingBox();
           expect(toolbarBox).not.toBeNull();
-          expect(firstRowBox).not.toBeNull();
-          expect(firstRowBox!.y - toolbarBox!.y - toolbarBox!.height).toBe(4);
+          expect(firstHeadingBox).not.toBeNull();
+          expect(firstHeadingBox!.y - toolbarBox!.y - toolbarBox!.height).toBe(4);
         },
       );
     },
