@@ -30,12 +30,12 @@ import { replaceSessionEntry } from "../../config/sessions/session-accessor.js";
 import * as sessionReads from "../../config/sessions/session-entry-read-runtime.js";
 import { withOpenClawTestState } from "../../test-utils/openclaw-test-state.js";
 import { expectText } from "../../test-utils/text-assertions.js";
-import type { ReplyPayload } from "../types.js";
 import { buildSubagentsStatusLine } from "./commands-status-subagents.js";
 import { handleSubagentsCommand } from "./commands-subagents.js";
 import { handleSubagentsInfoAction } from "./commands-subagents/action-info.js";
 import { handleSubagentsListAction } from "./commands-subagents/action-list.js";
 import { handleSubagentsLogAction } from "./commands-subagents/action-log.js";
+import type { CommandHandlerResult } from "./commands-types.js";
 import { baseCommandTestConfig, buildCommandTestParams } from "./commands.test-harness.js";
 
 const callGatewayMock = vi.hoisted(() => vi.fn());
@@ -44,11 +44,10 @@ vi.mock("../../gateway/call.js", () => ({
   callGateway: (params: unknown) => callGatewayMock(params),
 }));
 
-function requireReplyText(reply: ReplyPayload | undefined): string {
-  if (reply?.text === undefined) {
-    throw new Error("expected reply text");
-  }
-  return reply.text;
+async function replyText(
+  result: Promise<CommandHandlerResult | null | undefined>,
+): Promise<string> {
+  return expectDefined((await result)?.reply?.text, "expected reply text");
 }
 
 function commandRun(fields: SubagentRunRecordOverrides): SubagentRunRecord {
@@ -219,7 +218,7 @@ describe("subagents command snapshots", () => {
         });
         return context;
       });
-    const text = requireReplyText((await runCommand("/subagents list"))?.reply);
+    const text = await replyText(runCommand("/subagents list"));
     expectText(
       text,
       ["active (waiting on 1 child)", "paired parent"],
@@ -265,7 +264,7 @@ describe("subagents command snapshots", () => {
         );
         return prepare(...args);
       });
-    const text = requireReplyText((await runCommand("/agents"))?.reply);
+    const text = await replyText(runCommand("/agents"));
     expectText(text, ["(none)"], ["removed parent", "waiting on 1 child"]);
   });
 });
@@ -302,7 +301,7 @@ describe("subagents global-session inspection", () => {
       params.sessionKey = "global";
       params.agentId = "research";
 
-      const text = requireReplyText((await handleSubagentsCommand(params, true))?.reply);
+      const text = await replyText(handleSubagentsCommand(params, true));
 
       expectText(text, ["research worker"], ["ops worker"]);
       if (command === "/subagents log 1") {
@@ -348,7 +347,7 @@ describe("subagents info", () => {
     seedSubagentRunForReadTest(run);
     const result = await handleSubagentsInfoAction(buildInfoContext([run], [target], cfg));
     expect(result.shouldContinue).toBe(false);
-    return requireReplyText(result.reply);
+    return expectDefined(result.reply?.text, "expected reply text");
   }
 
   beforeEach(() => setRuntimeConfigSnapshot(infoConfig));
@@ -459,11 +458,9 @@ describe("subagents info", () => {
       seedSubagentRunForReadTest(run);
     }
     const context = buildInfoContext(runs);
-    const listing = requireReplyText((await handleSubagentsListAction(context)).reply);
+    const listing = await replyText(handleSubagentsListAction(context));
     expectText(listing, ["1. recent worker"], ["stale worker"]);
-    expect(requireReplyText((await handleSubagentsInfoAction(context)).reply)).toContain(
-      "Run: numbering-recent",
-    );
+    expect(await replyText(handleSubagentsInfoAction(context))).toContain("Run: numbering-recent");
     callGatewayMock.mockResolvedValue({ messages: [] });
     await handleSubagentsLogAction(context);
     expect(callGatewayMock).toHaveBeenLastCalledWith({
@@ -482,10 +479,8 @@ describe("subagents info", () => {
     seedSubagentRunForReadTest(run);
     const context = buildInfoContext([run]);
 
-    expect(requireReplyText((await handleSubagentsInfoAction(context)).reply)).toContain(
-      "Status: killed",
-    );
-    expect(requireReplyText((await handleSubagentsListAction(context)).reply)).toContain(" killed");
+    expect(await replyText(handleSubagentsInfoAction(context))).toContain("Status: killed");
+    expect(await replyText(handleSubagentsListAction(context))).toContain(" killed");
   });
 
   it("omits Date-invalid subagent timestamps", async () => {
@@ -586,7 +581,7 @@ describe("subagents log", () => {
   ])("%s", async (_name, message, expectedText, unexpectedText) => {
     callGatewayMock.mockResolvedValue({ messages: [message] });
 
-    const text = requireReplyText((await handleSubagentsLogAction(logContext())).reply);
+    const text = await replyText(handleSubagentsLogAction(logContext()));
 
     expectText(text, [expectedText], [unexpectedText]);
   });
