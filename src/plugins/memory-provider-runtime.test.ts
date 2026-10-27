@@ -1,4 +1,4 @@
-import { beforeEach, expect, it, vi } from "vitest";
+import { beforeEach, expect, it, onTestFinished, vi } from "vitest";
 import type { MemoryProviderStatus } from "../memory-host-sdk/host/types.js";
 import { createDeferredCore } from "../shared/deferred.js";
 import { delegateMemoryAudience, resolveMemoryAudienceFromEntry } from "./memory-audience.js";
@@ -122,24 +122,20 @@ class LegacyManager implements RegisteredMemorySearchManager {
     return true;
   }
 }
-function manager(): RegisteredMemorySearchManager {
-  return new LegacyManager();
+function manager(
+  overrides: Partial<RegisteredMemorySearchManager> = {},
+): RegisteredMemorySearchManager {
+  return Object.assign(new LegacyManager(), overrides);
 }
 async function bind(raw = provider()) {
   advertise(raw);
   return (await open()).provider!;
 }
-async function withLegacy(
-  old: MemoryPluginRuntime,
-  check: (bound: MemoryProviderHandle) => Promise<void>,
-) {
+async function bindLegacy(old: MemoryPluginRuntime) {
   state.capability.runtime = old;
   const bound = (await open()).provider!;
-  try {
-    await check(bound);
-  } finally {
-    await bound.close();
-  }
+  onTestFinished(() => bound.close());
+  return bound;
 }
 
 beforeEach(() => {
@@ -332,9 +328,8 @@ it("preserves frozen class receivers, statusless empty reads, and read paginatio
 });
 
 it("withholds legacy session hits without authorization and enumerates no candidates", async () => {
-  const oldManager = manager();
-  vi.spyOn(oldManager, "search").mockResolvedValue([{ ...hit, source: "sessions" }]);
-  oldManager.listTriggerCandidates = async () => [{ ...hit, source: "sessions" }];
+  const sessionHits = async () => [{ ...hit, source: "sessions" as const }];
+  const oldManager = manager({ search: sessionHits, listTriggerCandidates: sessionHits });
   const old: MemoryPluginRuntime = legacy(oldManager);
   state.capability.runtime = old;
   const bound = (await open()).provider!;
@@ -362,52 +357,44 @@ it("withholds legacy session hits without authorization and enumerates no candid
 });
 
 it("keeps authorized legacy session and keyless project hits ineligible for automatic recall", async () => {
-  const oldManager = manager();
   const recall = {
     ...hit,
     provenance: { originClass: "owner", sessionKind: "interactive", observedAt: 1 } as const,
     triggers: "remember",
   };
-  vi.spyOn(oldManager, "search").mockResolvedValue([
-    { ...recall, source: "sessions" },
-    { ...recall, projectKey: ";" },
-    recall,
+  const oldManager = manager({
+    search: async () => [{ ...recall, source: "sessions" }, { ...recall, projectKey: ";" }, recall],
+  });
+  const bound = await bindLegacy({
+    ...legacy(oldManager),
+    authorizeSearchHits: async ({ hits }) => hits,
+  });
+  const { hits } = await bound.search({ query: "q" });
+  expect(hits.map(({ automaticRecall }) => automaticRecall?.eligible)).toEqual([
+    false,
+    false,
+    true,
   ]);
-  await withLegacy(
-    {
-      ...legacy(oldManager),
-      authorizeSearchHits: async ({ hits }) => hits,
-    },
-    async (bound) => {
-      const { hits } = await bound.search({ query: "q" });
-      expect(hits.map(({ automaticRecall }) => automaticRecall?.eligible)).toEqual([
-        false,
-        false,
-        true,
-      ]);
-    },
-  );
 });
 
 it("reports legacy health without host filesystem paths", async () => {
-  const oldManager = manager();
-  vi.spyOn(oldManager, "status").mockReturnValue({
-    backend: "builtin",
-    provider: "test",
-    files: 2,
-    workspaceDir: "/home/owner/workspace",
-    dbPath: "/home/owner/state/agent.sqlite",
-    extraPaths: [{ path: "/home/owner/notes", kind: "directory" }],
-    vector: { enabled: true, extensionPath: "/opt/sqlite-vec.dylib" },
-  } as never);
-  await withLegacy(legacy(oldManager), async (bound) => {
-    const health = await bound.health();
-    expect(health).toEqual({
-      status: "ready",
-      details: {
-        legacy: { backend: "builtin", provider: "test", files: 2, vector: { enabled: true } },
-      },
-    });
+  const oldManager = manager({
+    status: () => ({
+      backend: "builtin",
+      provider: "test",
+      files: 2,
+      workspaceDir: "/home/owner/workspace",
+      dbPath: "/home/owner/state/agent.sqlite",
+      extraPaths: [{ path: "/home/owner/notes", kind: "directory" }],
+      vector: { enabled: true, extensionPath: "/opt/sqlite-vec.dylib" },
+    }),
+  });
+  const bound = await bindLegacy(legacy(oldManager));
+  expect(await bound.health()).toEqual({
+    status: "ready",
+    details: {
+      legacy: { backend: "builtin", provider: "test", files: 2, vector: { enabled: true } },
+    },
   });
 });
 
@@ -458,23 +445,19 @@ it.each([
     true,
   ),
 ])("reports health and search coverage for $name", async ({ facts, complete }) => {
-  const oldManager = manager();
-  vi.spyOn(oldManager, "status").mockReturnValue({
-    backend: "builtin",
-    provider: "test",
-    ...facts,
+  const oldManager = manager({
+    status: () => ({ backend: "builtin", provider: "test", ...facts }),
   });
-  await withLegacy(legacy(oldManager), async (bound) => {
-    const page = await bound.search({ query: "remember" });
-    expect(page.hits).toHaveLength(1);
-    expect(page.coverage).toBe(complete ? "complete" : "partial");
-    const health = await bound.health();
-    expect(health.status).toBe(complete ? "ready" : "degraded");
-    if (!complete) {
-      expect(page.warning).toEqual(expect.any(String));
-      expect(health.message).toBe(page.warning);
-    }
-  });
+  const bound = await bindLegacy(legacy(oldManager));
+  const page = await bound.search({ query: "remember" });
+  expect(page.hits).toHaveLength(1);
+  expect(page.coverage).toBe(complete ? "complete" : "partial");
+  const health = await bound.health();
+  expect(health.status).toBe(complete ? "ready" : "degraded");
+  if (!complete) {
+    expect(page.warning).toEqual(expect.any(String));
+    expect(health.message).toBe(page.warning);
+  }
 });
 
 it("returns authorized hits with partial coverage when optional status diagnostics fail", async () => {
@@ -482,31 +465,29 @@ it("returns authorized hits with partial coverage when optional status diagnosti
   oldManager.statusAsync = vi.fn(async () => {
     throw new Error("diagnostic worker unavailable");
   });
-  await withLegacy(legacy(oldManager), async (bound) => {
-    const page = await bound.search({ query: "remember" });
-    expect(page.hits).toHaveLength(1);
-    expect(page).toMatchObject({
-      coverage: "partial",
-      warning: expect.stringContaining("could not be verified"),
-    });
-    expect(oldManager.statusAsync).toHaveBeenCalledWith({ includeCounts: false });
-    await expect(bound.health()).resolves.toMatchObject({
-      status: "degraded",
-      message: page.warning,
-    });
+  const bound = await bindLegacy(legacy(oldManager));
+  const page = await bound.search({ query: "remember" });
+  expect(page.hits).toHaveLength(1);
+  expect(page).toMatchObject({
+    coverage: "partial",
+    warning: expect.stringContaining("could not be verified"),
+  });
+  expect(oldManager.statusAsync).toHaveBeenCalledWith({ includeCounts: false });
+  await expect(bound.health()).resolves.toMatchObject({
+    status: "degraded",
+    message: page.warning,
   });
 });
 
 it.each(["search", "readFile"] as const)("rejects a legacy manager missing %s", async (method) => {
   const oldManager = manager();
   Reflect.set(oldManager, method, undefined);
-  await withLegacy(legacy(oldManager), async (bound) => {
-    const pending =
-      method === "search"
-        ? bound.search({ query: "q" })
-        : bound.get({ reference: { providerId: "test-memory", id: "MEMORY.md" } });
-    await expect(pending).rejects.toThrow(`memory runtime manager must implement ${method}`);
-  });
+  const bound = await bindLegacy(legacy(oldManager));
+  const pending =
+    method === "search"
+      ? bound.search({ query: "q" })
+      : bound.get({ reference: { providerId: "test-memory", id: "MEMORY.md" } });
+  await expect(pending).rejects.toThrow(`memory runtime manager must implement ${method}`);
 });
 
 it("closes transient legacy managers without closing cached default managers", async () => {
