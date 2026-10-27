@@ -156,8 +156,9 @@ final class LaunchAgentManager {
     private func failedChange(
         command: String, status: Int32, previousPlist: Data?) async -> (enabled: Bool?, error: String?)
     {
-        var message = String(localized:
-            "Could not enable Launch at Login. Check OpenClaw in System Settings → General → Login Items and try again.")
+        var message = String(localized: """
+        Could not enable Launch at Login. Check OpenClaw in System Settings → General → Login Items and try again.
+        """)
         message += " (launchctl \(command): \(status))"
         do {
             try await Self.restorePlist(previousPlist, at: self.plistURL)

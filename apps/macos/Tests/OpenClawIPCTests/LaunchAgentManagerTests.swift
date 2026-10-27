@@ -72,7 +72,9 @@ struct LaunchAgentManagerTests {
             enabled: true,
             bundlePath: "/Applications/OpenClaw.app",
             profile: AppProfile(environment: [:]),
-            onResult: { observed = $0; failure = $1 }).value
+            onResult: { observed = $0
+                failure = $1
+            }).value
 
         #expect(!applied)
         #expect(await calls.arguments.isEmpty)
