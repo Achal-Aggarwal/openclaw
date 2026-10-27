@@ -1,5 +1,5 @@
 {
-  "startupJsGzipBytes": 89994,
-  "reason": "Fixed Board chrome deferral cuts initial DOM from 3968 to 2246 and desktop tab-return task median from 376 to 239 ms; the integrated head measures 89994 B gzip.",
+  "startupJsGzipBytes": 89985,
+  "reason": "Measured Board chrome, body admission and native resource gating on paired production bundles; 89985 B gzip and one startup CSS request.",
   "updatedAt": "2026-10-27"
 }

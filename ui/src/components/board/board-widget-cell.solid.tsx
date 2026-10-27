@@ -186,6 +186,10 @@ function BoardWidgetCellContent(
     props.widget?.heightMode === "fixed" && contribution()?.kind === "session:report";
   const [reportEntered, setReportEntered] = createSignal(false);
   const reportReady = () => !fixedReport() || reportEntered();
+  // Keep an admitted body across hidden height-mode changes and MCP retirement.
+  const bodyReady = createMemo(
+    (previous = false) => previous || Boolean(props.widget && reportReady()),
+  );
   // Fixed reports already reserve their full height. Build nearby bodies once,
   // then let the existing core-widget latch retain them across tab switches.
   // Observe the card because the display:contents host has no intersection box.
@@ -263,19 +267,16 @@ function BoardWidgetCellContent(
     },
     focusWidget: () => widgetRoot()?.focus(),
     selectMenuItem,
-    async teardown() {
-      await mcpElement?.teardown();
-    },
-    restartAfterTeardown() {
-      mcpElement?.restartAfterTeardown();
-    },
+    teardown: async () => mcpElement?.teardown(),
+    restartAfterTeardown: () => mcpElement?.restartAfterTeardown(),
   });
   createEffect(
-    () => [props.widget, props.boardRevision, active(), gatewayBinding(), resources()] as const,
-    // Owner callbacks intentionally read the current binding captured above.
-    (next, previous) => {
-      const widget = next[0];
-      const current = next[4];
+    // Native widgets retain identity history without subscribing to frame activity.
+    () =>
+      resources()
+        ? ([props.widget, resources(), props.boardRevision, active(), gatewayBinding()] as const)
+        : ([props.widget, undefined] as const),
+    ([widget, current], previous) => {
       const previousWidget = previous?.[0];
       if (previousWidget && previousWidget !== widget) {
         current?.frame.widgetChanged(previousWidget, widget);
@@ -285,22 +286,28 @@ function BoardWidgetCellContent(
   );
   createEffect(
     () =>
-      [
-        widgetRoot(),
-        resources(),
-        resources()?.frameState.revision(),
-        props.widget,
-        props.boardRevision,
-        props.callbacks,
-        props.sessionKey,
-        gatewayBinding(),
-        active(),
-        props.loadingCovered,
-        props.bridgeEnabled,
-        props.widgetFrameUrl,
-        bodyErrored(),
-      ] as const,
-    ([root, current]) => {
+      resources() || props.loadingCovered
+        ? ([
+            widgetRoot(),
+            resources(),
+            resources()?.frameState.revision(),
+            props.widget,
+            props.boardRevision,
+            props.callbacks,
+            props.sessionKey,
+            gatewayBinding(),
+            active(),
+            props.loadingCovered,
+            props.bridgeEnabled,
+            props.widgetFrameUrl,
+            bodyErrored(),
+          ] as const)
+        : undefined,
+    (next) => {
+      if (!next) {
+        return;
+      }
+      const [root, current] = next;
       current?.appView.synchronize(props.callbacks, root ?? null);
       current?.frame.update();
       if (props.loadingCovered && presentationReady()) {
@@ -393,9 +400,6 @@ function BoardWidgetCellContent(
             ?.read()
             ?.errors.find((entry) => entry.pluginId === pluginId() || entry.pluginId === "host")
         : undefined;
-    const Loading = () => (
-      <p class="board-widget__plugin-loading">{t("board.widget.pluginLoading")}</p>
-    );
     return (
       <Switch
         fallback={
@@ -441,7 +445,7 @@ function BoardWidgetCellContent(
             plugins?.read().isLoading(pluginId())
           }
         >
-          <Loading />
+          <p class="board-widget__plugin-loading">{t("board.widget.pluginLoading")}</p>
         </Match>
         <Match when={runtimeError()}>
           <BoardWidgetError
@@ -531,7 +535,7 @@ function BoardWidgetCellContent(
   const style = (): SolidJSX.CSSProperties => {
     const rect = props.rect!;
     const height =
-      props.dragging || props.pageChrome
+      props.dragging || props.pageChrome || props.widget!.contentKind !== "html"
         ? undefined
         : exactBoardWidgetHeightPx(
             props.widget!,
@@ -651,8 +655,10 @@ function BoardWidgetCellContent(
             },
           ]}
         >
-          <Show when={bodyError()} fallback={<BodyBoundary />}>
-            {(failure) => <BoardWidgetError error={failure().error} />}
+          <Show when={bodyReady()}>
+            <Show when={bodyError()} fallback={<BodyBoundary />}>
+              {(failure) => <BoardWidgetError error={failure().error} />}
+            </Show>
           </Show>
           <Show when={actionFailed() && props.widget!.grantState !== "pending"}>
             <div class="board-widget__error-overlay">

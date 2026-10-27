@@ -178,6 +178,7 @@ catalogSuite.define(() => {
     const pendingNotifications: Array<() => void> = [];
     type PublicationPhase = "published" | "held" | "recovered";
     const publish = async (id: PublicationPhase) => {
+      traceCatalog(`publish:${id}`);
       if (catalogRequests.size) {
         await new Promise<void>((resolve) => {
           catalogDrained = resolve;
@@ -201,6 +202,7 @@ catalogSuite.define(() => {
       },
       async ({ page }) => {
         await page.routeWebSocket(`ws://127.0.0.1:${owner.port}/**`, (socket) => {
+          traceCatalog("catalog-socket-created");
           const server = socket.connectToServer();
           socket.onMessage((message) => {
             const frame = requireRecord(JSON.parse(message.toString()));
@@ -217,6 +219,11 @@ catalogSuite.define(() => {
             const catalogReply = typeof frame.id === "string" && catalogRequests.has(frame.id);
             const catalogChange =
               frame.event === "config.changed" || frame.event === "chat.metadata.changed";
+            if (catalogChange) {
+              const event = frame.event === "config.changed" ? "config" : "metadata";
+              const cleared = requireRecord(frame.payload).modelSelectionChanged === true;
+              traceCatalog(`${event}:selection-${cleared ? "cleared" : "kept"}`);
+            }
             if (catalogReply && typeof frame.id === "string") {
               traceCatalog(frame.ok ? "catalog-reply-ok" : "catalog-reply-error");
               catalogRequests.delete(frame.id);
@@ -227,9 +234,6 @@ catalogSuite.define(() => {
             // Exercise reads after real publication, not config changes during an in-flight read.
             // Keep the Gateway's notifications intact and in their original order.
             if (awaitCatalogPublication && catalogChange) {
-              traceCatalog(
-                frame.event === "config.changed" ? "config-changed-held" : "metadata-changed-held",
-              );
               pendingNotifications.push(() => socket.send(message));
               if (
                 frame.event === "chat.metadata.changed" &&
@@ -294,6 +298,7 @@ catalogSuite.define(() => {
                 const values = Array.from(
                   pickerElement?.querySelectorAll('[role="option"]') ?? [],
                 ).map((option) => option.getAttribute("data-value"));
+                const fixtureIds = ["anchor", "retiring", "published", "held", "recovered"];
                 return {
                   catalogPickerPresent: Boolean(pickerElement),
                   catalogPickerExpanded:
@@ -301,13 +306,9 @@ catalogSuite.define(() => {
                       ?.querySelector(".picker-select__trigger")
                       ?.getAttribute("aria-expanded") ?? null,
                   catalogOptionCount: values.length,
-                  catalogFixtureOptions: [
-                    "anchor",
-                    "retiring",
-                    "published",
-                    "held",
-                    "recovered",
-                  ].filter((modelId) => values.includes(`fixture/${modelId}`)),
+                  catalogFixtureOptions: fixtureIds.filter((modelId) =>
+                    values.includes(`fixture/${modelId}`),
+                  ),
                   catalogDraftNameRetained:
                     document.querySelector<HTMLInputElement>("#cron-name")?.value ===
                     "Retain this draft",
