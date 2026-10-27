@@ -206,7 +206,6 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
     });
     this.virtualizer = new Virtualizer({
       onChange: (view, sync) => {
-        const canDefer = this.offsetState.consumeOffsetNotification() || !sync;
         // Settled motion redraws locally; initial placement and held history need the caller.
         const redraw = view.isScrolling && this.isPositionSettled && !this.prependAnchor.hasPrepend;
         // Avoid repeated post-layout measurement/render passes in one scroll frame.
@@ -219,7 +218,7 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
             (redraw ? (this.renderPreviousRows ?? invalidate) : invalidate)();
             this.scheduleEndReconcile(view.getTotalSize());
           },
-          redraw && canDefer && !this.canAutoFollow() && !this.offsetState.hasPendingAnchor,
+          redraw && !sync && !this.canAutoFollow() && !this.offsetState.hasPendingAnchor,
         );
       },
       count: 0,
@@ -314,18 +313,19 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
   private stopGeometry?: () => void;
 
   connect(): void {
-    if (!this.connected) {
-      this.connected = true;
-      this.renderer.connect();
-      const target = this.callbacks.geometryEventTarget;
-      this.stopGeometry =
-        target && listen(target, SIDEBAR_GEOMETRY_COMMIT_EVENT, this.handleGeometryCommit);
-      // Virtual-core exposes its lifecycle hooks as bound arrow functions.
-      const { _didMount: mountVirtualizer } = this.virtualizer;
-      this.cleanupVirtualizer = mountVirtualizer();
-      if (this.offsetState.pendingScrollOffset) {
-        this.invalidate();
-      }
+    if (this.connected) {
+      return;
+    }
+    this.connected = true;
+    this.renderer.connect();
+    const target = this.callbacks.geometryEventTarget;
+    this.stopGeometry =
+      target && listen(target, SIDEBAR_GEOMETRY_COMMIT_EVENT, this.handleGeometryCommit);
+    // Virtual-core exposes its lifecycle hooks as bound arrow functions.
+    const { _didMount: mountVirtualizer } = this.virtualizer;
+    this.cleanupVirtualizer = mountVirtualizer();
+    if (this.offsetState.pendingScrollOffset) {
+      this.invalidate();
     }
   }
 

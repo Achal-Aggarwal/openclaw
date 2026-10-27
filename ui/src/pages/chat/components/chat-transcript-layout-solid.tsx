@@ -424,6 +424,9 @@ export class ChatTranscriptRenderer {
         }, element),
       );
     } else {
+      // Read the native offset before row mutations dirty layout. The later
+      // commit still accepts any sizes discovered while mounting those rows.
+      next.layout.commitRange(this.element, next.virtualizer.getTotalSize() + next.headerHeight);
       this.publishPresentation?.();
       this.publish?.();
     }
