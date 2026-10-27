@@ -107,7 +107,6 @@ function sameMessageGroup(previous: MessageGroup, next: MessageGroup): boolean {
         candidate !== undefined &&
         entry.key === candidate.key &&
         entry.message === candidate.message &&
-        entry.duplicateCount === candidate.duplicateCount &&
         JSON.stringify(entry.replyTarget) === JSON.stringify(candidate.replyTarget) &&
         entry.hasVisibleContent === candidate.hasVisibleContent
       );
@@ -116,7 +115,7 @@ function sameMessageGroup(previous: MessageGroup, next: MessageGroup): boolean {
 }
 
 const CHAT_ITEM_FIELDS = {
-  message: ["message", "duplicateCount"],
+  message: ["message"],
   notice: [
     "text",
     "label",
@@ -125,6 +124,7 @@ const CHAT_ITEM_FIELDS = {
     "boundaryId",
     "timestamp",
     "systemEvent",
+    "repeatCount",
   ],
   divider: [
     "compaction",
