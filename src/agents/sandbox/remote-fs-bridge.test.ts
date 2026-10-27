@@ -33,12 +33,13 @@ function shellResult(stdout: string) {
 
 function createStatRuntime(
   workspaceDir: string,
-  outputs: { hardlinks: (script: string) => string; stat: (script: string) => string },
+  { links, size, mtime }: { links: string; size: string; mtime: string },
 ): RemoteShellSandboxHandle {
   return {
     remoteWorkspaceDir: workspaceDir,
     remoteAgentWorkspaceDir: workspaceDir,
     runRemoteShellScript: async (command) => {
+      const kind = command.script.includes("LC_ALL=C stat") ? "regular file" : "reguläre Datei";
       if (command.script.includes('if [ -e "$1" ] || [ -L "$1" ]')) {
         return shellResult("1\n");
       }
@@ -46,10 +47,10 @@ function createStatRuntime(
         return shellResult(`${workspaceDir}/note.txt\0${workspaceDir}\0`);
       }
       if (command.script.includes('stat -c "%F|%h"')) {
-        return shellResult(`${outputs.hardlinks(command.script)}\n`);
+        return shellResult(`${kind}|${links}\n`);
       }
       if (command.script.includes('stat -c "%F|%s|%y"')) {
-        return shellResult(`${outputs.stat(command.script)}\n`);
+        return shellResult(`${kind}|${size}|${mtime}\n`);
       }
       throw new Error(`unexpected remote script: ${command.script}`);
     },
@@ -319,14 +320,9 @@ describe("remote sandbox fs bridge", () => {
     "parses C-locale stat output with link count %s",
     async (links, size, mtime, expected) => {
       const workspaceDir = tempDirs.make("remote-stat-");
-      const kind = (script: string) =>
-        script.includes("LC_ALL=C stat") ? "regular file" : "reguläre Datei";
       const bridge = createWorkspaceBridge(
         workspaceDir,
-        createStatRuntime(workspaceDir, {
-          hardlinks: (script) => `${kind(script)}|${links}`,
-          stat: (script) => `${kind(script)}|${size}|${mtime}`,
-        }),
+        createStatRuntime(workspaceDir, { links, size, mtime }),
       );
       const result = bridge.stat({ filePath: "note.txt" });
       if (!expected) {
