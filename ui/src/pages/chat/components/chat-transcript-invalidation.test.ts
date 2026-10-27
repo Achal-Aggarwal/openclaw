@@ -610,7 +610,9 @@ describe("chat transcript invalidation", () => {
         rerender();
         transcript.start();
         await flushDeferredRowPrune();
-        expect(required(container, ".chat-question-summary button").textContent).toBe("Answer");
+        await waitForSolid(() =>
+          expect(required(container, ".chat-question-summary button").textContent).toBe("Answer"),
+        );
 
         const previous = project();
         resetTranscriptSession(props.paneId, container);

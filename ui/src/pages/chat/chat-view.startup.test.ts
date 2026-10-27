@@ -1,5 +1,6 @@
 /* @vitest-environment jsdom */
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { waitForSolid } from "../../test-helpers/solid-settle.ts";
 import { resetChatViewState } from "./chat-view-state.test-support.ts";
 import { createTestTranscript, renderChatView } from "./chat-view.test-helpers.ts";
 import {
@@ -60,12 +61,16 @@ it.each([
     });
     await flushDeferredRowPrune();
     expect(container.querySelectorAll(".chat-group.user")).toHaveLength(1);
-    const status = container.querySelector(".chat-send-status");
     if (connected) {
-      expect(status).toBeNull();
+      expect(container.querySelector(".chat-send-status")).toBeNull();
       return;
     }
-    expect(status?.textContent).toContain("Waiting for reconnect");
+    await waitForSolid(() =>
+      expect(container.querySelector(".chat-send-status")?.textContent).toContain(
+        "Waiting for reconnect",
+      ),
+    );
+    const status = container.querySelector(".chat-send-status");
     expect(status?.querySelector(".chat-send-status__retry")).toBeNull();
     status?.querySelector<HTMLButtonElement>(".chat-send-status__discard")?.click();
     expect(onDiscardSessionPlacementStartup).toHaveBeenCalledOnce();
