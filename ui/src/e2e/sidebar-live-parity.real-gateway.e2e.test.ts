@@ -143,6 +143,17 @@ const suite = createControlUiE2eSuite({
         models: [{ id: "echo", name: "Deterministic local model" }],
         agents: { ownership: "explicit" },
       });
+      // Keep ambient external proxy routing, but send fixture inference directly to loopback.
+      const noProxy = [
+        instance.env.no_proxy ?? instance.env.NO_PROXY,
+        "127.0.0.1",
+        "localhost",
+        "::1",
+      ]
+        .filter(Boolean)
+        .join(",");
+      instance.env.NO_PROXY = noProxy;
+      instance.env.no_proxy = noProxy;
       const profile = ensureGatewayOwnerProfile("Riley Morgan", { env: instance.env });
       const image = await readFile(path.join(process.cwd(), "ui/public/apple-touch-icon.png"));
       expect(setAvatar(profile.id, image, "image/png", { env: instance.env }).ok).toBe(true);
