@@ -25,6 +25,15 @@ vi.mock("../chat-pane-layout-view.tsx", async (importOriginal) => {
   return createPaneLayoutFixture(PaneLayout);
 });
 
+function geometryMessages(count: number) {
+  return Array.from({ length: count }, (_, index) => ({
+    role: index % 2 === 0 ? "user" : "assistant",
+    content: `Row ${index}`,
+    timestamp: index + 1,
+    __openclaw: { id: `geometry-row-${index}` },
+  }));
+}
+
 class GeometryPane extends ChatPaneRuntime {
   session: ChatSessionVirtualizerHost | undefined;
   fixtureStream: string | null = null;
@@ -43,14 +52,7 @@ class GeometryPane extends ChatPaneRuntime {
     this.paneId = "geometry-render";
     this.sessionKey = "agent:main:geometry-render";
     this.rowHeight = rowHeight;
-    this.fixtureMessages =
-      messages ??
-      Array.from({ length: 100 }, (_, index) => ({
-        role: index % 2 === 0 ? "user" : "assistant",
-        content: `Row ${index}`,
-        timestamp: index + 1,
-        __openclaw: { id: `geometry-row-${index}` },
-      }));
+    this.fixtureMessages = messages ?? geometryMessages(100);
     saveChatSessionScrollPosition(this.paneId, this.sessionKey, {
       scrollTop: 0,
       anchorToEnd: followEnd,
@@ -151,6 +153,16 @@ async function mountPane(followEnd = false, rowHeight?: number, messages?: unkno
     slot: expectDefined(viewport.parentElement, "viewport slot"),
     virtualizer: session["virtualizer"],
   };
+}
+
+function scrollReader(viewport: HTMLElement, offset: number) {
+  viewport.dispatchEvent(
+    new WheelEvent("wheel", { deltaY: offset - viewport.scrollTop, bubbles: true }),
+  );
+  viewport.scrollTop = offset;
+  // Deliver motion before a row measurement can synchronize this offset as idle.
+  viewport.dispatchEvent(new Event("scroll"));
+  flush();
 }
 
 it.each([
@@ -362,9 +374,11 @@ it("parks retained rows without layout and restores their resized geometry and n
 });
 
 it("reconciles the streaming end only when native row geometry changes", async () => {
-  const { host, viewport, virtualizer } = await mountPane(true);
+  const { host, viewport, virtualizer } = await mountPane(true, 360, geometryMessages(6));
   host.fixtureStream = "Initial streaming text";
   await settleLayout();
+  // Finish background measurements before attributing changes to live text.
+  await expect.poll(() => virtualizer.getTotalSize()).toBe(7 * 360);
   await expect.poll(() => virtualizer.isScrolling).toBe(false);
   await settleLayout();
   const tail = requireElement(host, ".chat-virtual-row:last-child");
@@ -388,6 +402,85 @@ it("reconciles the streaming end only when native row geometry changes", async (
   expect(reconcile).toHaveBeenCalled();
   expect(keys()).toEqual(initialKeys);
   expect(viewport.scrollHeight - viewport.clientHeight - viewport.scrollTop).toBeLessThanOrEqual(1);
+});
+
+it("coalesces uncompensated reader measurements into the next frame", async () => {
+  const { host, session, viewport, virtualizer } = await mountPane();
+  scrollReader(viewport, 480);
+  expect(virtualizer.isScrolling).toBe(true);
+  expect(session.isPositionSettled).toBe(true);
+  const inner = requireElement(host, ".chat-thread-inner");
+  const height = Number.parseFloat(inner.style.height);
+  const commit = vi.spyOn(session.layout, "commitRange");
+  const notification = vi.spyOn(virtualizer.options, "onChange");
+  requireElement(host, '.chat-virtual-row[data-index="6"]').style.height = "180px";
+  virtualizer.resizeItem(6, 180);
+  requireElement(host, '.chat-virtual-row[data-index="7"]').style.height = "210px";
+  virtualizer.resizeItem(7, 210);
+  flush();
+  await Promise.resolve();
+  flush();
+
+  expect(notification.mock.calls).toEqual([
+    [virtualizer, false],
+    [virtualizer, false],
+  ]);
+  expect(commit).not.toHaveBeenCalled();
+  expect(Number.parseFloat(inner.style.height)).toBe(height);
+  expect(viewport.scrollTop).toBe(480);
+
+  await new Promise<void>((resolve) => {
+    requestAnimationFrame(() => resolve());
+  });
+  flush();
+  expect(commit).toHaveBeenCalledExactlyOnceWith(inner, height + 150);
+  expect(Number.parseFloat(inner.style.height)).toBe(height + 150);
+  expect(viewport.scrollTop).toBe(480);
+});
+
+it("commits reader compensation before paint after a deferred measurement", async () => {
+  const { host, viewport, virtualizer } = await mountPane();
+  scrollReader(viewport, 480);
+  expect(virtualizer.isScrolling).toBe(true);
+  expect(virtualizer.scrollDirection).toBe("forward");
+  const inner = requireElement(host, ".chat-thread-inner");
+  const height = Number.parseFloat(inner.style.height);
+  const notification = vi.spyOn(virtualizer.options, "onChange");
+  const paint = vi.fn();
+  const frame = requestAnimationFrame(paint);
+  try {
+    requireElement(host, '.chat-virtual-row[data-index="6"]').style.height = "180px";
+    virtualizer.resizeItem(6, 180);
+    expect(Number.parseFloat(inner.style.height)).toBe(height);
+    const compensated = new Promise<void>((resolve) => {
+      viewport.addEventListener("scroll", () => resolve(), { once: true });
+    });
+    requireElement(host, '.chat-virtual-row[data-index="2"]').style.height = "150px";
+    virtualizer.resizeItem(2, 150);
+    flush();
+    await Promise.resolve();
+    flush();
+
+    expect(notification.mock.calls).toEqual([
+      [virtualizer, false],
+      [virtualizer, true],
+    ]);
+    expect(viewport.scrollTop).toBe(510);
+    expect(Number.parseFloat(inner.style.height)).toBe(height + 90);
+    expect(paint).not.toHaveBeenCalled();
+
+    // The later native offset receipt must preserve the compensated geometry.
+    await compensated;
+    flush();
+    await new Promise<void>((resolve) => {
+      requestAnimationFrame(() => resolve());
+    });
+    flush();
+    expect(viewport.scrollTop).toBe(510);
+    expect(Number.parseFloat(inner.style.height)).toBe(height + 90);
+  } finally {
+    cancelAnimationFrame(frame);
+  }
 });
 
 it.each(["pending", "committed"] as const)(

@@ -34,6 +34,10 @@ export class TranscriptOffsetState {
   get touchActive(): boolean {
     return this.touching || this.touchScrolling;
   }
+
+  get hasPendingAnchor(): boolean {
+    return Boolean(this.pendingScrollOffset || this.scrollCommand || this.pendingInteractionAnchor);
+  }
 }
 
 export function isTranscriptMaintenanceScroll(

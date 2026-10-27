@@ -1,4 +1,3 @@
-import type { JSX } from "@solidjs/web";
 // Per-session virtualizer host: scroll anchoring, measurement, and row sync
 // for one transcript. Owned and swapped by the chat transcript owner.
 import { Virtualizer } from "@tanstack/virtual-core";
@@ -206,14 +205,21 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
       invalidate,
     });
     this.virtualizer = new Virtualizer({
-      onChange: (view) => {
+      onChange: (view, sync) => {
         // Settled motion redraws locally; initial placement and held history need the caller.
         const redraw = view.isScrolling && this.isPositionSettled && !this.prependAnchor.hasPrepend;
         // Avoid repeated post-layout measurement/render passes in one scroll frame.
         // Initial placement and held history still reconcile before paint.
         view.options.useAnimationFrameWithResizeObserver = redraw;
-        (redraw ? (this.renderPreviousRows ?? invalidate) : invalidate)();
-        this.scheduleEndReconcile(view.getTotalSize());
+        // An uncompensated measurement can share the next reader frame. Native
+        // scroll compensation and OpenClaw's pending anchors must land together.
+        this.presentation.commitChange(
+          () => {
+            (redraw ? (this.renderPreviousRows ?? invalidate) : invalidate)();
+            this.scheduleEndReconcile(view.getTotalSize());
+          },
+          redraw && !sync && !this.canAutoFollow() && !this.offsetState.hasPendingAnchor,
+        );
       },
       count: 0,
       getScrollElement: () => this.scrollElement,
@@ -437,7 +443,7 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
     renderRow: (row: TranscriptRow<T>) => TranscriptContent,
     announcement: TranscriptAnnouncement | null,
     announce: boolean,
-    overlay: JSX.Element = null,
+    overlay: TranscriptRenderSnapshot<T>["overlay"] = null,
     header: TranscriptHeader | null = null,
     presented: PresentationValue = true,
     applicationContext?: ApplicationContext,
@@ -477,6 +483,7 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
     snapshot: TranscriptRenderSnapshot<T>,
     capturePrepend: boolean,
   ): HTMLDivElement {
+    this.presentation.cancelChange();
     const { rows, renderRow, header, messageRows, renderKeyRows } = snapshot;
     const rowModelChanged =
       rows !== this.acceptedRows &&
@@ -505,11 +512,7 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
         if (capturePrepend) {
           this.prependAnchor.capture(
             this.scrollElement,
-            Boolean(
-              this.offsetState.pendingScrollOffset ||
-              this.offsetState.scrollCommand ||
-              this.offsetState.pendingInteractionAnchor,
-            ),
+            this.offsetState.hasPendingAnchor,
             // A peer append can add attribution above a bubble inside an
             // existing run row. Row-height compensation alone cannot hold it.
             rowModelChanged && !this.canAutoFollow(),
@@ -721,8 +724,6 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
       count: nextKeys.length,
       getItemKey: (index) => nextKeys[index]!,
       rangeExtractor: (range) => this.initialRange.extract(range),
-      // Fragment overscan is prepared incrementally, outside the scroll commit.
-      overscan: CHAT_TRANSCRIPT_OVERSCAN,
       scrollMargin,
     });
   }

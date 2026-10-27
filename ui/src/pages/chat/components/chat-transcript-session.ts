@@ -107,6 +107,7 @@ export function createTranscriptPresentation(
   beforeMeasure: () => void,
   measureRow = measureTranscriptRow,
 ) {
+  const redraw = {};
   let resizeOffsetSynced = false;
   const readConnectedRows = (): (() => boolean) | null => {
     const apply = readConnectedTranscriptRows(scrollElement(), virtualizer, rowElements());
@@ -119,6 +120,15 @@ export function createTranscriptPresentation(
   };
 
   const presentation = {
+    commitChange(commit: () => void, defer: boolean) {
+      if (defer) {
+        scheduleLayout(redraw, () => commit);
+      } else {
+        cancelLayout(redraw);
+        commit();
+      }
+    },
+    cancelChange: () => cancelLayout(redraw),
     measureElement(element: HTMLElement, entry: ResizeObserverEntry | undefined) {
       if (entry && !resizeOffsetSynced) {
         // Observer entries share one native reader position. Keep the virtualizer's
@@ -149,7 +159,10 @@ export function createTranscriptPresentation(
         element === scrollElement() ? (readConnectedRows() ?? undefined) : undefined,
       );
     },
-    disconnect: () => cancelLayout(presentation),
+    disconnect() {
+      cancelLayout(presentation);
+      cancelLayout(redraw);
+    },
   };
   return presentation;
 }
