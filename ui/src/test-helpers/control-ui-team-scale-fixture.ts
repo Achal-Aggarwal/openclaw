@@ -1,4 +1,3 @@
-import type { Buffer } from "node:buffer";
 import type {
   SessionCatalog,
   SessionsCatalogHostEvent,
@@ -15,7 +14,9 @@ import {
   prepareTeamScaleSidebarListChurn,
   type TeamScaleLiveEvent,
 } from "./control-ui-sidebar-list-fixture.ts";
+import { createTeamScaleSidebarPresentation } from "./control-ui-sidebar-presentation.test-support.ts";
 import { withTeamScaleConfig } from "./control-ui-team-scale-config.ts";
+import type { FixtureAsset, FixtureOptions } from "./control-ui-team-scale-fixture.types.ts";
 import { createTeamScaleHistoryFixture } from "./control-ui-team-scale-history-fixture.ts";
 import {
   createTeamScaleCronInventory,
@@ -25,6 +26,7 @@ import {
 import {
   createTeamScalePeople,
   TEAM_SCALE_AVATAR_ASSET,
+  teamScalePersonAvatar,
   TEAM_SCALE_SELF_INSTANCE_ID,
 } from "./control-ui-team-scale-people.ts";
 import {
@@ -41,42 +43,6 @@ const TEAM_SCALE_LIVE_RUN_ID = "team-scale-live-run";
 
 type TeamScaleCatalogEvent = { event: "sessions.catalog.host"; payload: SessionsCatalogHostEvent };
 type TeamScaleEvent = TeamScaleCatalogEvent | { event: "presence"; payload: PresencePayload };
-
-type FixtureAsset = {
-  body: string | Buffer;
-  contentType: string;
-  status?: number;
-  delayMs?: number;
-  headers?: Record<string, string>;
-};
-type FixtureOptions = {
-  baseUrl?: string;
-  now?: number;
-  /** Supply the real canvas sandbox fixture for browser/widget measurements. */
-  sandboxUrl?: string;
-  sandboxPort?: number;
-  liveRun?: boolean;
-  sidebarListChurn?: boolean;
-  sidebarLiveChurn?: boolean;
-  sidebarAvatars?: boolean;
-  transcriptAvatars?: boolean;
-  sidebarPersistentChildren?: boolean;
-  sessionEventChurn?: boolean;
-  sessionEventDurationMs?: number;
-  sessionEventAncestorRefs?: boolean;
-  duplicateBootReads?: boolean;
-  /** Opt into the canonical core descriptor catalog supplied by the benchmark. */
-  coreBoot?: { methods: readonly string[] };
-  closedMenuMembers?: boolean;
-  largeSnapshot?: boolean;
-  rowFacts?: boolean;
-  offRosterSession?: boolean;
-  transcriptMessages?: number;
-  dashboardMcpApp?: { font: Buffer };
-  /** Opt into a scripted HTML dashboard with an independently fetched web font. */
-  dashboardWidgetFontUrl?: string;
-  dashboardPaintMarker?: boolean;
-};
 
 /** One deterministic inventory shared by browser benchmarks and focused UI proofs. */
 export function createControlUiTeamScaleFixture(options: FixtureOptions = {}) {
@@ -106,7 +72,7 @@ export function createControlUiTeamScaleFixture(options: FixtureOptions = {}) {
     counts.people,
     now,
     {
-      avatars: options.sidebarLiveChurn || options.sidebarAvatars,
+      avatars: options.sidebarLiveChurn || options.sidebarAvatars || options.sidebarPresentation,
       sharing: options.closedMenuMembers,
     },
   );
@@ -132,8 +98,15 @@ export function createControlUiTeamScaleFixture(options: FixtureOptions = {}) {
   const duplicateReads = options.duplicateBootReads
     ? createTeamScaleDuplicateReadFixture(selectedSessionKey, now)
     : undefined;
+  const sidebarPresentation = options.sidebarPresentation
+    ? createTeamScaleSidebarPresentation({ agents, pinnedRows, assets, now })
+    : undefined;
   const coreBoot = options.coreBoot
-    ? createControlUiCoreBootFixture(selectedSessionKey, "e2e-gateway-boot")
+    ? createControlUiCoreBootFixture(
+        selectedSessionKey,
+        "e2e-gateway-boot",
+        sidebarPresentation?.sessions,
+      )
     : undefined;
   pinnedRows[0]!.sharingRole = "admin";
   pinnedRows[0]!.visibility = "shared";
@@ -170,16 +143,11 @@ export function createControlUiTeamScaleFixture(options: FixtureOptions = {}) {
         pinnedRows[(index - 8) % pinnedRows.length]!.key,
       ];
     }
-    if (options.sidebarLiveChurn || options.sidebarAvatars) {
-      assets.set(`/api/users/${person.id}/avatar`, {
-        contentType: "image/svg+xml",
-        body:
-          index % 6 === 2
-            ? "synthetic invalid image"
-            : `<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40"><rect width="40" height="40" fill="hsl(${(index * 37) % 360} 55% 45%)"/><text x="20" y="26" fill="white" text-anchor="middle" font-size="17">${index + 1}</text></svg>`,
-        ...(index % 6 === 1 ? { status: 404 } : {}),
-        ...(index % 6 === 3 ? { delayMs: 600 } : {}),
-      });
+    if (
+      (options.sidebarLiveChurn || options.sidebarAvatars || options.sidebarPresentation) &&
+      (!options.transcriptAvatars || person !== transcriptSender)
+    ) {
+      assets.set(`/api/users/${person.id}/avatar`, teamScalePersonAvatar(index));
     }
   }
   const sidebarListInput = {
@@ -402,8 +370,10 @@ export function createControlUiTeamScaleFixture(options: FixtureOptions = {}) {
       ),
     },
     ...(options.liveRun ? { inFlightRun: inFlightRun() } : {}),
+    featureEvents: ["cron.inventory.changed"],
     featureMethods: [
       ...teamScaleControlUiFeatureMethods,
+      ...(sidebarPresentation ? [sidebarPresentation.method] : []),
       ...(options.dashboardMcpApp ? ["board.widget.appView", "mcp.app.view"] : []),
       ...(options.dashboardWidgetFontUrl ? ["mcp.app.discover"] : []),
       ...(duplicateReads?.featureMethods ?? []),
@@ -425,7 +395,7 @@ export function createControlUiTeamScaleFixture(options: FixtureOptions = {}) {
             agentId: agent.id,
             name: agent.name,
             emoji: agent.identity?.emoji,
-            avatar: "",
+            avatar: agent.identity?.avatarUrl ?? "",
           },
         })),
       },
@@ -690,6 +660,7 @@ export function createControlUiTeamScaleFixture(options: FixtureOptions = {}) {
     canvasDocumentView,
     selectedSessionKey,
     sidebarPersistentChildren,
+    sidebarPresentation,
     pinnedKeys,
     sidebarEntries,
     events,

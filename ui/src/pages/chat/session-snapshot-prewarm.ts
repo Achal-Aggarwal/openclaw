@@ -1,3 +1,4 @@
+import { asOptionalRecord } from "@openclaw/normalization-core/record-coerce";
 import {
   sameBootRecordOwner,
   subscribeBootRecordChanges,
@@ -5,11 +6,13 @@ import {
 } from "../../app/boot-record.ts";
 import type { SidebarSnapshotModel } from "../../components/sidebar-snapshot-data.ts";
 import type { ChatSessionSnapshot } from "./session-message-cache.ts";
+import { readStoredChatSnapshotRecord } from "./session-snapshot-database.ts";
 import {
   sidebarSnapshotInvalidationMatches,
   snapshotStoreGeneration,
   subscribeSnapshotInvalidation,
 } from "./session-snapshot-invalidation-events.ts";
+import { prepareSnapshotPayloadValidators } from "./session-snapshot-payloads.ts";
 
 type PreparedSnapshotRead = ReturnType<
   typeof import("./session-snapshot-store.ts").readPrewarmedChatSnapshot
@@ -64,9 +67,17 @@ export async function prewarmChatSnapshot(cacheKey: string): Promise<void> {
     cacheKey,
     cancelled: false,
     promise: Promise.all([
-      import("./session-snapshot-database.ts").then(({ readStoredChatSnapshotRecord }) =>
-        readStoredChatSnapshotRecord(cacheKey),
-      ),
+      readStoredChatSnapshotRecord(cacheKey).then((record) => {
+        const snapshot = asOptionalRecord(asOptionalRecord(record)?.snapshot);
+        if (snapshot) {
+          // Warm only the payload families present in this retained record.
+          // The decoder still owns validation and the store owns publication.
+          const validators = prepareSnapshotPayloadValidators(snapshot);
+          void validators.board?.catch(() => {});
+          void validators.transcript?.catch(() => {});
+        }
+        return record;
+      }),
       loadSnapshotRecordParser(),
     ])
       .then(([record, parseSnapshotRecord]) => {

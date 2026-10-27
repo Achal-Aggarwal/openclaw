@@ -633,10 +633,10 @@ it("rejects trusted-proxy assistant media file reads without operator.read scope
 });
 
 it.each(["/openclaw/"])(
-  "activates only the initial route's modulepreloads under %j",
+  "activates only the initial route's preload hints under %j",
   async (basePath) => {
     const script = "window.controlUiBoot = true;";
-    const html = `<html><head><script>${script}</script><link rel="modulepreload" href="./assets/shared.js"><template data-openclaw-route-preloads="chat"><link rel="modulepreload" crossorigin href="./assets/chat.js"></template><template data-openclaw-route-preloads="new"><link rel="modulepreload" crossorigin href="./assets/new.js"></template></head><body></body></html>`;
+    const html = `<html><head><script>${script}</script><link rel="modulepreload" href="./assets/shared.js"><template data-openclaw-route-preloads="chat"><link rel="modulepreload" crossorigin href="./assets/chat.js"><link rel="preload" as="script" crossorigin href="./assets/presentation.js"><link rel="preload" as="script" fetchpriority="low" crossorigin href="./assets/menu.js"></template><template data-openclaw-route-preloads="new"><link rel="modulepreload" crossorigin href="./assets/new.js"></template></head><body></body></html>`;
     const rootPath = await createControlUiRoot(html);
     const mount = basePath.replace(/\/$/, "");
     const cases = [
@@ -671,6 +671,9 @@ it.each(["/openclaw/"])(
       );
       if (!pathname.startsWith("/share/")) {
         const links = preloads.map((href) => `<${href}>; rel=modulepreload; crossorigin`);
+        if (route === "chat") {
+          links.push(`<${mount}/assets/presentation.js>; rel=preload; as=script; crossorigin`);
+        }
         expect(reply.headers.Link, pathname).toEqual(links);
       }
       if (!pathname.startsWith("/share/")) {

@@ -28,6 +28,8 @@ export function controlUiPreloadLinks(html: string): string[] {
       links.push(`<${href}>; rel=modulepreload; crossorigin`);
     } else if (/\brel="stylesheet"|\bas="style"/.test(tag)) {
       links.push(`<${href}>; rel=preload; as=style; crossorigin`);
+    } else if (/\brel="preload"/.test(tag) && /\bas="script"/.test(tag)) {
+      links.push(`<${href}>; rel=preload; as=script; crossorigin`);
     }
   }
   return [...new Set(links)];

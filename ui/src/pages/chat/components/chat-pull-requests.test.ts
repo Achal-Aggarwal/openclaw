@@ -7,6 +7,7 @@ import { GatewayBrowserClient } from "../../../api/gateway.ts";
 import { i18n } from "../../../i18n/index.ts";
 import { captureI18nStateForTesting } from "../../../i18n/lib/translate.test-support.ts";
 import { createApplicationGateway } from "../../../test-helpers/application-context-fixtures.ts";
+import { waitForSolid } from "../../../test-helpers/solid-settle.ts";
 import { confirmation } from "../chat-github-publication.test-support.ts";
 import type { ChatCiDetailsElement } from "./chat-ci-details.tsx";
 import type { ChatPullRequestsProps } from "./chat-pull-request-shared.tsx";
@@ -89,7 +90,7 @@ describe("ChatPullRequests", () => {
 
   it.each(["merged", "older receipt", "recovery"] as const)(
     "keeps the current PR distinct from its %s publication receipt",
-    (kind) => {
+    async (kind) => {
       const onDismiss = vi.fn();
       const onNewAction = vi.fn();
       const onRefresh = vi.fn();
@@ -132,11 +133,13 @@ describe("ChatPullRequests", () => {
       } else if (kind === "older receipt") {
         expect(query(".chat-pr__checks")).not.toBeNull();
       } else {
-        expect(container.textContent).toContain("Response lost.");
+        await waitForSolid(() => expect(container.textContent).toContain("Response lost."));
         const recovery = query(".chat-pr__publication-outcome");
         expect(recovery?.closest("article, details:not([open])")).toBeNull();
         expect(query(".chat-pr__create")).toBeNull();
-        expect(query('button[aria-label="Refresh publication"]')).not.toBeNull();
+        await waitForSolid(() =>
+          expect(query('button[aria-label="Refresh publication"]')).not.toBeNull(),
+        );
         click('button[aria-label="Refresh publication"]');
         expect(onRefresh).toHaveBeenCalledOnce();
         expect(container.querySelectorAll(".chat-pr__dismiss")).toHaveLength(1);
@@ -148,7 +151,7 @@ describe("ChatPullRequests", () => {
     },
   );
 
-  it("does not attach a failed session publication to any PR when live and settled rows reorder", () => {
+  it("does not attach a failed session publication to any PR when live and settled rows reorder", async () => {
     const failedPublication = publication({
       result: failedResult("Check repository read access before retrying publication."),
       onNewAction: vi.fn(),
@@ -177,13 +180,15 @@ describe("ChatPullRequests", () => {
         "Publication attempt failed",
       );
       expect(history?.open).toBe(false);
-      expect(history?.textContent).toContain("Check repository read access before retrying");
+      await waitForSolid(() =>
+        expect(history?.textContent).toContain("Check repository read access before retrying"),
+      );
     }
   });
 
   it.each(["requested", "publishing", "needs_confirmation"] as const)(
     "keeps %s publication recovery exposed beside merged history",
-    (status) => {
+    async (status) => {
       const onRefresh = vi.fn();
       const onConfirm = vi.fn();
       paint({
@@ -201,12 +206,20 @@ describe("ChatPullRequests", () => {
           onConfirm: status === "needs_confirmation" ? onConfirm : undefined,
         }),
       });
+      await waitForSolid(() =>
+        expect(text(".chat-pr__publication-outcome")).toContain(
+          "The original publication still needs attention.",
+        ),
+      );
       const outcome = query(".chat-pr__publication-outcome");
-      expect(outcome?.textContent).toContain("The original publication still needs attention.");
       expect(outcome?.closest("details:not([open])")).toBeNull();
       expect(query(".chat-pr__publication-history")).toBeNull();
+      await waitForSolid(() =>
+        expect(container.querySelector<HTMLButtonElement>(".chat-pr__create")?.disabled).toBe(
+          false,
+        ),
+      );
       const action = container.querySelector<HTMLButtonElement>(".chat-pr__create");
-      expect(action?.disabled).toBe(false);
       action?.click();
       expect(status === "needs_confirmation" ? onConfirm : onRefresh).toHaveBeenCalledOnce();
     },
@@ -256,7 +269,7 @@ describe("ChatPullRequests", () => {
     expect(row?.querySelector(".chat-pr__create")).toBeNull();
   });
 
-  it("keeps publication success, failure, and uncertain recovery on the branch row", () => {
+  it("keeps publication success, failure, and uncertain recovery on the branch row", async () => {
     const branch = sessionBranch();
     const draw = (patch: Parameters<typeof publication>[0]) =>
       paint({ branch, publication: publication(patch) });
@@ -267,8 +280,10 @@ describe("ChatPullRequests", () => {
         publisher: { source: "personal", accountId: 2, login: "alice-tools" },
       },
     });
-    expect(container.querySelector<HTMLAnchorElement>(".chat-pr__create")?.href).toBe(
-      "https://github.com/openclaw/openclaw/pull/125200",
+    await waitForSolid(() =>
+      expect(container.querySelector<HTMLAnchorElement>(".chat-pr__create")?.href).toBe(
+        "https://github.com/openclaw/openclaw/pull/125200",
+      ),
     );
     expect(text(".chat-pr__branch")).toBe(branch.branch);
     expect(query(".chat-pr__diff")).not.toBeNull();
@@ -281,8 +296,12 @@ describe("ChatPullRequests", () => {
       },
       onNewAction: () => {},
     });
+    await waitForSolid(() =>
+      expect(text('.chat-pr__publication-outcome[data-state="failed"]')).toContain(
+        "Check repository write access and retry.",
+      ),
+    );
     const failure = query('.chat-pr__publication-outcome[data-state="failed"]');
-    expect(failure?.textContent).toContain("Check repository write access and retry.");
     expect(failure?.closest("details:not([open])")).toBeNull();
     const status = failure?.querySelector<HTMLDetailsElement>(
       "details.chat-pr__publication-status",
@@ -299,8 +318,7 @@ describe("ChatPullRequests", () => {
       error: "Repository write permission is missing.",
       locked: true,
     });
-    const retry = container.querySelector<HTMLButtonElement>(".chat-pr__create");
-    expect(retry?.textContent).toContain("Retry publication");
+    await waitForSolid(() => expect(text(".chat-pr__create")).toContain("Retry publication"));
     expect(container.textContent).toContain("Repository write permission is missing.");
     expect(container.textContent).toContain("The outcome is unknown");
     expect(query("a.chat-pr__create")).toBeNull();

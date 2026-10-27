@@ -272,7 +272,6 @@ export function createContext(
       subscribe,
     },
     runtimeConfig: { state: { configSnapshot: null }, subscribe },
-    channels: { subscribe },
     plugins: { registrations: vi.fn(() => []), reportError: vi.fn(), subscribe },
     navigate: vi.fn(),
     preload: vi.fn(),

@@ -1,6 +1,7 @@
+import { runInNewContext } from "node:vm";
 import { asOptionalRecord } from "@openclaw/normalization-core/record-coerce";
 import { Value } from "typebox/value";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { CronJobSchema } from "../../../packages/gateway-protocol/src/schema/cron.ts";
 import { MentionsListResultSchema } from "../../../packages/gateway-protocol/src/schema/human-mentions.ts";
 import { ChatHistoryDeltaResultSchema } from "../../../packages/gateway-protocol/src/schema/logs-chat.ts";
@@ -9,12 +10,18 @@ import { SessionGitHubOptionsResultSchema } from "../../../packages/gateway-prot
 import { SessionSuggestionsListResultSchema } from "../../../packages/gateway-protocol/src/schema/sessions-suggestions.ts";
 import { SessionsObserverVisibilityResultSchema } from "../../../packages/gateway-protocol/src/schema/sessions.ts";
 import { TaskSuggestionsListResultSchema } from "../../../packages/gateway-protocol/src/schema/task-suggestions.ts";
+import {
+  CONTROL_UI_SESSION_PULL_REQUESTS_CHANGED_EVENT,
+  SESSION_PULL_REQUESTS_SUBSCRIBE_METHOD,
+} from "../../../src/gateway/control-ui-contract.ts";
 import { listCoreAdvertisedGatewayMethodNames } from "../../../src/gateway/methods/core-method-policy.ts";
 import { GatewaySessionRowEvents } from "../api/gateway-session-row-events.ts";
 import type { GatewaySessionRow } from "../api/types.ts";
 import { canApplySessionListSnapshot } from "../lib/sessions/session-list-query.ts";
+import type { ControlUiMockRequestHandler } from "./control-ui-e2e-contract.ts";
 import { sessionGatewayTest } from "./control-ui-e2e.sessions.test-support.ts";
 import { createTeamScaleSidebarListOwner } from "./control-ui-sidebar-list-fixture.ts";
+import { installTeamScaleSidebarPresentation } from "./control-ui-sidebar-presentation.test-support.ts";
 import { createControlUiTeamScaleFixture } from "./control-ui-team-scale-fixture.ts";
 
 const now = 1_800_000_000_000;
@@ -34,6 +41,25 @@ function expectAbsent(value: unknown, fields: string) {
   for (const field of fields.split(" ")) {
     expect(value).not.toHaveProperty(field);
   }
+}
+
+function captureSubscriptionHandler(script: string) {
+  const handlers = new Map<string, ControlUiMockRequestHandler>();
+  const broadcast = vi.fn();
+  runInNewContext(script, {
+    window: {
+      openclawControlUiE2eGateway: {
+        setRequestHandler: (method: string, handler: ControlUiMockRequestHandler) =>
+          handlers.set(method, handler),
+        emit: broadcast,
+      },
+    },
+  });
+  const handler = handlers.get(SESSION_PULL_REQUESTS_SUBSCRIBE_METHOD);
+  if (!handler) {
+    throw new Error("The fixture did not install its subscription handler");
+  }
+  return { handler, broadcast };
 }
 
 describe("Team-scale Gateway fixture", () => {
@@ -86,6 +112,108 @@ describe("Team-scale Gateway fixture", () => {
       }),
     ).toThrow("different workspace fixtures");
   });
+  it.each([false, true])(
+    "retains core subscription facts and request ownership with sidebar presentation %s",
+    (sidebarPresentation) => {
+      const fixture = createControlUiTeamScaleFixture({
+        now,
+        coreBoot: { methods: listCoreAdvertisedGatewayMethodNames() },
+        sidebarPresentation,
+      });
+      const { handler, broadcast } = captureSubscriptionHandler(fixture.coreBootInitScript!);
+      const selectedKey = fixture.selectedSessionKey;
+      const sidebarKey = fixture.pinnedKeys[1]!;
+      const otherKey = "agent:main:subscription-fallback";
+      const empty = { status: "ready", pullRequests: [], rateLimited: false };
+      const selected = { ...empty, repository: { owner: "example", repo: "boot-fixture" } };
+      const sidebar = sidebarPresentation
+        ? { status: "ready", pullRequests: [{ number: 100 }], rateLimited: false }
+        : empty;
+      const events: Array<{ event: string; payload: unknown }> = [];
+      const respond = vi.fn();
+      handler({
+        params: {
+          sessionKeys: [selectedKey, otherKey, selectedKey],
+          passiveSessionKeys: [sidebarKey],
+        },
+        respond,
+        emit: (event, payload) => events.push({ event, payload }),
+      });
+      expect(respond).toHaveBeenCalledWith({ subscribed: true });
+      expect(events).toMatchObject(
+        sidebarPresentation
+          ? [
+              {
+                event: CONTROL_UI_SESSION_PULL_REQUESTS_CHANGED_EVENT,
+                payload: { sessions: { [selectedKey]: selected } },
+              },
+              {
+                event: CONTROL_UI_SESSION_PULL_REQUESTS_CHANGED_EVENT,
+                payload: { sessions: { [otherKey]: empty } },
+              },
+              {
+                event: CONTROL_UI_SESSION_PULL_REQUESTS_CHANGED_EVENT,
+                payload: { sessions: { [sidebarKey]: sidebar } },
+              },
+            ]
+          : [
+              {
+                event: CONTROL_UI_SESSION_PULL_REQUESTS_CHANGED_EVENT,
+                payload: {
+                  sessions: { [selectedKey]: selected, [otherKey]: empty, [sidebarKey]: empty },
+                },
+              },
+            ],
+      );
+      const firstSocketEventCount = events.length;
+      const nextEvents: Array<{ event: string; payload: unknown }> = [];
+      handler({
+        params: { sessionKeys: [otherKey] },
+        respond: vi.fn(),
+        emit: (event, payload) => nextEvents.push({ event, payload }),
+      });
+      expect(events).toHaveLength(firstSocketEventCount);
+      expect(nextEvents).toEqual([
+        {
+          event: CONTROL_UI_SESSION_PULL_REQUESTS_CHANGED_EVENT,
+          payload: { sessions: { [otherKey]: empty } },
+        },
+      ]);
+      expect(broadcast).not.toHaveBeenCalled();
+    },
+  );
+
+  it("keeps standalone sidebar snapshots independent and scoped to the requesting socket", () => {
+    const fixture = createControlUiTeamScaleFixture({ now, sidebarPresentation: true });
+    const script = `const __name = (fn) => fn; (${installTeamScaleSidebarPresentation.toString()})(${JSON.stringify(fixture.sidebarPresentation)});`;
+    const { handler, broadcast } = captureSubscriptionHandler(script);
+    const firstKey = fixture.pinnedKeys[1]!;
+    const secondKey = fixture.pinnedKeys[2]!;
+    const events: Array<{ event: string; payload: unknown }> = [];
+    const respond = vi.fn();
+    handler({
+      params: { sessionKeys: [firstKey, "agent:main:unlisted"], passiveSessionKeys: [secondKey] },
+      respond,
+      emit: (event, payload) => events.push({ event, payload }),
+    });
+    expect(respond).toHaveBeenCalledWith({ subscribed: true });
+    expect(events).toMatchObject([
+      {
+        event: CONTROL_UI_SESSION_PULL_REQUESTS_CHANGED_EVENT,
+        payload: {
+          sessions: { [firstKey]: { status: "ready", pullRequests: [{ number: 100 }] } },
+        },
+      },
+      {
+        event: CONTROL_UI_SESSION_PULL_REQUESTS_CHANGED_EVENT,
+        payload: {
+          sessions: { [secondKey]: { status: "ready", pullRequests: [{ number: 101 }] } },
+        },
+      },
+    ]);
+    expect(broadcast).not.toHaveBeenCalled();
+  });
+
   sessionGatewayTest.for(["normal", "large"] as const)(
     "revalidates the selected %s transcript without retransmitting cached messages",
     async (mode, { connect }) => {

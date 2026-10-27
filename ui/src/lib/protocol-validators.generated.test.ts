@@ -41,6 +41,7 @@ import * as approvalChecks from "./protocol-validators.generated/approvals.js";
 import * as boardChecks from "./protocol-validators.generated/board.js";
 import * as historyStateChecks from "./protocol-validators.generated/history-state.js";
 import * as sessionInputChecks from "./protocol-validators.generated/session-input.js";
+import * as sessionRestrictionChecks from "./protocol-validators.generated/session-restriction.js";
 import * as transcriptChecks from "./protocol-validators.generated/transcript.js";
 
 const checks = {
@@ -48,6 +49,7 @@ const checks = {
   ...approvalChecks,
   ...boardChecks,
   ...sessionInputChecks,
+  ...sessionRestrictionChecks,
   ...transcriptChecks,
   ...historyStateChecks,
   isSessionParticipantIdentity,

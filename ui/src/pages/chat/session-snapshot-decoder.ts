@@ -1,12 +1,7 @@
 import { asOptionalRecord } from "@openclaw/normalization-core/record-coerce";
-import { isBoardSnapshot } from "../../lib/protocol-validators.generated/board.js";
-import {
-  isChatTranscriptMetadata,
-  isMessageReactionSummary,
-  isProgressCard,
-} from "../../lib/protocol-validators.generated/transcript.js";
 import * as json from "../../lib/snapshot-json.ts";
 import type { ChatSessionSnapshot } from "./session-message-cache.ts";
+import { prepareSnapshotPayloadValidators } from "./session-snapshot-payloads.ts";
 import {
   loadChatHistoryStateValidator,
   prewarmedHistoryStateValidator,
@@ -74,11 +69,10 @@ const snapshotSchema = json.object(
         (heights) => Object.keys(heights).length <= 100,
       ),
     ),
-    transcriptMetadata: json.optional(json.checked(isChatTranscriptMetadata)),
-    messageReactions: json.optional(
-      json.record(json.array(json.checked(isMessageReactionSummary))),
-    ),
-    progressCard: json.optional(json.nullable(json.checked(isProgressCard))),
+    // Optional payloads pass their canonical readers below, before publication.
+    transcriptMetadata: json.optional(json.unknown),
+    messageReactions: json.optional(json.unknown),
+    progressCard: json.optional(json.unknown),
     deltaCursor: json.optional(json.text),
     // Only persisted warm metadata needs its full validator; read admission loads it below.
     historyState: json.optional(json.unknown),
@@ -120,11 +114,26 @@ export async function parseSnapshotRecord(
   if (!parsed || (sessionKey && parsed.sessionKey !== sessionKey)) {
     return null;
   }
-  const { board: storedBoard, ...snapshot } = parsed.snapshot;
+  const {
+    board: storedBoard,
+    transcriptMetadata: _transcriptMetadata,
+    messageReactions: _messageReactions,
+    progressCard: _progressCard,
+    ...snapshot
+  } = parsed.snapshot;
+  const validators = prepareSnapshotPayloadValidators(parsed.snapshot);
+  const loaded =
+    validators.transcript || validators.board
+      ? await Promise.all([validators.transcript, validators.board])
+      : undefined;
+  const transcriptFields = loaded?.[0] ? loaded[0].parseSnapshotPayloads(parsed.snapshot) : {};
+  if (!transcriptFields) {
+    return null;
+  }
   // Cached display data is validated before any synchronous provider sees it.
   // A malformed board never invalidates an otherwise usable transcript.
   const board =
-    storedBoard && isBoardSnapshot(storedBoard.snapshot)
+    storedBoard && loaded?.[1]?.isBoardSnapshot(storedBoard.snapshot)
       ? { snapshot: storedBoard.snapshot, receivedAtMs: storedBoard.receivedAtMs }
       : storedBoard == null
         ? storedBoard
@@ -142,6 +151,11 @@ export async function parseSnapshotRecord(
   }
   return {
     ...parsed,
-    snapshot: { ...snapshot, ...(board === undefined ? {} : { board }), historyState },
+    snapshot: {
+      ...snapshot,
+      ...transcriptFields,
+      ...(board === undefined ? {} : { board }),
+      historyState,
+    },
   };
 }

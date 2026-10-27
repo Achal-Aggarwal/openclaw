@@ -53,6 +53,7 @@ type Group =
   | "activity"
   | "approvals"
   | "session-input"
+  | "session-restriction"
   | "transcript"
   | "board"
   | "history-state"
@@ -84,7 +85,7 @@ const validators: Array<[name: string, schema: TSchema, type: string, group: Gro
     "AgentRuntimeRestrictionErrorDetails",
     AgentRuntimeRestrictionErrorDetailsSchema,
     'import("../../../../packages/gateway-protocol/src/agent-runtime-restriction-error-details.js").AgentRuntimeRestrictionErrorDetails',
-    "session-input",
+    "session-restriction",
   ],
   [
     "SessionObserverDigest",
@@ -219,6 +220,7 @@ async function main() {
     "activity",
     "approvals",
     "session-input",
+    "session-restriction",
     "transcript",
     "history-state",
     "sender-identity",

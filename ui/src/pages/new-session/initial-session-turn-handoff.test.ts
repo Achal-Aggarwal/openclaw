@@ -178,6 +178,38 @@ describe("first-turn publication", () => {
 });
 
 describe("retained launcher rejection", () => {
+  it("does not publish a rejected turn retired while restriction validation loads", async () => {
+    const { context } = createDraftFixture();
+    const retain = vi.spyOn(rejected, "retainRejectedInitialTurn");
+    const navigation = new StartedSessionNavigation();
+    const navigate = vi.spyOn(navigation, "navigate").mockResolvedValue();
+    const onRejectedPrompt = vi.fn();
+    const clearDraft = vi.fn(async () => {});
+    let current = true;
+    const completion = completeInitialSessionTurn({
+      context,
+      client: context.gateway.snapshot.client!,
+      agentId: "main",
+      result: {
+        key: "agent:main:retired-rejection",
+        initialRun: { status: "rejected", error: "Synthetic denial", errorDetails: {} },
+      },
+      turn: { text: "Retired prompt", attachments: [], createdAt: 1 },
+      instant: undefined,
+      navigation,
+      isCurrent: () => current,
+      clearDraft,
+      completeInBackground: () => true,
+      finishNavigation: vi.fn(),
+      onRejectedPrompt,
+    });
+    current = false;
+    await completion;
+    expect(retain).not.toHaveBeenCalled();
+    expect(navigate).not.toHaveBeenCalled();
+    expect(onRejectedPrompt).not.toHaveBeenCalled();
+    expect(clearDraft).not.toHaveBeenCalled();
+  });
   it.each([true, false])(
     "publishes launcher rejection only for its current owner (%s)",
     async (current) => {

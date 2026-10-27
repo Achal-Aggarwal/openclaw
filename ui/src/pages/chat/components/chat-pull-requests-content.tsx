@@ -1,4 +1,4 @@
-import { createMemo, For, Show, useContext } from "solid-js";
+import { createMemo, For, lazy, Show, useContext } from "solid-js";
 import type {
   ControlUiSessionBranch,
   ControlUiSessionPullRequest,
@@ -18,7 +18,7 @@ import type { GitHubPublicationView } from "../../../lib/sessions/github-publica
 import { HoverMarquee } from "../../../lib/solid/hover-marquee.tsx";
 import { ContentPresentation } from "../../../lib/solid/presentation.ts";
 import { ChatCiAutomationPanel, ChatCiDetailsPanel } from "./chat-ci-panels.tsx";
-import { GitHubPublicationAction, GitHubPublicationDetails } from "./chat-github-publication.tsx";
+import { ChatLazyBoundary } from "./chat-lazy-boundary.tsx";
 import { PullRequestActions } from "./chat-pull-request-actions.tsx";
 import { ChatPullRequestChecks } from "./chat-pull-request-checks.tsx";
 import { chatPullRequestRows, type PullRequestRowEntry } from "./chat-pull-request-rows.ts";
@@ -32,6 +32,13 @@ import { hasChatPullRequests, retainedPublication, showWorkRow } from "./chat-pu
 import "./chat-pull-request-presenters.css";
 
 registerGitHubEnglish();
+
+const GitHubPublicationAction = lazy(() => import("./chat-github-publication.tsx"), {
+  export: "GitHubPublicationAction",
+});
+const GitHubPublicationDetails = lazy(() => import("./chat-github-publication.tsx"), {
+  export: "GitHubPublicationDetails",
+});
 
 const CHECK_LABEL_KEYS = {
   passing: "chat.pullRequests.checksPassing",
@@ -166,7 +173,9 @@ function WorkRow(props: {
           }
         >
           {(publication) => (
-            <GitHubPublicationAction publication={publication()} presented={props.presented} />
+            <ChatLazyBoundary>
+              <GitHubPublicationAction publication={publication()} presented={props.presented} />
+            </ChatLazyBoundary>
           )}
         </Show>
         <Show when={props.branch && !published() && props.onDismissBranch}>
@@ -188,7 +197,11 @@ function WorkRow(props: {
         </Show>
       </span>
       <Show when={props.publication}>
-        {(publication) => <GitHubPublicationDetails publication={publication()} />}
+        {(publication) => (
+          <ChatLazyBoundary>
+            <GitHubPublicationDetails publication={publication()} />
+          </ChatLazyBoundary>
+        )}
       </Show>
     </article>
   );
@@ -391,10 +404,14 @@ function PublicationRecovery(props: {
   const failed = () => props.publication.result?.status === "failed";
   const content = () => (
     <div class="chat-pr__publication-recovery">
-      <GitHubPublicationDetails publication={props.publication} inline={failed()} />
+      <ChatLazyBoundary>
+        <GitHubPublicationDetails publication={props.publication} inline={failed()} />
+      </ChatLazyBoundary>
       <Show when={props.publication.result?.status !== "published"}>
         <div>
-          <GitHubPublicationAction publication={props.publication} presented={props.presented} />
+          <ChatLazyBoundary>
+            <GitHubPublicationAction publication={props.publication} presented={props.presented} />
+          </ChatLazyBoundary>
         </div>
       </Show>
     </div>

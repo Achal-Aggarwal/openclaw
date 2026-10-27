@@ -205,7 +205,7 @@ it.each([
 
 it.each(["system-configured", "agent-override", null] as const)(
   "renders publisher %s without redundant account controls",
-  (source) => {
+  async (source) => {
     const shared = source ? { source, accountId: 1, login: "system-bot" } : null;
     const onSelect = vi.fn();
     const options = { shared, personal: null, pendingPersonal: null, latestShared: null };
@@ -214,6 +214,7 @@ it.each(["system-configured", "agent-override", null] as const)(
       selection: shared ? { source: "shared", expected: shared } : null,
       onSelect,
     });
+    await waitForPublication();
     expect(query('select, [role="menu"], [role="dialog"][popover]')).toBeNull();
     expect(query('[aria-label="Publication account"]')).toBeNull();
     expect(publish()?.textContent?.trim()).toBe("Publish PR");
@@ -223,7 +224,11 @@ it.each(["system-configured", "agent-override", null] as const)(
       expect(query(".chat-pr__publication-outcome")).toBeNull();
     } else {
       expect(publish()?.disabled).toBe(true);
-      expect(container.textContent).toContain("Sign in with a personal profile to use My GitHub.");
+      await waitForSolid(() =>
+        expect(container.textContent).toContain(
+          "Sign in with a personal profile to use My GitHub.",
+        ),
+      );
       expect(container.textContent).not.toContain(
         "applies only to this explicit Publish PR action",
       );
@@ -256,8 +261,10 @@ it.each([false, true])(
         onSelect,
       });
     paintSelection("shared");
+    await waitForSolid(() =>
+      expect(query('[role="menu"]')?.getAttribute("aria-label")).toBe("Publication account"),
+    );
     const menu = query('[role="menu"]');
-    expect(menu?.getAttribute("aria-label")).toBe("Publication account");
     expect(query('select, [role="dialog"][popover]')).toBeNull();
     const choices = [...menu!.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]')];
     expect(choices.map((item) => [item.value, item.getAttribute("aria-checked")])).toEqual([
@@ -286,7 +293,7 @@ it.each([false, true])(
   },
 );
 
-it("warns about the workspace only for a selected or sole personal account", () => {
+it("warns about the workspace only for a selected or sole personal account", async () => {
   const personal = personalAccount();
   const shared = { source: "system-configured" as const, accountId: 1, login: "system-bot" };
   const options = { shared, personal, pendingPersonal: null, latestShared: null };
@@ -294,6 +301,7 @@ it("warns about the workspace only for a selected or sole personal account", () 
   const paintPublication = (overrides: Partial<GitHubPublicationView>) =>
     paint({ options, onSelect, personalReady: false, ...overrides });
   paintPublication({});
+  await waitForPublication();
   expect(publish()?.disabled).toBe(false);
   expect(container.textContent).not.toContain("reclaim the workspace");
   paintPublication({
@@ -302,8 +310,10 @@ it("warns about the workspace only for a selected or sole personal account", () 
   expect(publish()?.disabled).toBe(true);
   expect(container.textContent).toContain("reclaim the workspace");
   expect(query('[role="menu"]')?.textContent).not.toContain("reclaim the workspace");
-  expect(query(".chat-pr__publication-outcome")?.textContent?.replace(/\s+/g, " ").trim()).toBe(
-    "Wait for work to finish and reclaim the workspace to publish with My GitHub.",
+  await waitForSolid(() =>
+    expect(query(".chat-pr__publication-outcome")?.textContent?.replace(/\s+/g, " ").trim()).toBe(
+      "Wait for work to finish and reclaim the workspace to publish with My GitHub.",
+    ),
   );
   paintPublication({ options: { ...options, shared: null }, selection: null });
   expect(publish()?.disabled).toBe(true);

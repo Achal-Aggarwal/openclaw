@@ -11,7 +11,7 @@ import type { SystemEventRenderItem } from "../chat-system-event-grouping.ts";
 import { coalesceSystemEvents } from "../chat-system-event-grouping.ts";
 import { persistedMessageEntryId } from "../chat-thread-items.ts";
 import {
-  type buildCachedChatItems,
+  buildCachedChatItems,
   findLiveStreamIndex,
   getExpansionStateVersion,
   getChatItemsGeneration,
@@ -33,11 +33,13 @@ import {
   type ChatPositionIndex,
 } from "./chat-position-projection.ts";
 import type { LoadedReplySource } from "./chat-reply-preview.ts";
-import type { ChatThreadProps } from "./chat-thread-interactions.ts";
+import type { ChatThreadProps, ChatThreadState } from "./chat-thread-interactions.ts";
 import type { TranscriptRow } from "./chat-transcript-layout.ts";
 import { createTranscriptMemo } from "./chat-transcript-memo.ts";
 import { GuardedTranscriptItem } from "./chat-transcript-render-guard.ts";
+import { NativeTranscriptRowDemand } from "./chat-transcript-row-entries.ts";
 import type { NativeTranscriptView } from "./chat-transcript-rows.ts";
+import type { ChatTranscriptSession } from "./chat-transcript-session.ts";
 import type { projectTranscriptWorkPreviews } from "./chat-transcript-work-previews.ts";
 
 type ChatRenderItem = SystemEventRenderItem;
@@ -59,10 +61,14 @@ type TranscriptIndex = Readonly<{
   loadedReplySources: ReadonlyMap<string, LoadedReplySource>;
   positionIndex: ChatPositionIndex;
   rows: readonly TranscriptRow<ChatRenderItem>[];
+  rowDemand: number;
   liveItem?: StreamOwner;
 }>;
 
-type TranscriptIndexSource = Pick<TranscriptChain, "searchActive" | "transcriptItems" | "live">;
+type TranscriptIndexSource = Pick<
+  TranscriptChain,
+  "searchActive" | "transcriptItems" | "continuations" | "live"
+>;
 
 type LiveStream = Extract<ReturnType<typeof buildCachedChatItems>[number], { kind: "stream" }>;
 type StreamOwner = Extract<ChatRenderItem, { kind: "stream-run" | "agent-run-frame" }>;
@@ -263,7 +269,18 @@ export function projectTranscriptIndex(
     // New row keys measure expanded work immediately; existing keys keep their
     // cached height until ResizeObserver reports the changed layout.
     const rows: TranscriptRow<ChatRenderItem>[] = [];
+    let rowDemand = 0;
     for (const item of chain.transcriptItems) {
+      if (item.kind === "agent-run-frame") {
+        rowDemand |= NativeTranscriptRowDemand.frame;
+      }
+      if (
+        item.kind === "stream-run" ||
+        item.kind === "question" ||
+        chain.continuations.has(item.key)
+      ) {
+        rowDemand |= NativeTranscriptRowDemand.stream;
+      }
       rows.push({ kind: "item", key: item.key, item });
       if (item.kind === "work-group" && expandedToolCards.get(item.key)) {
         for (const group of item.groups) {
@@ -318,6 +335,7 @@ export function projectTranscriptIndex(
       loadedReplySources,
       positionIndex,
       rows,
+      rowDemand,
       liveItem: chain.live?.item,
     };
   });
@@ -348,6 +366,66 @@ export function expandReplyTargetWork(
       }
     }
   }
+}
+
+/** Resolve against loaded history even when search has removed the target's row. */
+export function createTranscriptReplyNavigation({
+  chain,
+  loadedSources,
+  expanded,
+  props,
+  session,
+  input,
+  search,
+  transcript,
+}: {
+  chain: TranscriptChain;
+  loadedSources: ReadonlyMap<string, LoadedReplySource>;
+  expanded: Map<string, boolean>;
+  props: ChatThreadProps;
+  session: ChatThreadProps["selectedSession"];
+  input: Parameters<typeof buildCachedChatItems>[0];
+  search: ChatThreadState["search"];
+  transcript: Pick<ChatTranscriptSession, "revealMessage">;
+}): (messageId: string) => void {
+  return (messageId) => {
+    // Navigation expands the visible cache's stable row keys; loaded history
+    // keeps ownership even when search has filtered those rows out.
+    const targetChain = chain.searchActive
+      ? projectTranscriptChain(
+          buildCachedChatItems({ ...input, searchOpen: false, searchQuery: "" }),
+          {
+            sessionKey: props.sessionKey,
+            runWorking: Boolean(props.runWorking),
+            searchActive: false,
+            bubbleMode: props.chatBubbleMode === true,
+            session,
+          },
+        )
+      : chain;
+    const targetSources =
+      targetChain === chain
+        ? loadedSources
+        : projectTranscriptIndex(targetChain, expanded, props).loadedReplySources;
+    const loaded = targetSources.has(messageId);
+    if (loaded) {
+      expandReplyTargetWork(targetChain.transcriptItems, expanded, messageId);
+    }
+    if (chain.searchActive) {
+      search.close();
+    }
+    if (loaded) {
+      // Search must commit the original row before reveal can find it.
+      // Loaded originals also navigate in archived/read-only views.
+      if (chain.searchActive) {
+        queueMicrotask(() => transcript.revealMessage(messageId));
+      } else {
+        transcript.revealMessage(messageId);
+      }
+      return;
+    }
+    props.replyMessageAccess?.open(messageId);
+  };
 }
 
 export type PlacedContentRow = Extract<TranscriptRow, { kind: "content" }> & {

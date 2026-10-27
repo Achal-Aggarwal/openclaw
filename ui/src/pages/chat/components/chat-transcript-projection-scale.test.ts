@@ -60,7 +60,7 @@ function personMessage(id: string, name: string, timestamp: number) {
 
 function projectSession(props: ChatThreadProps, transcript: ReturnType<typeof createTranscript>) {
   return transcript.renderSession(props.sessionKey, (session) => {
-    projectChatTranscript(props, session);
+    projectChatTranscript(props, session).commitContentReady();
     return null;
   });
 }

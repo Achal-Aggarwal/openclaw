@@ -47,6 +47,7 @@ import {
 import { ChatToolFamilyBoundary, useChatToolReadiness } from "./chat-tool-family-boundary.tsx";
 import type { ChatTranscript } from "./chat-transcript-controller.ts";
 import { projectChatTranscript } from "./chat-transcript-projection.ts";
+import { prepareNativeTranscriptRows } from "./chat-transcript-row-entries.ts";
 import { resolveAssistantDisplayAvatar } from "./chat-welcome.ts";
 import { ChatWelcome } from "./chat-welcome.tsx";
 
@@ -84,6 +85,40 @@ export function ChatThread(input: ChatThreadInput) {
     >
       <PreparedChatThread {...input} />
     </ChatToolFamilyBoundary>
+  );
+}
+
+/** Pending row code holds only transcript content, never the pane's input/ref consumers. */
+function ReadyTranscriptRows(props: {
+  demand: number;
+  renderRows: () => HTMLDivElement;
+  announcement: () => string;
+  announce: boolean;
+  announcementRef: ChatThreadProps["onTranscriptAnnouncementRef"];
+}) {
+  const demand = createMemo(() => props.demand);
+  const ready = createMemo(() => prepareNativeTranscriptRows(demand()));
+  const contents = createMemo(() => {
+    ready();
+    return props.renderRows();
+  });
+  const announcement = createMemo(() => {
+    contents();
+    return props.announcement();
+  });
+  return (
+    <>
+      <span
+        ref={[elementRef(props.announcementRef)]}
+        class="chat-transcript-announcement sr-only"
+        role="status"
+        aria-live={props.announce ? "polite" : "off"}
+        aria-atomic="true"
+      >
+        {announcement()}
+      </span>
+      {contents()}
+    </>
   );
 }
 
@@ -174,9 +209,11 @@ function PreparedChatThread(input: ChatThreadInput) {
     // Native range changes redraw this island without preparing the whole pane.
     geometry().read();
     if (routeLoading() && mobile()) {
+      current().projection.commitContentReady();
       return <ChatConversationLoading route />;
     }
     if (showLoadingSkeleton() || isEmpty()) {
+      current().projection.commitContentReady();
       return (
         <div class="chat-thread-inner">
           {sentinel()}
@@ -201,7 +238,7 @@ function PreparedChatThread(input: ChatThreadInput) {
         </div>
       );
     }
-    return current().projection.renderRows(sentinel(), historyHeader());
+    return null;
   });
   const announcement = createMemo(() => {
     // The row owner records the accepted announcement while rendering its rows.
@@ -305,15 +342,6 @@ function PreparedChatThread(input: ChatThreadInput) {
           )
         }
       >
-        <span
-          ref={[elementRef(input.props.onTranscriptAnnouncementRef)]}
-          class="chat-transcript-announcement sr-only"
-          role="status"
-          aria-live={input.props.announceTranscript !== false ? "polite" : "off"}
-          aria-atomic="true"
-        >
-          {announcement()}
-        </span>
         <ChatPositionRail
           positions={current().projection.positionIndex}
           transcript={current().session}
@@ -322,7 +350,36 @@ function PreparedChatThread(input: ChatThreadInput) {
             name: input.props.assistantName,
           }}
         />
-        {contents()}
+        <Show
+          when={!showLoadingSkeleton() && !isEmpty()}
+          fallback={
+            <>
+              <span
+                ref={[elementRef(input.props.onTranscriptAnnouncementRef)]}
+                class="chat-transcript-announcement sr-only"
+                role="status"
+                aria-live={input.props.announceTranscript !== false ? "polite" : "off"}
+                aria-atomic="true"
+              >
+                {announcement()}
+              </span>
+              {contents()}
+            </>
+          }
+        >
+          <ChatLazyBoundary fallback={<LoadingState messagesOnly />}>
+            <ReadyTranscriptRows
+              demand={current().projection.rowDemand}
+              renderRows={() => {
+                geometry().read();
+                return current().projection.renderRows(sentinel(), historyHeader());
+              }}
+              announcement={() => current().session.liveAnnouncementText}
+              announce={input.props.announceTranscript !== false}
+              announcementRef={input.props.onTranscriptAnnouncementRef}
+            />
+          </ChatLazyBoundary>
+        </Show>
         <Show when={commentPins() ? getTranscriptState(paneId()) : undefined} keyed>
           {(threadState) => (
             <ChatLazyBoundary>

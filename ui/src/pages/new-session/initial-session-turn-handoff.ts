@@ -1,10 +1,10 @@
+import type { AgentRuntimeRestrictionErrorDetails } from "../../../../packages/gateway-protocol/src/agent-runtime-restriction-error-details.js";
 import { createDeferredCore } from "../../../../src/shared/deferred.js";
 import type { ApplicationContext } from "../../app/context.ts";
 import { t } from "../../i18n/index.ts";
 import { registerModelControlsEnglish } from "../../i18n/locales/en-model-controls.ts";
 import type { ChatAttachment } from "../../lib/chat/chat-types.ts";
 import { formatUiError } from "../../lib/format-error.ts";
-import { isAgentRuntimeRestrictionErrorDetails } from "../../lib/protocol-validators.generated/session-input.js";
 import type { SessionCreateOutcome } from "../../lib/sessions/create.ts";
 import { areUiSessionKeysEquivalent } from "../../lib/sessions/session-key.ts";
 import { showToast } from "../../lib/toast.ts";
@@ -89,11 +89,18 @@ export async function completeInitialSessionTurn(
     // turn into a different authenticated or navigation owner.
     return;
   }
-  const restriction =
-    initialRun.status === "rejected" &&
-    isAgentRuntimeRestrictionErrorDetails(initialRun.errorDetails)
-      ? initialRun.errorDetails
-      : undefined;
+  const errorDetails = initialRun.status === "rejected" ? initialRun.errorDetails : undefined;
+  let restriction: AgentRuntimeRestrictionErrorDetails | undefined;
+  if (errorDetails !== undefined) {
+    const { isAgentRuntimeRestrictionErrorDetails } =
+      await import("../../lib/protocol-validators.generated/session-restriction.js");
+    if (!options.isCurrent() || (instant && !instant.isCurrent())) {
+      return;
+    }
+    if (isAgentRuntimeRestrictionErrorDetails(errorDetails)) {
+      restriction = errorDetails;
+    }
+  }
   const retry = restriction ? createDeferredCore<boolean>() : undefined;
   try {
     if (initialRun.status === "rejected" && options.onRejectedPrompt) {

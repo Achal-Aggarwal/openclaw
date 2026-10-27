@@ -4,7 +4,7 @@ import { t } from "../../i18n/index.ts";
 import { resolvePreferredServerChatModelValue } from "../../lib/chat/model-ref.ts";
 import { resolveChatModelOverrideValue } from "../../lib/chat/model-select-state.ts";
 import { formatUiError } from "../../lib/format-error.ts";
-import { isAgentRuntimeRestrictionErrorDetails } from "../../lib/protocol-validators.generated/session-input.js";
+import { isAgentRuntimeRestrictionErrorDetails } from "../../lib/protocol-validators.generated/session-restriction.js";
 import { setChatError } from "./chat-history-state.ts";
 import {
   claimChatModelSelection,

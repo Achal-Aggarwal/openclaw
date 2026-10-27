@@ -1,4 +1,4 @@
-import { createMemo, createSignal, For, lazy, onSettled, Show } from "solid-js";
+import { createMemo, createSignal, For, onSettled, Show } from "solid-js";
 import { PersonName } from "../../../components/person-activity-link-solid.tsx";
 import { personActivityLink } from "../../../components/person-activity-link.ts";
 import type { MessageGroup as MessageGroupData } from "../../../lib/chat/chat-types.ts";
@@ -43,11 +43,7 @@ import type { ReplyConnectorElements } from "./chat-reply-connector.tsx";
 import { ChatSessionActivity } from "./chat-session-activity.solid.tsx";
 import { selectBrowserTabPreviews } from "./chat-tool-cards.ts";
 import { ChatToolFamilyBoundary, useChatToolReadiness } from "./chat-tool-family-boundary.tsx";
-import { TurnRecapRow } from "./chat-turn-recap-view.tsx";
-
-const StreamGroupParts = lazy(() => import("./chat-message-stream-view.tsx"), {
-  export: "StreamGroupParts",
-});
+import { StreamGroupParts, TurnRecapRow } from "./chat-transcript-row-entries.ts";
 
 export function ActivityGroup(props: {
   groups: readonly MessageGroupData[];
@@ -470,11 +466,13 @@ function FramedMessageGroup(props: {
           when={Boolean(options().activeContinuation)}
           fallback={
             options().turnRecap ? (
-              <TurnRecapRow
-                recap={options().turnRecap!}
-                presentation="continuation"
-                hideDuration={options().hideTurnRecapDuration}
-              />
+              <ChatLazyBoundary>
+                <TurnRecapRow
+                  recap={options().turnRecap!}
+                  presentation="continuation"
+                  hideDuration={options().hideTurnRecapDuration}
+                />
+              </ChatLazyBoundary>
             ) : undefined
           }
         >

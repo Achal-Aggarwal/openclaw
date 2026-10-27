@@ -1,6 +1,7 @@
 /* @vitest-environment jsdom */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { waitForSolid } from "../../../test-helpers/solid-settle.ts";
 import {
   paintChatPullRequests,
   clearChatPullRequests,
@@ -26,7 +27,7 @@ describe("failed publication account discovery", () => {
     container.remove();
   });
 
-  it("collapses into one refresh action on the branch row", () => {
+  it("collapses into one refresh action on the branch row", async () => {
     const onRefresh = vi.fn();
     paint({
       branch: sessionBranch(),
@@ -38,12 +39,14 @@ describe("failed publication account discovery", () => {
       }),
     });
     const row = container.querySelector('.chat-pr[data-state="branch"]');
+    await waitForSolid(() =>
+      expect(row?.querySelector("openclaw-tooltip")?.getAttribute("content")).toBe(
+        "Publication status unavailable: GitHub publication options timed out after 5 seconds; retry the request.",
+      ),
+    );
     expect(row?.querySelector(".chat-pr__publication-outcome")).toBeNull();
     expect(row?.querySelector(".chat-pr__create")).toBeNull();
     expect(row?.textContent).not.toContain("Publication status unavailable");
-    expect(row?.querySelector("openclaw-tooltip")?.getAttribute("content")).toBe(
-      "Publication status unavailable: GitHub publication options timed out after 5 seconds; retry the request.",
-    );
     row?.querySelector<HTMLButtonElement>(".chat-pr__publication-refresh")?.click();
     expect(onRefresh).toHaveBeenCalledOnce();
   });

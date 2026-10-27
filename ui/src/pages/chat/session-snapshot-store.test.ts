@@ -351,6 +351,25 @@ describe("persistent chat session snapshots", () => {
     },
   );
 
+  it.each([
+    { transcriptMetadata: null },
+    { messageReactions: { message: [{}] } },
+    { progressCard: {} },
+  ])(
+    "rejects malformed optional payloads before publishing a retained board: %j",
+    async (payload) => {
+      const value = boardSnapshot(sessionKey, "retained board");
+      await seed(value);
+      await putRawRecord({
+        ...envelope(sessionKey, value),
+        snapshot: { ...value, ...payload },
+      });
+      const presentBoard = vi.fn();
+      expect(await new SessionSnapshotStore().read(sessionKey, presentBoard)).toBeNull();
+      expect(presentBoard).not.toHaveBeenCalled();
+    },
+  );
+
   it("presents a validated board before rejecting malformed persisted history", async () => {
     const value = boardSnapshot(sessionKey, "retained board");
     await seed(value);
@@ -414,14 +433,14 @@ describe("persistent chat session snapshots", () => {
     },
   );
 
-  it("restores legacy sidebar presence defaults", async () => {
+  it("defaults omitted sidebar presence preferences in the current projection", async () => {
     const store = makeStore(undefined, true);
     const sidebarKey = `${key("").split("\u0000")[0]}\u0000sidebar:operator`;
     expect(await store.writeSidebar(sidebarKey, sidebarSnapshot, parseSidebarSnapshot)).toBe(true);
     await putRawRecord(
       {
         sessionKey: sidebarKey,
-        projectionVersion: 1,
+        projectionVersion: 3,
         savedAt: Date.now(),
         model: { ...sidebarSnapshot, peoplePresenceFilter: undefined, offlineUsers: undefined },
       },

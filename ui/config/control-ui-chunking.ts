@@ -67,7 +67,31 @@ export const controlUiLocaleConfigHintsChunkPrefix = "locale-config-hints-";
 export function controlUiStableChunkName(id: string): string | undefined {
   const normalized = normalizeModuleId(id);
 
+  if (moduleIdIncludesPackage(id, "ipaddr.js")) {
+    return "net-policy-ip-runtime";
+  }
   switch (controlUiBootManifestKey(id)) {
+    case "packages/net-policy/src/ip.ts":
+      return "net-policy-ip-runtime";
+    case "ui/src/components/app-sidebar-online.tsx":
+      return "sidebar-online-runtime";
+    case "ui/src/pages/chat/components/chat-message-bubble-rich.tsx":
+    case "ui/src/pages/chat/components/chat-message-attachment-status-solid.tsx":
+    case "ui/src/pages/chat/components/chat-async-question-summary.tsx":
+    case "ui/src/pages/chat/components/chat-message-context-view.tsx":
+      return "chat-message-rich-runtime";
+    case "ui/src/pages/chat/components/chat-workspace-conflict.tsx":
+      return "chat-workspace-conflict-runtime";
+    case "ui/src/pages/chat/components/chat-agent-run-frame.tsx":
+    case "ui/src/pages/chat/components/chat-message-stream-view.tsx":
+      return "chat-stream-frame-runtime";
+    case "ui/src/pages/chat/components/chat-working-indicator.tsx":
+    case "ui/src/pages/chat/components/chat-working-indicator-branding.tsx":
+    case "ui/src/components/working-phrase-solid.tsx":
+    case "ui/src/pages/chat/components/chat-retry-status.tsx":
+    case "ui/src/pages/chat/components/chat-working-indicator-surprise.ts":
+    case "ui/src/pages/chat/components/chat-turn-recap-view.tsx":
+      return "chat-run-status-runtime";
     case "ui/src/components/modal-dialog.tsx":
     case "ui/src/components/solid/modal-dialog.tsx":
     case "ui/src/components/solid/modal-dialog.css":
@@ -168,11 +192,6 @@ export function controlUiStableChunkName(id: string): string | undefined {
     case "ui/src/pages/chat/chat-spawned-subagent.ts":
     case "ui/src/lib/chat/tool-display-identity.ts":
     case "src/agents/tool-display-name.ts":
-    case "ui/src/pages/chat/components/chat-working-indicator.tsx":
-    case "ui/src/pages/chat/components/chat-working-indicator-branding.tsx":
-    case "ui/src/components/working-phrase-solid.tsx":
-    case "ui/src/pages/chat/components/chat-retry-status.tsx":
-    case "ui/src/pages/chat/components/chat-working-indicator-surprise.ts":
     case "src/shared/assistant-display-content.ts":
     case "src/shared/agent-run-status.ts":
     case "ui/src/app/assistant-media.ts":
@@ -304,6 +323,9 @@ export function controlUiStableChunkName(id: string): string | undefined {
     case "ui/src/lib/device-pair-setup.ts":
       // Pairing loads on interaction; the earlier boot capture must not pull it into either route.
       return "device-pair-setup-runtime";
+    case "ui/src/lib/channels/index.ts":
+      // Channel owners load on their first consumer, outside earlier shared boot captures.
+      return "channels-runtime";
     case "ui/src/pages/chat/talk/conversation.ts":
       return "talk-conversation-runtime";
     case "ui/src/pages/chat/chat-goal-operations.runtime.ts":
@@ -388,8 +410,7 @@ export function controlUiStableChunkName(id: string): string | undefined {
       return "plugin-contracts-runtime";
     case "ui/src/components/solid/copy-button.tsx":
     case "ui/src/components/copy-button-state.ts":
-    case "ui/src/components/app-sidebar-online.tsx":
-      // Both routes preload these; standalone copy surfaces also download the small Online view.
+      // Copy controls have no dependency on the optional Online sidebar view.
       // Login recovery also copies commands, before any Chat route can load.
       return "copy-button-runtime";
     case "ui/src/components/login-gate-solid.tsx":
@@ -539,17 +560,10 @@ export function createControlUiCodeSplitting(options: { includeBootGroups?: bool
                   "ui/src/pages/chat/components/chat-details-desktop-process-row.tsx",
                   "ui/src/pages/chat/components/chat-details-process-row.tsx",
                   "ui/src/pages/chat/components/chat-details-environment-body.tsx",
-                  "ui/src/pages/chat/components/chat-message-bubble-rich.tsx",
                   "ui/src/pages/chat/components/chat-bubble-activity-view.tsx",
-                  "ui/src/pages/chat/components/chat-message-attachment-status-solid.tsx",
-                  "ui/src/pages/chat/components/chat-async-question-summary.tsx",
-                  "ui/src/pages/chat/components/chat-message-context-view.tsx",
                   "ui/src/pages/chat/components/chat-session-activity.solid.tsx",
                   "ui/src/pages/chat/components/chat-forwarded-attribution.tsx",
-                  "ui/src/pages/chat/components/chat-workspace-conflict.tsx",
                   "ui/src/pages/chat/session-snapshot-decoder.ts",
-                  "ui/src/lib/protocol-validators.generated/board.js",
-                  "ui/src/lib/protocol-validators.generated/transcript.js",
                 ]) {
                   modules.add(module);
                 }

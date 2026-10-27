@@ -69,6 +69,8 @@ const repositoryScriptEntries = [
   "scripts/perf/access-authority-callback-measure.mjs!",
   // Its header documents the sandbox/workspace ownership assertion benchmark.
   "scripts/perf/workspace-assertion-measure.mjs!",
+  // Its header documents the paired workspace reconciliation benchmark.
+  "scripts/perf/workspace-manifest-comparison.ts!",
   "scripts/perf/state-owner-identity-measure.mjs!",
   // Its header documents the full transcript-pairing repair benchmark.
   "scripts/perf/tool-result-pairing-measure.ts!",
@@ -140,6 +142,7 @@ const repositoryScriptEntries = [
   "scripts/perf/session-row-materialization-measure.ts!",
   "scripts/perf/session-row-lineage-measure.ts!",
   "scripts/perf/tool-result-hash-measure.ts!",
+  "scripts/perf/tool-result-size-measure.ts!",
   "scripts/perf/ws-counter-stress-preload.ts!",
   "scripts/perf/ws-counter-stress.ts!",
   // The source header documents this GitHub reader benchmark's Node command.
@@ -511,6 +514,7 @@ const repositoryScriptEntries = [
   "scripts/perf/ui-streaming-render-measure.ts!",
   // Maintained source headers invoke these standalone commands by exact path.
   "scripts/perf/archive-worker-startup-measure.mjs!",
+  "scripts/perf/archive-canonical-worker-measure.ts!",
   "scripts/perf/attempt-stream-repair-measure.ts!",
   "scripts/perf/config-health-read-measure.ts!",
   "scripts/perf/context-engine-lifecycle-bench.ts!",
@@ -580,10 +584,13 @@ const repositoryScriptEntries = [
   "scripts/perf/compaction-serialization-measure.mjs!",
   "scripts/perf/exec-policy-sort-measure.mjs!",
   "scripts/perf/mcp-acquisition-measure.ts!",
+  "scripts/perf/profile-avatar-retention-measure.ts!",
   "scripts/perf/shell-extract-bench.ts!",
   "scripts/perf/subagent-active-read-measure.ts!",
   "scripts/perf/subagent-descendant-count-measure.ts!",
   "scripts/perf/trusted-snapshot-freeze-measure.mjs!",
+  "scripts/perf/session-skill-snapshot-intern.ts!",
+  "scripts/perf/session-skill-snapshot-intern.preload.mjs!",
   "scripts/perf/git-read-sharing-measure.ts!",
   // Live proof and test owners spawn or preload these children through computed paths.
   "scripts/perf/bench-ingress-bridge.mjs!",

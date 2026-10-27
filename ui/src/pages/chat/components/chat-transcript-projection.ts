@@ -13,7 +13,7 @@ import { projectSubagentStatus } from "../chat-subagent-wait.ts";
 import type { SystemEventRenderItem } from "../chat-system-event-grouping.ts";
 import { persistedMessageEntryId } from "../chat-thread-items.ts";
 import {
-  buildCachedChatItems,
+  type buildCachedChatItems,
   getExpansionStateVersion,
   getExpandedToolCards,
   getExpandedUserMessages,
@@ -36,6 +36,7 @@ import {
 } from "./chat-transcript-identity.ts";
 import { createTranscriptMemo } from "./chat-transcript-memo.ts";
 import {
+  createTranscriptReplyNavigation,
   expandReplyTargetWork,
   projectTranscriptChain,
   projectTranscriptIndex,
@@ -49,6 +50,7 @@ import {
   trackTranscriptRenderDependencies,
   transcriptReplyDependencies,
 } from "./chat-transcript-render-guard.ts";
+import { NativeTranscriptRowDemand } from "./chat-transcript-row-entries.ts";
 import type { NativeTranscriptView } from "./chat-transcript-rows.ts";
 import type { ChatTranscriptSession, TranscriptHeader } from "./chat-transcript-session.ts";
 import { createTranscriptStreamSource } from "./chat-transcript-stream-source.ts";
@@ -181,6 +183,7 @@ export function projectChatTranscript(
     loadedReplySources,
     positionIndex,
     rows,
+    rowDemand: indexedRowDemand,
     liveItem,
   } = projectTranscriptIndex(transcriptChain, expandedToolCards, props);
   const workPreviews = projectTranscriptWorkPreviews(transcriptChain.workGroups, {
@@ -214,7 +217,8 @@ export function projectChatTranscript(
     !props.loading &&
     !hasLiveContent &&
     (!props.historyPagination?.hasMore || search.open);
-  transcript.setContentReady(!props.loading);
+  // Row code may still be pending; the render slot commits readiness with its rows.
+  transcript.setContentReady(false);
   const { isDirectThread, avatarPlacement } = resolveTranscriptAvatarPlacement(props, chatItems);
   const showLoadingSkeleton = props.loading && transcriptItems.length === 0 && !hasTypingActors;
   const presented =
@@ -619,6 +623,7 @@ export function projectChatTranscript(
   transcript.entryAnimations.project(chatItems);
   transcript.syncMessageRows(messageRowKeysById, transcriptMessageKeys);
   const contentRows: PlacedContentRow[] = [];
+  let rowDemand = indexedRowDemand;
   const appendContent = (key: string, content: NativeTranscriptView, after?: string | null) =>
     contentRows.push({
       kind: "content",
@@ -633,10 +638,14 @@ export function projectChatTranscript(
       afterMessageId ? messageRowKeysById.get(afterMessageId) : afterMessageId,
     );
   }
-  if (turnRecap !== null && !recapAttached && !isEmpty && !showLoadingSkeleton) {
-    appendContent("turn-recap", { kind: "recap", recap: turnRecap });
+  if (turnRecap !== null && !isEmpty && !showLoadingSkeleton) {
+    rowDemand |= NativeTranscriptRowDemand.recap;
+    if (!recapAttached) {
+      appendContent("turn-recap", { kind: "recap", recap: turnRecap });
+    }
   }
   if (subagents.wait && !subagents.placedWait && !searchFiltering) {
+    rowDemand |= NativeTranscriptRowDemand.stream;
     appendContent("waiting-subagents", {
       kind: "wait",
       sessionKey: props.sessionKey,
@@ -653,51 +662,25 @@ export function projectChatTranscript(
     });
   }
   const transcriptRows = projectTranscriptRows(rows, workPreviews, contentRows);
-  state.transcriptRenderContext.turnVideoMessages = snapshot.turnVideoMessages;
-  state.transcriptRenderContext.onSetReply = props.onSetReply;
-  state.transcriptRenderContext.onOpenReply = (replyToId) => {
-    // Search removes rows from the index, not from loaded history. Resolve the
-    // unfiltered projection only on navigation, using the same index/expansion
-    // owners as visible targets rather than requiring a history loader.
-    const targetChain = searchFiltering
-      ? projectTranscriptChain(
-          // Navigation expands the stabilized row keys of the visible cache;
-          // the gallery cache owns membership, not mounted disclosure identity.
-          buildCachedChatItems({ ...chatItemsInput, searchOpen: false, searchQuery: "" }),
-          {
-            sessionKey: props.sessionKey,
-            runWorking: Boolean(props.runWorking),
-            searchActive: false,
-            bubbleMode: props.chatBubbleMode === true,
-            session: activeSession,
-          },
-        )
-      : transcriptChain;
-    const targetSources =
-      targetChain === transcriptChain
-        ? loadedReplySources
-        : projectTranscriptIndex(targetChain, expandedToolCards, props).loadedReplySources;
-    const loaded = targetSources.has(replyToId);
-    if (loaded) {
-      expandReplyTargetWork(targetChain.transcriptItems, expandedToolCards, replyToId);
-    }
-    if (searchFiltering) {
-      state.search.close();
-    }
-    if (loaded) {
-      // Closing search must commit the original's row before reveal can find it.
-      // Loaded originals also navigate in archived/read-only views.
-      if (searchFiltering) {
-        queueMicrotask(() => transcript.revealMessage(replyToId));
-      } else {
-        transcript.revealMessage(replyToId);
-      }
-      return;
-    }
-    props.replyMessageAccess?.open(replyToId);
+  const commitContentReady = () => {
+    transcript.setContentReady(!props.loading);
+    state.transcriptRenderContext.turnVideoMessages = snapshot.turnVideoMessages;
+    state.transcriptRenderContext.onSetReply = props.onSetReply;
+    state.transcriptRenderContext.onOpenReply = createTranscriptReplyNavigation({
+      chain: transcriptChain,
+      loadedSources: loadedReplySources,
+      expanded: expandedToolCards,
+      props,
+      session: activeSession,
+      input: chatItemsInput,
+      search: state.search,
+      transcript,
+    });
   };
   return {
     isDirectThread,
+    rowDemand,
+    commitContentReady,
     positionIndex: showLoadingSkeleton
       ? { markers: [], markerIdsByMessageId: new Map() }
       : {
@@ -710,8 +693,9 @@ export function projectChatTranscript(
     isEmpty,
     showLoadingSkeleton,
     searchOpen: search.open,
-    renderRows: (overlay: JSX.Element = null, header: TranscriptHeader | null = null) =>
-      transcript.render(
+    renderRows: (overlay: JSX.Element = null, header: TranscriptHeader | null = null) => {
+      commitContentReady();
+      return transcript.render(
         transcriptRows,
         (row) =>
           row.kind === "item"
@@ -723,6 +707,7 @@ export function projectChatTranscript(
         header,
         props.transcriptVisible ?? true,
         props.applicationContext,
-      ),
+      );
+    },
   };
 }

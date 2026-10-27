@@ -5,7 +5,11 @@ import { CONTROL_UI_SESSION_PULL_REQUESTS_CHANGED_EVENT } from "../../../src/gat
 import type { MockGatewayWindow } from "./control-ui-e2e-contract.ts";
 
 /** Synthetic recovered work makes publication discovery part of the first screen. */
-export function createControlUiCoreBootFixture(sessionKey: string, gatewayBootId: string) {
+export function createControlUiCoreBootFixture(
+  sessionKey: string,
+  gatewayBootId: string,
+  sidebarSnapshots?: Record<string, ControlUiSessionPullRequestSnapshot>,
+) {
   const branch = { owner: "example", repo: "boot-fixture", branch: "fixture/core-boot" };
   const publication: SessionGitHubOptionsResult = {
     personal: {
@@ -77,6 +81,7 @@ export function createControlUiCoreBootFixture(sessionKey: string, gatewayBootId
         event: CONTROL_UI_SESSION_PULL_REQUESTS_CHANGED_EVENT,
         sessionKey,
         snapshot,
+        sidebarSnapshots,
       },
     )}); })();`,
   };
@@ -87,6 +92,7 @@ function installCoreBootSubscriptions(input: {
   event: string;
   sessionKey: string;
   snapshot: ControlUiSessionPullRequestSnapshot;
+  sidebarSnapshots?: Record<string, ControlUiSessionPullRequestSnapshot>;
 }) {
   const gateway = (window as MockGatewayWindow).openclawControlUiE2eGateway;
   if (!gateway) {
@@ -129,7 +135,11 @@ function installCoreBootSubscriptions(input: {
             key,
             key === input.sessionKey
               ? input.snapshot
-              : { status: "ready", pullRequests: [], rateLimited: false },
+              : (input.sidebarSnapshots?.[key] ?? {
+                  status: "ready",
+                  pullRequests: [],
+                  rateLimited: false,
+                }),
           ];
         }),
       );
@@ -137,7 +147,13 @@ function installCoreBootSubscriptions(input: {
       if (keys.length > 0) {
         // Both callbacks belong to this request's socket; no timer or retained
         // emitter can publish an obsolete replacement after a reconnect.
-        emit(input.event, { sessions });
+        if (input.sidebarSnapshots) {
+          for (const [key, snapshot] of Object.entries(sessions)) {
+            emit(input.event, { sessions: { [key]: snapshot } });
+          }
+        } else {
+          emit(input.event, { sessions });
+        }
       }
     },
   );

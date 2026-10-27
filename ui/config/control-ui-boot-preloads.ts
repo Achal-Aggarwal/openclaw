@@ -49,6 +49,16 @@ const chatInteractionEntries = new Set([
   // Search, session actions, commands and viewers load on explicit demand.
 ]);
 
+// These existing first-screen alternatives keep the route's parallel head start,
+// but preparing their module graph waits for the rendered history to need them.
+const chatPresentationEntries = new Set([
+  "ui/src/pages/chat/components/chat-agent-run-frame.tsx",
+  "ui/src/pages/chat/components/chat-message-stream-view.tsx",
+  "ui/src/pages/chat/components/chat-message-bubble-rich.tsx",
+  "ui/src/pages/chat/components/chat-message-context-view.tsx",
+  "ui/src/pages/chat/components/chat-workspace-conflict.tsx",
+]);
+
 export function collectControlUiStaticAssets(
   bundle: NonNullable<IndexHtmlTransformContext["bundle"]>,
   file: string,
@@ -84,6 +94,7 @@ export function collectControlUiBootAssets(
   }
   const routes = { chat: new Set(initial), new: new Set(initial) };
   const interactions = { chat: new Set<string>(), new: new Set<string>() };
+  const presentations = { chat: new Set<string>(), new: new Set<string>() };
   const login = new Set(initial);
   // Browser admission signs before the shell can become interactive. Download
   // the signer first without evaluating it or requesting its dynamic fallback.
@@ -100,13 +111,6 @@ export function collectControlUiBootAssets(
   }
   for (const [route, entry] of [
     ["chat", "ui/src/pages/chat/route-entry.ts"],
-    // First-screen content may need these renderers after history arrives.
-    // Fetch their whole static graph beside the route without evaluating it.
-    ["chat", "ui/src/pages/chat/components/chat-agent-run-frame.tsx"],
-    ["chat", "ui/src/pages/chat/components/chat-message-stream-view.tsx"],
-    ["chat", "ui/src/pages/chat/components/chat-message-bubble-rich.tsx"],
-    ["chat", "ui/src/pages/chat/components/chat-message-context-view.tsx"],
-    ["chat", "ui/src/pages/chat/components/chat-workspace-conflict.tsx"],
     ["new", "ui/src/pages/new-session/new-session-page-entry.ts"],
   ] as const) {
     const chunk = chunks.find((candidate) =>
@@ -116,6 +120,16 @@ export function collectControlUiBootAssets(
     );
     if (chunk) {
       collectControlUiStaticAssets(bundle, chunk.fileName, routes[route]);
+    }
+  }
+  for (const entry of chatPresentationEntries) {
+    const chunk = chunks.find((candidate) =>
+      [candidate.facadeModuleId, ...Object.keys(candidate.modules)].some(
+        (id) => id && controlUiBootManifestKey(id) === entry,
+      ),
+    );
+    if (chunk) {
+      collectControlUiStaticAssets(bundle, chunk.fileName, presentations.chat);
     }
   }
   for (const chunk of chunks) {
@@ -160,7 +174,12 @@ export function collectControlUiBootAssets(
   // Grouping can emit dynamic re-export facades that the ungrouped capture did
   // not need. They introduce no code beyond the measured graph, but a warm
   // import still requests their URL (for example, a sidebar controller).
-  for (const assets of [...Object.values(routes), ...Object.values(interactions), login]) {
+  for (const assets of [
+    ...Object.values(routes),
+    ...Object.values(presentations),
+    ...Object.values(interactions),
+    login,
+  ]) {
     let added;
     do {
       added = false;
@@ -178,8 +197,15 @@ export function collectControlUiBootAssets(
       }
     } while (added);
   }
+  const presentationOnly = { chat: new Set<string>(), new: new Set<string>() };
   const interactionOnly = { chat: new Set<string>(), new: new Set<string>() };
   for (const route of ["chat", "new"] as const) {
+    for (const file of presentations[route]) {
+      if (!routes[route].has(file)) {
+        presentationOnly[route].add(file);
+        routes[route].add(file);
+      }
+    }
     for (const file of interactions[route]) {
       if (!routes[route].has(file)) {
         interactionOnly[route].add(file);
@@ -187,7 +213,7 @@ export function collectControlUiBootAssets(
       }
     }
   }
-  return { initial, ...routes, login, interactionOnly };
+  return { initial, ...routes, login, presentationOnly, interactionOnly };
 }
 
 export function controlUiBootPreloadsPlugin(): Plugin {
@@ -222,11 +248,13 @@ export function controlUiBootPreloadsPlugin(): Plugin {
                     href: `./${file}`,
                   }
                 : {
-                    // Keep interaction bytes available without preparing their
-                    // module graph until the owning action needs it.
-                    ...(assets.interactionOnly[route].has(file)
-                      ? { rel: "preload", as: "script", fetchpriority: "low" }
-                      : { rel: "modulepreload" }),
+                    // First-screen alternatives retain normal fetch priority;
+                    // optional interactions keep their existing low priority.
+                    ...(assets.presentationOnly[route].has(file)
+                      ? { rel: "preload", as: "script" }
+                      : assets.interactionOnly[route].has(file)
+                        ? { rel: "preload", as: "script", fetchpriority: "low" }
+                        : { rel: "modulepreload" }),
                     crossorigin: "",
                     href: `./${file}`,
                   },

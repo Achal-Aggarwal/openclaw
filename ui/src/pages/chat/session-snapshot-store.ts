@@ -413,7 +413,7 @@ export class SessionSnapshotStore implements ChatCacheObserver {
       const record: SidebarRecord = {
         sessionKey: key,
         savedAt: Date.now(),
-        projectionVersion: 1,
+        projectionVersion: 3,
         model: structuredClone(model),
       };
       if (sidebarRecordBytes(record) > 512 * 1024) {
