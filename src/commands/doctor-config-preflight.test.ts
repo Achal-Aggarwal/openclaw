@@ -133,32 +133,21 @@ const doctorRepairOptions = {
 
 describe("runDoctorConfigPreflight", () => {
   it.each([
-    {
-      report: {
-        migrated: false,
-        skipped: false,
-        changes: [],
-        warnings: ["Manual state repair remains"],
-      },
-      expected: true,
-    },
-    {
-      report: {
-        migrated: false,
-        skipped: false,
-        changes: [],
-        warnings: ["Archived state requires manual inspection"],
-        warningDisposition: "recoverable" as const,
-      },
-      expected: false,
-    },
-  ])(
-    "retains unresolved migration outcomes for retirement admission: $expected",
-    async ({ report, expected }) => {
+    [undefined, true],
+    ["recoverable", false],
+  ] as const)(
+    "retains unresolved migration outcomes for retirement admission (%s)",
+    async (warningDisposition, expected) => {
       await withDoctorConfigPreflightHome(async (home) => {
         await writeOpenClawConfig(home, { plugins: { enabled: false } });
         const legacyState = await import("../infra/state-migrations.state-dir.js");
-        vi.spyOn(legacyState, "autoMigrateLegacyStateDir").mockResolvedValue(report);
+        vi.spyOn(legacyState, "autoMigrateLegacyStateDir").mockResolvedValue({
+          migrated: false,
+          skipped: false,
+          changes: [],
+          warnings: ["Manual state repair remains"],
+          warningDisposition,
+        });
 
         const preflight = await runDoctorConfigPreflight(doctorRepairOptions);
 

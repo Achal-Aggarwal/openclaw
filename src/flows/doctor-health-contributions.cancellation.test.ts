@@ -27,8 +27,10 @@ it.each([false, true])(
     await expect(
       work.track(() =>
         runDoctorHealthContributionList(ctx, [
-          createDoctorHealthContribution("doctor:interrupted", "Interrupted inspection", {
-            run: async () => {
+          createDoctorHealthContribution(
+            "doctor:interrupted",
+            "Interrupted inspection",
+            async () => {
               try {
                 work.beginClose(reason);
                 if (throws) {
@@ -39,7 +41,7 @@ it.each([false, true])(
                 cleaned();
               }
             },
-          }),
+          ),
           createDoctorHealthContribution("doctor:later", "Later inspection", later),
         ]),
       ),
@@ -53,16 +55,13 @@ it.each([false, true])(
 afterEach(() => vi.restoreAllMocks());
 
 describe("Doctor contribution migration outcomes", () => {
-  function receipt(
-    outcome: "refused" | "warning",
-    requiredness: "required" | "conditional",
-  ): LegacyStateMigrationStepReceipt {
+  function receipt(outcome: "refused" | "warning"): LegacyStateMigrationStepReceipt {
     return {
       id: "plugin-doctor-post-session-state",
       phase: "final",
       source: [{ kind: "owner", id: "plugin:example:legacy-state" }],
       target: [{ kind: "owner", id: "plugin:example:doctor-state" }],
-      requiredness,
+      requiredness: "conditional",
       reversibility: "checkpoint-required",
       outcome,
       changes: [],
@@ -79,7 +78,7 @@ describe("Doctor contribution migration outcomes", () => {
   }
 
   it("stops copied-state rehearsal after a conditional migration refusal", async () => {
-    const recorded = receipt("refused", "conditional");
+    const recorded = receipt("refused");
     const receipts: LegacyStateMigrationStepReceipt[] = [];
     const ctx = createDoctorHealthFlowContext({
       configResult: { stateMigrationStepReceipts: receipts },
@@ -102,10 +101,8 @@ describe("Doctor contribution migration outcomes", () => {
     const later = vi.fn(async () => {});
     await expect(
       runDoctorHealthContributionList(ctx, [
-        createDoctorHealthContribution("doctor:session-transcripts", "Sessions", {
-          run: async () => {
-            receipts.push(recorded);
-          },
+        createDoctorHealthContribution("doctor:session-transcripts", "Sessions", async () => {
+          receipts.push(recorded);
         }),
         createDoctorHealthContribution("doctor:later", "Later repair", later),
       ]),
@@ -115,22 +112,18 @@ describe("Doctor contribution migration outcomes", () => {
   });
 
   it("continues after an owner-classified recoverable warning and an unrelated advisory throw", async () => {
-    const recorded = receipt("warning", "conditional");
+    const recorded = receipt("warning");
     const receipts: LegacyStateMigrationStepReceipt[] = [];
     const ctx = createDoctorHealthFlowContext({
       configResult: { stateMigrationStepReceipts: receipts },
     });
     const later = vi.fn(async () => {});
     await runDoctorHealthContributionList(ctx, [
-      createDoctorHealthContribution("doctor:session-transcripts", "Sessions", {
-        run: async () => {
-          receipts.push(recorded);
-        },
+      createDoctorHealthContribution("doctor:session-transcripts", "Sessions", async () => {
+        receipts.push(recorded);
       }),
-      createDoctorHealthContribution("doctor:advisory", "Advisory", {
-        run: async () => {
-          throw new Error("optional diagnostic\nunavailable");
-        },
+      createDoctorHealthContribution("doctor:advisory", "Advisory", async () => {
+        throw new Error("optional diagnostic\nunavailable");
       }),
       createDoctorHealthContribution("doctor:later", "Later repair", later),
     ]);
@@ -154,10 +147,8 @@ it("stops after an optional contribution fails after writing config", async () =
 
   await expect(
     runDoctorHealthContributionList(ctx, [
-      createDoctorHealthContribution("doctor:test-config-write", "Test config write", {
-        run: async () => {
-          throw failure;
-        },
+      createDoctorHealthContribution("doctor:test-config-write", "Test config write", async () => {
+        throw failure;
       }),
       createDoctorHealthContribution("doctor:test-later", "Test later", laterRun),
     ]),
@@ -166,32 +157,20 @@ it("stops after an optional contribution fails after writing config", async () =
   expect(laterRun).not.toHaveBeenCalled();
 });
 
-it("runs release configured plugin install repair before plugin registry and final config writes", () => {
+it.each([
+  ["release-configured-plugin-installs", "plugin-registry"],
+  ["plugin-registry", "write-config"],
+  ["plugin-registry", "runtime-tool-schemas"],
+  ["legacy-state", "session-transcripts"],
+  ["session-transcripts", "agent-memory-schema"],
+  ["session-transcripts", "plugin-registry"],
+])("orders Doctor %s before %s", (before, after) => {
   const ids = resolveDoctorHealthContributions().map((entry) => entry.id);
-
-  expect(ids.indexOf("doctor:release-configured-plugin-installs")).toBeGreaterThan(-1);
-  expect(ids.indexOf("doctor:plugin-registry")).toBeGreaterThan(-1);
-  expect(ids.indexOf("doctor:release-configured-plugin-installs")).toBeLessThan(
-    ids.indexOf("doctor:plugin-registry"),
-  );
-  expect(ids.indexOf("doctor:plugin-registry")).toBeLessThan(ids.indexOf("doctor:write-config"));
-  expect(ids.indexOf("doctor:plugin-registry")).toBeLessThan(
-    ids.indexOf("doctor:runtime-tool-schemas"),
-  );
-});
-
-it("repairs canonical session rows before downstream agent-state checks", () => {
-  const ids = resolveDoctorHealthContributions().map((entry) => entry.id);
-
-  expect(ids.indexOf("doctor:legacy-state")).toBeLessThan(
-    ids.indexOf("doctor:session-transcripts"),
-  );
-  expect(ids.indexOf("doctor:session-transcripts")).toBeLessThan(
-    ids.indexOf("doctor:agent-memory-schema"),
-  );
-  expect(ids.indexOf("doctor:session-transcripts")).toBeLessThan(
-    ids.indexOf("doctor:plugin-registry"),
-  );
+  const earlier = ids.indexOf(`doctor:${before}`);
+  const later = ids.indexOf(`doctor:${after}`);
+  expect(earlier).toBeGreaterThan(-1);
+  expect(later).toBeGreaterThan(-1);
+  expect(earlier).toBeLessThan(later);
 });
 
 it.each(["completed", "deferred", "warning", "refused", "finding", "diagnostic"] as const)(

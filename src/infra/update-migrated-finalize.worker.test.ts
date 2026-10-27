@@ -16,46 +16,6 @@ import {
   POST_CORE_UPDATE_RESULT_PATH_ENV,
 } from "./update-post-core-context.js";
 
-it.each([false, true])(
-  "validates the internal retirement-only hint (%s)",
-  async (retirementOnly) => {
-    const doctor = vi.fn();
-    // mock-isolation: Observe the private wire contract without running host maintenance.
-    vi.doMock("../flows/doctor-health.js", () => ({ runDoctorHealthFlow: doctor }));
-    process.env.OPENCLAW_UPDATE_POST_INSTALL_DOCTOR_RESULT_PATH = "/synthetic/doctor.json";
-    try {
-      await runWorker(
-        {
-          executor: {},
-          runId: "synthetic-run",
-          root: "/synthetic",
-          configInputHash: "hash",
-          repair: true,
-          retirementOnly,
-        },
-        "--doctor",
-      );
-    } finally {
-      delete process.env.OPENCLAW_UPDATE_POST_INSTALL_DOCTOR_RESULT_PATH;
-      vi.doUnmock("../flows/doctor-health.js");
-    }
-
-    expect(fixture.stopService).not.toHaveBeenCalled();
-    if (retirementOnly) {
-      expect(doctor).toHaveBeenCalledExactlyOnceWith(
-        expect.anything(),
-        expect.anything(),
-        expect.objectContaining({ retirementOnly: true }),
-      );
-      expect(process.exitCode).toBe(originalExitCode);
-    } else {
-      expect(doctor).not.toHaveBeenCalled();
-      expect(process.exitCode).toBe(1);
-      expect(stderr.join("")).toContain("retirementOnly");
-    }
-  },
-);
-
 const fixture = vi.hoisted(() => ({
   close: vi.fn<() => Promise<void>>(),
   closeNative: vi.fn<() => Promise<void>>(),
@@ -320,36 +280,50 @@ it.each([
   { field: "repair", value: "false" },
   { field: "requester", value: { senderId: 42 } },
   { field: "databaseGenerations", value: { "/synthetic/agent.sqlite": false } },
-])("refuses malformed Doctor $field before maintenance", async ({ field, value }) => {
-  const doctor = vi.fn();
-  // mock-isolation: Check input rejection without running maintenance against the host.
-  vi.doMock("../flows/doctor-health.js", () => ({ runDoctorHealthFlow: doctor }));
-  process.env.OPENCLAW_UPDATE_POST_INSTALL_DOCTOR_RESULT_PATH = "/synthetic/doctor.json";
-  try {
-    await runWorker(
-      {
-        executor: {},
-        runId: "synthetic-run",
-        root: "/synthetic",
-        configInputHash: "hash",
-        repair: true,
-        [field]: value,
-      },
-      "--doctor",
-    );
-    // The executable reports its terminal error after all cleanup promises settle.
-    await setImmediate();
-  } finally {
-    delete process.env.OPENCLAW_UPDATE_POST_INSTALL_DOCTOR_RESULT_PATH;
-    vi.doUnmock("../flows/doctor-health.js");
-  }
+  { field: "retirementOnly", value: false },
+  { field: "retirementOnly", value: true, accepted: true },
+])(
+  "validates Doctor $field at the worker boundary ($value)",
+  async ({ field, value, accepted }) => {
+    const doctor = vi.fn();
+    // mock-isolation: Observe the private wire contract without running host maintenance.
+    vi.doMock("../flows/doctor-health.js", () => ({ runDoctorHealthFlow: doctor }));
+    process.env.OPENCLAW_UPDATE_POST_INSTALL_DOCTOR_RESULT_PATH = "/synthetic/doctor.json";
+    try {
+      await runWorker(
+        {
+          executor: {},
+          runId: "synthetic-run",
+          root: "/synthetic",
+          configInputHash: "hash",
+          repair: true,
+          [field]: value,
+        },
+        "--doctor",
+      );
+      // The executable reports its terminal error after all cleanup promises settle.
+      await setImmediate();
+    } finally {
+      delete process.env.OPENCLAW_UPDATE_POST_INSTALL_DOCTOR_RESULT_PATH;
+      vi.doUnmock("../flows/doctor-health.js");
+    }
 
-  expect(doctor).not.toHaveBeenCalled();
-  expect(fixture.stopService).not.toHaveBeenCalled();
-  expect(fixture.activation).not.toHaveBeenCalled();
-  expect(process.exitCode).toBe(1);
-  expect(stderr.join("")).toContain(field);
-});
+    expect(fixture.stopService).not.toHaveBeenCalled();
+    if (accepted) {
+      expect(doctor).toHaveBeenCalledExactlyOnceWith(
+        expect.anything(),
+        expect.anything(),
+        expect.objectContaining({ retirementOnly: true }),
+      );
+      expect(process.exitCode).toBe(originalExitCode);
+    } else {
+      expect(doctor).not.toHaveBeenCalled();
+      expect(fixture.activation).not.toHaveBeenCalled();
+      expect(process.exitCode).toBe(1);
+      expect(stderr.join("")).toContain(field);
+    }
+  },
+);
 
 it.each(["json", "human", "check"] as const)(
   "preserves %s stdout through finalization and asynchronous cleanup",

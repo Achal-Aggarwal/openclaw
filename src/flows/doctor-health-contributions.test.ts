@@ -1002,8 +1002,6 @@ describe("doctor health contributions", () => {
     const invalidatePluginMetadataSnapshot = vi.fn();
     const contribution = requireDoctorContribution("doctor:legacy-plugin-manifests");
     const ctx = createDoctorHealthFlowContext({
-      cfg: {},
-      runtime: { log: vi.fn(), error: vi.fn(), exit: vi.fn() },
       prompter: createDoctorPrompterFixture(true),
       invalidatePluginMetadataSnapshot,
     });
@@ -1330,12 +1328,7 @@ describe("doctor health contributions", () => {
 
   it("defers gateway probes while Doctor owns offline maintenance", async () => {
     const contribution = requireDoctorContribution(DOCTOR_GATEWAY_HEALTH_ID);
-    const ctx = createDoctorContext({
-      cfg: {},
-      configResult: { cfg: {} },
-      cfgForPersistence: {},
-      env: {},
-    });
+    const ctx = createDoctorContext({ env: {} });
     ctx.gatewayMaintenanceActive = true;
     await contribution.run(ctx);
     expect(mocks.checkGatewayHealth).not.toHaveBeenCalled();
@@ -1351,12 +1344,7 @@ describe("doctor health contributions", () => {
       status: { ok: true },
     });
     const contribution = requireDoctorContribution(DOCTOR_GATEWAY_HEALTH_ID);
-    const ctx = createDoctorContext({
-      cfg: {},
-      configResult: { cfg: {} },
-      cfgForPersistence: {},
-      env: {},
-    });
+    const ctx = createDoctorContext({ env: {} });
 
     await contribution.run(ctx);
 
@@ -1606,10 +1594,7 @@ describe("doctor health contributions", () => {
         },
       },
     };
-    const ctx = createDoctorHealthFlowContext({
-      cfg,
-      options: {},
-    });
+    const ctx = createDoctorHealthFlowContext({ cfg });
 
     await contribution.run(ctx);
 
@@ -1632,7 +1617,6 @@ describe("doctor health contributions", () => {
     const contribution = requireDoctorContribution("doctor:heartbeat-cadence-migration");
     const source = { agents: { defaults: { heartbeat: { every: "0m" } } } };
     const ctx = createDoctorHealthFlowContext({
-      cfg: {},
       configResult: { heartbeatMigrationSource: source },
       prompter: createDoctorPrompterFixture(true),
       env: { OPENCLAW_STATE_DIR: "/tmp/openclaw-state" },
@@ -1788,11 +1772,7 @@ describe("doctor health contributions", () => {
     const contribution = requireDoctorContribution("doctor:gateway-services");
     const ctx = createDoctorContext({
       cfg: { gateway: { mode: "local" } },
-      configResult: {},
-      sourceConfigValid: true,
-      prompter: createDoctorPrompterFixture(true),
-      runtime: { log: vi.fn(), error: vi.fn(), exit: vi.fn() },
-      options: {},
+      shouldRepair: true,
     });
 
     await contribution.run(ctx);
@@ -1807,8 +1787,6 @@ describe("doctor health contributions", () => {
   it("hints how to enable authenticated GitHub project search", async () => {
     const contribution = requireDoctorContribution("doctor:github-projects");
     const ctx = createDoctorContext({
-      cfg: {},
-      configResult: {},
       env: {},
       configPath: "/tmp/openclaw.json",
     });
@@ -1859,8 +1837,6 @@ describe("doctor health contributions", () => {
       checksValidated: 1,
     }));
     const ctx = createDoctorContext({
-      cfg: {},
-      configResult: {},
       shouldRepair: true,
       options: { nonInteractive: true },
     });
@@ -1879,7 +1855,6 @@ describe("doctor health contributions", () => {
     mocks.detectLegacyStateMigrations.mockResolvedValue(detected);
     const ctx = createDoctorContext({
       cfg,
-      configResult: {},
       shouldRepair: true,
       options: { nonInteractive: true, repair: true },
       configPath: "/tmp/openclaw.json",
@@ -2006,9 +1981,7 @@ describe("doctor health contributions", () => {
     const ctx = createDoctorHealthFlowContext({
       cfg,
       cfgForPersistence: structuredClone(cfg),
-      sourceConfigValid: true,
       prompter: createDoctorPrompterFixture(true),
-      runtime: { log: vi.fn(), error: vi.fn(), exit: vi.fn() },
       options: { nonInteractive: true },
     });
 
@@ -2052,7 +2025,6 @@ describe("doctor health contributions", () => {
     });
     const ctx = createDoctorHealthFlowContext({
       cfg,
-      cfgForPersistence: cfg,
       env: { OPENCLAW_UPDATE_IN_PROGRESS: "1" },
       prompter: createDoctorPrompterFixture(true),
     });
@@ -2223,14 +2195,6 @@ describe("doctor health contributions", () => {
         ),
       finding: { severity: "info", message: "Back up your workspace before major repair work." },
       args: () => ["/tmp/openclaw-workspace"],
-    },
-    {
-      id: "disk-space",
-      collect: mocks.collectDiskSpaceHealthFindings,
-      seed: (finding: HealthFinding) =>
-        mocks.collectDiskSpaceHealthFindings.mockReturnValueOnce([finding]),
-      finding: {},
-      args: () => [undefined],
     },
     {
       id: "device-pairing",
@@ -2422,6 +2386,27 @@ describe("doctor health contributions", () => {
       expect(mocks.note).toHaveBeenCalledTimes(2);
     },
   );
+
+  it("keeps disk space opt-in for default lint selection", async () => {
+    const ctx = createDoctorLintFixture();
+
+    expect(mocks.collectDiskSpaceHealthFindings).not.toHaveBeenCalled();
+
+    mocks.collectDiskSpaceHealthFindings.mockReturnValueOnce([
+      {
+        checkId: "core/doctor/disk-space",
+        severity: "warning",
+        message: "Low disk space: 300 MB free on the partition containing ~/.openclaw.",
+        path: "/home/test/.openclaw",
+        requirement: "low-free-space",
+      },
+    ]);
+
+    await expectOptInLintFindings(ctx, "core/doctor/disk-space", [
+      expect.objectContaining({ checkId: "core/doctor/disk-space" }),
+    ]);
+    expect(mocks.collectDiskSpaceHealthFindings).toHaveBeenCalledWith(undefined);
+  });
 
   it("keeps WhatsApp responsiveness opt-in for default lint selection", async () => {
     const whatsappCheck = await requireDoctorHealthCheck("core/doctor/whatsapp-responsiveness");
@@ -2694,9 +2679,6 @@ describe("doctor health contributions", () => {
     ]);
     const contribution = requireDoctorContribution("doctor:structured-health-repairs");
     const ctx = createDoctorContext({
-      cfg: {},
-      configResult: { cfg: {} },
-      cfgForPersistence: {},
       shouldRepair: true,
       env: { OPENCLAW_UPDATE_POST_CORE: "1" },
     });
@@ -2713,9 +2695,6 @@ describe("doctor health contributions", () => {
     const checkId = "plugin/example/probe";
     const contribution = requireDoctorContribution("doctor:structured-health-repairs");
     const ctx = createDoctorContext({
-      cfg: {},
-      configResult: { cfg: {} },
-      cfgForPersistence: {},
       shouldRepair: true,
       env: { OPENCLAW_UPDATE_POST_CORE: "1" },
       updateWarnings: ["earlier warning"],
@@ -2796,9 +2775,6 @@ describe("doctor health contributions", () => {
     ]);
     const contribution = requireDoctorContribution("doctor:structured-health-repairs");
     const ctx = createDoctorContext({
-      cfg: {},
-      configResult: { cfg: {} },
-      cfgForPersistence: {},
       shouldRepair: true,
       env: {},
     });
@@ -2921,9 +2897,7 @@ describe("doctor health contributions", () => {
 
     const ctx = createDoctorContext({
       cfg: originalCfg,
-      cfgForPersistence: originalCfg,
       configResult: {
-        cfg: originalCfg,
         preservedLegacyRootKeys: ["defaultModel"],
         shouldWriteConfig: true,
         skipPluginValidationOnWrite: true,
@@ -2976,23 +2950,16 @@ describe("doctor health contributions", () => {
   it("does not commit deferred cron migration when the config write fails", async () => {
     const cfg = { agents: { defaults: { models: {} } } } as OpenClawConfig;
     mocks.replaceConfigFile.mockRejectedValueOnce(new Error("config write failed"));
-    const ctx = {
+    const ctx = createDoctorContext({
       cfg,
-      cfgForPersistence: cfg,
       configResult: {
-        cfg,
         shouldWriteConfig: true,
         shouldRepairCronCodexModelRefsAfterConfigWrite: true,
-        confirmedConfigSource: { path: "/tmp/fake-openclaw.json", hash: "planning-revision" },
         blockedCodexModelIdentities: ["codex\u0000gpt-5.6-sol"],
       },
-      configPath: "/tmp/fake-openclaw.json",
-      sourceConfigValid: true,
-      prompter: createDoctorPrompterFixture(true),
-      runtime: { log: vi.fn(), error: vi.fn(), exit: vi.fn() },
-      options: {},
+      shouldRepair: true,
       env: {},
-    } as DoctorContributionRunContext;
+    });
 
     await expect(requireDoctorContribution("doctor:write-config").run(ctx)).rejects.toThrow(
       "config write failed",
@@ -3003,24 +2970,16 @@ describe("doctor health contributions", () => {
   it("keeps deferred legacy cron migration after the early write without repair mode", async () => {
     const cfg = { agents: { defaults: { models: {} } } } as OpenClawConfig;
     const retiredModelRefConfig = { agents: { defaults: { model: "openai/retired-model" } } };
-    const ctx = {
+    const ctx = createDoctorContext({
       cfg,
-      cfgForPersistence: cfg,
       configResult: {
-        cfg,
         shouldWriteConfig: true,
         shouldRepairCronCodexModelRefsAfterConfigWrite: true,
-        confirmedConfigSource: { path: "/tmp/fake-openclaw.json", hash: "planning-revision" },
         retiredModelRefConfig,
         blockedCodexModelIdentities: ["codex\u0000gpt-5.6-sol"],
       },
-      configPath: "/tmp/fake-openclaw.json",
-      sourceConfigValid: true,
-      prompter: createDoctorPrompterFixture(false),
-      runtime: { log: vi.fn(), error: vi.fn(), exit: vi.fn() },
-      options: {},
       env: {},
-    } as DoctorContributionRunContext;
+    });
 
     await requireDoctorContribution("doctor:write-config-migrations").run(ctx);
 
@@ -3148,9 +3107,6 @@ describe("doctor health contributions", () => {
 
       await contribution.run(
         createDoctorContext({
-          cfg: {},
-          cfgForPersistence: {},
-          configResult: { cfg: {} },
           shouldRepair: true,
           env: {
             OPENCLAW_UPDATE_IN_PROGRESS: "1",
