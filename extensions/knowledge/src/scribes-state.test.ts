@@ -53,10 +53,7 @@ describe("scribes catalog", () => {
     expect(prompt).toContain("`Scribe status: on — <one sentence: the automation");
     const runMessage = prompt.match(/Run message:\n\n```text\n([\s\S]+)\n```$/)?.[1];
     expect(runMessage).toMatch(
-      /^Scheduled run of the Knowledge scribe "Learn from conversations"\./,
-    );
-    expect(runMessage).toMatch(
-      /archived, from the last 90 days\.[\s\S]*"Learn from conversations"/,
+      /^Scheduled run of the Knowledge scribe "Learn from conversations"\.[\s\S]*archived, from the last 90 days\.[\s\S]*"Learn from conversations"/,
     );
     expect(prompt, "no JSON in the prompt").not.toMatch(/[{}]|```json|SCRIBE_RESULT/);
   });
