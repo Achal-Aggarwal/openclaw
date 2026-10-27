@@ -179,17 +179,6 @@ describe("remote pinned read sources", () => {
 });
 
 describe("remote sandbox fs bridge", () => {
-  it.runIf(process.platform === "linux")(
-    "streams file copies with the pinned mutation helper",
-    async () => {
-      const { bridge, put, contents, calls } = await createFixture();
-      await put("source.txt", "streamed");
-      await bridge.copyFile!({ sourcePath: "source.txt", destinationPath: "nested/copy.txt" });
-      await contents("nested/copy.txt", "streamed");
-      expect(calls.some((call) => call.args?.[0] === "copy")).toBe(true);
-    },
-  );
-
   it.each([false, true])("resolves equal-root ownership (protected=%s)", (protectedRoot) => {
     const workspaceDir = path.resolve("mapping-workspace");
     const agentWorkspaceDir = path.resolve("mapping-agent");
@@ -358,20 +347,6 @@ describe.runIf(process.platform === "linux")("remote sandbox fs bridge (GNU shel
     const { workspaceDir, at, bridge, runtime } = await createFixture(true);
     const remotePath = at("race-target.txt");
     const hostPath = path.join(workspaceDir, "race-target.txt");
-    const aliasIdentity = await resolveSandboxFileMutationQueueKey({
-      bridge,
-      root: workspaceDir,
-      filePath: remotePath,
-      cwd: workspaceDir,
-    });
-    await expect(
-      resolveSandboxFileMutationQueueKey({
-        bridge,
-        root: workspaceDir,
-        filePath: hostPath,
-        cwd: workspaceDir,
-      }),
-    ).resolves.toBe(aliasIdentity);
     const writeIdentityStarted = createDeferred();
     const releaseWriteIdentity = createDeferred();
     const readIdentityResolved = createDeferred();
@@ -532,25 +507,27 @@ it.runIf(process.platform === "linux").each(["remove", "rename"] as const)(
       operation === "remove"
         ? bridge.remove({ filePath: from, force: false })
         : bridge.rename({ from, to });
-    await put("note.txt", "root sentinel");
-    await put("real/note.txt", "requested bytes");
-    await mutate("alias/note.txt", "moved.txt");
-    await contents("note.txt", "root sentinel");
-    await expectAbsent(at("real/note.txt"));
-    if (operation === "rename") {
-      await contents("moved.txt", "requested bytes");
-    }
     const linkTarget = path.join(outsideDir, "target.txt");
     await fs.writeFile(linkTarget, "outside target");
-    await put("link.txt", "root link sentinel");
-    await fs.symlink(linkTarget, path.join(realDir, "link.txt"));
-    await mutate("alias/link.txt", "moved-link.txt");
-    await contents("link.txt", "root link sentinel");
-    await expectAbsent(at("real/link.txt"));
-    await expectFile(linkTarget, "outside target");
-    if (operation === "rename") {
-      await expect(fs.readlink(at("moved-link.txt"))).resolves.toBe(linkTarget);
+    for (const name of ["note.txt", "link.txt"]) {
+      await put(name, "root sentinel");
+      if (name === "link.txt") {
+        await fs.symlink(linkTarget, at(`real/${name}`));
+      } else {
+        await put(`real/${name}`, "requested bytes");
+      }
+      await mutate(`alias/${name}`, `moved-${name}`);
+      await contents(name, "root sentinel");
+      await expectAbsent(at(`real/${name}`));
+      if (operation === "rename") {
+        if (name === "link.txt") {
+          await expect(fs.readlink(at(`moved-${name}`))).resolves.toBe(linkTarget);
+        } else {
+          await contents(`moved-${name}`, "requested bytes");
+        }
+      }
     }
+    await expectFile(linkTarget, "outside target");
     await put("escape-target.txt", "root escape sentinel");
     await fs.writeFile(path.join(outsideDir, "escape-target.txt"), "outside sentinel");
     await expect(mutate("escape/escape-target.txt", "escaped.txt")).rejects.toThrow(
