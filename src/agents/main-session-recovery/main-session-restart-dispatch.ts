@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { formatErrorStackWithMessage } from "@openclaw/normalization-core/error-coercion";
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
 import { GatewayClientRequestError } from "../../../packages/gateway-client/src/index.js";
 import { isExecutionIdentityCollectionEnabled } from "../../audit/audit-config.js";
@@ -43,6 +44,7 @@ import { scheduleMainSessionRecoveryPendingTarget } from "./main-session-recover
 import type { MainSessionRecoveryReservation } from "./main-session-recovery-state.js";
 import { commitMainSessionRecovery } from "./main-session-recovery-store.js";
 import {
+  reconcileAcceptedRestartRecoveryCancellation,
   rollbackRestartRecoveryReservation,
   settleAcceptedRestartRecovery,
   settleRejectedRestartRecovery,
@@ -54,7 +56,6 @@ import {
 } from "./main-session-restart-dispatch-start.js";
 import type { ResumeMainSessionParams } from "./main-session-restart-dispatch.types.js";
 import {
-  announceRestartRecoveryResumption,
   hasRestartRecoveryMessageActionAuthority,
   requiresRestartRecoveryMessageActionAuthority,
   prepareRestartRecoveryDeliveryCurrent,
@@ -144,9 +145,8 @@ export async function resumeMainSession(
       },
     );
   }
-  const isCurrent = () => {
-    return source ? matchesRequester(source.readCurrent()) : retained?.isCurrent() === true;
-  };
+  const isCurrent = () =>
+    source ? matchesRequester(source.readCurrent()) : retained?.isCurrent() === true;
   if (!isCurrent()) {
     return "skipped";
   }
@@ -255,6 +255,7 @@ async function resumeMainSessionWithinAdmission(
     expectedRecoveryRunId: recoveryRunId,
     expectedRecoverySourceRunId: sourceRunId,
     expectedSessionId: params.entry.sessionId,
+    pendingFinalDelivery: params.entry.pendingFinalDelivery,
     lifecycleGeneration,
     sessionKeys: Array.from(new Set([dispatchSessionKey, params.sessionKey])),
     shouldContinue: params.shouldContinue,
@@ -584,7 +585,7 @@ async function resumeMainSessionWithinAdmission(
         shouldContinue: params.shouldContinue,
       }).catch((error: unknown) => {
         log.warn(
-          `failed to prepare restart recovery notice ${params.sessionKey}: ${String(error)}`,
+          `failed to prepare restart recovery typing ${params.sessionKey}: ${String(error)}`,
         );
         return undefined;
       });
@@ -599,19 +600,6 @@ async function resumeMainSessionWithinAdmission(
           });
           retainDeliveryCurrent = stopTyping !== undefined;
         }
-        await announceRestartRecoveryResumption({
-          ...target,
-          isCurrent: (cfg) => !dispatchSettled && taskRemainsOwed() && isDeliveryCurrent(cfg),
-          sessionKey: dispatchSessionKey,
-          sessionId: params.entry.sessionId,
-          recoveryRunId,
-          lifecycleGeneration,
-          deliveryContext,
-          cfg: params.cfg,
-          shouldContinue: () =>
-            !dispatchSettled && taskRemainsOwed() && params.shouldContinue?.() !== false,
-          gatewayRuntime: params.gatewayRuntime,
-        });
       }
     }
     log.info(
@@ -622,25 +610,21 @@ async function resumeMainSessionWithinAdmission(
     return resumeResult;
   } catch (error) {
     const explicitlyRejected = error instanceof GatewayClientRequestError && !dispatchAccepted;
-    if (
-      dispatchAccepted &&
-      !executionStarted &&
-      (!preStartAbortAttempted || preStartAbortConfirmed) &&
-      params.shouldContinue?.() !== false
-    ) {
-      await repairAcceptedRecovery();
-    } else if (
-      dispatchAccepted &&
-      !executionStarted &&
-      preStartAbortAttempted &&
-      !preStartAbortConfirmed &&
-      params.shouldContinue?.() !== false
-    ) {
-      log.warn(
-        `restart recovery execution start timed out without confirmed cancellation: ${params.sessionKey}`,
-      );
-    }
     try {
+      const unconfirmedStartTimeout = await reconcileAcceptedRestartRecoveryCancellation({
+        controllerInput,
+        dispatchAccepted,
+        executionStarted,
+        preStartAbortAttempted,
+        preStartAbortConfirmed,
+        repairAcceptedRecovery,
+        shouldContinue: params.shouldContinue,
+      });
+      if (unconfirmedStartTimeout) {
+        log.warn(
+          `restart recovery execution start timed out without confirmed cancellation: ${params.sessionKey}`,
+        );
+      }
       if (
         dispatchStarted &&
         (!explicitlyRejected || controllerInput?.abortSignal.aborted) &&
@@ -650,8 +634,6 @@ async function resumeMainSessionWithinAdmission(
           recoveryRunId,
           params.gatewayRuntime,
         );
-        // Stop can revoke operator admission before acceptance. Reconcile its
-        // recorded cancellation without treating other authority rejections as accepted work.
         if (
           terminalStatus &&
           (!explicitlyRejected || terminalStatus === "cancelled") &&
@@ -711,7 +693,7 @@ async function resumeMainSessionWithinAdmission(
       return rejected;
     }
     log.warn(
-      `failed to resume interrupted main session ${params.sessionKey}: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`,
+      `failed to resume interrupted main session ${params.sessionKey}: ${error instanceof Error ? formatErrorStackWithMessage(error) : String(error)}`,
     );
     return "failed";
   } finally {

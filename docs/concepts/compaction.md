@@ -254,6 +254,12 @@ It shows a notice even with compaction notifications disabled; resend any
 essential details from omitted history. The bound applies to selected history,
 not the fixed instructions, tool definitions, or current request.
 
+For direct Anthropic API-key routes, cleared turn-scoped runtime-context contents
+do not contribute to compaction pressure or the fallback window. Saved replay
+remains append-only. Event envelopes and history outside the bounded accounting
+read still count conservatively. The separate history hydration limit continues
+to count raw serialized bytes.
+
 Manual compaction also reports `transcript_bytes` pressure to the context engine
 when the configured positive threshold is reached and automatic compaction is
 enabled. This lets an owning engine apply the same byte-pressure policy during
@@ -319,25 +325,11 @@ exhausted but the reply still continues:
 
 Before compaction, OpenClaw can run a **silent memory flush** turn to save durable context. Memory Core appends to a workspace memory file; another selected memory plugin can persist through its own tools and use declared read-only lookup tools to check existing memory first. The tools retain the source conversation's memory audience and sandbox restrictions. Missing lookup tools produce a warning but do not block persistence. If policy removes every declared persistence tool, OpenClaw skips the flush and continues compaction.
 
-Set `agents.defaults.compaction.memoryFlush.model` when this housekeeping turn should use a local model instead of the active conversation model:
-
-```json
-{
-  "agents": {
-    "defaults": {
-      "compaction": {
-        "memoryFlush": {
-          "model": "ollama/qwen3:8b"
-        }
-      }
-    }
-  }
-}
-```
+The flush uses the active session model and its normal fallback chain. To keep memory extraction local, use a local model for the session and configure local fallbacks.
 
 Memory flush is optional maintenance: a failure, including exhausted retries, does not reset the session or discard conversation history. If compaction is unnecessary or succeeds, OpenClaw continues the reply; with `notifyUser` enabled, exhausted flush retries also produce a degraded notice. If required compaction fails, OpenClaw reports that failure and keeps the conversation intact instead of starting over automatically.
 
-The memory-flush model override is exact and does not inherit the active session fallback chain. See [Memory](/concepts/memory) for details and config.
+See [Memory](/concepts/memory) for details and config.
 
 ## Provider and engine behavior
 

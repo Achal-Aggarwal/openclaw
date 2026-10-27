@@ -89,6 +89,11 @@ the nested shape before starting the Gateway. See the
   output. Still uses the chunker if the buffered text exceeds `maxChars`, so it
   can emit multiple chunks at the end.
 
+Final-answer blocks wait while trailing tool syntax or Markdown ownership is still
+ambiguous. Recognized calls are hidden; literal examples and unfinished text are
+released when the text ends. Ordinary prose keeps streaming, and preview updates
+retain their existing replacement behavior.
+
 <a id="pending-text-phases" />
 
 ### Text phases and final replies
@@ -165,6 +170,7 @@ Block chunking is implemented by `EmbeddedBlockChunker`:
   whitespace -> hard break.
 - **Code fences:** never split inside fences; when forced at `maxChars`, close
   and reopen the fence to keep Markdown valid.
+  Inline backtick code does not make following prose part of a fenced block.
 - **Tables:** a Markdown table that fits in `maxChars` is kept in one chunk,
   even if that means breaking before it below `minChars`, so channels that
   render tables see the header and rows together. Larger tables split at row
@@ -417,6 +423,9 @@ Slack-only:
   parallel and consecutive tool updates share the current tool-activity post.
 - Falls back to sending a fresh final post if the preview post was deleted or
   is otherwise unavailable at finalize time.
+- Sends the final answer as a new post and deletes the preview when anything
+  was posted after the preview in its thread (or channel), such as a `message`
+  tool send, so the answer lands last and notifies.
 - Final media/error payloads cancel pending preview updates before normal
   delivery instead of flushing a temporary preview post.
 
