@@ -1,6 +1,8 @@
 // @vitest-environment node
 import { describe, expect, it, vi } from "vitest";
+import { createDeferred as deferred } from "../../../../test/helpers/promise.js";
 import type { GatewayBrowserClient } from "../../api/gateway.ts";
+import type { ConfigSnapshot } from "../../api/types.ts";
 import { createConfigCapabilityHarness, createGatewayHarness } from "./config-test-harness.ts";
 import { makeSnapshot } from "./config-write.test-support.ts";
 import { createRuntimeConfigCapability } from "./runtime-config-capability.ts";
@@ -25,6 +27,64 @@ describe("runtime config load retries", () => {
     new Promise<void>((resolve) => {
       setTimeout(resolve, 0);
     });
+
+  it("releases loading after a failed display read so the editor can be explicitly reloaded", async () => {
+    vi.useFakeTimers();
+    const request = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("temporarily unavailable"))
+      .mockResolvedValue(makeSnapshot({ config: { count: 1 }, hash: "recovered" }));
+    const { runtimeConfig, state } = createConfigCapabilityHarness(request);
+    let observed: { loading: boolean; error: string | null } | undefined;
+    const unsubscribe = runtimeConfig.subscribe((current) => {
+      observed = { loading: current.configLoading, error: current.lastError };
+    });
+    try {
+      await runtimeConfig.ensureDisplayLoaded();
+      expect(state.lastError).toBe("temporarily unavailable");
+
+      await runtimeConfig.ensureLoaded();
+      expect(request).toHaveBeenCalledOnce();
+      expect(observed).toEqual({ loading: false, error: "temporarily unavailable" });
+      expect(state.configLoading).toBe(false);
+
+      await runtimeConfig.discardDraft({ reloadOnly: true });
+      expect(request).toHaveBeenCalledTimes(2);
+      expect(state.configForm).toEqual({ count: 1 });
+      expect(state.configSnapshot?.hash).toBe("recovered");
+      expect(observed).toEqual({ loading: false, error: null });
+    } finally {
+      unsubscribe();
+      runtimeConfig.dispose();
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps a shared editor read busy when concurrent callers wait for activation", async () => {
+    const first = deferred<ConfigSnapshot>();
+    const request = vi.fn(() => first.promise);
+    const { runtimeConfig, state } = createConfigCapabilityHarness(request);
+    let observedLoading: boolean | undefined;
+    const unsubscribe = runtimeConfig.subscribe((current) => {
+      observedLoading = current.configLoading;
+    });
+    const pending = [runtimeConfig.ensureLoaded(), runtimeConfig.ensureLoaded()];
+    try {
+      await vi.waitFor(() => expect(request).toHaveBeenCalledOnce());
+      expect(state.configLoading).toBe(true);
+      expect(observedLoading).toBe(true);
+      first.resolve(makeSnapshot());
+      await Promise.all(pending);
+      expect(observedLoading).toBe(false);
+      expect(state.configLoading).toBe(false);
+      expect(state.configSnapshot?.hash).toBe("hash-1");
+    } finally {
+      first.resolve(makeSnapshot());
+      await Promise.all(pending);
+      unsubscribe();
+      runtimeConfig.dispose();
+    }
+  });
 
   it.each(["display", "editor"] as const)(
     "does not republish %s loads that cannot start before read access",

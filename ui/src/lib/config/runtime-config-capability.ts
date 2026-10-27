@@ -222,9 +222,15 @@ export function createRuntimeConfigCapability(
           }
           editor.setWritesSuspended(...suspension);
           stopEditor = editor.subscribe(publish);
-          if (state.configSnapshot) {
+          // Release the import lock before the editor can start its own read.
+          if (!displayRead) {
             state.configLoading = false;
+          }
+          if (state.configSnapshot) {
             void editor.ensureLoaded();
+            publish();
+          } else if (!displayRead && !canEnsureConfigRead(state)) {
+            // A skipped ensure will not publish the idle handoff.
             publish();
           }
           return editor;
@@ -280,13 +286,7 @@ export function createRuntimeConfigCapability(
     if (editor) {
       return task(editor);
     }
-    const result = invoke((loaded) => {
-      // Hand the module-loading flag to the read before its coalesced publication.
-      if (!currentConfigRead(state)) {
-        state.configLoading = false;
-      }
-      return task(loaded);
-    }, undefined);
+    const result = invoke(task, undefined);
     if (
       !background &&
       state.client &&
