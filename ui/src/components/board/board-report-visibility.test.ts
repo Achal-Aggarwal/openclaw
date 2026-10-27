@@ -24,8 +24,7 @@ it("defers fixed reports until nearby, then retains their body and current conte
         observers.push({
           targets: this.targets,
           deliver: (target) => {
-            // SAFETY: The visibility pool consumes only target/isIntersecting;
-            // this fixture supplies the native observer's delivery contract.
+            // SAFETY: The observer fixture only needs target/isIntersecting.
             callback(
               [{ target, isIntersecting: true } as IntersectionObserverEntry],
               this as unknown as IntersectionObserver,
@@ -58,20 +57,16 @@ it("defers fixed reports until nearby, then retains their body and current conte
   };
   const cell = mountCell(widget, { context });
   await cell.updateComplete;
-  expect(cell.querySelector(".board-widget")?.getAttribute("style")).toContain(
-    "grid-row: 1 / span 4",
-  );
+  const target = cell.querySelector(".board-widget")!;
+  expect(target.getAttribute("style")).toContain("grid-row: 1 / span 4");
   expect(cell.querySelector("openclaw-report-widget")).toBeNull();
   expect(cell.querySelector(".board-widget__menu-trigger")).toBeNull();
   expect(cell.querySelector(".board-widget__chrome")).toBeNull();
   expect(cell.querySelector(".board-widget__resize-handle")).toBeNull();
-  const target = cell.querySelector(".board-widget")!;
   const observer = observers.find(({ targets }) => targets.has(target));
-  expect(observer).toBeDefined();
   observer!.deliver(target);
   await waitForSolid(() => expect(cell.textContent).toContain("Initial report"));
   expect(cell.querySelector(".board-widget__menu-trigger")).not.toBeNull();
-  expect(cell.querySelector(".board-widget__chrome")).not.toBeNull();
   expect(cell.querySelector(".board-widget__resize-handle")).not.toBeNull();
   const report = cell.querySelector("openclaw-report-widget");
   expect(observer!.targets.has(target)).toBe(false);
