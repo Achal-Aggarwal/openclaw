@@ -261,7 +261,7 @@ describe("session menu", () => {
   });
 
   it.each([false, true])(
-    "adds collection references through the unchanged native menu (compact=%s)",
+    "adds sessions to sections through the unchanged native menu (compact=%s)",
     async (compact) => {
       const key = compact ? "agent:main:research" : "main";
       const agentId = compact ? "main" : "research";
@@ -306,7 +306,7 @@ describe("session menu", () => {
         "Mark as unread",
         "Copy link",
         "Move to group",
-        "Add to my collections",
+        "Add to section",
         "Archive session",
         "Advanced",
       ]);
@@ -314,10 +314,10 @@ describe("session menu", () => {
       if (compact) {
         await selectMenuValue(menu, "compact:open-collections");
       } else {
-        await openSubmenu(menu, "Add to my collections");
+        await openSubmenu(menu, "Add to section");
       }
       if (compact) {
-        expect(menuItemLabels(menu)).toEqual(["Back", "Focus", "New collection"]);
+        expect(menuItemLabels(menu)).toEqual(["Back", "Focus", "New section"]);
         expect(menuPanel(menu).querySelector('[role="menu"]')).toBeNull();
         await selectMenuValue(menu, "compact:back");
         expect(menuItemLabels(menu)).toContain("Move to group");

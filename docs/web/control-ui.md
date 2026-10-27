@@ -349,23 +349,24 @@ Open group rename and **New session defaults** dialogs close when the Gateway
 reconnects or you switch connections. Reopen the group’s menu to make changes
 using the current connection.
 
-**My collections** organize only your sidebar, for solo users, members, and guests.
-The section stays out of the way until you create a collection; deliberately empty
-collections remain visible. Choose **New collection** in **Filter & sort** even
-without selecting a session, or use a session's **Add to my collections** menu to
-add a reference to an existing collection or create one with that session selected.
-Only your sidebar changes. Sessions stay in their groups.
+**Sections** organize only your sidebar, for solo users, members, and guests.
+They appear below **Pinned**, among the sidebar groups, marked with a stacked-layers
+icon; deliberately empty sections remain visible. Choose **New section** in
+**Filter & sort** even without selecting a session, or use a session's
+**Add to section** menu to add it to an existing section or create one with that
+session selected. Only your sidebar changes. Sessions stay in their groups.
 
-**Edit collection** renames a collection and adds or removes references. Drag an
-existing session into a collection to add a reference. Drag collection headers to
-reorder them, or use **Move up** and **Move down** in the collection menu.
-**Remove collection** removes only that personal collection; it never deletes
-sessions. Pins and shared groups are independent, and **Move to group** still
-changes shared group membership.
+**Edit section** renames a section and chooses its sessions; use the search button
+to filter the list. Sessions inside a section follow the sidebar's **Sort by**
+selection. Drag an existing session into a section to add it. Drag section headers
+to reorder them, or use **Move up** and **Move down** in the section menu.
+**Remove section** removes only that personal section; it never deletes sessions.
+Pins and shared groups are independent, and **Move to group** still changes shared
+group membership.
 
-Collections do not grant access. Unavailable saved sessions remain hidden,
-and references outside the loaded session list resolve through the normal access-checked
-session lookup. Collections are scoped to your profile and Gateway. Connections with
+Sections do not grant access. Unavailable saved sessions remain hidden,
+and sessions outside the loaded session list resolve through the normal access-checked
+session lookup. Sections are scoped to your profile and Gateway. Connections with
 general Gateway write access sync them through personal preferences. Session-only,
 read-only, and profileless connections keep their edits in that browser, like personal pins.
 

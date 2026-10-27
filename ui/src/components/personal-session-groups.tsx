@@ -8,7 +8,10 @@ import type { PersonalSessionGroup } from "../lib/sessions/personal-groups.ts";
 import { showToast } from "../lib/toast.ts";
 import type { SidebarSessionListHost } from "./app-sidebar-session-render-types.ts";
 import { renderSessionTree as SessionTree } from "./app-sidebar-session-row-render.tsx";
-import { createPersonalSessionGroupActions } from "./personal-session-group-actions.ts";
+import {
+  createPersonalSessionGroupActions,
+  personalSessionGroupCandidates,
+} from "./personal-session-group-actions.ts";
 import { Icon } from "./solid/icon.tsx";
 import { Menu } from "./solid/menu.tsx";
 
@@ -38,9 +41,10 @@ function PersonalGroups(props: { host: SidebarSessionListHost }) {
       ? props.host.resolvePersonalGroupSession(key)
       : props.host.reconciledSidebarZone().sessionRows.get(key);
   const visibleRows = (group: PersonalSessionGroup) => props.host.personalGroupSessionRows(group);
+  // Every entry point lists the same loaded sessions; the sidebar only resolves existing members.
   const { write, edit } = createPersonalSessionGroupActions(
     context,
-    () => [...props.host.reconciledSidebarZone().sessionRows.values()],
+    () => personalSessionGroupCandidates(context),
     resolve,
     lifetime.signal,
   );
@@ -86,22 +90,12 @@ function PersonalGroups(props: { host: SidebarSessionListHost }) {
   };
   return (
     <Show when={groups().length > 0}>
-      <div class="sidebar-recent-sessions personal-session-groups">
-        <div class="sidebar-recent-sessions__head personal-session-groups__heading">
-          <span class="sidebar-session-group-status sidebar-recent-sessions__label-text">
-            {t("sessionsView.personalGroups")}
-          </span>
-          <button
-            type="button"
-            class="sidebar-session-toolbar__button"
-            aria-label={t("sessionsView.personalGroupNew")}
-            title={t("sessionsView.personalGroupNew")}
-            disabled={!props.host.connected || Boolean(props.host.sidebarSnapshot)}
-            onClick={() => void edit()}
-          >
-            <Icon name="plus" />
-          </button>
-        </div>
+      {/* Sections sit among the sidebar groups; their icon, not a heading, marks them personal. */}
+      <div
+        class="sidebar-recent-sessions personal-session-groups"
+        role="group"
+        aria-label={t("sessionsView.personalGroups")}
+      >
         <For each={groups()} keyed={(group) => group.id}>
           {(group, index) => (
             <div
@@ -166,6 +160,9 @@ function PersonalGroups(props: { host: SidebarSessionListHost }) {
                           : "chevronDown"
                       }
                     />
+                  </span>
+                  <span class="personal-session-groups__icon" aria-hidden="true">
+                    <Icon name="layers" />
                   </span>
                   <span class="sidebar-recent-sessions__label-text">{group().label}</span>
                 </button>

@@ -330,7 +330,7 @@ export function useSessionMenuEntries(
             class: "session-menu__item",
             labelClass: "session-menu__text",
             disabled: state.disabled || group.sessionKeys.includes(state.session.target?.key ?? ""),
-            icon: icon("folder"),
+            icon: icon("layers"),
           })),
           {
             id: "personal-collection:new",
@@ -442,7 +442,7 @@ export function useSessionMenuEntries(
             submenu({
               view: "collections",
               label: t("sessionsView.personalGroupAdd"),
-              icon: "folder",
+              icon: "layers",
               disabled: state.disabled,
             }),
           ]

@@ -1,12 +1,81 @@
-.personal-session-group-dialog {
-  min-height: 0;
+/* Loaded with the lazy dialog; startup CSS is unaffected. */
+.personal-section-dialog.exec-approval-card {
+  gap: 0;
+  padding: 0;
   overflow: hidden;
 }
 
-.personal-session-group-dialog__sessions {
+.personal-section-dialog__hero {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 18px 20px;
+  border-bottom: 1px solid var(--border);
+  background: radial-gradient(
+    120% 160% at 0 0,
+    color-mix(in srgb, var(--accent) 13%, transparent),
+    transparent 62%
+  );
+}
+
+.personal-section-dialog__intro {
+  display: grid;
+  gap: 7px;
+  justify-items: start;
+}
+
+.personal-section-dialog__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 9px;
+  border-color: color-mix(in srgb, var(--accent) 26%, transparent);
+  background: color-mix(in srgb, var(--accent) 11%, transparent);
+  color: color-mix(in srgb, var(--accent) 78%, var(--text));
+}
+
+.personal-section-dialog__chip svg {
+  width: 12px;
+  height: 12px;
+}
+
+.personal-section-dialog__body {
   display: flex;
   min-height: 0;
-  min-width: 0;
   flex-direction: column;
+  gap: 14px;
+  padding: 16px 20px 20px;
+}
+
+.personal-section-dialog__list-head {
+  display: flex;
+  height: 36px;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: -6px;
+}
+
+.personal-section-dialog__count {
+  margin-inline-start: auto;
+}
+
+.personal-section-dialog__search {
+  flex: 1;
+  min-width: 0;
+}
+
+.personal-section-dialog__search::-webkit-search-cancel-button {
+  display: none;
+}
+
+/* A fixed list height keeps the dialog stable while searching or selecting. */
+.personal-session-group-dialog__sessions {
+  display: flex;
+  height: clamp(156px, 34dvh, 248px);
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px 12px;
   overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
 }

@@ -176,7 +176,7 @@ it("keeps live pins across query replacement until their descriptors confirm abs
   expect(read).toHaveBeenCalledTimes(2);
 });
 
-it("hides unused collections but retains deliberately empty collections", async () => {
+it("hides unused sections but retains deliberately empty sections", async () => {
   const gateway = createGatewayHarness({} as GatewayBrowserClient);
   const sessions = createSessionsHarness("main", []);
   const context = createContext(gateway.gateway, sessions.sessions);

@@ -139,9 +139,15 @@ export function createPersonalSessionGroupActions(
       if (id && !group) {
         return;
       }
+      // Existing members outside the loaded list stay visible so they can be removed.
+      const listed = new Set(available.map((row) => row.key));
+      const members = (group?.sessionKeys ?? []).flatMap((key) => {
+        const row = listed.has(key) ? undefined : resolve(key);
+        return row?.pinnable && !row.archived ? [row] : [];
+      });
       await showPersonalSessionGroupDialog({
         group,
-        candidates: available,
+        candidates: [...members, ...available],
         selectedKey,
         signal,
         submit: (value) => {

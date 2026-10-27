@@ -17,6 +17,132 @@ const key = "agent:main:reliability";
 const releaseKey = "agent:main:release";
 
 suite.define(() => {
+  it("places sections below Pinned and keeps their editor compact", async () => {
+    // OPENCLAW_SECTIONS_STAGE=before|after also records matched proof screenshots.
+    const stage = process.env.OPENCLAW_SECTIONS_STAGE;
+    const before = stage === "before";
+    const noun = before ? "collection" : "section";
+    const artifacts = stage ? createControlUiE2eArtifactDir("sections-" + stage) : undefined;
+    await suite.withPage({ viewport: { width: 1280, height: 900 } }, async ({ page }) => {
+      const rows = Array.from({ length: 45 }, (_, index) =>
+        createControlUiSessionRow(
+          index === 0 ? key : index === 1 ? releaseKey : "agent:main:section-" + index,
+          index === 0
+            ? "Roadmap review"
+            : index === 1
+              ? "Release checklist"
+              : index === 2
+                ? "Research notes"
+                : "Project " + String(index).padStart(2, "0"),
+          1793000000000 - index * 1000,
+          { category: "Engineering", createdAt: 1792900000000 - index * 1000 },
+        ),
+      );
+      await installMockGateway(page, {
+        sessionKey: key,
+        operatorScopes: ["operator.sessions.read"],
+        sessions: rows,
+      });
+      await page.goto(controlUiSessionUrl(suite.server.baseUrl, key));
+      await page.locator("openclaw-app-sidebar .sidebar-recent-session").first().waitFor();
+      await evaluateControlUiContext(page, ({ navigation, theme }) => {
+        theme.setMode("light");
+        navigation.update({
+          sidebarEntries: ["session:agent:main:reliability"],
+          // Saved in the opposite order to the sidebar's newest-first Sort by.
+          personalSessionGroups: [
+            {
+              id: "focus",
+              label: "This week",
+              sessionKeys: ["agent:main:release", "agent:main:reliability"],
+            },
+            { id: "reading", label: "Reading", sessionKeys: ["agent:main:section-2"] },
+          ],
+        });
+      });
+      const sidebar = page.locator("openclaw-app-sidebar");
+      const focus = sidebar.locator('[data-personal-session-group="focus"]');
+      await focus.waitFor();
+      if (artifacts) {
+        await captureFrame(artifacts, "sidebar.png", page.locator(".shell"), [
+          sidebar.locator(".sidebar-sessions"),
+        ]);
+      }
+      if (!before) {
+        expect(
+          await sidebar.locator(".sidebar-sessions").evaluate((root) => {
+            const pinned = root.querySelector(".sidebar-recent-sessions--pinned");
+            const section = root.querySelector('[data-personal-session-group="focus"]');
+            return Boolean(
+              pinned &&
+              section &&
+              pinned.compareDocumentPosition(section) & Node.DOCUMENT_POSITION_FOLLOWING,
+            );
+          }),
+        ).toBe(true);
+        // No heading: the icon distinguishes a personal section from a shared group.
+        expect(
+          await sidebar
+            .locator(".personal-session-groups > .sidebar-recent-sessions__head")
+            .count(),
+        ).toBe(0);
+        expect(await focus.locator(".personal-session-groups__icon svg").count()).toBe(1);
+        expect(
+          await focus
+            .locator(".sidebar-recent-session")
+            .evaluateAll((items) => items.map((item) => item.getAttribute("data-session-key"))),
+        ).toEqual([key, releaseKey]);
+      }
+      await sidebar
+        .getByRole("button", { name: "Options for " + noun + " This week", exact: true })
+        .click();
+      await page.getByRole("menuitem", { name: "Edit " + noun, exact: true }).click();
+      const dialog = page.getByRole("dialog", { name: "Edit " + noun, exact: true });
+      await dialog.waitFor();
+      // Measure after the opening scale transition settles.
+      await dialog.evaluate((element) =>
+        Promise.all(
+          element.getAnimations({ subtree: true }).map((animation) => animation.finished),
+        ),
+      );
+      if (artifacts) {
+        await captureFrame(artifacts, "dialog-light.png", page.locator(".shell"), [dialog]);
+      }
+      if (!before) {
+        expect((await dialog.boundingBox())?.height).toBeLessThanOrEqual(600);
+        expect(await dialog.getByRole("searchbox").count()).toBe(0);
+        expect(await dialog.getByText("Just your sidebar", { exact: true }).isVisible()).toBe(true);
+        const list = dialog.getByRole("group", { name: "Sessions", exact: true });
+        const listHeight = (await list.boundingBox())?.height;
+        await dialog.getByRole("button", { name: "Search sessions", exact: true }).click();
+        const search = dialog.getByRole("searchbox", { name: "Search sessions", exact: true });
+        await expect.poll(() => search.evaluate((element) => element.matches(":focus"))).toBe(true);
+        await search.fill("Release");
+        await expect.poll(() => list.getByRole("checkbox").count()).toBe(1);
+        expect((await list.boundingBox())?.height).toBe(listHeight);
+        await search.press("Escape");
+        expect(await search.inputValue()).toBe("");
+        await search.press("Escape");
+        await expect.poll(() => dialog.getByRole("searchbox").count()).toBe(0);
+        expect(await dialog.isVisible()).toBe(true);
+        if (artifacts) {
+          await dialog.getByRole("button", { name: "Search sessions", exact: true }).click();
+          await search.fill("Release");
+          await captureFrame(artifacts, "dialog-search.png", page.locator(".shell"), [dialog]);
+          await dialog.getByRole("button", { name: "Close search", exact: true }).click();
+          await expect.poll(() => dialog.getByRole("searchbox").count()).toBe(0);
+        }
+      }
+      if (artifacts) {
+        await evaluateControlUiContext(page, ({ theme }) => theme.setMode("dark"));
+        await page.locator('html[data-theme-mode="dark"]').waitFor({ state: "attached" });
+        await captureFrame(artifacts, "dialog-dark.png", page.locator(".shell"), [dialog]);
+        console.log("Sections proof: " + artifacts);
+      }
+      await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+    });
+  });
+
   it.for(["operator.admin", "operator.sessions.read"])(
     "organizes a personal layout without shared mutations (%s)",
     async (scope) => {
@@ -71,26 +197,24 @@ suite.define(() => {
             // Shared organization stays present with its original guest disabled policy.
             const move = page.getByRole("menuitem", { name: "Move to group", exact: true });
             expect(await move.isDisabled()).toBe(scope === "operator.sessions.read");
-            await page
-              .getByRole("menuitem", { name: "Add to my collections", exact: true })
-              .hover();
-            await page.getByRole("menuitem", { name: "New collection", exact: true }).waitFor();
+            await page.getByRole("menuitem", { name: "Add to section", exact: true }).hover();
+            await page.getByRole("menuitem", { name: "New section", exact: true }).waitFor();
           };
-          // First collection is discoverable from the native session menu, without a section.
+          // The first section is discoverable from the native session menu, without a heading.
           await openCollections(key);
           if (artifacts) {
             await captureFrame(artifacts, "native-discovery.png", page.locator(".shell"), [
               sidebar.locator(".sidebar-sessions"),
             ]);
           }
-          await page.getByRole("menuitem", { name: "New collection", exact: true }).click();
-          const firstDialog = page.getByRole("dialog", { name: "New collection", exact: true });
+          await page.getByRole("menuitem", { name: "New section", exact: true }).click();
+          const firstDialog = page.getByRole("dialog", { name: "New section", exact: true });
           expect(
             await firstDialog
               .getByRole("checkbox", { name: "Reliability Tracker", exact: true })
               .isChecked(),
           ).toBe(true);
-          await firstDialog.getByLabel("Collection name", { exact: true }).fill("Focus");
+          await firstDialog.getByLabel("Section name", { exact: true }).fill("Focus");
           if (artifacts) {
             await captureFrame(artifacts, "creation.png", page.locator(".shell"), [firstDialog]);
           }
@@ -100,10 +224,10 @@ suite.define(() => {
             await sidebar.getByRole("button", { name: /^Filter & sort/ }).click();
             await page
               .locator(".sidebar-session-sort-menu")
-              .getByRole("button", { name: "New collection", exact: true })
+              .getByRole("button", { name: "New section", exact: true })
               .click();
-            const dialog = page.getByRole("dialog", { name: "New collection", exact: true });
-            await dialog.getByLabel("Collection name", { exact: true }).fill(label);
+            const dialog = page.getByRole("dialog", { name: "New section", exact: true });
+            await dialog.getByLabel("Section name", { exact: true }).fill(label);
             if (selected) {
               await dialog.getByRole("checkbox", { name: selected, exact: true }).check();
             }
@@ -116,7 +240,7 @@ suite.define(() => {
               .filter({ has: page.getByRole("list", { name: label, exact: true }) });
           const options = async (label: string, action: string) => {
             await sidebar
-              .getByRole("button", { name: `Options for collection ${label}`, exact: true })
+              .getByRole("button", { name: `Options for section ${label}`, exact: true })
               .click();
             await page.getByRole("menuitem", { name: action, exact: true }).click();
           };
@@ -146,7 +270,7 @@ suite.define(() => {
           await create("Later");
           expect(
             await group("Later")
-              .getByText("Drag sessions here or choose Edit collection to add them.")
+              .getByText("Drag sessions here or choose Edit section to add them.")
               .isVisible(),
           ).toBe(true);
           // Adding an existing reference is not a shared move, including for read-only guests.
@@ -155,9 +279,9 @@ suite.define(() => {
           await group("Focus")
             .getByRole("link", { name: /Release checklist/ })
             .waitFor();
-          await options("Focus", "Edit collection");
-          const editor = page.getByRole("dialog", { name: "Edit collection", exact: true });
-          await editor.getByLabel("Collection name", { exact: true }).fill("This week");
+          await options("Focus", "Edit section");
+          const editor = page.getByRole("dialog", { name: "Edit section", exact: true });
+          await editor.getByLabel("Section name", { exact: true }).fill("This week");
           await editor
             .getByRole("checkbox", { name: "Reliability Tracker", exact: true })
             .uncheck();
@@ -181,13 +305,12 @@ suite.define(() => {
             .getByRole("link", { name: /Release checklist/ })
             .waitFor();
           if (artifacts && process.env.OPENCLAW_PERSONAL_GROUP_PROOF_STAGE !== "before") {
-            await sidebar.getByRole("button", { name: "New collection", exact: true }).hover();
             await captureFrame(artifacts, "after.png", page.locator(".shell"), [
               sidebar.locator(".sidebar-sessions"),
             ]);
             console.log("Personal groups after proof: " + artifacts);
           }
-          await options("This week", "Remove collection");
+          await options("This week", "Remove section");
           await expect.poll(order).toEqual(["Later"]);
           expect(
             await sidebar
@@ -197,11 +320,11 @@ suite.define(() => {
           expect(
             await sidebar.locator('[data-session-section="category:Engineering"]').count(),
           ).toBe(1);
-          await options("Later", "Remove collection");
+          await options("Later", "Remove section");
           expect(await sidebar.locator(".personal-session-groups").count()).toBe(0);
           await create("Empty by choice");
           expect(await group("Empty by choice").count()).toBe(1);
-          console.log("Collection UI proof: " + artifacts);
+          console.log("Section UI proof: " + artifacts);
           for (const method of [
             "sessions.patch",
             "sessions.delete",
@@ -225,7 +348,7 @@ suite.define(() => {
     },
   );
 
-  it("discovers collections without a selected session and keeps native compact Back", async () => {
+  it("discovers sections without a selected session and keeps native compact Back", async () => {
     await suite.withPage({ viewport: { width: 390, height: 844 } }, async ({ page }) => {
       const gateway = await installMockGateway(page, {
         sessionKey: key,
@@ -244,14 +367,14 @@ suite.define(() => {
       await sidebar.getByRole("button", { name: /^Filter & sort/ }).click();
       await page
         .locator(".sidebar-session-sort-menu")
-        .getByRole("button", { name: "New collection", exact: true })
+        .getByRole("button", { name: "New section", exact: true })
         .click();
-      const dialog = page.getByRole("dialog", { name: "New collection", exact: true });
-      await dialog.getByLabel("Collection name", { exact: true }).fill("Reading");
+      const dialog = page.getByRole("dialog", { name: "New section", exact: true });
+      await dialog.getByLabel("Section name", { exact: true }).fill("Reading");
       await dialog.getByRole("button", { name: "Save", exact: true }).click();
       await dialog.waitFor({ state: "hidden" });
       await sidebar.getByRole("link", { name: /Reliability Tracker/ }).click({ button: "right" });
-      await page.getByRole("menuitem", { name: "Add to my collections", exact: true }).click();
+      await page.getByRole("menuitem", { name: "Add to section", exact: true }).click();
       await page.getByRole("menuitem", { name: "Back", exact: true }).waitFor();
       if (process.env.OPENCLAW_CAPTURE_UI_PROOF === "1") {
         const artifacts = createControlUiE2eArtifactDir("personal-collections-narrow");
@@ -261,7 +384,7 @@ suite.define(() => {
       expect(
         await page.getByRole("menuitem", { name: "Move to group", exact: true }).isDisabled(),
       ).toBe(true);
-      await page.getByRole("menuitem", { name: "Add to my collections", exact: true }).click();
+      await page.getByRole("menuitem", { name: "Add to section", exact: true }).click();
       await page.getByRole("menuitem", { name: "Reading", exact: true }).click();
       await sidebar
         .locator("[data-personal-session-group]")
@@ -428,10 +551,10 @@ suite.define(() => {
           ],
         }),
       );
-      await page.getByRole("button", { name: "Options for collection Focus", exact: true }).click();
-      await page.getByRole("menuitem", { name: "Edit collection", exact: true }).click();
-      const dialog = page.getByRole("dialog", { name: "Edit collection", exact: true });
-      await dialog.getByLabel("Collection name", { exact: true }).fill("Renamed");
+      await page.getByRole("button", { name: "Options for section Focus", exact: true }).click();
+      await page.getByRole("menuitem", { name: "Edit section", exact: true }).click();
+      const dialog = page.getByRole("dialog", { name: "Edit section", exact: true });
+      await dialog.getByLabel("Section name", { exact: true }).fill("Renamed");
       // The preference owner receives a newer saved layout while this editor is open.
       await evaluateControlUiContext(page, ({ navigation }) =>
         navigation.update({
@@ -443,18 +566,18 @@ suite.define(() => {
       await dialog.getByRole("button", { name: "Save", exact: true }).click();
       await dialog
         .getByRole("alert")
-        .getByText("This collection changed. Reopen it before saving your edits.", { exact: true })
+        .getByText("This section changed. Reopen it before saving your edits.", { exact: true })
         .waitFor();
       await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
       const group = page.locator('[data-personal-session-group="shared-tab"]');
       await group.getByRole("link", { name: /Release checklist/ }).waitFor();
       expect(await group.getByRole("link", { name: /Reliability Tracker/ }).count()).toBe(0);
-      await page.getByRole("button", { name: "Options for collection Focus", exact: true }).click();
-      await page.getByRole("menuitem", { name: "Edit collection", exact: true }).click();
+      await page.getByRole("button", { name: "Options for section Focus", exact: true }).click();
+      await page.getByRole("menuitem", { name: "Edit section", exact: true }).click();
       expect(
         await dialog.getByRole("checkbox", { name: "Release checklist", exact: true }).isChecked(),
       ).toBe(true);
-      await dialog.getByLabel("Collection name", { exact: true }).fill("Renamed");
+      await dialog.getByLabel("Section name", { exact: true }).fill("Renamed");
       await dialog.getByRole("button", { name: "Save", exact: true }).click();
       await group.getByRole("list", { name: "Renamed", exact: true }).waitFor();
       await group.getByRole("link", { name: /Release checklist/ }).waitFor();
@@ -483,10 +606,10 @@ suite.define(() => {
         .click();
       await page
         .locator(".sidebar-session-sort-menu")
-        .getByRole("button", { name: "New collection", exact: true })
+        .getByRole("button", { name: "New section", exact: true })
         .click();
-      const dialog = page.getByRole("dialog", { name: "New collection", exact: true });
-      await dialog.getByLabel("Collection name", { exact: true }).fill("Long list");
+      const dialog = page.getByRole("dialog", { name: "New section", exact: true });
+      await dialog.getByLabel("Section name", { exact: true }).fill("Long list");
       const choices = dialog.getByRole("group", { name: "Sessions", exact: true });
       await expect
         .poll(() => choices.evaluate((element) => element.scrollHeight > element.clientHeight))
@@ -560,8 +683,8 @@ suite.define(() => {
       );
       const openOffPageCollections = async () => {
         await group.getByRole("link", { name: /Release checklist/ }).click({ button: "right" });
-        await page.getByRole("menuitem", { name: "Add to my collections", exact: true }).hover();
-        await page.getByRole("menuitem", { name: "New collection", exact: true }).waitFor();
+        await page.getByRole("menuitem", { name: "Add to section", exact: true }).hover();
+        await page.getByRole("menuitem", { name: "New section", exact: true }).waitFor();
       };
       await openOffPageCollections();
       await page.getByRole("menuitem", { name: "Later", exact: true }).click();
@@ -570,12 +693,12 @@ suite.define(() => {
         .getByRole("link", { name: /Release checklist/ })
         .waitFor();
       await openOffPageCollections();
-      await page.getByRole("menuitem", { name: "New collection", exact: true }).click();
-      const dialog = page.getByRole("dialog", { name: "New collection", exact: true });
+      await page.getByRole("menuitem", { name: "New section", exact: true }).click();
+      const dialog = page.getByRole("dialog", { name: "New section", exact: true });
       expect(
         await dialog.getByRole("checkbox", { name: "Release checklist", exact: true }).isChecked(),
       ).toBe(true);
-      await dialog.getByLabel("Collection name", { exact: true }).fill("Release work");
+      await dialog.getByLabel("Section name", { exact: true }).fill("Release work");
       await dialog.getByRole("button", { name: "Save", exact: true }).click();
       await dialog.waitFor({ state: "hidden" });
       await page

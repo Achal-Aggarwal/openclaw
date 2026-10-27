@@ -198,10 +198,10 @@ suite.define(() => {
               await sidebar.getByRole("button", { name: /^Filter & sort/ }).click();
               await page
                 .locator(".sidebar-session-sort-menu")
-                .getByRole("button", { name: "New collection", exact: true })
+                .getByRole("button", { name: "New section", exact: true })
                 .click();
-              const dialog = page.getByRole("dialog", { name: "New collection", exact: true });
-              await dialog.getByLabel("Collection name", { exact: true }).fill(label);
+              const dialog = page.getByRole("dialog", { name: "New section", exact: true });
+              await dialog.getByLabel("Section name", { exact: true }).fill(label);
               if (member) {
                 await dialog.getByRole("checkbox", { name: member, exact: true }).check();
               }
@@ -210,7 +210,7 @@ suite.define(() => {
             };
             const menu = async (label: string, action: string) => {
               await sidebar
-                .getByRole("button", { name: `Options for collection ${label}`, exact: true })
+                .getByRole("button", { name: `Options for section ${label}`, exact: true })
                 .click();
               await page.getByRole("menuitem", { name: action, exact: true }).click();
             };
@@ -249,9 +249,9 @@ suite.define(() => {
                 .locator("[data-personal-session-group] .sidebar-session-group-toggle")
                 .allTextContents();
             await expect.poll(order).toEqual(["Later", "Focus"]);
-            await menu("Focus", "Edit collection");
-            const dialog = page.getByRole("dialog", { name: "Edit collection", exact: true });
-            await dialog.getByLabel("Collection name", { exact: true }).fill("This week");
+            await menu("Focus", "Edit section");
+            const dialog = page.getByRole("dialog", { name: "Edit section", exact: true });
+            await dialog.getByLabel("Section name", { exact: true }).fill("This week");
             await dialog.getByRole("button", { name: "Save", exact: true }).click();
             await dialog.waitFor({ state: "hidden" });
             await page.reload();
@@ -266,7 +266,7 @@ suite.define(() => {
             await waitForControlUiGatewayReady(fresh);
             expect(await fresh.locator("[data-personal-session-group]").count()).toBe(0);
             await suite.closeBrowserContext(freshContext);
-            await menu("This week", "Remove collection");
+            await menu("This week", "Remove section");
             await expect.poll(order).toEqual(["Later"]);
             expect(await sidebar.locator(`[data-session-key="${parentKey}"]`).count()).toBe(1);
             const forbidden = new Set([
