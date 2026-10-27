@@ -133,6 +133,8 @@
    whether its content is visible, hidden or absent, so revealing it never moves
    the next turn and every group ends the same distance above the turn gap. */
 .chat-group-footer {
+  --chat-action-gap: var(--chat-footer-offset);
+  position: relative;
   display: flex;
   align-self: start;
   flex-wrap: wrap;
@@ -147,8 +149,8 @@
   transition: opacity 120ms ease-out;
 }
 
-.chat-group:hover .chat-group-footer,
-.chat-group:focus-within .chat-group-footer,
+.chat-group:hover > .chat-group-footer,
+.chat-group:focus-within > .chat-group-footer,
 .chat-group-footer:has(.msg-meta[open]) {
   --chat-footer-disclosure-opacity: 1;
   --chat-footer-disclosure-pointer-events: auto;
@@ -254,6 +256,10 @@
 }
 
 .chat-message-actions-row {
+  --chat-message-action-opacity: 0;
+  --chat-message-action-pointer-events: none;
+  --chat-action-gap: calc(4px + var(--chat-message-gap));
+  position: relative;
   --chat-message-action-size: 24px;
   align-self: stretch;
   margin-top: 4px;
@@ -359,15 +365,9 @@
   padding: 0;
   border: 0;
   background: transparent;
-  opacity: 0;
-  pointer-events: none;
+  opacity: var(--chat-message-action-opacity, 0);
+  pointer-events: var(--chat-message-action-pointer-events, none);
   transition: opacity 120ms ease;
-}
-
-.chat-group:hover .chat-reaction-chip--add,
-.chat-group:focus-within .chat-reaction-chip--add {
-  opacity: 1;
-  pointer-events: auto;
 }
 
 @media (prefers-reduced-motion: no-preference) {
@@ -396,21 +396,8 @@
 }
 
 .chat-reaction-action {
-  opacity: var(--chat-footer-disclosure-opacity, 0);
-  pointer-events: var(--chat-footer-disclosure-pointer-events, none);
-}
-
-.chat-message-actions-row .chat-reaction-action {
   opacity: var(--chat-message-action-opacity, 0);
   pointer-events: var(--chat-message-action-pointer-events, none);
-}
-
-/* Rest at the sibling footer actions' revealed opacity so the row reads as one
-   color; the trigger itself owns the accent hover color. */
-.chat-group:hover .chat-reaction-action,
-.chat-group:focus-within .chat-reaction-action {
-  opacity: 0.6;
-  pointer-events: auto;
 }
 
 .chat-group .chat-reaction-action:hover {
@@ -551,111 +538,106 @@
   justify-content: center;
 }
 
-.chat-group-footer-actions
-  :is(.chat-copy-btn, .chat-reply-btn, .chat-read-aloud-btn, .chat-group-rewind),
-.chat-group-footer .chat-send-status__action {
-  opacity: var(--chat-footer-disclosure-opacity, 0);
-  pointer-events: var(--chat-footer-disclosure-pointer-events, none);
+/* Each action row consumes only its own message's disclosure state. */
+.chat-group {
+  --chat-final-action-opacity: 0;
+  --chat-final-action-pointer-events: none;
 }
 
-/* Inline rows belong to earlier messages in a group, so the latest footer's
-   resting disclosure must not reveal them before hover or touch. */
-.chat-message-actions-row
+.chat-group > .chat-group-footer {
+  --chat-message-action-opacity: var(--chat-final-action-opacity);
+  --chat-message-action-pointer-events: var(--chat-final-action-pointer-events);
+}
+
+:is(.chat-group-footer-actions, .chat-message-actions-row)
   :is(.chat-copy-btn, .chat-reply-btn, .chat-read-aloud-btn, .chat-group-rewind) {
-  min-height: var(--chat-message-action-size);
   opacity: var(--chat-message-action-opacity, 0);
   pointer-events: var(--chat-message-action-pointer-events, none);
 }
 
-.chat-group:hover
-  :is(.chat-group-footer-actions, .chat-message-actions-row)
+.chat-message-actions-row
   :is(.chat-copy-btn, .chat-reply-btn, .chat-read-aloud-btn, .chat-group-rewind) {
-  opacity: 0.6;
-  pointer-events: auto;
+  min-height: var(--chat-message-action-size);
 }
 
-.chat-group.user.chat-group--peer
-  :is(.chat-message-actions-row, .chat-group-footer-actions)
-  :is(.chat-copy-btn, .chat-reply-btn, .chat-read-aloud-btn, .chat-group-rewind) {
-  opacity: 0;
-  pointer-events: none;
+.chat-message-footer {
+  --chat-message-action-opacity: 0;
+  --chat-message-action-pointer-events: none;
 }
 
-/* The native row owns both layout space and actions; no overlaid copy.
-   Keep :hover separate from touch/focus selectors for the build hover guard. */
-.chat-group.user.chat-group--peer
-  :is(.chat-bubble, .chat-message--reply):hover
-  + .chat-message-actions-row
-  :is(.chat-copy-btn, .chat-reply-btn, .chat-read-aloud-btn, .chat-group-rewind),
-.chat-group.user.chat-group--peer
-  .chat-message-actions-row:hover
-  :is(.chat-copy-btn, .chat-reply-btn, .chat-read-aloud-btn, .chat-group-rewind),
-.chat-group.user.chat-group--peer
-  :is(.chat-bubble, .chat-message--reply):is(:focus-within, .chat-bubble--actions-revealed)
-  + .chat-message-actions-row
-  :is(.chat-copy-btn, .chat-reply-btn, .chat-read-aloud-btn, .chat-group-rewind),
-.chat-group.user.chat-group--peer
-  .chat-message--reply:has(> .chat-bubble--actions-revealed)
-  + .chat-message-actions-row
-  :is(.chat-copy-btn, .chat-reply-btn, .chat-read-aloud-btn, .chat-group-rewind),
-.chat-group.user.chat-group--peer
-  .chat-message-actions-row:focus-within
-  :is(.chat-copy-btn, .chat-reply-btn, .chat-read-aloud-btn, .chat-group-rewind) {
-  opacity: 0.6;
-  pointer-events: auto;
+/* Extend only the toolbar hitbox through its existing gap to the message. */
+:is(.chat-group-footer, .chat-message-actions-row)::before {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  bottom: 100%;
+  height: var(--chat-action-gap);
 }
 
-/* The final action belongs to the final bubble, alongside its native metadata.
-   Keep the :has() state on its subject: a combinator after a non-subject :has()
-   joins Chromium's shared :has() invalidation set and restyles every button.
-   Hover and touch/focus reveals stay separate rules: the build hover guard
-   moves any selector containing :hover under @media (hover: hover). */
-.chat-group.user.chat-group--peer:has(
-    > .chat-group-messages > .chat-bubble:last-child:hover,
-    > .chat-group-messages > .chat-message--reply:last-child > .chat-bubble:hover
-  ) {
-  --chat-peer-final-action-opacity: 0.6;
-  --chat-peer-final-action-pointer-events: auto;
+/* Keep the row reachable across its existing bubble-to-toolbar gap. */
+.chat-group-messages
+  > :is(.chat-bubble, .chat-message--reply):hover
+  + :is(.chat-message-actions-row, .chat-message-footer),
+:is(.chat-message-actions-row, .chat-message-footer):hover {
+  --chat-message-action-opacity: 0.6;
+  --chat-message-action-pointer-events: auto;
+  --chat-footer-disclosure-opacity: 1;
+  --chat-footer-disclosure-pointer-events: auto;
 }
 
-.chat-group.user.chat-group--peer:has(
-    > .chat-group-messages
-      > .chat-bubble:last-child:is(:focus-within, .chat-bubble--actions-revealed),
-    > .chat-group-messages
-      > .chat-message--reply:last-child
-      > .chat-bubble:is(:focus-within, .chat-bubble--actions-revealed)
-  ) {
-  --chat-peer-final-action-opacity: 0.6;
-  --chat-peer-final-action-pointer-events: auto;
+.chat-group-messages
+  > :is(.chat-bubble, .chat-message--reply):is(:focus-within, .chat-bubble--actions-revealed)
+  + :is(.chat-message-actions-row, .chat-message-footer),
+.chat-group-messages
+  > .chat-message--reply:has(> .chat-bubble--actions-revealed)
+  + :is(.chat-message-actions-row, .chat-message-footer),
+:is(.chat-message-actions-row, .chat-message-footer):focus-within {
+  --chat-message-action-opacity: 0.6;
+  --chat-message-action-pointer-events: auto;
+  --chat-footer-disclosure-opacity: 1;
+  --chat-footer-disclosure-pointer-events: auto;
 }
 
-.chat-group.user.chat-group--peer
-  > .chat-group-footer
-  .chat-group-footer-actions
-  :is(.chat-copy-btn, .chat-reply-btn, .chat-read-aloud-btn, .chat-group-rewind) {
-  opacity: var(--chat-peer-final-action-opacity, 0);
-  pointer-events: var(--chat-peer-final-action-pointer-events, none);
+/* The final toolbar belongs to the final bubble. A run frame has one answer
+   toolbar for its body. Keep :has() on the subject to bound invalidation, and
+   hover separate from focus/touch so the build hover guard preserves both. */
+.chat-group:has(
+  > .chat-group-messages > .chat-bubble:last-child:hover,
+  > .chat-group-messages > .chat-message--reply:last-child > .chat-bubble:hover,
+  > .chat-group-messages > .chat-agent-run-body:hover
+) {
+  --chat-final-action-opacity: 0.6;
+  --chat-final-action-pointer-events: auto;
 }
 
-.chat-group.user.chat-group--peer
-  .chat-group-footer:hover
-  .chat-group-footer-actions
-  :is(.chat-copy-btn, .chat-reply-btn, .chat-read-aloud-btn, .chat-group-rewind),
-.chat-group.user.chat-group--peer
-  .chat-group-footer:focus-within
-  .chat-group-footer-actions
-  :is(.chat-copy-btn, .chat-reply-btn, .chat-read-aloud-btn, .chat-group-rewind) {
-  opacity: 0.6;
-  pointer-events: auto;
+.chat-group:has(
+  > .chat-group-messages
+    > .chat-bubble:last-child:is(:focus-within, .chat-bubble--actions-revealed),
+  > .chat-group-messages
+    > .chat-message--reply:last-child
+    > .chat-bubble:is(:focus-within, .chat-bubble--actions-revealed),
+  > .chat-group-messages > .chat-agent-run-body:focus-within
+) {
+  --chat-final-action-opacity: 0.6;
+  --chat-final-action-pointer-events: auto;
 }
 
-@media (hover: hover) {
-  .chat-group:focus-within
-    :is(.chat-group-footer-actions, .chat-message-actions-row)
-    :is(.chat-copy-btn, .chat-reply-btn, .chat-read-aloud-btn, .chat-group-rewind) {
-    opacity: 0.6;
-    pointer-events: auto;
-  }
+.chat-group-footer:hover,
+.chat-session-activity__message:hover,
+.chat-message-reactions:hover {
+  --chat-message-action-opacity: 0.6;
+  --chat-message-action-pointer-events: auto;
+  --chat-footer-disclosure-opacity: 1;
+  --chat-footer-disclosure-pointer-events: auto;
+}
+
+.chat-group-footer:focus-within,
+.chat-session-activity__message:focus-within,
+.chat-message-reactions:focus-within {
+  --chat-message-action-opacity: 0.6;
+  --chat-message-action-pointer-events: auto;
+  --chat-footer-disclosure-opacity: 1;
+  --chat-footer-disclosure-pointer-events: auto;
 }
 
 @media (hover: none) {
@@ -663,11 +645,20 @@
     --chat-footer-disclosure-opacity: 1;
     --chat-footer-disclosure-pointer-events: auto;
   }
+  .chat-group:not(.chat-group--peer) > .chat-group-footer,
+  .chat-group:not(.chat-group--peer) .chat-message-actions-row,
+  .chat-group:not(.chat-group--peer) .chat-message-footer {
+    --chat-message-action-opacity: var(--chat-footer-disclosure-opacity, 0);
+    --chat-message-action-pointer-events: var(--chat-footer-disclosure-pointer-events, none);
+  }
 }
 
-.chat-group:hover
-  .chat-group-footer-actions
-  :is(.chat-copy-btn, .chat-reply-btn, .chat-read-aloud-btn, .chat-group-rewind):disabled,
+:is(.chat-group-footer-actions, .chat-message-actions-row)
+  :is(.chat-copy-btn, .chat-reply-btn, .chat-read-aloud-btn, .chat-group-rewind):disabled {
+  opacity: calc(var(--chat-message-action-opacity, 0) / 2);
+  pointer-events: none;
+}
+
 .chat-reply-context-menu button:disabled,
 .chat-comment-preview__actions button:disabled {
   opacity: 0.3;
@@ -1982,6 +1973,8 @@ button.chat-reply-attribution__target:disabled {
     --chat-footer-disclosure-opacity: 0;
     --chat-footer-disclosure-pointer-events: none;
     --chat-footer-action-opacity: 0;
+    --chat-message-action-opacity: var(--chat-footer-action-opacity);
+    --chat-message-action-pointer-events: var(--chat-footer-disclosure-pointer-events);
     pointer-events: var(--chat-footer-disclosure-pointer-events);
   }
 

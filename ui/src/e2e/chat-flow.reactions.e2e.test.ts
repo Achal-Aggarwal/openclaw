@@ -61,7 +61,7 @@ suite.define(() => {
     });
   });
 
-  it("toggles reactions through both picker modes and receives a peer reaction live", async () => {
+  it("keeps message actions scoped while toggling reactions and receiving a peer reaction", async () => {
     await suite.withPage(createControlUiE2eContextOptions(), async ({ page }) => {
       const sessionKey = "agent:main:main";
       const sessionId = "reaction-session";
@@ -73,9 +73,27 @@ suite.define(() => {
         presenceUsers: [{ self: true, id: identity.id, identity, name: "Avery" }],
         sessions: [{ key: sessionKey, sessionId, visibility: "shared", sharingRole: "owner" }],
         historyMessages: [
-          chatMessage("user", prompt, {
-            __openclaw: { id: messageId, seq: 1, senderName: "Riley", senderId: "profile-riley" },
-          }),
+          ...["First own note.", "Second own note.", "Last own note."].map((text, index) =>
+            chatMessage("user", text, {
+              __openclaw: {
+                id: `own-note-${index}`,
+                seq: index + 1,
+                senderName: "Avery",
+                senderId: identity.id,
+                senderIdentity: identity,
+              },
+            }),
+          ),
+          ...["First checklist note.", prompt, "Last checklist note."].map((text, index) =>
+            chatMessage("user", text, {
+              __openclaw: {
+                id: index === 1 ? messageId : `riley-note-${index}`,
+                seq: index + 4,
+                senderName: "Riley",
+                senderId: "profile-riley",
+              },
+            }),
+          ),
         ],
       });
       await page.goto(`${suite.server.baseUrl}chat`);
@@ -85,11 +103,39 @@ suite.define(() => {
         reactions.locator(
           `.chat-reaction-chip[aria-pressed="${pressed}"][aria-label="${emoji} 1"]`,
         );
-      await message.hover();
+      await message.locator(".chat-bubble").filter({ hasText: prompt }).hover();
+      const visibleActionRows = (group: Locator = message) =>
+        group
+          .locator("[data-message-actions-for]")
+          .evaluateAll((rows) =>
+            rows
+              .filter((row) =>
+                [...row.querySelectorAll("button")].some((button) =>
+                  button.checkVisibility({ checkOpacity: true }),
+                ),
+              )
+              .map((row) => row.getAttribute("data-message-actions-for")),
+          );
+      await expect.poll(() => visibleActionRows()).toEqual([`msg:id:${messageId}:0`]);
+      const ownedActions = message.locator(`[data-message-actions-for="msg:id:${messageId}:0"]`);
+      await ownedActions.getByRole("button", { name: "Copy as markdown", exact: true }).focus();
+      await page.mouse.move(0, 0);
+      await expect.poll(() => visibleActionRows()).toEqual([`msg:id:${messageId}:0`]);
+      const desktopViewport = page.viewportSize()!;
+      await page.setViewportSize({ width: 560, height: 1000 });
+      const ownGroup = page.locator(".chat-group.user", { hasText: "First own note." });
+      await ownGroup.locator(".chat-bubble").filter({ hasText: "First own note." }).hover();
+      await expect.poll(() => visibleActionRows(ownGroup)).toEqual(["msg:id:own-note-0:0"]);
+      await ownGroup
+        .locator('[data-message-actions-for="msg:id:own-note-0:0"]')
+        .getByRole("button", { name: "Copy as markdown", exact: true })
+        .focus();
+      await page.mouse.move(0, 0);
+      await expect.poll(() => visibleActionRows(ownGroup)).toEqual(["msg:id:own-note-0:0"]);
+      await page.setViewportSize(desktopViewport);
+      await message.locator(".chat-bubble").filter({ hasText: prompt }).hover();
       // Without reactions the hover row carries the picker; once reacted, the chip row owns it.
-      const footerPicker = message.locator(
-        ".chat-group-footer-actions openclaw-message-reaction-picker",
-      );
+      const footerPicker = ownedActions.locator(".chat-reaction-action");
       const rowPicker = reactions.locator("openclaw-message-reaction-picker");
       // Each picker owns its popover; an unscoped lookup can match a sibling
       // popover that is still animating closed.
@@ -106,7 +152,7 @@ suite.define(() => {
       await chip("🎉", true).waitFor();
       await footerPicker.waitFor({ state: "detached" });
 
-      await message.hover();
+      await message.locator(".chat-bubble").filter({ hasText: prompt }).hover();
       await pick(rowPicker, "More…");
       // A complete emoji applies on input, so the OS picker needs no extra keystroke.
       await rowPicker.getByRole("searchbox", { name: "Search emoji…", exact: true }).fill("🦞");
