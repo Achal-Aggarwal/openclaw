@@ -8,7 +8,6 @@ import {
   mintMcpLoopbackClientGrant,
 } from "./mcp-grant-store.js";
 
-
 export async function json(response: Response): Promise<unknown> {
   const body = await response.text();
   expect(response.status, body).toBe(200);
