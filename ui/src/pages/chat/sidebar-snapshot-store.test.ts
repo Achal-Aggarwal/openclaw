@@ -11,7 +11,6 @@ import { createStorageMock } from "../../test-helpers/storage.ts";
 import { SidebarSnapshotStore } from "./session-sidebar-store.ts";
 import {
   openSessionSnapshotDatabase,
-  CHAT_SNAPSHOT_DB_NAME as DB_NAME,
   CHAT_SNAPSHOT_STORE_NAME as CHAT,
   CHAT_SNAPSHOT_METADATA_STORE_NAME as METADATA,
   SIDEBAR_SNAPSHOT_STORE_NAME as SIDEBAR,
@@ -23,6 +22,7 @@ import {
 } from "./session-snapshot-invalidation.ts";
 import { SessionSnapshotStore } from "./session-snapshot-store.ts";
 
+const DB_NAME = "openclaw-chat-snapshots";
 const scope = {
   gatewayScope: "wss://sidebar.example",
   recoveryScope: "account-a",

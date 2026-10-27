@@ -391,6 +391,16 @@ suite.define(() => {
         catalogReloadStarted = true;
         recordCatalogFacts();
         await page.reload();
+        // Saved controls can appear before reload finishes its authoritative startup read.
+        await expect
+          .poll(() =>
+            page
+              .locator('openclaw-chat-pane[aria-hidden="false"]')
+              .evaluate(
+                (pane) => (pane as HTMLElement & { transcriptReady: boolean }).transcriptReady,
+              ),
+          )
+          .toBe(true);
         try {
           await trigger.click();
           await expect.poll(() => account.textContent()).toContain("Account B");
@@ -399,6 +409,15 @@ suite.define(() => {
           await expect.poll(() => selectedRow.isVisible()).toBe(true);
           expect(await selectedRow.isEnabled()).toBe(true);
           expect(await account.textContent()).not.toContain("Account A");
+          await expect
+            .poll(() =>
+              page
+                .locator(
+                  'openclaw-chat-pane[aria-hidden="false"] [data-composer-catalog-state="stale"]',
+                )
+                .count(),
+            )
+            .toBe(0);
           const readsBeforeReopen = catalogRequests.size;
           await trigger.click();
           await trigger.click();
