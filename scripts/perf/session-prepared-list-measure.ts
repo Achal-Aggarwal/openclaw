@@ -30,7 +30,6 @@ const { values } = parseArgs({
     "cpu-profile": { type: "boolean", default: false },
     golden: { type: "string" },
     "archive-workload": { type: "boolean", default: false },
-    "archive-shape": { type: "string" },
     "sort-rows": { type: "string" },
     "sort-workload": { type: "boolean", default: false },
   },
@@ -240,12 +239,14 @@ function sampledBytes(profile: HeapProfiler.SamplingHeapProfile) {
   return { total, prepared, roster, list, sort, comparator };
 }
 
-function sampledCpu(profile: Profiler.Profile) {
+type ListCpuSpan = { start: number; end: number; caseIndex: number };
+function sampledCpu(profile: Profiler.Profile, spans: readonly ListCpuSpan[]) {
   const targets = new Set([
     "withPreparedExactRows",
     "withAgentRosterFactsBatch",
     "selectPage",
     "matchesSessionArchiveFilter",
+    "archiveIndex",
     "filterSessionEntries",
   ]);
   const nodes = new Map(
@@ -259,13 +260,35 @@ function sampledCpu(profile: Profiler.Profile) {
   );
   targets.add("archiveEntryIteration");
   const selfMicros: Record<string, number> = {};
+  const byCase: Record<string, number>[] = cases.map(() => ({}));
+  let timestamp = profile.startTime;
+  let spanIndex = 0;
+  let attributedSamples = 0;
   for (const [index, id] of (profile.samples ?? []).entries()) {
+    const duration = profile.timeDeltas?.[index] ?? 0;
+    timestamp += duration;
+    while (spans[spanIndex] && spans[spanIndex]!.end < timestamp) spanIndex++;
+    const span = spans[spanIndex];
     const name = nodes.get(id);
+    if (span && span.start <= timestamp) {
+      attributedSamples++;
+      if (name && targets.has(name)) {
+        const selected = byCase[span.caseIndex]!;
+        selected[name] = (selected[name] ?? 0) + duration;
+      }
+    }
     if (name && targets.has(name)) {
-      selfMicros[name] = (selfMicros[name] ?? 0) + (profile.timeDeltas?.[index] ?? 0);
+      selfMicros[name] = (selfMicros[name] ?? 0) + duration;
     }
   }
-  return selfMicros;
+  if (spans.length) {
+    assert(attributedSamples > 0, "Profiler and list spans must share the monotonic clock");
+  }
+  return {
+    selfMicros,
+    byCase: spans.length ? byCase : undefined,
+    attributedSamples: spans.length ? attributedSamples : undefined,
+  };
 }
 
 try {
@@ -308,17 +331,6 @@ try {
       },
       { source: "agent-roster", rowMode: "sidebar", archived: "all", limit: 50 },
     );
-  }
-  if (values["archive-shape"] !== undefined) {
-    assert(values["archive-workload"], "--archive-shape requires --archive-workload");
-    const index = parseStrictIntegerOption({
-      raw: values["archive-shape"],
-      label: "--archive-shape",
-      min: 0,
-      fallback: 0,
-    });
-    assert(index < cases.length, "--archive-shape must select one of the five archive cases");
-    cases.splice(0, cases.length, cases[index]!);
   }
   if (values["sort-rows"]) {
     writeFileSync(
@@ -412,6 +424,9 @@ try {
   let listCpuMicros = 0;
   const caseCpuMicros = cases.map(() => 0);
   const caseCalls = cases.map(() => 0);
+  const cpuSpans: ListCpuSpan[] = [];
+  // Linux shares CLOCK_MONOTONIC; other platforms retain aggregate profile samples.
+  const collectSpans = values["cpu-profile"] && process.platform === "linux";
   let updateCpuMicros = 0;
   let returnedRows = 0;
   const responses = values.mode === "verify" ? createHash("sha256") : undefined;
@@ -441,7 +456,11 @@ try {
       }
       before = process.threadCpuUsage();
       const caseIndex = sequence % cases.length;
+      const start = measured && collectSpans ? Number(process.hrtime.bigint() / 1000n) : 0;
       const result = await read(sequence++);
+      if (start) {
+        cpuSpans.push({ start, end: Number(process.hrtime.bigint() / 1000n), caseIndex });
+      }
       used = process.threadCpuUsage(before);
       assert.equal(result.count, result.sessions.length);
       assert(typeof result.totalCount === "number");
@@ -497,9 +516,9 @@ try {
   }
   writeFileSync(path.join(root, "golden.json"), JSON.stringify(golden, null, 2));
   const bytes = allocation ? sampledBytes(allocation) : undefined;
+  const cpuSamples = cpu ? sampledCpu(cpu, cpuSpans) : undefined;
   const result = {
     archiveWorkload: values["archive-workload"],
-    archiveShape: values["archive-shape"],
     caseCpuMsPerCall: caseCpuMicros.map((micros, index) => micros / 1000 / caseCalls[index]!),
     mode: values.mode,
     cpuProfile: values["cpu-profile"],
@@ -518,12 +537,15 @@ try {
     allocatedBytesPerList:
       bytes &&
       Object.fromEntries(Object.entries(bytes).map(([key, value]) => [key, value / iterations])),
-    targetSelfCpuMicros: cpu ? sampledCpu(cpu) : undefined,
+    targetSelfCpuMicros: cpuSamples?.selfMicros,
+    targetSelfCpuMicrosByCase: cpuSamples?.byCase,
+    attributedListSamples: cpuSamples?.attributedSamples,
+    caseCalls,
     golden,
     cases,
     host: { node: process.version, load: loadavg() },
     scope:
-      "Owner-level lists with registry churn; sort-workload uses an identified synthetic operator, limit 200, owner-first, involvement, and recency queries. No transport/model claim. Reconciliation is an explicit incomplete-postimage scenario. Heap family samples overlap and exclude native backing stores.",
+      "Owner-level lists with registry churn; sort-workload uses an identified synthetic operator, limit 200, owner-first, involvement, and recency queries. Per-case CPU sample attribution is Linux-only. No transport/model claim. Reconciliation is an explicit incomplete-postimage scenario. Heap family samples overlap and exclude native backing stores.",
   };
   writeFileSync(path.join(root, "result.json"), JSON.stringify(result, null, 2));
   console.log(JSON.stringify(result));
