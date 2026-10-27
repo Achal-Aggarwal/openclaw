@@ -6,6 +6,7 @@ import { ContentPresentation } from "../../../lib/solid/presentation.ts";
 import { waitForSolid } from "../../../test-helpers/solid-settle.ts";
 import { mountTestTranscript } from "../test-helpers/chat-transcript-native.tsx";
 import type { TranscriptPreparationRequest } from "./chat-transcript-layout.ts";
+import * as transcriptPreparation from "./chat-transcript-preparation.ts";
 import { GuardedTranscriptItem } from "./chat-transcript-render-guard.ts";
 import { nativeRows } from "./chat-transcript-rows.ts";
 import {
@@ -94,7 +95,7 @@ it("shows import failure beside retained content and retries the current batch",
   expect(view.container.querySelector(".chat-virtual-row")).toBe(original);
 });
 
-it("does not reload resident factories and cannot publish after disposal", async () => {
+it("reuses admitted preparation, retains legacy inspection, and cannot publish after disposal", async () => {
   const held = heldPreparation();
   held.resolve();
   const view = await mountTestTranscript(
@@ -105,6 +106,19 @@ it("does not reload resident factories and cannot publish after disposal", async
   );
   expect(view.container.textContent).toContain("Resident");
   expect(held.request.load).not.toHaveBeenCalled();
+  const inspectRows = vi.spyOn(transcriptPreparation, "prepareTranscriptRows");
+  try {
+    view.renderRows(rows("Legacy inspection"));
+    expect(inspectRows).toHaveBeenCalled();
+    inspectRows.mockClear();
+    const admittedRows = rows("Already admitted");
+    view.renderRows(admittedRows, null);
+    view.renderRows(admittedRows, null);
+    expect(view.container.textContent).toContain("Already admitted");
+    expect(inspectRows).not.toHaveBeenCalled();
+  } finally {
+    inspectRows.mockRestore();
+  }
   const late = heldPreparation(2);
   view.renderRows(rows("Disposed"), late.request);
   view.transcript.dispose();

@@ -73,7 +73,7 @@ export type ChatTranscriptSession = {
     header?: TranscriptHeader | null,
     presented?: PresentationValue,
     applicationContext?: ApplicationContext,
-    preparation?: TranscriptPreparationRequest,
+    preparation?: TranscriptPreparationRequest | null,
   ): HTMLDivElement;
   syncMessageRows(
     messageRowKeysById: ReadonlyMap<string, string>,

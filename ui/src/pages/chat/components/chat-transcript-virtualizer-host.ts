@@ -443,7 +443,7 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
     header: TranscriptHeader | null = null,
     presented: PresentationValue = true,
     applicationContext?: ApplicationContext,
-    preparation?: TranscriptPreparationRequest,
+    preparation?: TranscriptPreparationRequest | null,
   ): HTMLDivElement {
     this.offsetState.renderedTouchActive = this.offsetState.touchActive;
     // Keep old geometry during the gesture, while still virtualizing that old

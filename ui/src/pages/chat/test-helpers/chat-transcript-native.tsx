@@ -145,7 +145,7 @@ export async function mountTestTranscript(
   paneId: string,
   initialRows: readonly TestContentRow[],
   transcript: ChatTranscript = createTestTranscript(paneId),
-  initialPreparation?: TranscriptPreparationRequest,
+  initialPreparation?: TranscriptPreparationRequest | null,
 ) {
   const container = document.body.appendChild(document.createElement("div"));
   Object.defineProperties(container, {
@@ -174,7 +174,7 @@ export async function mountTestTranscript(
   container.addEventListener("focusout", (event) => currentSession.handleFocusOut(event));
   const renderRows = (
     rows: readonly TestContentRow[],
-    preparation?: TranscriptPreparationRequest,
+    preparation?: TranscriptPreparationRequest | null,
     presented: PresentationValue = currentPresented,
   ) => {
     currentRows = rows;

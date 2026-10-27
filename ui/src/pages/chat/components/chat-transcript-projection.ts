@@ -720,7 +720,7 @@ export function projectChatTranscript(
         header,
         props.transcriptVisible ?? true,
         props.applicationContext,
-        preparation,
+        preparation ?? null,
       ),
   };
 }

@@ -227,10 +227,13 @@ export class ChatTranscriptRenderer {
 
   prepare<T>(
     rows: readonly TranscriptRow<T>[],
-    suppliedRequest?: TranscriptPreparationRequest,
+    suppliedRequest?: TranscriptPreparationRequest | null,
   ): boolean {
+    // Null records an admitted no-work result; omitted requests still need inspection.
     const request =
-      suppliedRequest ?? prepareTranscriptRows(rows.filter((row) => row.kind === "content"));
+      suppliedRequest === undefined
+        ? prepareTranscriptRows(rows.filter((row) => row.kind === "content"))
+        : suppliedRequest;
     if (!request || request.ready()) {
       this.preparation = undefined;
       return true;
