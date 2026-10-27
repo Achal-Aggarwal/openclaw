@@ -18,6 +18,7 @@ import {
 } from "../../plugins/hook-runner-global.js";
 import type { PluginHookName } from "../../plugins/hook-types.js";
 import { createMockPluginRegistry } from "../../plugins/hooks.test-fixtures.js";
+import { replaceSessionEntry } from "../../config/sessions/session-accessor.js";
 import { createUserTurnTranscriptRecorder } from "../../sessions/user-turn-transcript.js";
 import { createSqliteTranscriptTarget } from "../../sessions/user-turn-transcript.test-support.js";
 import type { UserTurnInput } from "../../sessions/user-turn-transcript.types.js";
@@ -599,4 +600,16 @@ describe("registered harness input attachment preparation", () => {
       openSpy?.mockRestore();
     }
   });
+});
+
+it("passes full permission mode to a consented native harness", async () => {
+ const storePath = path.join(trajectoryTempDirs.make("native-consent-"), "sessions.json");
+ const config: OpenClawConfig = { session: { store: storePath } };
+ const attempt = createAttemptParams(config);
+ attempt.agentId = "main"; attempt.sessionKey = "agent:main:consented-native"; attempt.senderIsOwner = true;
+ await replaceSessionEntry({ agentId: "main", sessionKey: attempt.sessionKey, storePath }, { sessionId: attempt.sessionId, updatedAt: 1, agentRuntimeOverride: "codex", permissionMode: "full", sandboxMode: "off", nativeRuntimeConsent: "codex" });
+ const nativeStart = vi.fn<AgentHarness["runAttempt"]>(async () => makeEmbeddedRunnerAttempt({ agentHarnessId: "codex" }));
+ registerAgentHarness({ id: "codex", label: "Codex", executionEnvironment: "host-only", supports: () => ({ supported: true, priority: 100 }), runAttempt: nativeStart }, { ownerPluginId: "codex" });
+ await runAgentHarnessAttempt(attempt);
+ expect(nativeStart.mock.calls[0]?.[0].permissionMode).toBe("full");
 });
