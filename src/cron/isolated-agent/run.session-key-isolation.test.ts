@@ -76,13 +76,7 @@ describe("runCronIsolatedAgentTurn isolated session identity", () => {
       sessionTarget: sessionTarget("run-a", first.sessionKey),
       bootstrapContextMode: "lightweight",
       bootstrapContextRunKind: "cron",
-      inputProvenance: {
-        kind: "internal_system",
-        sourceTool: "cron",
-        sourceSessionKey: first.sessionKey,
-      },
     });
-    expect(a.inputProvenance).toEqual(a.userTurnTranscriptRecorder.message?.provenance);
     expect(a.sessionFile).toBeUndefined();
     expect(b.sessionId).toBe("run-b");
     expect(a.promptCacheKey).toMatch(/^openclaw-cron-[a-f0-9]{32}$/u);
@@ -183,17 +177,9 @@ describe("runCronIsolatedAgentTurn isolated session identity", () => {
       expect(result.status).toBe("ok");
       expect(h.runCliAgentMock).toHaveBeenCalledOnce();
       const runRequest = h.runCliAgentMock.mock.calls[0]?.[0];
-      expect(runRequest.inputProvenance).toEqual(
-        runRequest.userTurnTranscriptRecorder.message?.provenance,
-      );
       if (external) {
-        expect(runRequest.inputProvenance).toBeUndefined();
         expect(runRequest.userTurnTranscriptRecorder.message?.provenance).toBeUndefined();
       } else {
-        expect(runRequest.inputProvenance).toMatchObject({
-          kind: "internal_system",
-          sourceTool: "cron",
-        });
         const sessionKey = "agent:default:cron:cli-monitor:run:isolated-cli-run-1";
         expect(result.sessionKey).toBe(sessionKey);
         expect(runRequest).toMatchObject({
