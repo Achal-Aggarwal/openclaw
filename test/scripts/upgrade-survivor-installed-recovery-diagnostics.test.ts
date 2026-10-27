@@ -193,6 +193,61 @@ it.each([false, true])(
   },
 );
 
+it.skipIf(process.platform !== "linux")(
+  "keeps unexpected command output private until diagnostic publication",
+  () => {
+    const f = fixture();
+    fs.rmdirSync(f.directory);
+    const prefix = path.join(f.root, "prefix");
+    const installed = path.join(prefix, "lib/node_modules/openclaw");
+    const packed = path.join(f.root, "package");
+    fs.mkdirSync(installed, { recursive: true });
+    fs.mkdirSync(path.join(prefix, "bin"), { recursive: true });
+    fs.mkdirSync(path.join(packed, "dist"), { recursive: true });
+    const manifest = { version: "2026.10.6", openclaw: { schemaVersions: {} } };
+    writeJson(path.join(installed, "package.json"), manifest);
+    writeJson(path.join(packed, "package.json"), manifest);
+    writeJson(path.join(packed, "dist/build-info.json"), { version: manifest.version });
+    writeJson(path.join(packed, "dist/postinstall-inventory.json"), []);
+    fs.writeFileSync(path.join(packed, "dist/package-update-activation-recovery.mjs"), "");
+    fs.writeFileSync(
+      path.join(prefix, "bin/openclaw"),
+      `process.stderr.write(${JSON.stringify(`token=${secret}\n`)});`,
+    );
+    writeJson(f.env.OPENCLAW_CONFIG_PATH, {});
+    const tarball = path.join(f.root, "candidate.tgz");
+    const archive = runProcess("tar", ["-czf", tarball, "-C", f.root, "package"], f.env, 10_000);
+    expect(archive.status, archive.stderr).toBe(0);
+    const result = runProcess(
+      node,
+      [
+        path.join(owner, "installed-recovery.mjs"),
+        f.run.directory,
+        prefix,
+        tarball,
+        f.env.OPENCLAW_CONFIG_PATH,
+        f.run.summary,
+        "partial-previous",
+      ],
+      { ...f.env, OPENCLAW_E2E_COMMAND_TIMEOUT: "2s" },
+      10_000,
+    );
+    expect(result.status, result.stderr).toBe(1);
+    expect(result.stderr).toContain("displacement: exit 0");
+    expect(result.stdout + result.stderr).not.toContain(secret);
+    expect(fs.readFileSync(path.join(f.directory, "displacement.err"), "utf8")).toContain(secret);
+    expect(readJson(f.run.summary).current).toMatchObject({
+      name: "displacement",
+      state: "completed",
+      status: 0,
+      treeJoined: true,
+    });
+    const report = capture(f);
+    expect(report.installedRecovery.logs.stderr).toContain("token=");
+    expect(report.installedRecovery.logs.stderr).not.toContain(secret);
+  },
+);
+
 it.skipIf(process.platform === "win32")(
   "publishes the real rejected command's output without inventing an exit or join receipt",
   () => {

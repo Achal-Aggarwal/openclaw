@@ -119,11 +119,9 @@ async function main([artifacts, prefix, tarball, configPath, summary, selectedCu
     });
     const { status } = result;
     commands.push({ ...evidence.current, preload: faultCut ?? null });
-    assert.equal(
-      status === 0,
-      !faultCut,
-      `${name}: exit ${status}\n${result.stderr.slice(-16_384)}`,
-    );
+    // Command output stays private until the host publisher redacts it.
+    // Assertion errors reach the public lane log through the top-level catch.
+    assert.equal(status === 0, !faultCut, `${name}: exit ${status}`);
     return result;
   };
   const settingsUnchanged = () =>
