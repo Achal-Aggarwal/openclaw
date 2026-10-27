@@ -1,20 +1,33 @@
+import fsSync from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { expect, it, vi } from "vitest";
+import { expectDefined } from "@openclaw/normalization-core";
+import { Command } from "commander";
+import { expect, it, vi, type MockInstance } from "vitest";
+import * as runtimePaths from "../../daemon/runtime-paths.js";
 import * as daemonService from "../../daemon/service.js";
 import {
   createMockGatewayService,
   mockSystemAccountHome,
 } from "../../daemon/service.test-helpers.js";
+import * as activationPaths from "../../infra/package-update-activation-paths.js";
+import { normalizeUpdateChannel } from "../../infra/update-channels.js";
+import * as packageMetadata from "../../infra/update-check-package-target.js";
+import * as updateCheck from "../../infra/update-check.js";
 import * as updateGlobal from "../../infra/update-global.js";
 import * as processExec from "../../process/exec.js";
 import { defaultRuntime, ExitError } from "../../runtime.js";
 import { createCommandResult } from "../../test-utils/npm-spec-install-test-helpers.js";
 import { quoteCliArg, quotePowerShellArg } from "../quote-cli-arg.js";
-import { installFreshUpdateFixture } from "./update-command-fresh.test-support.js";
+import { registerUpdateCli } from "../update-cli.js";
+import * as shared from "./shared.js";
+import { installFreshUpdateFixture, targetMetadata } from "./update-command-fresh.test-support.js";
 import * as packageDestination from "./update-command-package-destination.js";
 import * as packageUpdate from "./update-command-package.js";
 import * as plugins from "./update-command-plugin-preflight.js";
+import * as commandRun from "./update-command-run.js";
+import * as runtimePlan from "./update-command-runtime-preflight.js";
+import { unsupportedServiceRuntimeFixture } from "./update-command-runtime-recovery.test-support.js";
 import * as servicePlan from "./update-command-service-plan.js";
 import { updateCommand } from "./update-command.js";
 
@@ -322,6 +335,16 @@ it.each([
 );
 
 const lastJsonCall = () => vi.mocked(defaultRuntime.writeJson).mock.lastCall;
+const quote = process.platform === "win32" ? quotePowerShellArg : quoteCliArg;
+function runtimeFixture(version: string, sqliteVersion: string) {
+  return {
+    status: "supported" as const,
+    version,
+    sqliteVersion,
+    nodeSharedSqlite: false,
+    sqliteProbe: { available: true, version: sqliteVersion, text: true, blob: true, json: true },
+  };
+}
 function preflightOutcome(
   preflight: MockInstance<typeof runtimePlan.resolvePackageRuntimePreflight>,
 ) {

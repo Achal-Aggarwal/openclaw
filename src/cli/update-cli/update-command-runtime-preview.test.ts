@@ -217,16 +217,22 @@ it.each([
           expect.objectContaining({ nodeRunner: replacement ? "/current/node" : "/service/node" }),
         );
       } else {
-        expect(lastJson()).toMatchObject({
-          reason: "preflight-node-runtime-incompatible",
-          steps: matchingEntry({
-            stderrTail: expect.stringContaining(
-              `node ${quote(path.join(fixture.root, "openclaw.mjs"))} update --tag 2026.9.2`,
-            ),
-            failureFacts: matchingEntry({
-              code: "node-runtime-preflight",
-              message: expect.stringContaining("Required: openclaw@2026.9.2 Node >=26.12.1"),
-            }),
+        expect(defaultRuntime.writeJson).toHaveBeenLastCalledWith(
+          expect.objectContaining({
+            reason: "preflight-node-runtime-incompatible",
+            steps: expect.arrayContaining([
+              expect.objectContaining({
+                stderrTail: expect.stringContaining(
+                  `node ${process.platform === "win32" ? quotePowerShellArg(path.join(fixture.root, "openclaw.mjs")) : quoteCliArg(path.join(fixture.root, "openclaw.mjs"))} update --tag 2026.9.2`,
+                ),
+                failureFacts: expect.arrayContaining([
+                  expect.objectContaining({
+                    code: "node-runtime-preflight",
+                    message: expect.stringContaining("Required: openclaw@2026.9.2 Node >=26.12.1"),
+                  }),
+                ]),
+              }),
+            ]),
           }),
         );
         expect(packageUpdate.stagePackageInstallUpdate).not.toHaveBeenCalled();
