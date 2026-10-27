@@ -230,7 +230,7 @@ it.skipIf(process.platform === "win32")(
         process.stderr.write('token=${secret}\\n');
         setInterval(() => {}, 1000);
       `)}],
-      env: process.env, stdout: out, stderr: err, timeoutMs: 2000, timeoutKillGraceMs: 100,
+      env: process.env, stdout: out, stderr: err, timeout: '2s', timeoutKillGraceMs: 100,
       record(state) {
         states.push(state.state);
         evidence.current = { ...evidence.current, ...state };
@@ -284,6 +284,42 @@ it.skipIf(process.platform === "win32")(
       intent: "displace",
       synced: false,
     });
+  },
+);
+
+it.skipIf(process.platform === "win32").each(["", "0"])(
+  "preserves the disabled inner command watchdog: %j",
+  (timeout) => {
+    const f = fixture();
+    const commandOwner = pathToFileURL(path.join(owner, "installed-recovery-command.mjs")).href;
+    const result = runProcess(
+      node,
+      [
+        "--input-type=module",
+        "-e",
+        `
+    import assert from 'node:assert/strict';
+    import { runInstalledRecoveryCommand } from ${JSON.stringify(commandOwner)};
+    const states = [];
+    const result = await runInstalledRecoveryCommand({
+      bin: process.execPath,
+      args: ['-e', 'setTimeout(() => process.stdout.write("finished"), 30)'],
+      env: process.env,
+      stdout: ${JSON.stringify(path.join(f.run.directory, "disabled.out"))},
+      stderr: ${JSON.stringify(path.join(f.run.directory, "disabled.err"))},
+      timeout: ${JSON.stringify(timeout)}, timeoutKillGraceMs: 100,
+      record: state => states.push(state),
+    });
+    assert.equal(result.status, 0);
+    assert.equal(result.stdout, 'finished');
+    assert.deepEqual(states.map(state => state.state), ['running', 'completed']);
+    assert.equal(states.at(-1).treeJoined, true);
+  `,
+      ],
+      f.env,
+      10_000,
+    );
+    expect(result.status, result.stderr).toBe(0);
   },
 );
 

@@ -1,8 +1,12 @@
 import fs from "node:fs";
+import { parseTimeoutMs } from "../../../lib/docker-e2e-watchdog.mjs";
 import { runManagedCommand } from "../../../lib/managed-child-process.mts";
 import { openInstalledRecoveryEvidence } from "./installed-recovery-observations.mjs";
 
-export async function runInstalledRecoveryCommand({ stdout, stderr, record, ...options }) {
+export async function runInstalledRecoveryCommand({ stdout, stderr, record, timeout, ...options }) {
+  // Match openclaw_e2e_maybe_timeout's disabled sentinel; the outer lane remains bounded.
+  const timeoutMs = timeout === "" || timeout === "0" ? undefined : parseTimeoutMs(timeout);
+  console.log(`[installed-recovery] command timeout ms: ${timeoutMs ?? "disabled"}`);
   const startedAt = Date.now();
   const start = performance.now();
   const observation = (state) =>
@@ -18,6 +22,7 @@ export async function runInstalledRecoveryCommand({ stdout, stderr, record, ...o
     try {
       status = await runManagedCommand({
         ...options,
+        timeoutMs,
         stdio: ["ignore", out, err],
         requireProcessTreeExit: true,
         timeoutForceKillOnLeaderExit: true,

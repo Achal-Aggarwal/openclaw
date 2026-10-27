@@ -10,6 +10,6 @@ export function runInstalledRecoveryCommand(options: {
   bin: string;
   args: string[];
   env: NodeJS.ProcessEnv;
-  timeoutMs: number;
+  timeout: string;
   timeoutKillGraceMs: number;
 }): Promise<{ status: number; stdout: string; stderr: string }>;

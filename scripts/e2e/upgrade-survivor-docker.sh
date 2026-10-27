@@ -583,6 +583,7 @@ if [ "$SCENARIO" = "package-installed-recovery" ]; then
     -e OPENCLAW_TEST_STATE_FUNCTION_B64="$OPENCLAW_TEST_STATE_FUNCTION_B64" \
     -e OPENCLAW_UPGRADE_SURVIVOR_ARTIFACT_ROOT=/tmp/openclaw-upgrade-survivor-artifacts \
     -e OPENCLAW_UPGRADE_SURVIVOR_INSTALLED_RECOVERY_CUT="${OPENCLAW_UPGRADE_SURVIVOR_INSTALLED_RECOVERY_CUT:-}" \
+    -e OPENCLAW_E2E_COMMAND_TIMEOUT="$COMMAND_TIMEOUT" \
     -v "$ARTIFACT_DIR:/tmp/openclaw-upgrade-survivor-artifacts" \
     -v "$HARNESS_ROOT_DIR/scripts:/tmp/openclaw-release-harness/scripts:ro" \
     ${DOCKER_E2E_PACKAGE_ARGS[@]+"${DOCKER_E2E_PACKAGE_ARGS[@]}"} \

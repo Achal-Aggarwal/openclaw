@@ -26,6 +26,10 @@ const packedManifest = (tarball) =>
 
 async function main([artifacts, prefix, tarball, configPath, summary, selectedCut = ""]) {
   const cuts = selectInstalledRecoveryCuts(selectedCut);
+  // The survivor owner budgets the whole update. A shorter local watchdog can
+  // kill candidate preparation before the intended interruption checkpoint.
+  const timeout = process.env.OPENCLAW_E2E_COMMAND_TIMEOUT;
+  assert(timeout !== undefined, "missing survivor command timeout");
   assert.equal(
     process.platform,
     "linux",
@@ -99,7 +103,7 @@ async function main([artifacts, prefix, tarball, configPath, summary, selectedCu
       env: childEnv,
       stdout,
       stderr,
-      timeoutMs: 180_000,
+      timeout,
       timeoutKillGraceMs: 10_000,
       record: (outcome) => {
         evidence.current = {

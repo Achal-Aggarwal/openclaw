@@ -40,9 +40,9 @@ openclaw_test_state_create installed-recovery empty
 phase=installed-recovery-install
 openclaw_e2e_install_package "$run_artifacts/install.log" "current recovery writer" "$npm_config_prefix"
 phase=installed-recovery-configure
-openclaw_e2e_maybe_timeout 180s openclaw config set gateway \
+openclaw_e2e_maybe_timeout "${OPENCLAW_E2E_COMMAND_TIMEOUT?missing survivor command timeout}" openclaw config set gateway \
   "$(cat "$harness/scripts/e2e/lib/upgrade-survivor/config-recipe/gateway.json")" --strict-json
-openclaw_e2e_maybe_timeout 180s openclaw config set plugins.enabled false --strict-json
+openclaw_e2e_maybe_timeout "$OPENCLAW_E2E_COMMAND_TIMEOUT" openclaw config set plugins.enabled false --strict-json
 phase=installed-recovery-command
 node "$harness/scripts/e2e/lib/upgrade-survivor/installed-recovery.mjs" \
   "$run_artifacts" "$npm_config_prefix" "$OPENCLAW_CURRENT_PACKAGE_TGZ" "$OPENCLAW_CONFIG_PATH" \
