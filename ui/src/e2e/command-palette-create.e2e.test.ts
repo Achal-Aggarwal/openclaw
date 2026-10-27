@@ -152,7 +152,14 @@ suite.define(() => {
                 .getAttribute("aria-selected"),
             )
             .toBe("true");
-          await input.press("Tab");
+          const composeTab = palette.getByRole("tab", { name: "Compose", exact: true });
+          await composeTab.focus();
+          await composeTab.press("ArrowLeft");
+          const searchTab = palette.getByRole("tab", { name: "Search", exact: true });
+          await expect.poll(() => searchTab.getAttribute("aria-selected")).toBe("true");
+          expect(await searchTab.evaluate((element) => document.activeElement === element)).toBe(
+            true,
+          );
           await input.fill("");
           await expect
             .poll(() => search.evaluate((element: HTMLElement) => element.inert))
