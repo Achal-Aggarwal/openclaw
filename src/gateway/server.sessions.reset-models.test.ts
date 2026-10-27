@@ -27,6 +27,15 @@ type ModelResetEntry = Pick<
 >;
 type ResolvedSessionModel = { modelProvider: string; model: string };
 
+test("sessions.reset preserves a person-linked model account", async () => {
+const { storePath } = await createSessionStoreDir();
+const selection = { authProfileOverride: "openai:linked-person", authProfileOverrideSource: "user-link" } satisfies Partial<SessionEntry>;
+await writeSessionStore({ entries: { main: sessionStoreEntry("linked-account", selection) } });
+const reset = await directSessionReq<{ entry: SessionEntry }>("sessions.reset", { key: "main" });
+expect(reset.ok).toBe(true); expect(reset.payload?.entry).toMatchObject(selection);
+expect(loadSessionEntry({ sessionKey: "agent:main:main", storePath })).toMatchObject(selection);
+});
+
 test("sessions.reset stamps the creator's required sandbox only when materializing a new row", async () => {
   const { storePath } = await createSessionStoreDir();
   const profile = ensureProfileForEmail("sandboxed-reset-creator@example.test");
