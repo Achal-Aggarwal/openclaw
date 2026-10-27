@@ -1,5 +1,5 @@
 {
-  "startupJsGzipBytes": 90325,
-  "reason": "Fixed Board card deferral reduces initial DOM from 3968 to 2246 nodes and desktop tab-return task median from 376 to 239 ms; measured startup is 90325 B gzip.",
+  "startupJsGzipBytes": 89994,
+  "reason": "Fixed Board chrome deferral cuts initial DOM from 3968 to 2246 and desktop tab-return task median from 376 to 239 ms; the integrated head measures 89994 B gzip.",
   "updatedAt": "2026-10-27"
 }
