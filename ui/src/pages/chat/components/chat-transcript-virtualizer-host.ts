@@ -180,12 +180,7 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
       initialOffset,
       () => this.virtualizer,
       (...range) =>
-        this.prependAnchor.extractRange(
-          ...range,
-          this.focusedRowKey,
-          this.acceptedRows ?? [],
-          this.initialRange.hasReaderMovement ? this.virtualizer.itemSizeCache : undefined,
-        ),
+        this.prependAnchor.extractRange(...range, this.focusedRowKey, this.acceptedRows ?? []),
       invalidate,
       this.layout.rowMinimum,
       () => this.connected && this.renderer.isPresented(),
@@ -764,8 +759,11 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
       applyPendingScrollOffset(this.scrollRestoreHost);
       return;
     }
-    const { pendingInteractionAnchor, touchActive } = this.offsetState;
-    if (this.canAutoFollow() && !(pendingInteractionAnchor || touchActive)) {
+    if (
+      (this.initialRange.pending || this.offsetState.scrollCommand?.target === "end") &&
+      this.canAutoFollow() &&
+      !(this.offsetState.pendingInteractionAnchor || this.offsetState.touchActive)
+    ) {
       const behavior = this.offsetState.scrollCommand?.behavior ?? "instant";
       this.scrollToEnd({ source: "auto", behavior });
       this.offsetState.syncNativeOffset?.();

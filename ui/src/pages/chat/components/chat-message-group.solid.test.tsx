@@ -646,6 +646,29 @@ it("prepares the detailed timestamp only when metadata exposes its label", () =>
   }
 });
 
+it("shares timestamp formatting across scroll tasks and refreshes it the next minute", async () => {
+  const timestamp = 8_000_000_000_000;
+  const clock = vi.spyOn(Date, "now").mockReturnValue(timestamp);
+  const formatter = vi.spyOn(Intl, "DateTimeFormat");
+  const views: ReturnType<typeof mountSolid>[] = [];
+  try {
+    views.push(mountSolid(() => <ChatTimestamp timestamp={timestamp} />));
+    await Promise.resolve();
+    views.push(mountSolid(() => <ChatTimestamp timestamp={timestamp + 1000} />));
+    expect(formatter).toHaveBeenCalledTimes(1);
+    expect(views[0]!.container.querySelector("time")?.dateTime).toBe(
+      new Date(timestamp).toISOString(),
+    );
+    clock.mockReturnValue(timestamp + 60_000);
+    views.push(mountSolid(() => <ChatTimestamp timestamp={timestamp + 2000} />));
+    expect(formatter).toHaveBeenCalledTimes(2);
+  } finally {
+    views.forEach((view) => view.unmount());
+    formatter.mockRestore();
+    clock.mockRestore();
+  }
+});
+
 it("leaves timestamp attributes untouched when only message usage changes", () => {
   const calendarFormat = vi.spyOn(Date.prototype, "toLocaleString");
   const clock = vi.spyOn(Date, "now").mockReturnValue(301_000);

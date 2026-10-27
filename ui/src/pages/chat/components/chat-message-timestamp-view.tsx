@@ -13,6 +13,7 @@ registerEnglishCatalog(registerChatMessageMetadataEnglish);
 const CHAT_RELATIVE_TIMESTAMP_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 const CHAT_RELATIVE_TIMESTAMP_FUTURE_SKEW_MS = 2 * 60 * 1000;
 let timestampFormatter: Intl.DateTimeFormat | undefined;
+let timestampFormatterMinute: number | undefined;
 
 // Shared relative-time copy is lowercase for mid-sentence use ("Updated just now");
 // the chat footer shows it alone, so it starts with a capital ("Just now").
@@ -25,7 +26,8 @@ function prepareTimestamp(timestamp: number) {
   const valid = Number.isFinite(date.getTime());
   let label: string;
   if (valid) {
-    if (!timestampFormatter) {
+    const minute = Math.floor(Date.now() / 60_000);
+    if (!timestampFormatter || timestampFormatterMinute !== minute) {
       timestampFormatter = new Intl.DateTimeFormat([], {
         month: "short",
         day: "numeric",
@@ -34,10 +36,9 @@ function prepareTimestamp(timestamp: number) {
         minute: "2-digit",
         timeZoneName: "short",
       });
-      // Rows mounted together share Intl setup; the next batch observes system changes.
-      queueMicrotask(() => {
-        timestampFormatter = undefined;
-      });
+      // Scrolling mounts rows in separate tasks; share Intl setup for one minute.
+      // Newly mounted rows observe system locale/timezone changes in the next minute.
+      timestampFormatterMinute = minute;
     }
     label = timestampFormatter.format(date);
   } else {
