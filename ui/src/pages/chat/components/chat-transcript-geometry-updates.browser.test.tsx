@@ -636,6 +636,38 @@ it("defers uncompensated measurement read-back until the next frame", async () =
   }
 });
 
+it("renders new viewport rows before paint when a measurement reads a fast scroll", async () => {
+  const { host, session, viewport, virtualizer } = await mountPane();
+  scrollReader(viewport, 480);
+  const row = requireElement(host, '.chat-virtual-row[data-index="6"]');
+  const render = vi.spyOn(session["renderer"], "render");
+  const paint = vi.fn();
+  const frame = requestAnimationFrame(paint);
+  try {
+    viewport.scrollTop = 1800;
+    const entry: ResizeObserverEntry = {
+      target: row,
+      borderBoxSize: [{ inlineSize: 800, blockSize: 120 }],
+      contentBoxSize: [{ inlineSize: 800, blockSize: 120 }],
+      devicePixelContentBoxSize: [],
+      contentRect: row.getBoundingClientRect(),
+    };
+    virtualizer.resizeItem(6, virtualizer.options.measureElement(row, entry, virtualizer));
+    await Promise.resolve();
+    flush();
+    expect(render).toHaveBeenCalled();
+    const bounds = viewport.getBoundingClientRect();
+    const visible = [...host.querySelectorAll<HTMLElement>(".chat-virtual-row")]
+      .map((element) => element.getBoundingClientRect())
+      .filter((rect) => rect.bottom > bounds.top && rect.top < bounds.bottom);
+    expect(Math.min(...visible.map((rect) => rect.top))).toBeLessThanOrEqual(bounds.top);
+    expect(Math.max(...visible.map((rect) => rect.bottom))).toBeGreaterThanOrEqual(bounds.bottom);
+    expect(paint).not.toHaveBeenCalled();
+  } finally {
+    cancelAnimationFrame(frame);
+  }
+});
+
 it("commits rows before paint when an uncompensated extent shrink clamps the reader", async () => {
   const { host, viewport, virtualizer } = await mountPane(
     false,
