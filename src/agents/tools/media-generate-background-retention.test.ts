@@ -83,7 +83,9 @@ describe("undelivered generated media", () => {
         vi.useFakeTimers({ toFake: ["Date"] });
         const realPerformanceNow = performance.now.bind(performance);
         let performanceClockSkewMs = 0;
-        vi.spyOn(performance, "now").mockImplementation(() => realPerformanceNow() + performanceClockSkewMs);
+        vi.spyOn(performance, "now").mockImplementation(
+          () => realPerformanceNow() + performanceClockSkewMs,
+        );
         const enqueue = vi
           .spyOn(sessionDelivery, "enqueueClaimedSessionDelivery")
           .mockImplementation(async () => {
