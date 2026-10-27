@@ -165,6 +165,7 @@ export type MockOpenAiRequestSnapshot = QaMockRequestSnapshot & {
   instructions?: string;
   codeModeExecSurface?: MockOpenAiCodeModeExecSurface;
   requestKind: MockOpenAiRequestKind;
+  terminalCompletionCase?: string;
   compactionSummaryFaultMode: MockCompactionSummaryFaultMode;
   outcome: MockOpenAiRequestOutcome;
   errorCode?: string;

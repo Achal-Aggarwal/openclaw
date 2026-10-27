@@ -18,10 +18,22 @@ if (!isRecord(guarded) || !isRecord(guarded.try) || !Array.isArray(guarded.try.a
 }
 const actions: unknown[] = guarded.try.actions;
 const flow = (selected: unknown[]) => ({ steps: [{ name: step.name, actions: selected }] });
+type ReceiptFault =
+  | "missing"
+  | "model"
+  | "provider"
+  | "run"
+  | "child"
+  | "prefix"
+  | "delimiter"
+  | "duplicate"
+  | "text";
 
 async function startPublicCase(
   acknowledgments: number,
   initialAck: "missing" | "deleted" | "foreign" = "missing",
+  receiptFault?: ReceiptFault,
+  providerFault?: "duplicate-completion" | "missing-error" | "wrong-case",
 ) {
   const publicIndex = actions.findIndex((action) => isRecord(action) && "forEach" in action);
   if (publicIndex < 0) {
@@ -40,7 +52,14 @@ async function startPublicCase(
     childSessionKey: "child",
     runId: "run",
   };
-  const requests = [{ plannedToolName: "sessions_spawn", plannedToolArgs: { label: run.label } }];
+  const requests = [
+    { plannedToolName: "sessions_spawn", plannedToolArgs: { label: run.label } },
+    ...Array.from({ length: providerFault === "duplicate-completion" ? 2 : 1 }, () => ({
+      terminalCompletionCase: providerFault === "wrong-case" ? "foreign" : "fallback",
+      outcome: providerFault === "missing-error" ? "success" : "error",
+      errorCode: providerFault === "missing-error" ? undefined : "qa_terminal_completion_failure",
+    })),
+  ];
   let parentSend: Promise<void> | undefined;
   const result = runLoadedScenarioFlow(scenario.id, {
     state,
@@ -65,15 +84,26 @@ async function startPublicCase(
           call: async (method: string) => {
             if (method === "chat.history") {
               return {
-                messages: [
-                  {
-                    role: "assistant",
-                    provider: "openclaw",
-                    model: "delivery-mirror",
-                    __openclaw: { idempotencyKey: "announce:v1:child:run:text-direct" },
-                    content: [{ type: "text", text: marker }],
-                  },
-                ],
+                messages:
+                  receiptFault === "missing"
+                    ? []
+                    : Array.from({ length: receiptFault === "duplicate" ? 2 : 1 }, () => ({
+                        role: "assistant",
+                        provider: receiptFault === "provider" ? "foreign" : "openclaw",
+                        model: receiptFault === "model" ? "delivery-mirror" : "automation-result",
+                        __openclaw: {
+                          idempotencyKey:
+                            receiptFault === "prefix"
+                              ? "announce:v1:child:run:text-direct:fixture"
+                              : `outbound-delivery:announce:v1:${receiptFault === "child" ? "foreign" : "child"}:${receiptFault === "run" ? "foreign" : "run"}:text-direct${receiptFault === "delimiter" ? "-" : ":"}fixture`,
+                        },
+                        content: [
+                          {
+                            type: "text",
+                            text: receiptFault === "text" ? "foreign result" : marker,
+                          },
+                        ],
+                      })),
               };
             }
             throw new Error(`unexpected RPC ${method}`);
@@ -120,7 +150,9 @@ async function startPublicCase(
         await parentSent.promise;
         const settled = await check();
         if (settled === undefined) {
-          throw new Error("terminal observation deadline: parent acknowledgment missing");
+          throw new Error(
+            "terminal observation deadline: parent acknowledgment missing or direct receipt invalid",
+          );
         }
         return settled;
       },
@@ -174,6 +206,47 @@ describe("terminal completion scenario parent acknowledgment", () => {
       expect(outcome).toMatchObject({ value: { status: "pass" } });
     }
   });
+
+  it.each<ReceiptFault>([
+    "missing",
+    "model",
+    "provider",
+    "run",
+    "child",
+    "prefix",
+    "delimiter",
+    "duplicate",
+    "text",
+  ])("rejects the %s direct-fallback receipt", async (fault) => {
+    const run = await startPublicCase(1, "missing", fault);
+    try {
+      expect(await run.observed).toBeUndefined();
+    } finally {
+      await run.release();
+    }
+    expect(await run.outcome).toHaveProperty("error");
+    const outcome = await run.outcome;
+    if ("error" in outcome) {
+      expect(String(outcome.error)).toContain("receipt");
+    }
+  });
+
+  it.each(["duplicate-completion", "missing-error", "wrong-case"] as const)(
+    "rejects %s provider evidence in the loaded scenario",
+    async (fault) => {
+      const run = await startPublicCase(1, "missing", undefined, fault);
+      try {
+        expect(await run.observed).toBeUndefined();
+      } finally {
+        await run.release();
+      }
+      const outcome = await run.outcome;
+      expect(outcome).toHaveProperty("error");
+      if ("error" in outcome) {
+        expect(String(outcome.error)).toContain("unexpected provider completion or retry");
+      }
+    },
+  );
 });
 
 async function replayPrivateKickoff(text: string, fault?: string) {

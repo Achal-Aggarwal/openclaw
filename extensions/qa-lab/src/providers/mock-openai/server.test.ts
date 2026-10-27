@@ -1521,12 +1521,23 @@ describe("qa mock openai server", () => {
         carrier,
       );
       const tools = [SESSIONS_SPAWN_TOOL, MESSAGE_TOOL];
-      const payload = await respond(server, input, { tools });
       if (terminalCase === "visible") {
-        expectNoTool(payload);
-        expect(outputText(payload)).toBe("");
+        const response = await postResponses(server, { model: "gpt-5.6-luna", input, tools });
+        expect(response.status).toBe(405);
+        expect(await response.json()).toEqual({
+          error: {
+            type: "qa_terminal_completion_failure",
+            code: "qa_terminal_completion_failure",
+            message: "Method Not Allowed",
+          },
+        });
+        expect(await readDebug(server)).toMatchObject({
+          outcome: "error",
+          errorCode: "qa_terminal_completion_failure",
+        });
         return;
       }
+      const payload = await respond(server, input, { tools });
       const messageCall = findToolCall(payload, "message");
       expect(callArgs(messageCall)).toMatchObject({
         action: "send",

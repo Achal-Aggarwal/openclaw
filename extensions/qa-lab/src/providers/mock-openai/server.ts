@@ -937,8 +937,8 @@ async function buildResponsesPayload(
       }
       return buildAssistantEvents(visibleRepresentation);
     }
-    // Empty output exercises direct fallback. Exact NO_REPLY is intentional
-    // silence and must not be used as a missing-answer fixture.
+    // Successful empty completions settle quietly. The dispatch owner injects
+    // a provider failure for the selected direct-fallback controls instead.
     return buildAssistantEvents("");
   }
   const terminalWorkerCase = terminalTurn?.kind === "worker" ? terminalTurn.caseName : undefined;
@@ -2061,6 +2061,9 @@ export async function startQaMockOpenAiServer(params?: QaMockOpenAiServerOptions
         resolveCodeModeExecSurface(resolveCurrentToolDeclarationSurface(body, input)) ?? undefined,
       imageInputCount: countImageInputs(input),
       requestKind,
+      ...(subagentTurn?.kind === "completion" && subagentTurn.caseName
+        ? { terminalCompletionCase: subagentTurn.caseName }
+        : {}),
       compactionSummaryFaultMode,
       rawByteLength,
     };
@@ -2094,6 +2097,20 @@ export async function startQaMockOpenAiServer(params?: QaMockOpenAiServerOptions
     let injectedFailure: QaMockProviderDispatchResult["failure"];
     try {
       if (
+        request.route === "responses" &&
+        subagentTurn?.kind === "completion" &&
+        ["visible", "fallback", "restart"].includes(subagentTurn.caseName ?? "")
+      ) {
+        // A successful empty parent completion is intentionally quiet; a real
+        // nonretryable failure admits the child result to direct fallback.
+        injectedFailure = {
+          status: 405,
+          type: "qa_terminal_completion_failure",
+          code: "qa_terminal_completion_failure",
+          message: "Method Not Allowed",
+        };
+        events = [];
+      } else if (
         request.route === "anthropic-messages" &&
         QA_ANTHROPIC_THINKING_ERROR_RECOVERY_PROMPT_RE.test(allInputText)
       ) {

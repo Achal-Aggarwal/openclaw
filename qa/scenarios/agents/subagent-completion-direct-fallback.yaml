@@ -138,6 +138,13 @@ flow:
                       - caseName
                     async: true
                     expr: "(await readNativeQaSubagentRuns(env)).find((run) => run.label === `qa-terminal-${caseName}` && run.execution.status === 'terminal' && run.execution.outcome?.status === 'ok' && run.delivery?.status === 'delivered')"
+              # Cursor reads fail if any request expired; bounded diagnostics cannot
+              # prove absence of a provider or model retry.
+              - set: readTerminalCompletionProof
+                value:
+                  lambda:
+                    params: [requests, caseName]
+                    expr: "({ completionRequestCount: requests.filter((request) => request.terminalCompletionCase === caseName).length, injectedFailureCount: requests.filter((request) => request.errorCode === 'qa_terminal_completion_failure').length })"
               # The channel payload alone could also come from the completion model.
               # Match the destination history row recorded for this exact child run.
               - set: readDirectFallbackReceipts
@@ -206,6 +213,13 @@ flow:
                     - set: caseRequests
                       value:
                         expr: "env.mock ? await fetchJson(`${env.mock.baseUrl}/debug/requests?after=${requestCursor}`) : []"
+                    - set: completionProof
+                      value:
+                        expr: "readTerminalCompletionProof(caseRequests, terminalCase.name)"
+                    - assert:
+                        expr: "terminalCase.name === 'silent' ? completionProof.injectedFailureCount === 0 : completionProof.completionRequestCount === 1 && completionProof.injectedFailureCount === 1"
+                        message:
+                          expr: "`terminal ${terminalCase.name}: unexpected provider completion or retry: ${JSON.stringify(completionProof)}`"
                     - set: publicDiagnosticCheckpoint
                       value:
                         expr: "await publishTerminalDiagnostic({ captureStage: 'public-case-observed', activePhase, requestCursor, requestCount: caseRequests.length, requests: snapshotTerminalRequests(caseRequests.slice(0, 4)), omittedRequestCount: Math.max(0, caseRequests.length - 4) })"
@@ -222,7 +236,7 @@ flow:
                           expr: "`terminal ${terminalCase.name}: spawning parent did not acknowledge its completed turn`"
                     - set: appendDirectFallbackProof
                       value:
-                        expr: "directFallbackProofs.push({ case: terminalCase.name, runId: terminalRun.runId, receiptKeys: directFallbackReceipts.map((message) => message.__openclaw.idempotencyKey) })"
+                        expr: "directFallbackProofs.push({ case: terminalCase.name, runId: terminalRun.runId, receiptKeys: directFallbackReceipts.map((message) => message.__openclaw.idempotencyKey), ...completionProof })"
                     - assert:
                         expr: "matchingOutbound.length === terminalCase.expectedSendCount"
                         message:
@@ -340,6 +354,12 @@ flow:
               - set: privateRequests
                 value:
                   expr: "await fetchJson(`${env.mock.baseUrl}/debug/requests?after=${privateRequestCursor}`)"
+              - set: privateCompletionProof
+                value:
+                  expr: "readTerminalCompletionProof(privateRequests, 'private')"
+              - assert:
+                  expr: "privateCompletionProof.injectedFailureCount === 0"
+                  message: Private completion received a public direct-fallback provider failure.
               - set: privateSpawns
                 value:
                   expr: "privateRequests.filter((request) => request.outcome === 'success' && request.plannedToolName === 'sessions_spawn')"
@@ -448,7 +468,7 @@ flow:
                         message: Private result reached the direct channel fallback.
               - set: appendPrivateVerdict
                 value:
-                  expr: "verdicts.push({ case: 'private', conversationId: privateConversationId, runIds: privateRuns.map((run) => run.runId), deliveryStatus: 'delivered', privateSpawnReceiptCount: privateSpawnReceipts.length, messageToolDenied: !privateTools.has('message'), mediaReferenceConsumed: true, outboundAttachmentCount: privateOutboundEvents.reduce((count, event) => count + (event.message.attachments?.length ?? 0), 0), expectedTerminalSendCount: 0, actualTerminalSendCount: privateAcknowledgments.length - 1, kickoffTransportSendCount: privateOutbound.length, previewRetirementVerified: !privateTelegramWire, capturedTerminalPayloads: [], pass: true })"
+                  expr: "verdicts.push({ case: 'private', conversationId: privateConversationId, runIds: privateRuns.map((run) => run.runId), deliveryStatus: 'delivered', privateSpawnReceiptCount: privateSpawnReceipts.length, messageToolDenied: !privateTools.has('message'), mediaReferenceConsumed: true, outboundAttachmentCount: privateOutboundEvents.reduce((count, event) => count + (event.message.attachments?.length ?? 0), 0), expectedTerminalSendCount: 0, actualTerminalSendCount: privateAcknowledgments.length - 1, kickoffTransportSendCount: privateOutbound.length, previewRetirementVerified: !privateTelegramWire, capturedTerminalPayloads: [], ...privateCompletionProof, pass: true })"
               # Every prior run is now terminal and delivery-settled, so restart from
               # the lifecycle boundary rather than waiting an arbitrary grace period.
               - set: preRestartOutbound
@@ -519,13 +539,20 @@ flow:
               - set: restartFallbackReceipts
                 value:
                   expr: "await readDirectFallbackReceipts(restartRun)"
+              - set: restartCompletionProof
+                value:
+                  expr: "readTerminalCompletionProof(await fetchJson(`${env.mock.baseUrl}/debug/requests?after=${restartRequestCursor}`), 'restart')"
+              - assert:
+                  expr: "restartCompletionProof.completionRequestCount === 1 && restartCompletionProof.injectedFailureCount === 1"
+                  message:
+                    expr: "`restart completion unexpectedly retried its provider: ${JSON.stringify(restartCompletionProof)}`"
               - assert:
                   expr: "restartFallbackReceipts.length === 1 && restartFallbackReceipts[0].content.filter((block) => block.type === 'text').map((block) => block.text).join('') === config.restartMarker"
                   message:
                     expr: "`restart completion did not use its exact direct-fallback owner: ${JSON.stringify(restartFallbackReceipts)}`"
               - set: appendRestartFallbackProof
                 value:
-                  expr: "directFallbackProofs.push({ case: 'restart', runId: restartRun.runId, receiptKeys: restartFallbackReceipts.map((message) => message.__openclaw.idempotencyKey) })"
+                  expr: "directFallbackProofs.push({ case: 'restart', runId: restartRun.runId, receiptKeys: restartFallbackReceipts.map((message) => message.__openclaw.idempotencyKey), ...restartCompletionProof })"
               - assert:
                   expr: "restartMatches.length === 1"
                   message:
