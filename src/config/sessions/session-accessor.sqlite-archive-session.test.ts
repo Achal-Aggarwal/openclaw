@@ -57,7 +57,10 @@ import * as reclamationWorker from "./session-accessor.sqlite-reclamation-worker
 import * as sessionWorker from "./session-accessor.sqlite-replacement-worker.js";
 import { replaceTranscriptEvents } from "./session-accessor.sqlite-transcript-write.test-support.js";
 import * as archivePublication from "./session-archive-publication.js";
-import { runSessionColdStorageMaintenance } from "./session-cold-storage.js";
+import {
+  restoreSessionColdTranscript,
+  runSessionColdStorageMaintenance,
+} from "./session-cold-storage.js";
 import {
   createSessionColdStorageFixture,
   maintenanceConfig,
@@ -354,7 +357,9 @@ describe("SQLite transcript archive sessions", () => {
               return result;
             },
           );
-          const restored = loadTranscriptEvents(fixture.scope);
+          const restored = restoreSessionColdTranscript(fixture.scope).then(() =>
+            loadTranscriptEvents(fixture.scope),
+          );
           await entered.promise;
           expect(carriers).toHaveLength(1);
           const exited = once(carrier, "exit");
