@@ -511,32 +511,41 @@ try {
   if (typeof runtime.runtimeRoot !== "string" || !path.isAbsolute(runtime.runtimeRoot)) {
     throw new Error("runtime-root-missing");
   }
-  const labelMaps: [string, string][][] = JSON.parse(
+  type LabelHints = { labels: [string, string][]; unreadable: number };
+  const labelMaps: [LabelHints, LabelHints] = JSON.parse(
     await command("runtime-job-labels", "python3", [
       "-c",
       `import json, pathlib, plistlib, re, sys
 from collections import defaultdict
+from xml.parsers.expat import ExpatError
 maps = []
 for root in (pathlib.Path(sys.argv[1]), pathlib.Path("/")):
     buckets = defaultdict(set)
+    unreadable = 0
     for directory in ("System/Library/LaunchDaemons", "System/Library/LaunchAgents"):
         for file in (root / directory).glob("*.plist"):
-            data = plistlib.loads(file.read_bytes())
+            try:
+                data = plistlib.loads(file.read_bytes())
+            except (OSError, plistlib.InvalidFileException, ExpatError):
+                # These optional name hints must not block process CPU accounting.
+                unreadable += 1
+                continue
             args = data.get("ProgramArguments") or []
             program = data.get("Program") or (args[0] if args else "")
             label = data.get("Label", "")
             name = pathlib.PurePosixPath(program).name
             if re.fullmatch(r"[A-Za-z0-9_.+-]{1,160}", name) and re.fullmatch(r"com\\.apple\\.[A-Za-z0-9_.-]{1,120}", label):
                 buckets[name[:16]].add(label)
-    maps.append([[name, next(iter(labels))] for name, labels in buckets.items() if len(labels) == 1])
+    maps.append({"labels": [[name, next(iter(labels))] for name, labels in buckets.items() if len(labels) == 1], "unreadable": unreadable})
 print(json.dumps(maps))`,
       runtime.runtimeRoot,
     ]),
   );
-  runtimeLabels = new Map(labelMaps[0]);
-  hostLabels = new Map(labelMaps[1]);
+  runtimeLabels = new Map(labelMaps[0].labels);
+  hostLabels = new Map(labelMaps[1].labels);
   proof.runtimeLabelHintCount = runtimeLabels.size;
   proof.hostLabelHintCount = hostLabels.size;
+  proof.unreadableLabelMetadata = labelMaps.map(({ unreadable }) => unreadable);
   phase = "gateway-install";
   const gateway = await prepareIOSReleaseGateway({
     targetSha,
