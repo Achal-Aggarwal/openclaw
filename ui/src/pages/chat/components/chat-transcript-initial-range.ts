@@ -217,11 +217,11 @@ export class TranscriptInitialRange {
     ) {
       return;
     }
-    const prepare = (deadline: number, prewarm = false, warmOnly = false) => {
+    const prepare = (deadline: number, prewarmRequested = false, warmOnlyRequested = false) => {
       this.cancelPreparation = undefined;
       this.preparationIsIdle = false;
       if (performance.now() >= deadline) {
-        this.queuePreparation(!warmOnly);
+        this.queuePreparation(!warmOnlyRequested);
         return;
       }
       const virtualizer = this.virtualizer();
@@ -240,6 +240,11 @@ export class TranscriptInitialRange {
       const viewport = virtualizer.scrollRect?.height ?? 600;
       const moving = !inward && performance.now() - this.scrollSample.time < 100;
       const velocity = moving ? this.scrollSample.velocity : 0;
+      // A viewport-sized step skips speculative DOM before it can be reused.
+      // Spend that frame's preparation budget on the arriving Markdown instead.
+      const skipSpeculativeDom = moving && this.scrollSample.distance >= viewport;
+      const prewarm = prewarmRequested || skipSpeculativeDom;
+      const warmOnly = warmOnlyRequested || skipSpeculativeDom;
       // HTML warming is synchronous: predict one observed scroll step and walk
       // into that viewport, rather than beyond its leading edge.
       const distance = moving
@@ -298,7 +303,7 @@ export class TranscriptInitialRange {
       let canMaterialize = false;
       for (let step = 1; step <= lookahead && admitted === 0; step++) {
         if (performance.now() >= deadline) {
-          this.queuePreparation(warmOnly ? canMaterialize : true);
+          this.queuePreparation(warmOnly ? canMaterialize && !skipSpeculativeDom : true);
           return;
         }
         const index = origin + step * searchDirection;
@@ -326,8 +331,8 @@ export class TranscriptInitialRange {
         }
       }
       if (!admitted) {
-        if (warmOnly && (warmed || canMaterialize)) {
-          this.queuePreparation(canMaterialize);
+        if (warmOnly && (warmed || (canMaterialize && !skipSpeculativeDom))) {
+          this.queuePreparation(canMaterialize && !skipSpeculativeDom);
         }
         return;
       }

@@ -477,12 +477,12 @@ it("keeps parked row styles stable when an earlier row changes height", async ()
   }
 });
 
-it("prepares ahead during fast scrolling and waits for measurement before admitting another row", async () => {
+it("prepares ahead during scrolling and waits for measurement before admitting another row", async () => {
   const view = await transcriptFixture();
   await view.frame(8);
   await view.scrollTo(1);
   await view.frame();
-  await view.scrollTo(60);
+  await view.scrollTo(4);
   const activeIndexes = () =>
     [...view.container.querySelectorAll<HTMLElement>("[data-index]:not([data-prepared-row])")].map(
       (row) => Number(row.dataset.index),
@@ -535,7 +535,7 @@ it("uses cached geometry on the first reader movement after tail placement", asy
 
 it("materializes one predicted row between scroll frames and uses the latest viewport", async () => {
   const view = await transcriptFixture(0, true, false, "retained");
-  await view.scrollTo(60);
+  await view.scrollTo(3);
   const mounted = transcriptRows(view.container);
   await view.task();
   expect(transcriptRows(view.container)).toEqual(mounted);
@@ -550,14 +550,14 @@ it("materializes one predicted row between scroll frames and uses the latest vie
   const prepared = transcriptRows(view.container).find((row) => !mounted.includes(row));
   expect(prepared).toBeDefined();
   expect(prepared!.getAttribute("data-preparing-row")).toBe("true");
-  expect(Number(prepared!.dataset.index)).toBeGreaterThan(60);
+  expect(Number(prepared!.dataset.index)).toBeGreaterThan(3);
   await view.frame(1, false);
   await view.task();
   expect(transcriptRows(view.container)).toHaveLength(mounted.length + 1);
 
   emitTranscriptResize(prepared!, 800, 100);
   await settle();
-  await view.scrollTo(120);
+  await view.scrollTo(6);
   const afterScroll = transcriptRows(view.container);
   await view.frame(1, false);
   await view.task();
@@ -565,13 +565,15 @@ it("materializes one predicted row between scroll frames and uses the latest vie
   await view.task();
   const next = transcriptRows(view.container).find((row) => !afterScroll.includes(row));
   expect(next).toBeDefined();
-  expect(Number(next!.dataset.index)).toBeGreaterThan(120);
+  expect(Number(next!.dataset.index)).toBeGreaterThan(6);
 });
 
 it("stops preparing when the predicted DOM window has no retainable rows", async () => {
   const view = await transcriptFixture(0, true, false, true);
-  await view.updateRow(120, 120);
-  await view.scrollTo(60);
+  await view.updateRow(24, 24);
+  await view.scrollTo(10);
+  await view.frame();
+  await view.scrollTo(15);
   await view.frame(1, false);
   await view.task();
   await view.frame(1, false);
@@ -582,11 +584,24 @@ it("stops preparing when the predicted DOM window has no retainable rows", async
   expect(view.renderRow.mock.calls).toHaveLength(rendered);
 });
 
+it("warms arriving Markdown without speculative mounts during viewport-sized scroll steps", async () => {
+  const view = await transcriptFixture(0, true, false, "retained");
+  await view.scrollTo(60);
+  const mounted = transcriptRows(view.container);
+  const rendered = view.renderRow.mock.calls.length;
+  await view.frame(1, false);
+  await view.task();
+  await view.frame(1, false);
+  await view.task();
+  expect(view.renderRow.mock.calls.length).toBeGreaterThan(rendered);
+  expect(transcriptRows(view.container)).toEqual(mounted);
+});
+
 it("prepares inward when fast upward prediction reaches an ordinary first row", async () => {
   const view = await transcriptFixture(24_000, true, true);
-  await view.scrollTo(239);
+  await view.scrollTo(8);
   await view.frame(2);
-  await view.scrollTo(40);
+  await view.scrollTo(4);
   expect(view.container.querySelector('[data-virtual-row-key="fragment:1"]')).toBeNull();
 
   await view.frame(1, false);
@@ -597,7 +612,7 @@ it("prepares inward when fast upward prediction reaches an ordinary first row", 
   const firstFragment = view.container.querySelector('[data-virtual-row-key="fragment:1"]');
   expect(firstFragment).not.toBeNull();
   expect(firstFragment?.getAttribute("data-prepared-row")).toBe("true");
-  expect(view.container.scrollTop).toBe(4_000);
+  expect(view.container.scrollTop).toBe(400);
 });
 
 it("shares calendar formatting within one row mounting batch", async () => {
