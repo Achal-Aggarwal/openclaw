@@ -39,7 +39,7 @@ it.for(["Move down", "Remove personal group"])(
     const view = mountSolid(() => <PersonalSessionGroups host={host} />, {
       wrapper: provider.wrapper,
     });
-    view.getByRole("button", { name: "Options for personal group Focus", exact: true }).click();
+    view.getByRole("button", { name: /^Options for personal group Focus$/ }).click();
     await waitForSolid(() => expect(document.querySelector('[role="menuitem"]')).not.toBeNull());
     const item = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
       (candidate) => candidate.textContent?.trim() === action,

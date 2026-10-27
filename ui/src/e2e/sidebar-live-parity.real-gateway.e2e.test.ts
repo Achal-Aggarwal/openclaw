@@ -329,7 +329,7 @@ suite.define(() => {
           expect.soft(cached.rows, "saved row presentation").toEqual(live.rows);
           // A newer complete preference must not be replaced by the filtered cached layout.
           const authored = await evaluateControlUiContext(page, ({ navigation }) => {
-            const groups = navigation.snapshot.personalSessionGroups;
+            const groups = navigation.snapshot.personalSessionGroups ?? [];
             navigation.update({
               personalSessionGroups: [
                 ...groups,
