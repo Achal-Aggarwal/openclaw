@@ -5,7 +5,10 @@ import { CHAT_PENDING_INPUT_MESSAGE_PREFIX } from "../../../../../packages/gatew
 import { isToolCallContentType } from "../../../../../src/chat/tool-content.js";
 import { parseMarkdownJson } from "../../../components/markdown-json.ts";
 import type { MarkdownRenderOptions } from "../../../components/markdown-render-options.ts";
-import { prewarmSanitizedMarkdown } from "../../../components/markdown.ts";
+import {
+  prewarmSanitizedMarkdown,
+  type MarkdownPrewarmMode,
+} from "../../../components/markdown.ts";
 import {
   extractThinkingCached,
   readTranscriptMediaEntries,
@@ -161,7 +164,7 @@ function messageMarkdownRenderOptions(
 export function prewarmGroupedMessage(
   message: unknown,
   opts: Pick<GroupedMessageOptions, "onOpenImage" | "fetchLinkFavicon">,
-  prepareCachedFragment = false,
+  mode: MarkdownPrewarmMode = "cold-fragment",
 ): boolean {
   const role = asNullableRecord(message)?.role;
   if (
@@ -188,7 +191,7 @@ export function prewarmGroupedMessage(
     prewarmSanitizedMarkdown(
       markdown,
       messageMarkdownRenderOptions(role, prepared, markdown, { ...opts, isStreaming: false }),
-      prepareCachedFragment,
+      mode,
     )
   );
 }

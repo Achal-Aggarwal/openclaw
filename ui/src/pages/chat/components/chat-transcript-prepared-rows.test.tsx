@@ -7,6 +7,7 @@ import { prewarmGroupedMessage } from "./chat-message-bubble-presentation.ts";
 import { ChatTimestamp } from "./chat-message-timestamp-view.tsx";
 import { createMessageGroup } from "./chat-message.test-support.ts";
 import { emitTranscriptResize } from "./chat-transcript-fixture.test-support.tsx";
+import { ChatTranscriptRenderer } from "./chat-transcript-layout-solid.tsx";
 import type { TranscriptRow } from "./chat-transcript-layout.ts";
 import { GuardedTranscriptItem } from "./chat-transcript-render-guard.ts";
 import { ChatSessionVirtualizerHost } from "./chat-transcript-virtualizer-host.ts";
@@ -261,6 +262,51 @@ async function transcriptFixture(
   };
 }
 
+it.each(["group", "frame"] as const)(
+  "finishes fragment warming for an oversized completed %s",
+  (kind) => {
+    const group = createMessageGroup({}, "assistant", {
+      messages: Array.from({ length: 40 }, (_, index) => ({
+        key: `${kind}-oversized-${index}`,
+        message: { role: "assistant", content: `**${kind}-oversized-${index}**` },
+      })),
+    });
+    for (const { message } of group.messages) {
+      expect(prewarmGroupedMessage(message, {}, "html")).toBe(true);
+    }
+    const renderer = new ChatTranscriptRenderer();
+    renderer.contentFor(
+      [{ kind: "item", key: group.key, item: group }],
+      () =>
+        new GuardedTranscriptItem(
+          [group],
+          kind === "group"
+            ? { kind, group, options: {} }
+            : {
+                kind,
+                frame: {
+                  kind: "agent-run-frame",
+                  key: group.key,
+                  runId: group.key,
+                  boundaryId: group.key,
+                  outcome: { kind: "completed", actionOwner: group.messages.at(-1)! },
+                  parts: [group],
+                },
+                options: {
+                  streamOptions: {},
+                  workPreviews: new Map(),
+                  renderGroupOptions: () => ({}),
+                  isWorkExpanded: () => false,
+                  onToggleWork: () => {},
+                },
+              },
+        ),
+    );
+    expect(renderer.prewarmRow(0, "fragment")).toBe(true);
+    expect(renderer.prewarmRow(0, "fragment")).toBe(false);
+  },
+);
+
 it.each([600, 1400])(
   "warms ordinary rows only in idle time without mounting their DOM (%i px)",
   async (height) => {
@@ -293,6 +339,12 @@ it.each([600, 1400])(
     const completed = view.renderRow.mock.calls.length;
     await view.idle();
     expect(view.renderRow.mock.calls).toHaveLength(completed);
+    const parse = vi.spyOn(Element.prototype, "innerHTML", "set");
+    await view.scrollTo(index);
+    expect(view.container.textContent).toContain(`Idle ordinary message ${index}`);
+    expect(
+      parse.mock.calls.filter(([html]) => html.includes(`Idle ordinary message ${index}`)),
+    ).toHaveLength(0);
   },
 );
 
@@ -300,7 +352,10 @@ it.each([true, "toolCall"] as const)(
   "warms completed frame messages with %s one per idle callback before their first mount",
   async (content) => {
     const parse = vi.spyOn(DOMParser.prototype, "parseFromString");
+    const html = vi.spyOn(Element.prototype, "innerHTML", "set");
     const view = await transcriptFixture(0, true, false, true, 600, content);
+    parse.mockClear();
+    html.mockClear();
     const rendered = view.renderRow.mock.calls.length;
     const elements = view.container.querySelectorAll(".chat-virtual-row").length;
     await view.idle(0);
@@ -314,13 +369,15 @@ it.each([true, "toolCall"] as const)(
     const second = `idle-frame-${index}-second`;
     const parsesFor = (text: string) =>
       parse.mock.calls.filter(([input]) => input.includes(text)).length;
-    expect(parsesFor(first)).toBeGreaterThan(0);
-    expect(parsesFor(second)).toBe(0);
+    // Initial range settling may already have cached this row's HTML. Count
+    // both cold sanitization and cached fragment restoration in the idle slice.
+    const preparationsFor = (text: string) =>
+      parsesFor(text) + html.mock.calls.filter(([input]) => input.includes(text)).length;
+    expect(preparationsFor(first) + preparationsFor(second)).toBe(1);
     expect(view.container.querySelector(`[data-virtual-row-key="${warmed.key}"]`)).toBeNull();
     expect(view.container.querySelectorAll(".chat-virtual-row")).toHaveLength(elements);
 
     await view.idle();
-    expect(parsesFor(second)).toBeGreaterThan(0);
     expect(view.container.querySelector(`[data-virtual-row-key="${warmed.key}"]`)).toBeNull();
     const beforeMount = [parsesFor(first), parsesFor(second)];
     await view.scrollTo(index);

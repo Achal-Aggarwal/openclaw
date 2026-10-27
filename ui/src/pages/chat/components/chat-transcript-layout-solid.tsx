@@ -1,5 +1,6 @@
 import { dynamic, render, type JSX } from "@solidjs/web";
 import { createMemo, createSignal, For, onSettled, runWithOwner, Show, useContext } from "solid-js";
+import type { MarkdownPrewarmMode } from "../../../components/markdown.ts";
 import { PRESENTATION_CHANGED_EVENT, type PresentationBinding } from "../../../lib/presentation.ts";
 import { ApplicationProvider } from "../../../lib/reactive/context.ts";
 import { elementRef } from "../../../lib/reactive/element-ref.ts";
@@ -14,6 +15,7 @@ import {
 } from "../solid-render-lifecycle.ts";
 import { ChatHistoryBoundary } from "./chat-history-boundary.tsx";
 import { ChatLazyBoundary } from "./chat-lazy-boundary.tsx";
+import type { GroupedMessageOptions } from "./chat-message-bubble-options.ts";
 import { prewarmGroupedMessage } from "./chat-message-bubble-presentation.ts";
 import type {
   TranscriptContent,
@@ -193,12 +195,26 @@ export class ChatTranscriptRenderer {
     return this.contentSource.getContent;
   }
 
-  prewarmRow(index: number, prepareCachedFragment = false): boolean {
+  prewarmRow(index: number, mode: MarkdownPrewarmMode = "cold-fragment"): boolean {
     const content = this.contentSource?.getContent(index);
     const view = content instanceof GuardedTranscriptItem ? content.native : undefined;
+    // Restoring every source in an atomic row larger than the fragment cache
+    // would evict its own earlier work forever. Restore only the first source;
+    // media-only first sources leave later cached HTML for the visible mount.
+    let nextMode = mode;
+    const prewarm = (
+      message: unknown,
+      options: Pick<GroupedMessageOptions, "onOpenImage" | "fetchLinkFavicon">,
+    ) => {
+      const currentMode = nextMode;
+      if (nextMode === "fragment") {
+        nextMode = "cold-fragment";
+      }
+      return prewarmGroupedMessage(message, options, currentMode);
+    };
     if (view?.kind === "group" && !view.group.isStreaming) {
       for (const message of view.group.messages) {
-        if (prewarmGroupedMessage(message.message, view.options, prepareCachedFragment)) {
+        if (prewarm(message.message, view.options)) {
           return true;
         }
       }
@@ -211,7 +227,7 @@ export class ChatTranscriptRenderer {
         }
         const options = view.options.renderGroupOptions(part);
         for (const message of part.messages) {
-          if (prewarmGroupedMessage(message.message, options, prepareCachedFragment)) {
+          if (prewarm(message.message, options)) {
             return true;
           }
         }

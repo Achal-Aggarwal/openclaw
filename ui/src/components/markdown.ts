@@ -42,6 +42,7 @@ const markdownCache = new Map<string, MarkdownCacheEntry>();
 // Carry recent idle work into its first mount; the larger cache remains HTML-only.
 const preparedFragments = new Map<MarkdownCacheEntry, DocumentFragment>();
 const PREPARED_FRAGMENT_LIMIT = 32;
+export type MarkdownPrewarmMode = "html" | "cold-fragment" | "fragment";
 export const HIGHLIGHTABLE_CODE_RE = /<pre><code(?! class="markdown-block-art")/u;
 
 export function appendMarkdownTruncationNotice(truncated: {
@@ -232,13 +233,13 @@ export function toSanitizedMarkdownContent(
   return prepareSanitizedMarkdown(markdownLocal, options, true);
 }
 
-/** Prepare a cacheable row without touching an existing entry. */
+/** Warm HTML once, optionally retaining or restoring a fragment for the next mount. */
 export function prewarmSanitizedMarkdown(
   markdownLocal: string,
   options: MarkdownRenderOptions,
-  prepareCachedFragment = false,
+  mode: MarkdownPrewarmMode = "cold-fragment",
 ): boolean {
-  return prepareSanitizedMarkdown(markdownLocal, options, false, true, prepareCachedFragment);
+  return prepareSanitizedMarkdown(markdownLocal, options, false, true, mode);
 }
 
 function prepareSanitizedMarkdown(
@@ -251,14 +252,14 @@ function prepareSanitizedMarkdown(
   options: MarkdownRenderOptions,
   returnFragment: boolean,
   prewarm: true,
-  prepareCachedFragment?: boolean,
+  mode?: MarkdownPrewarmMode,
 ): boolean;
 function prepareSanitizedMarkdown(
   markdownLocal: string,
   options: MarkdownRenderOptions,
   returnFragment: boolean,
   prewarm = false,
-  prepareCachedFragment = false,
+  mode: MarkdownPrewarmMode = "cold-fragment",
 ): MarkdownContent | boolean {
   const renderOptions = normalizeMarkdownRenderOptions(options);
   const prepared =
@@ -310,12 +311,12 @@ function prepareSanitizedMarkdown(
     if (HIGHLIGHTABLE_CODE_RE.test(cached.html)) {
       cached.highlighting = markdownHighlightingReady();
     }
-    if (prewarm && typeof content !== "string") {
+    if (prewarm && mode !== "html" && typeof content !== "string") {
       preparedFragments.set(cached, content.fragment);
       pruneMapToMaxSize(preparedFragments, PREPARED_FRAGMENT_LIMIT);
     }
   } else if (prewarm) {
-    if (!prepareCachedFragment || preparedFragments.has(cached)) {
+    if (mode !== "fragment" || preparedFragments.has(cached)) {
       return false;
     }
     // The cache owns sanitized HTML. Rebuild its consumed DOM ahead of a return

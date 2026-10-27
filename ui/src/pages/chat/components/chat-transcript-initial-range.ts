@@ -1,4 +1,5 @@
 import type { Range, Virtualizer } from "@tanstack/virtual-core";
+import type { MarkdownPrewarmMode } from "../../../components/markdown.ts";
 import type { TranscriptRow } from "./chat-transcript-layout.ts";
 
 // A few viewports avoid repeat mounts without making every scroll restyle a
@@ -33,7 +34,7 @@ export class TranscriptInitialRange {
       element: HTMLElement,
       entry: ResizeObserverEntry | undefined,
     ) => number,
-    private readonly prewarmRow?: (index: number, prepareCachedFragment: boolean) => boolean,
+    private readonly prewarmRow?: (index: number, mode: MarkdownPrewarmMode) => boolean,
   ) {
     this.tailRows = initialOffset === null ? 1 : 0;
   }
@@ -311,7 +312,9 @@ export class TranscriptInitialRange {
         const canPrepareRow =
           row?.retainDom && !rendered.has(row.key) && !this.preparedRowKeys.has(row.key);
         canMaterialize ||= Boolean(canPrepareRow);
-        if (row && prewarm && !rendered.has(row.key) && this.prewarmRow?.(index, warmOnly)) {
+        // Distant HTML must not evict the nearby fragments needed by the next scroll.
+        const mode = warmOnly || step <= 8 ? "fragment" : "html";
+        if (row && prewarm && !rendered.has(row.key) && this.prewarmRow?.(index, mode)) {
           // The shared cache owns readiness; no DOM or range invalidation is needed.
           if (warmOnly) {
             warmed = true;

@@ -48,8 +48,8 @@ it("hands idle-prepared DOM to the first visible caller without parsing it again
   // A return scroll can prepare DOM from the retained sanitized HTML before
   // its next mount. Ordinary idle warming must still finish after one pass.
   expect(prewarmSanitizedMarkdown(source, {})).toBe(false);
-  expect(prewarmSanitizedMarkdown(source, {}, true)).toBe(true);
-  expect(prewarmSanitizedMarkdown(source, {}, true)).toBe(false);
+  expect(prewarmSanitizedMarkdown(source, {}, "fragment")).toBe(true);
+  expect(prewarmSanitizedMarkdown(source, {}, "fragment")).toBe(false);
   const preparedParses = parses;
   const rewarmed = toSanitizedMarkdownContent(source);
   expect(typeof rewarmed).not.toBe("string");
@@ -73,10 +73,16 @@ it("bounds prepared DOM while keeping evicted HTML reusable", () => {
   expect(typeof toSanitizedMarkdownContent(source(32))).toBe("string");
   for (let index = 0; index < 33; index++) {
     toSanitizedMarkdownContent(source(index));
-    expect(prewarmSanitizedMarkdown(source(index), {}, true)).toBe(true);
+    expect(prewarmSanitizedMarkdown(source(index), {}, "fragment")).toBe(true);
   }
   expect(typeof toSanitizedMarkdownContent(source(0))).toBe("string");
   expect(typeof toSanitizedMarkdownContent(source(32))).not.toBe("string");
+  for (let index = 0; index < 64; index++) {
+    prewarmSanitizedMarkdown(`near-first-${index}`, {}, index < 8 ? "cold-fragment" : "html");
+  }
+  expect(typeof toSanitizedMarkdownContent("near-first-0")).not.toBe("string");
+  expect(typeof toSanitizedMarkdownContent("near-first-0")).toBe("string");
+  expect(typeof toSanitizedMarkdownContent("near-first-63")).toBe("string");
 });
 
 it("mounts fresh chat Markdown without reparsing and keeps only HTML in its cache", () => {
