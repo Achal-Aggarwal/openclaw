@@ -135,49 +135,77 @@ describe("Gateway index over Harness workspace files", () => {
     await fs.writeFile(path.join(harness, "memory/notes.md"), "alpha Harness canonical notes.");
     await fs.writeFile(path.join(fixture.paths.memory, "notes.md"), "beta Gateway decoy.");
     const cfg = createConfig();
-    const status = await indexMemoryOnGateway({
-      cfg,
-      agentId: "main",
-      force: true,
-      assertCurrent() {},
+    const { MemoryIndexManager } = await import("./manager.js");
+    const syncStatus = vi.spyOn(MemoryIndexManager.prototype, "status").mockImplementation(() => {
+      throw new Error("Gateway maintenance must not read SQLite synchronously");
     });
-    expect(status.files).toBe(1);
-    expect(status.custom?.workspaceHost).toBe("remote");
+    try {
+      const status = await indexMemoryOnGateway({
+        cfg,
+        agentId: "main",
+        force: true,
+        assertCurrent() {},
+      });
+      expect(status.files).toBe(1);
+      expect(status.chunks).toBeGreaterThan(0);
+      expect(status.custom?.workspaceHost).toBe("remote");
+    } finally {
+      syncStatus.mockRestore();
+    }
     const manager = await fixture.getFreshManager(cfg, "status");
     expect(await manager.search("canonical", { minScore: 0 })).toHaveLength(1);
     expect(await manager.search("decoy", { minScore: 0 })).toEqual([]);
   });
 
-  it("does not publish a replacement after the maintenance operator loses authority", async () => {
-    const { harness, files } = await registerHarness();
-    const filename = path.join(harness, "memory/notes.md");
-    await fs.writeFile(filename, "alpha original canonical notes.");
-    const cfg = createConfig();
-    await indexMemoryOnGateway({ cfg, agentId: "main", force: true, assertCurrent() {} });
-    await fs.writeFile(filename, "beta revoked replacement.");
-    let current = true;
-    const read = files.readForIndexing.bind(files);
-    vi.spyOn(files, "readForIndexing").mockImplementation(async (file) => {
-      const result = await read(file);
-      current = false;
-      return result;
-    });
-    await expect(
-      indexMemoryOnGateway({
-        cfg,
-        agentId: "main",
-        force: true,
-        assertCurrent() {
-          if (!current) {
-            throw new Error("operator revoked");
-          }
-        },
-      }),
-    ).rejects.toThrow("operator revoked");
-    const manager = await fixture.getFreshManager(cfg, "status");
-    expect(await manager.search("original", { minScore: 0 })).toHaveLength(1);
-    expect(await manager.search("replacement", { minScore: 0 })).toEqual([]);
-  });
+  it.each(["none", "openai", "batch-test"])(
+    "does not embed or publish after maintenance authority is revoked (%s)",
+    async (provider) => {
+      const { harness, files } = await registerHarness();
+      const filename = path.join(harness, "memory/notes.md");
+      await fs.writeFile(filename, "alpha original canonical notes.");
+      const cfg = createConfig({
+        provider,
+        batchEnabled: provider === "batch-test",
+        cacheEnabled: false,
+      });
+      await indexMemoryOnGateway({ cfg, agentId: "main", force: true, assertCurrent() {} });
+      const before = {
+        inline: fixture.provider.embedBatchCalls,
+        batch: fixture.provider.providerRuntimeBatchCalls.length,
+      };
+      if (provider === "openai") {
+        expect(before.inline).toBeGreaterThan(0);
+      }
+      if (provider === "batch-test") {
+        expect(before.batch).toBeGreaterThan(0);
+      }
+      await fs.writeFile(filename, "beta revoked replacement.");
+      let current = true;
+      const read = files.readForIndexing.bind(files);
+      vi.spyOn(files, "readForIndexing").mockImplementation(async (file) => {
+        const result = await read(file);
+        current = false;
+        return result;
+      });
+      await expect(
+        indexMemoryOnGateway({
+          cfg,
+          agentId: "main",
+          force: true,
+          assertCurrent() {
+            if (!current) {
+              throw new Error("operator revoked");
+            }
+          },
+        }),
+      ).rejects.toThrow("operator revoked");
+      expect(fixture.provider.embedBatchCalls).toBe(before.inline);
+      expect(fixture.provider.providerRuntimeBatchCalls).toHaveLength(before.batch);
+      const manager = await fixture.getFreshManager(cfg, "status");
+      expect(await manager.search("original", { minScore: 0 })).toHaveLength(1);
+      expect(await manager.search("replacement", { minScore: 0 })).toEqual([]);
+    },
+  );
 
   it("validates admin maintenance requests before acquiring a manager", async () => {
     let registered:

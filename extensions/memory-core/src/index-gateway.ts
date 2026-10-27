@@ -56,6 +56,11 @@ export function registerMemoryIndexGatewayMethod(api: OpenClawPluginApi): void {
           agentId,
           force: params.force === true,
           assertCurrent,
+          signal: AbortSignal.any(
+            [signal, client?.connectionSignal].filter(
+              (value): value is AbortSignal => value !== undefined,
+            ),
+          ),
           acquireLocalService: (...args) => api.runtime.llm.acquireLocalService(...args),
         });
         assertCurrent();
