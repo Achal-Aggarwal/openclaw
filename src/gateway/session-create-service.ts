@@ -771,7 +771,6 @@ async function createGatewaySessionInScope(
           return invalidSessionRequest(adoptionError);
         }
         const execNode = normalizeOptionalString(params.execNode);
-        const execCwd = normalizeOptionalString(params.execCwd);
         const initialAgentHarnessId = params.initialEntry
           ? normalizeOptionalString(params.initialEntry.agentHarnessId)
           : undefined;
@@ -818,6 +817,8 @@ async function createGatewaySessionInScope(
             pendingProjectGitUrl,
             pendingWorktree,
             spawnedCwd,
+            execNode,
+            execCwd: params.execCwd,
             preparedLifecycle,
           }),
           ...(catalogResolvedModel && catalogAgentRuntime
@@ -832,7 +833,6 @@ async function createGatewaySessionInScope(
               }
             : {}),
           ...(params.deviceFolder ? { deviceFolder: { ...params.deviceFolder } } : {}),
-          ...(execNode ? { execHost: "node", execNode, ...(execCwd ? { execCwd } : {}) } : {}),
           ...(createdNewEntry &&
           params.armSessionDiffBaselineCapture &&
           !execNode &&
