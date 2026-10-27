@@ -185,6 +185,7 @@ function BoardWidgetCellContent(
   const fixedReport = () =>
     props.widget?.heightMode === "fixed" && contribution()?.kind === "session:report";
   const [reportEntered, setReportEntered] = createSignal(false);
+  const reportReady = () => !fixedReport() || reportEntered();
   // Fixed reports already reserve their full height. Build nearby bodies once,
   // then let the existing core-widget latch retain them across tab switches.
   // Observe the card because the display:contents host has no intersection box.
@@ -417,7 +418,7 @@ function BoardWidgetCellContent(
               contribution={core}
               widget={props.widget}
               session={props.session}
-              active={active() && (!fixedReport() || reportEntered())}
+              active={active() && reportReady()}
             />
           )}
         </Match>
@@ -583,6 +584,7 @@ function BoardWidgetCellContent(
           {
             "board-widget--page-chrome": props.pageChrome,
             "board-widget--dragging": props.dragging,
+            "board-widget--fixed-report": fixedReport(),
           },
           presentation() && `board-widget--${presentation()}`,
         ]}
@@ -601,7 +603,7 @@ function BoardWidgetCellContent(
         onFocus={() => props.callbacks!.focusChanged(props.widget!.name)}
         onKeyDown={keyDown}
       >
-        <Show when={!props.pageChrome}>
+        <Show when={!props.pageChrome && reportReady()}>
           <div class="board-widget__chrome">
             <header class="board-widget__bar">
               <Show when={canMutate()}>
@@ -625,7 +627,7 @@ function BoardWidgetCellContent(
                     : t("board.widget.kindHtml")}
               </span>
               <BoardGrantedCapabilities widget={props.widget!} />
-              <Show when={canMutate() && (!fixedReport() || reportEntered())}>
+              <Show when={canMutate()}>
                 <BoardWidgetMenu
                   widget={props.widget!}
                   tabs={props.tabs ?? []}
@@ -662,7 +664,7 @@ function BoardWidgetCellContent(
             </div>
           </Show>
         </div>
-        <Show when={canMutate() && !props.pageChrome}>
+        <Show when={canMutate() && !props.pageChrome && reportReady()}>
           <span
             class="board-widget__resize-handle"
             aria-hidden="true"
@@ -670,7 +672,7 @@ function BoardWidgetCellContent(
             onPointerDown={(event) => props.callbacks!.resizePointerDown(props.widget!, event)}
           />
         </Show>
-        <Show when={props.widget!.grantState === "granted" && !props.pageChrome}>
+        <Show when={props.widget!.grantState === "granted" && !props.pageChrome && reportReady()}>
           <span class="board-widget__grant-dot" aria-hidden="true" />
         </Show>
       </section>

@@ -63,12 +63,16 @@ it("defers fixed reports until nearby, then retains their body and current conte
   );
   expect(cell.querySelector("openclaw-report-widget")).toBeNull();
   expect(cell.querySelector(".board-widget__menu-trigger")).toBeNull();
+  expect(cell.querySelector(".board-widget__chrome")).toBeNull();
+  expect(cell.querySelector(".board-widget__resize-handle")).toBeNull();
   const target = cell.querySelector(".board-widget")!;
   const observer = observers.find(({ targets }) => targets.has(target));
   expect(observer).toBeDefined();
   observer!.deliver(target);
   await waitForSolid(() => expect(cell.textContent).toContain("Initial report"));
   expect(cell.querySelector(".board-widget__menu-trigger")).not.toBeNull();
+  expect(cell.querySelector(".board-widget__chrome")).not.toBeNull();
+  expect(cell.querySelector(".board-widget__resize-handle")).not.toBeNull();
   const report = cell.querySelector("openclaw-report-widget");
   expect(observer!.targets.has(target)).toBe(false);
 
@@ -87,6 +91,7 @@ it("defers fixed reports until nearby, then retains their body and current conte
 
   const auto = mountCell({ ...widget, name: "auto-report", heightMode: "auto" }, { context });
   await waitForSolid(() => expect(auto.textContent).toContain("Initial report"));
+  expect(auto.querySelector(".board-widget__chrome")).not.toBeNull();
   expect(observers.some(({ targets }) => targets.has(auto.querySelector(".board-widget")!))).toBe(
     false,
   );
