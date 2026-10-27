@@ -433,7 +433,9 @@ describe("runBrowserProxyCommand", () => {
       });
       dispatcherMocks.dispatch.mockResolvedValueOnce({ status: 200, body: { ok: true } });
 
-      await expect(runBrowserProxyCommand(reportUploadRequest(5), "browser.proxy.upload.v1")).resolves.toBeDefined();
+      await expect(
+        runBrowserProxyCommand(reportUploadRequest(5), "browser.proxy.upload.v1"),
+      ).resolves.toBeDefined();
     } finally {
       vi.useRealTimers();
     }
@@ -451,7 +453,10 @@ describe("runBrowserProxyCommand", () => {
       });
       dispatcherMocks.dispatch.mockImplementationOnce(() => new Promise(() => {}));
 
-      const settled = runBrowserProxyCommand(reportUploadRequest(5), "browser.proxy.upload.v1").then(
+      const settled = runBrowserProxyCommand(
+        reportUploadRequest(5),
+        "browser.proxy.upload.v1",
+      ).then(
         () => "resolved",
         (error: unknown) => String(error),
       );
