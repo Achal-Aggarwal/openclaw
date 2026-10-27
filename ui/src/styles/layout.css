@@ -2149,6 +2149,7 @@ html.openclaw-native-desktop .shell:not(.shell--mobile-nav) {
 }
 
 .sidebar-online__menu-trigger svg {
+  display: block;
   width: 14px;
   height: 14px;
 }
