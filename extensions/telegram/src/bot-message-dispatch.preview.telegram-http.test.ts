@@ -707,6 +707,9 @@ describe("Telegram preview, presentation, and progress delivery through HTTP", (
       context.ctxPayload.WasMentioned = chat === "group";
       await runTurn(
         async (options) => {
+          if (denied) {
+            expect(options?.suppressTyping).toBe(true);
+          }
           await options?.onReasoningProgress?.({ progressTokens: 200 });
           await emitPreamble(options, commentary);
           await tool(options, "exec", "inspect-tool");
@@ -729,6 +732,7 @@ describe("Telegram preview, presentation, and progress delivery through HTTP", (
         },
       );
       if (denied) {
+        await http.waitForTypingSend();
         expect(
           calls.filter((call) =>
             ["sendMessage", "editMessageText", "deleteMessage", "sendChatAction"].includes(

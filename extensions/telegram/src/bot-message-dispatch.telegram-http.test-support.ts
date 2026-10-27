@@ -290,6 +290,7 @@ export function createTelegramDispatchHttpFixture() {
       });
     });
     holdNextCall = undefined;
+    typingSend = Promise.resolve();
     // SQLite workers share native hrtime deadlines with the dispatching thread.
     vi.useFakeTimers({
       shouldAdvanceTime: true,
@@ -428,7 +429,10 @@ export function createTelegramDispatchHttpFixture() {
     const work = (async () => {
       let channelOptions: ReplyResolverOptions;
       const replyResolver: ReplyResolver = async (_ctx, options) => {
-        await options?.onReplyStart?.();
+        // Match the real resolver: denied delivery must not start channel typing.
+        if (options?.suppressTyping !== true) {
+          await options?.onReplyStart?.();
+        }
         await options?.onAssistantMessageStart?.();
         await emitEvents(options, channelOptions);
         // The final answer follows the finished progress edit, as a model that
