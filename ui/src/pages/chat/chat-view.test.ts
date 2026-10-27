@@ -94,6 +94,7 @@ import {
   resetTranscriptTestDom,
 } from "./components/chat-transcript.test-support.ts";
 import { ChatWelcome } from "./components/chat-welcome.tsx";
+import "./components/chat-typing-indicator.tsx";
 import { RealtimeTalkLevelSignal } from "./talk/level.ts";
 import {
   workspaceConflictPathForDisplay,
@@ -318,8 +319,6 @@ describe("chat typing status", () => {
   ])(
     "renders $expectedText in the transcript",
     async ({ actors, expectedText, expectedAvatars }) => {
-      // This checks presentation; cold module compilation is separate fixture setup.
-      await import("./components/chat-typing-indicator.tsx");
       const container = renderChatView({ typingActors: actors });
       await waitForSolid(() =>
         expect(container.querySelector(".agent-chat__typing-indicator--outside")).not.toBeNull(),
