@@ -1406,78 +1406,55 @@ describe("doctor health contributions", () => {
     expect(ctx.gatewayMemoryProbe).toEqual({ checked: false, ready: false, skipped: true });
   });
 
-  it("keeps release configured plugin installs repair-only", async () => {
-    const contribution = requireDoctorContribution("doctor:release-configured-plugin-installs");
-    const ctx = createDoctorHealthFlowContext({
-      cfg: {},
-      configResult: { cfg: {}, sourceLastTouchedVersion: "2026.4.29" },
-      sourceConfigValid: true,
-      prompter: createDoctorPrompterFixture(false),
-      env: {},
-    });
-
-    await contribution.run(ctx);
-
-    expect(mocks.maybeRunConfiguredPluginInstallReleaseStep).not.toHaveBeenCalled();
-    expect(mocks.note).not.toHaveBeenCalled();
-  });
-
-  it("stamps release configured plugin installs after repair changes", async () => {
-    mocks.maybeRunConfiguredPluginInstallReleaseStep.mockResolvedValue({
-      changes: ["Installed configured plugin matrix."],
-      warnings: [],
-      touchedConfig: true,
-      pluginInventoryChanged: true,
-    });
-    const invalidatePluginMetadataSnapshot = vi.fn();
-    const contribution = requireDoctorContribution("doctor:release-configured-plugin-installs");
-    const ctx = createDoctorHealthFlowContext({
-      cfg: {},
-      configResult: { cfg: {}, sourceLastTouchedVersion: "2026.4.29" },
-      sourceConfigValid: true,
-      prompter: createDoctorPrompterFixture(true),
-      env: {},
-      invalidatePluginMetadataSnapshot,
-    });
-
-    await contribution.run(ctx);
-
-    expect(mocks.maybeRunConfiguredPluginInstallReleaseStep).toHaveBeenCalledWith({
-      cfg: {},
-      env: {},
-      touchedVersion: "2026.4.29",
-    });
-    expect(mocks.note).toHaveBeenCalledWith(
-      "Installed configured plugin matrix.",
-      "Doctor changes",
-    );
-    expect(ctx.cfg.meta?.lastTouchedVersion).toBe("2026.5.2-test");
-    expect(invalidatePluginMetadataSnapshot).toHaveBeenCalledOnce();
-  });
-
-  it("keeps legacy parent writable release repairs old-parent-readable", async () => {
-    mocks.maybeRunConfiguredPluginInstallReleaseStep.mockResolvedValue({
-      changes: ["Installed configured plugin matrix."],
-      warnings: [],
-      touchedConfig: true,
-    });
-    const contribution = requireDoctorContribution("doctor:release-configured-plugin-installs");
-    const ctx = createDoctorContext({
-      cfg: {},
-      configResult: { cfg: {}, sourceLastTouchedVersion: "2026.5.16-beta.4" },
-      cfgForPersistence: {},
-      shouldRepair: true,
-      env: {
-        OPENCLAW_UPDATE_IN_PROGRESS: "1",
-        OPENCLAW_UPDATE_PARENT_SUPPORTS_DOCTOR_CONFIG_WRITE: "1",
-      },
-    });
-
-    await contribution.run(ctx);
-
-    expect(ctx.cfg.meta?.lastTouchedVersion).toBe("2026.5.16-beta.4");
-    expect(readConfigMachineState<string>("config.lastTouchedAt")).toEqual(expect.any(String));
-  });
+  it.each(["read-only", "repair", "legacy-parent"] as const)(
+    "keeps configured plugin release repair ownership for %s",
+    async (mode) => {
+      mocks.maybeRunConfiguredPluginInstallReleaseStep.mockResolvedValue({
+        changes: ["Installed configured plugin matrix."],
+        warnings: [],
+        touchedConfig: true,
+        pluginInventoryChanged: mode === "repair",
+      });
+      const invalidatePluginMetadataSnapshot = vi.fn();
+      const version = mode === "legacy-parent" ? "2026.5.16-beta.4" : "2026.4.29";
+      const env =
+        mode === "legacy-parent"
+          ? {
+              OPENCLAW_UPDATE_IN_PROGRESS: "1",
+              OPENCLAW_UPDATE_PARENT_SUPPORTS_DOCTOR_CONFIG_WRITE: "1",
+            }
+          : {};
+      const ctx = createDoctorContext({
+        configResult: { sourceLastTouchedVersion: version },
+        env,
+        shouldRepair: mode !== "read-only",
+        invalidatePluginMetadataSnapshot,
+      });
+      await requireDoctorContribution("doctor:release-configured-plugin-installs").run(ctx);
+      if (mode === "read-only") {
+        expect(mocks.maybeRunConfiguredPluginInstallReleaseStep).not.toHaveBeenCalled();
+        expect(mocks.note).not.toHaveBeenCalled();
+        return;
+      }
+      expect(mocks.maybeRunConfiguredPluginInstallReleaseStep).toHaveBeenCalledWith({
+        cfg: {},
+        env,
+        touchedVersion: version,
+      });
+      expect(ctx.cfg.meta?.lastTouchedVersion).toBe(
+        mode === "legacy-parent" ? version : "2026.5.2-test",
+      );
+      if (mode === "repair") {
+        expect(mocks.note).toHaveBeenCalledWith(
+          "Installed configured plugin matrix.",
+          "Doctor changes",
+        );
+        expect(invalidatePluginMetadataSnapshot).toHaveBeenCalledOnce();
+      } else {
+        expect(readConfigMachineState<string>("config.lastTouchedAt")).toEqual(expect.any(String));
+      }
+    },
+  );
 
   it("runs the web fetch proxy diagnostic after security checks", async () => {
     const ids = resolveDoctorHealthContributions().map((entry) => entry.id);
@@ -1582,62 +1559,43 @@ describe("doctor health contributions", () => {
     });
   });
 
-  it("omits plugin readiness when status fails before applicability is known", async () => {
-    const contribution = requireDoctorContribution("doctor:workspace-status");
-    mocks.gatherDaemonStatus.mockRejectedValueOnce(new Error("service inspection failed"));
-    const cfg = {};
-
-    await contribution.run(createDoctorHealthFlowContext({ cfg }));
-
-    expect(mocks.collectWorkspaceStatusHealthFindings).toHaveBeenCalledWith(cfg, {
-      pluginVersionReadiness: undefined,
-    });
-  });
-
-  it("skips daemon-context plugin drift probes for remote gateway mode", async () => {
-    const contribution = requireDoctorContribution("doctor:workspace-status");
-    const cfg = {
-      gateway: { mode: "remote" },
-      plugins: { entries: { codex: { enabled: true } } },
-    };
-
-    await contribution.run({
-      cfg,
-      options: { nonInteractive: true },
-    } as unknown as Parameters<(typeof contribution)["run"]>[0]);
-
-    expect(mocks.gatherDaemonStatus).not.toHaveBeenCalled();
-    expect(mocks.collectWorkspaceStatusHealthFindings).toHaveBeenCalledWith(cfg, {
-      pluginVersionReadiness: undefined,
-    });
-  });
-
-  it("keeps workspace diagnostics without probing host services in Kubernetes", async () => {
-    vi.stubEnv("KUBERNETES_SERVICE_HOST", "10.96.0.1");
-    vi.stubEnv("KUBERNETES_SERVICE_PORT", "443");
-    const contribution = requireDoctorContribution("doctor:workspace-status");
-    const cfg = { plugins: { entries: { codex: { enabled: true } } } };
-
-    await contribution.run(createDoctorContext({ cfg, options: { nonInteractive: true } }));
-
-    expect(mocks.gatherDaemonStatus).not.toHaveBeenCalled();
-    expect(mocks.collectWorkspaceStatusHealthFindings).toHaveBeenCalledWith(cfg, {
-      pluginVersionReadiness: undefined,
-    });
-
-    const ctx = createDoctorLintContext({
-      cfg,
-      mode: "lint",
-      runtime: { log: vi.fn(), error: vi.fn(), exit: vi.fn() },
-    });
-    const check = contribution.healthChecks[0] as HealthCheck;
-    await runDoctorLintChecks(ctx, { checks: [check], onlyIds: ["core/doctor/workspace-status"] });
-
-    expect(mocks.gatherDaemonStatus).not.toHaveBeenCalled();
-    expect(mocks.collectWorkspaceStatusHealthFindings).toHaveBeenCalledWith(cfg, {
-      pluginVersionReadiness: undefined,
-    });
-  });
+  it.each(["status-failed", "remote", "kubernetes"] as const)(
+    "keeps workspace diagnostics without unavailable daemon readiness: %s",
+    async (mode) => {
+      const contribution = requireDoctorContribution("doctor:workspace-status");
+      const cfg: OpenClawConfig =
+        mode === "status-failed"
+          ? {}
+          : {
+              ...(mode === "remote" ? { gateway: { mode: "remote" } as const } : {}),
+              plugins: { entries: { codex: { enabled: true } } },
+            };
+      if (mode === "status-failed") {
+        mocks.gatherDaemonStatus.mockRejectedValueOnce(new Error("service inspection failed"));
+      } else if (mode === "kubernetes") {
+        vi.stubEnv("KUBERNETES_SERVICE_HOST", "10.96.0.1");
+        vi.stubEnv("KUBERNETES_SERVICE_PORT", "443");
+      }
+      await contribution.run(createDoctorContext({ cfg, options: { nonInteractive: true } }));
+      expect(mocks.collectWorkspaceStatusHealthFindings).toHaveBeenCalledWith(cfg, {
+        pluginVersionReadiness: undefined,
+      });
+      if (mode !== "status-failed") {
+        expect(mocks.gatherDaemonStatus).not.toHaveBeenCalled();
+      }
+      if (mode === "kubernetes") {
+        const check = contribution.healthChecks[0] as HealthCheck;
+        await runDoctorLintChecks(createDoctorLintFixture(cfg), {
+          checks: [check],
+          onlyIds: ["core/doctor/workspace-status"],
+        });
+        expect(mocks.gatherDaemonStatus).not.toHaveBeenCalled();
+        expect(mocks.collectWorkspaceStatusHealthFindings).toHaveBeenCalledWith(cfg, {
+          pluginVersionReadiness: undefined,
+        });
+      }
+    },
+  );
 
   it("uses the read-only model catalog for hooks.gmail.model warnings", async () => {
     const contribution = requireDoctorContribution("doctor:hooks-model");
@@ -2247,28 +2205,121 @@ describe("doctor health contributions", () => {
     });
   });
 
-  it("keeps stale plugin-runtime symlinks opt-in for structured lint selection", async () => {
-    mocks.collectStalePluginRuntimeSymlinkHealthFindings.mockResolvedValueOnce([
-      {
-        checkId: "core/doctor/stale-plugin-runtime-symlinks",
-        severity: "warning",
-        message: "Stale plugin-runtime symlink left-pad points at plugin-runtime-deps.",
-        path: "/tmp/node_modules/left-pad",
-        target: "/tmp/node_modules/left-pad",
-      },
-    ]);
+  it.each([
+    {
+      id: "stale-plugin-runtime-symlinks",
+      collect: mocks.collectStalePluginRuntimeSymlinkHealthFindings,
+      seed: (finding: HealthFinding) =>
+        mocks.collectStalePluginRuntimeSymlinkHealthFindings.mockResolvedValueOnce([finding]),
+      finding: { path: "/tmp/node_modules/left-pad" },
+      args: undefined,
+    },
+    {
+      id: "workspace-suggestions",
+      collect: mocks.collectWorkspaceBackupTip,
+      seed: () =>
+        mocks.collectWorkspaceBackupTip.mockReturnValueOnce(
+          "Back up your workspace before major repair work.",
+        ),
+      finding: { severity: "info", message: "Back up your workspace before major repair work." },
+      args: () => ["/tmp/openclaw-workspace"],
+    },
+    {
+      id: "disk-space",
+      collect: mocks.collectDiskSpaceHealthFindings,
+      seed: (finding: HealthFinding) =>
+        mocks.collectDiskSpaceHealthFindings.mockReturnValueOnce([finding]),
+      finding: {},
+      args: () => [undefined],
+    },
+    {
+      id: "device-pairing",
+      collect: mocks.collectDevicePairingHealthFindings,
+      seed: () => undefined,
+      finding: undefined,
+      cfg: { gateway: { mode: "local" } },
+      args: (ctx: ReturnType<typeof createDoctorLintFixture>) => [
+        { cfg: ctx.cfg, healthOk: false, env: ctx.env },
+      ],
+    },
+    {
+      id: "legacy-cron-store",
+      collect: mocks.collectLegacyCronStoreHealthFindings,
+      seed: (finding: HealthFinding) =>
+        mocks.collectLegacyCronStoreHealthFindings.mockResolvedValueOnce([finding]),
+      finding: {},
+      cfg: { cron: { store: "/tmp/openclaw-cron/jobs.json" } },
+      args: (ctx: ReturnType<typeof createDoctorLintFixture>) => [{ cfg: ctx.cfg }],
+    },
+    {
+      id: "legacy-whatsapp-crontab",
+      collect: mocks.collectLegacyWhatsAppCrontabHealthWarning,
+      seed: () =>
+        mocks.collectLegacyWhatsAppCrontabHealthWarning.mockResolvedValueOnce(
+          "Legacy WhatsApp crontab health check detected.\nRemove the stale crontab entry.",
+        ),
+      finding: { severity: "warning" },
+      args: undefined,
+    },
+    {
+      id: "channel-plugin-blockers",
+      collect: mocks.scanConfiguredChannelPluginBlockers,
+      seed: () =>
+        mocks.scanConfiguredChannelPluginBlockers.mockReturnValue([
+          { channelId: "discord", pluginId: "discord", reason: "missing explicit enablement" },
+        ]),
+      finding: { path: "channels.discord", target: "discord" },
+      cfg: { channels: { discord: { enabled: true } } },
+      args: (ctx: ReturnType<typeof createDoctorLintFixture>) => [ctx.cfg, process.env],
+    },
+    {
+      id: "channel-preview-warnings",
+      collect: mocks.collectChannelPreviewWarningHealthFindings,
+      seed: (finding: HealthFinding) =>
+        mocks.collectChannelPreviewWarningHealthFindings.mockResolvedValueOnce([finding]),
+      finding: { path: "channels.matrix" },
+      cfg: { channels: { matrix: { enabled: true } } },
+      args: (ctx: ReturnType<typeof createDoctorLintFixture>) => [
+        { cfg: ctx.cfg, allowExec: false },
+      ],
+    },
+  ] satisfies Array<{
+    id: string;
+    collect: object;
+    seed: (finding: HealthFinding) => void;
+    finding?: Partial<HealthFinding>;
+    cfg?: OpenClawConfig;
+    args?: (ctx: ReturnType<typeof createDoctorLintFixture>) => unknown[];
+  }>)(
+    "keeps $id opt-in and delegates selected lint to its owner",
+    async ({ id, collect, seed, finding, args, ...options }) => {
+      const ctx = createDoctorLintFixture("cfg" in options ? options.cfg : {});
+      const checkId = `core/doctor/${id}`;
+      seed({ checkId, severity: "warning", message: "Synthetic owner finding", ...finding });
+      expect(collect).not.toHaveBeenCalled();
+      await expectOptInLintFindings(
+        ctx,
+        checkId,
+        finding && [expect.objectContaining({ checkId, ...finding })],
+      );
+      expect(collect).toHaveBeenCalledOnce();
+      if (args) {
+        expect(collect).toHaveBeenCalledWith(...args(ctx));
+      }
+    },
+  );
 
-    const ctx = createDoctorLintFixture();
-
-    expect(mocks.collectStalePluginRuntimeSymlinkHealthFindings).not.toHaveBeenCalled();
-
-    await expectOptInLintFindings(ctx, "core/doctor/stale-plugin-runtime-symlinks", [
-      expect.objectContaining({
-        checkId: "core/doctor/stale-plugin-runtime-symlinks",
-        path: "/tmp/node_modules/left-pad",
-      }),
-    ]);
-    expect(mocks.collectStalePluginRuntimeSymlinkHealthFindings).toHaveBeenCalledTimes(1);
+  it.each([
+    [
+      "doctor:legacy-cron",
+      ["core/doctor/legacy-whatsapp-crontab", "core/doctor/legacy-cron-store"],
+    ],
+    [
+      "doctor:startup-channel-maintenance",
+      ["core/doctor/channel-plugin-blockers", "core/doctor/channel-preview-warnings"],
+    ],
+  ] as const)("retains all public lint selectors for %s", (id, selectors) => {
+    expect(requireDoctorContribution(id).healthCheckIds).toEqual(selectors);
   });
 
   it("preserves the shipped legacy dependency selector as a non-destructive deprecation", async () => {
@@ -2342,88 +2393,35 @@ describe("doctor health contributions", () => {
     expect(mocks.noteMemorySearchHealth).toHaveBeenCalledWith({}, expect.objectContaining({ env }));
   });
 
-  it("keeps workspace suggestions opt-in for default lint selection", async () => {
-    mocks.collectWorkspaceBackupTip.mockReturnValueOnce(
-      "Back up your workspace before major repair work.",
-    );
-
-    const ctx = createDoctorLintFixture();
-
-    expect(mocks.collectWorkspaceBackupTip).not.toHaveBeenCalled();
-
-    await expectOptInLintFindings(ctx, "core/doctor/workspace-suggestions", [
-      expect.objectContaining({
-        checkId: "core/doctor/workspace-suggestions",
-        severity: "info",
-        message: "Back up your workspace before major repair work.",
-      }),
-    ]);
-    expect(mocks.collectWorkspaceBackupTip).toHaveBeenCalledWith("/tmp/openclaw-workspace");
-  });
-
-  it("labels normal workspace suggestions for secondary agents", async () => {
-    const contribution = requireDoctorContribution("doctor:workspace-suggestions");
-    const cfg = {} as OpenClawConfig;
-    const ctx = createDoctorContext({ cfg, env: {} });
-    mocks.listAgentIds.mockReturnValue(["default", "secondary"]);
-    mocks.resolveAgentWorkspaceDir.mockImplementation((_cfg, agentId) => `/tmp/${agentId}`);
-    mocks.collectWorkspaceBackupTip.mockImplementation((workspaceDir) =>
-      workspaceDir === "/tmp/secondary" ? "- Back up this workspace." : undefined,
-    );
-    mocks.shouldSuggestMemorySystem.mockImplementation(
-      async (workspaceDir) => workspaceDir === "/tmp/secondary",
-    );
-
-    await contribution.run(ctx);
-
-    expect(mocks.note).toHaveBeenCalledWith(
-      'Agent "secondary": - Back up this workspace.',
-      "Workspace",
-    );
-    expect(mocks.note).toHaveBeenCalledWith(
-      'Agent "secondary": Enable memory system for better recall.',
-      "Workspace",
-    );
-    expect(mocks.note).toHaveBeenCalledTimes(2);
-  });
-
-  it("keeps single-agent workspace suggestion wording unchanged", async () => {
-    const contribution = requireDoctorContribution("doctor:workspace-suggestions");
-    const cfg = {} as OpenClawConfig;
-    const ctx = createDoctorContext({ cfg, env: {} });
-    mocks.collectWorkspaceBackupTip.mockReturnValue("- Back up this workspace.");
-    mocks.shouldSuggestMemorySystem.mockResolvedValue(true);
-
-    await contribution.run(ctx);
-
-    expect(mocks.note).toHaveBeenNthCalledWith(1, "- Back up this workspace.", "Workspace");
-    expect(mocks.note).toHaveBeenNthCalledWith(
-      2,
-      "Enable memory system for better recall.",
-      "Workspace",
-    );
-  });
-
-  it("keeps disk space opt-in for default lint selection", async () => {
-    const ctx = createDoctorLintFixture();
-
-    expect(mocks.collectDiskSpaceHealthFindings).not.toHaveBeenCalled();
-
-    mocks.collectDiskSpaceHealthFindings.mockReturnValueOnce([
-      {
-        checkId: "core/doctor/disk-space",
-        severity: "warning",
-        message: "Low disk space: 300 MB free on the partition containing ~/.openclaw.",
-        path: "/home/test/.openclaw",
-        requirement: "low-free-space",
-      },
-    ]);
-
-    await expectOptInLintFindings(ctx, "core/doctor/disk-space", [
-      expect.objectContaining({ checkId: "core/doctor/disk-space" }),
-    ]);
-    expect(mocks.collectDiskSpaceHealthFindings).toHaveBeenCalledWith(undefined);
-  });
+  it.each([false, true])(
+    "labels workspace suggestions only for secondary agents: %s",
+    async (multiple) => {
+      mocks.listAgentIds.mockReturnValue(multiple ? ["default", "secondary"] : ["default"]);
+      mocks.resolveAgentWorkspaceDir.mockImplementation((_cfg, agentId) => `/tmp/${agentId}`);
+      const selectedWorkspace = multiple ? "/tmp/secondary" : "/tmp/default";
+      mocks.collectWorkspaceBackupTip.mockImplementation((workspaceDir) =>
+        workspaceDir === selectedWorkspace ? "- Back up this workspace." : undefined,
+      );
+      mocks.shouldSuggestMemorySystem.mockImplementation(
+        async (workspaceDir) => workspaceDir === selectedWorkspace,
+      );
+      await requireDoctorContribution("doctor:workspace-suggestions").run(
+        createDoctorContext({ env: {} }),
+      );
+      const prefix = multiple ? 'Agent "secondary": ' : "";
+      expect(mocks.note).toHaveBeenNthCalledWith(
+        1,
+        `${prefix}- Back up this workspace.`,
+        "Workspace",
+      );
+      expect(mocks.note).toHaveBeenNthCalledWith(
+        2,
+        `${prefix}Enable memory system for better recall.`,
+        "Workspace",
+      );
+      expect(mocks.note).toHaveBeenCalledTimes(2);
+    },
+  );
 
   it("keeps WhatsApp responsiveness opt-in for default lint selection", async () => {
     const whatsappCheck = await requireDoctorHealthCheck("core/doctor/whatsapp-responsiveness");
@@ -2527,81 +2525,6 @@ describe("doctor health contributions", () => {
     });
   });
 
-  it("keeps device pairing opt-in for default lint selection", async () => {
-    const ctx = createDoctorLintFixture({ gateway: { mode: "local" } });
-    expect(mocks.collectDevicePairingHealthFindings).not.toHaveBeenCalled();
-
-    await expectOptInLintFindings(ctx, "core/doctor/device-pairing");
-    expect(mocks.collectDevicePairingHealthFindings).toHaveBeenCalledWith({
-      cfg: ctx.cfg,
-      healthOk: false,
-      env: ctx.env,
-    });
-  });
-
-  it("keeps legacy cron store opt-in for default lint selection", async () => {
-    const contribution = requireDoctorContribution("doctor:legacy-cron");
-    expect(contribution.healthCheckIds).toEqual([
-      "core/doctor/legacy-whatsapp-crontab",
-      "core/doctor/legacy-cron-store",
-    ]);
-
-    const ctx = createDoctorLintFixture({ cron: { store: "/tmp/openclaw-cron/jobs.json" } });
-
-    expect(mocks.collectLegacyCronStoreHealthFindings).not.toHaveBeenCalled();
-
-    mocks.collectLegacyCronStoreHealthFindings.mockResolvedValueOnce([
-      {
-        checkId: "core/doctor/legacy-cron-store",
-        severity: "warning",
-        message: "Legacy JSON cron store was found.",
-        path: "/tmp/openclaw-cron/jobs.json",
-        requirement: "legacy-cron-store",
-      },
-    ]);
-    await expectOptInLintFindings(ctx, "core/doctor/legacy-cron-store", [
-      expect.objectContaining({ checkId: "core/doctor/legacy-cron-store" }),
-    ]);
-    expect(mocks.collectLegacyCronStoreHealthFindings).toHaveBeenCalledWith({ cfg: ctx.cfg });
-  });
-
-  it("keeps legacy WhatsApp crontab opt-in for default lint selection", async () => {
-    const ctx = createDoctorLintFixture();
-
-    expect(mocks.collectLegacyWhatsAppCrontabHealthWarning).not.toHaveBeenCalled();
-
-    mocks.collectLegacyWhatsAppCrontabHealthWarning.mockResolvedValueOnce(
-      "Legacy WhatsApp crontab health check detected.\nRemove the stale crontab entry.",
-    );
-
-    await expectOptInLintFindings(ctx, "core/doctor/legacy-whatsapp-crontab", [
-      expect.objectContaining({
-        checkId: "core/doctor/legacy-whatsapp-crontab",
-        severity: "warning",
-      }),
-    ]);
-    expect(mocks.collectLegacyWhatsAppCrontabHealthWarning).toHaveBeenCalledTimes(1);
-  });
-
-  it("keeps channel plugin blockers opt-in for default lint selection", async () => {
-    mocks.scanConfiguredChannelPluginBlockers.mockReturnValue([
-      { channelId: "discord", pluginId: "discord", reason: "missing explicit enablement" },
-    ]);
-
-    const ctx = createDoctorLintFixture({ channels: { discord: { enabled: true } } });
-
-    expect(mocks.scanConfiguredChannelPluginBlockers).not.toHaveBeenCalled();
-
-    await expectOptInLintFindings(ctx, "core/doctor/channel-plugin-blockers", [
-      expect.objectContaining({
-        checkId: "core/doctor/channel-plugin-blockers",
-        path: "channels.discord",
-        target: "discord",
-      }),
-    ]);
-    expect(mocks.scanConfiguredChannelPluginBlockers).toHaveBeenCalledWith(ctx.cfg, process.env);
-  });
-
   it("defers channel package-state loading only until post-core plugin convergence", async () => {
     const contribution = requireDoctorContribution("doctor:channel-package-state-capabilities");
     mocks.collectBundledChannelPackageStateLoadFailures.mockReturnValue([
@@ -2641,37 +2564,6 @@ describe("doctor health contributions", () => {
     expect(mocks.collectBundledChannelPackageStateLoadFailures).toHaveBeenCalledOnce();
     showDoctorHealthSummary(ctx);
     expect(ctx.runtime.log).toHaveBeenCalledWith(expect.stringContaining("checker failed to load"));
-  });
-
-  it("keeps channel preview warnings opt-in for default lint selection", async () => {
-    const contribution = requireDoctorContribution("doctor:startup-channel-maintenance");
-    expect(contribution.healthCheckIds).toEqual([
-      "core/doctor/channel-plugin-blockers",
-      "core/doctor/channel-preview-warnings",
-    ]);
-    mocks.collectChannelPreviewWarningHealthFindings.mockResolvedValue([
-      {
-        checkId: "core/doctor/channel-preview-warnings",
-        severity: "warning",
-        message: "channels.matrix has a preview warning",
-        path: "channels.matrix",
-      },
-    ]);
-
-    const ctx = createDoctorLintFixture({ channels: { matrix: { enabled: true } } });
-
-    expect(mocks.collectChannelPreviewWarningHealthFindings).not.toHaveBeenCalled();
-
-    await expectOptInLintFindings(ctx, "core/doctor/channel-preview-warnings", [
-      expect.objectContaining({
-        checkId: "core/doctor/channel-preview-warnings",
-        path: "channels.matrix",
-      }),
-    ]);
-    expect(mocks.collectChannelPreviewWarningHealthFindings).toHaveBeenCalledWith({
-      cfg: ctx.cfg,
-      allowExec: false,
-    });
   });
 
   it("forwards allow-exec secret refs into channel preview warnings", async () => {

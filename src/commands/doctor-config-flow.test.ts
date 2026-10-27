@@ -773,70 +773,56 @@ describe("doctor config flow", () => {
     );
   });
 
+  type SessionPlan = NonNullable<DoctorConfigPreflightResult["postSessionPluginMigration"]>;
+  const sessionPlan = (
+    step: Partial<SessionPlan["step"]> = {},
+    plannedActions: SessionPlan["plannedActions"] = [],
+  ): SessionPlan => ({
+    step: {
+      id: "plugin-doctor-post-session-state",
+      phase: "final",
+      source: [],
+      target: [],
+      requiredness: "not-required",
+      reversibility: "not-applicable",
+      ...step,
+    },
+    plannedActions,
+  });
+
   it.each([
-    { name: "settled retirement", facts: {}, expected: true },
-    { name: "missing config", facts: {}, exists: false, expected: false },
-    { name: "another config repair", facts: { configChanged: true }, expected: false },
-    {
-      name: "unfinished state migration",
-      facts: { stateMigrationUnsettled: true },
-      expected: false,
-    },
-    {
-      name: "unbound discovery",
-      facts: { postSessionPluginMigrationPlanBound: false },
-      expected: false,
-    },
-    { name: "bound absent plan", facts: { postSessionPluginMigration: undefined }, expected: true },
-    {
-      name: "conditional session work",
-      facts: {
-        postSessionPluginMigration: {
-          step: {
-            id: "plugin-doctor-post-session-state",
-            phase: "final",
-            source: [],
-            target: [],
-            requiredness: "conditional",
-            reversibility: "checkpoint-required",
-          },
-          plannedActions: [{ pluginId: "example", id: "session-repair" }],
-        },
+    ["settled retirement", {}, true],
+    ["missing config", {}, false, false],
+    ["another config repair", { configChanged: true }, false],
+    ["unfinished state migration", { stateMigrationUnsettled: true }, false],
+    ["unbound discovery", { postSessionPluginMigrationPlanBound: false }, false],
+    ["bound absent plan", { postSessionPluginMigration: undefined }, true],
+    [
+      "conditional session work",
+      {
+        postSessionPluginMigration: sessionPlan(
+          { requiredness: "conditional", reversibility: "checkpoint-required" },
+          [{ pluginId: "example", id: "session-repair" }],
+        ),
       },
-      expected: true,
-    },
-    {
-      name: "refused session plan",
-      facts: {
-        postSessionPluginMigration: {
-          step: {
-            id: "plugin-doctor-post-session-state",
-            phase: "final",
-            source: [],
-            target: [],
-            requiredness: "conditional",
-            reversibility: "checkpoint-required",
-            refusal: { code: "step-refused", message: "Incomplete session discovery" },
-          },
-          plannedActions: [],
-        },
+      true,
+    ],
+    [
+      "refused session plan",
+      {
+        postSessionPluginMigration: sessionPlan({
+          requiredness: "conditional",
+          reversibility: "checkpoint-required",
+          refusal: { code: "step-refused", message: "Incomplete session discovery" },
+        }),
       },
-      expected: false,
-    },
-    {
-      name: "unsettled preflight",
-      facts: { preflightLegacyStateConfig: undefined },
-      expected: false,
-    },
-    { name: "repair warning", facts: { warnings: ["Unfinished repair"] }, expected: false },
-  ] satisfies Array<{
-    name: string;
-    facts: Partial<DoctorConfigPreflightResult>;
-    exists?: boolean;
-    expected: boolean;
-  }>)(
-    "admits retirement with bound session work: $name",
-    async ({ facts, exists = true, expected }) => {
+      false,
+    ],
+    ["unsettled preflight", { preflightLegacyStateConfig: undefined }, false],
+    ["repair warning", { warnings: ["Unfinished repair"] }, false],
+  ] satisfies Array<[string, Partial<DoctorConfigPreflightResult>, boolean, boolean?]>)(
+    "admits retirement with bound session work: %s",
+    async (_name, facts, expected, exists = true) => {
       const config: OpenClawConfig = {
         agents: { entries: { main: {} } },
         messages: { queue: { allowCollaborativeSteering: false } },
@@ -844,17 +830,7 @@ describe("doctor config flow", () => {
       preflightFacts.value = {
         preflightLegacyStateConfig: config,
         postSessionPluginMigrationPlanBound: true,
-        postSessionPluginMigration: {
-          step: {
-            id: "plugin-doctor-post-session-state",
-            phase: "final",
-            source: [],
-            target: [],
-            requiredness: "not-required",
-            reversibility: "not-applicable",
-          },
-          plannedActions: [],
-        },
+        postSessionPluginMigration: sessionPlan(),
         ...facts,
       };
       mockRepair({ modelRetirementRepairRan: true, modelRetirementOnly: true });

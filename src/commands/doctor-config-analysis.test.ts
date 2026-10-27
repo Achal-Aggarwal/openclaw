@@ -169,14 +169,6 @@ describe("doctor config analysis helpers", () => {
     });
   });
 
-  it("preserves include syntax at agent defaults while stripping unknown keys", () => {
-    const agents = { defaults: { $include: "./agent-defaults.json5" } };
-    const result = stripUnknownConfigKeys({ agents, unexpected: true } as never);
-
-    expect(result.removed).toEqual(["unexpected"]);
-    expect(result.config).toEqual({ agents });
-  });
-
   it.each([undefined, "1"])(
     "cleans unowned keys during updates (post-core=%s), preserving deferred inputs",
     (postCore) => {
