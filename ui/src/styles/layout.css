@@ -2263,6 +2263,14 @@ html.openclaw-native-desktop .shell:not(.shell--mobile-nav) {
   mask-image: linear-gradient(to right, black calc(100% - 12px), transparent);
 }
 
+.sidebar-online__guest {
+  width: 12px;
+  height: 12px;
+  margin-inline-end: 4px;
+  vertical-align: -1px;
+  color: var(--muted);
+}
+
 .sidebar-online__person-name:dir(rtl) {
   mask-image: linear-gradient(to left, black calc(100% - 12px), transparent);
 }

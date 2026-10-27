@@ -4,6 +4,9 @@ import { replaceSessionEntrySync } from "../config/sessions/session-accessor.js"
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { listSystemPresence } from "../infra/system-presence.js";
 import { sessionChanges } from "../sessions/session-row-changes.js";
+import { prepareUserProfileCatalog } from "../state/user-profile-list.js";
+import { setUserProfileRole } from "../state/user-profile-writes.worker.js";
+import { ensureProfileForEmail } from "../state/user-profiles.js";
 import { withOpenClawTestState } from "../test-utils/openclaw-test-state.js";
 import { createPresenceRecipientProjection } from "./presence-projection.js";
 import type { GatewayClient } from "./server-methods/types.js";
@@ -103,6 +106,45 @@ describe("session viewer presence declarations", () => {
 });
 
 describe("presence projection without resident session facts", () => {
+  it("presents resolved guest policy without exposing presence to session-only readers", async () => {
+    await withOpenClawTestState({ scenario: "minimal" }, async () => {
+      const visitor = ensureProfileForEmail("visitor@presence.test");
+      const staff = ensureProfileForEmail("staff@presence.test");
+      setUserProfileRole(staff.id, "guest");
+      await prepareUserProfileCatalog();
+      const cfg: OpenClawConfig = {
+        gateway: {
+          roles: {
+            default: "visitor",
+            definitions: {
+              visitor: {
+                sessions: { others: "view" },
+                agents: [],
+                scopes: ["operator.sessions.write"],
+              },
+              guest: { sessions: { others: "write" }, agents: "*", scopes: ["operator.admin"] },
+            },
+          },
+        },
+      };
+      const presence = [
+        ...[visitor, staff].map((profile) => ({
+          ts: 1,
+          text: "",
+          user: { id: profile.id, identity: { type: "profile" as const, id: profile.id } },
+        })),
+        { ts: 1, text: "", user: { id: "unknown", name: "Guest" } },
+      ];
+      const project = createPresenceRecipientProjection({ cfg, presence });
+      expect(project(recipient()).map((row) => row.user?.isGuest)).toEqual([
+        true,
+        false,
+        undefined,
+      ]);
+      expect(project(recipient(["operator.sessions.read"]))).toEqual([]);
+    });
+  });
+
   it("shares watch selection across equal audiences and retires it when authority changes", async () => {
     await withOpenClawTestState({ scenario: "minimal" }, async () => {
       const key = "agent:main:presence-audience";

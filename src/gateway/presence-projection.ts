@@ -5,7 +5,11 @@ import {
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import type { SystemPresence } from "../infra/system-presence.js";
 import { isIncognitoSessionKey, parseAgentSessionKey } from "../routing/session-key.js";
-import { operatorScopeSatisfied } from "../shared/operator-scope-compat.js";
+import {
+  isRestrictedSessionGuest,
+  operatorScopeSatisfied,
+} from "../shared/operator-scope-compat.js";
+import { resolveOperatorRolePolicyForProfile } from "./operator-role-policy.js";
 import { READ_SCOPE } from "./operator-scopes.js";
 import { isGatewayClientProfilePending } from "./server-methods/gateway-client-identity.js";
 import type { GatewayClient } from "./server-methods/types.js";
@@ -87,8 +91,12 @@ export function createPresenceRecipientProjection(params: {
       });
       targets.clear();
       audiences.clear();
+      views.clear();
     }
     const currentRevision = params.projection?.sharingRevision;
+    if (revision !== currentRevision) {
+      views.clear();
+    }
     if (revision !== currentRevision || currentRevision === undefined) {
       revision = currentRevision;
       targets.clear();
@@ -124,7 +132,23 @@ export function createPresenceRecipientProjection(params: {
     const signature = indexes.join(",");
     let view = views.get(signature);
     if (!view) {
-      view = params.presence.map((row) => {
+      view = params.presence.map((source) => {
+        let row = source;
+        if (source.user?.identity) {
+          const role = resolveOperatorRolePolicyForProfile(source.user.identity.id, cfg);
+          if (role) {
+            row = {
+              ...source,
+              user: {
+                ...source.user,
+                isGuest: isRestrictedSessionGuest({
+                  scopes: role.scopes,
+                  sessionCap: role.sessions.others,
+                }),
+              },
+            };
+          }
+        }
         if (!row.watchedSessions) {
           return row;
         }
