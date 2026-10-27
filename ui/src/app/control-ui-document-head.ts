@@ -7,11 +7,6 @@ type ControlUiDocumentHead = {
 
 let elements: ControlUiDocumentHead = { themeColors: [], favicons: [] };
 
-/** The document entrypoint binds its static head nodes before mounting the app. */
-export function bindControlUiDocumentHead(head: ControlUiDocumentHead): void {
-  elements = head;
-}
-
 /** Set document assets before the entry module yields to the application import. */
 export function initializeControlUiDocumentHead(): void {
   const themeColors: HTMLMetaElement[] = [];
@@ -36,7 +31,7 @@ export function initializeControlUiDocumentHead(): void {
       }
     }
   }
-  bindControlUiDocumentHead({ themeColors, favicons });
+  elements = { themeColors, favicons };
 }
 
 export function controlUiDocumentHead(): ControlUiDocumentHead {

@@ -15,14 +15,17 @@ import { mountSolid } from "../test-helpers/mount-solid.ts";
 import { waitForSolid } from "../test-helpers/solid-settle.ts";
 import { makeBootRoster } from "./bootstrap.test-support.ts";
 import { createApplicationConfigCapability } from "./config.ts";
-import { bindControlUiDocumentHead, controlUiDocumentHead } from "./control-ui-document-head.ts";
+import {
+  controlUiDocumentHead,
+  initializeControlUiDocumentHead,
+} from "./control-ui-document-head.ts";
 
 const root = document.documentElement;
 const bootstrap = { basePath: "", assistantName: "OpenClaw", assistantAvatar: "O" };
 const edge = { label: "edge", color: "amber" } as const;
-function icon(href: string, type: string) {
+function icon(id: string, type: string) {
   const link = document.createElement("link");
-  Object.assign(link, { rel: "icon", href, type });
+  Object.assign(link, { id, rel: "icon", type });
   document.head.append(link);
   return link;
 }
@@ -47,7 +50,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
   document.body.replaceChildren();
   controlUiDocumentHead().favicons.forEach((link) => link.remove());
-  bindControlUiDocumentHead({ themeColors: [], favicons: [] });
+  initializeControlUiDocumentHead();
   root.removeAttribute("data-openclaw-environment");
   root.style.removeProperty("--control-ui-environment-color");
   root.style.removeProperty("--control-ui-environment-ink");
@@ -60,9 +63,11 @@ setupSidebarTest();
 
 it("renders and clears environment presentation, including the sidebar badge and avatar ring", async () => {
   document.title = "OpenClaw Control";
-  const favicon = icon("/favicon.svg", "image/svg+xml");
-  const png = icon("/favicon-32.png", "image/png");
-  bindControlUiDocumentHead({ themeColors: [], favicons: [favicon, png] });
+  const favicon = icon("openclaw-favicon-svg", "image/svg+xml");
+  const png = icon("openclaw-favicon-png", "image/png");
+  initializeControlUiDocumentHead();
+  favicon.setAttribute("href", "/favicon.svg");
+  png.setAttribute("href", "/favicon-32.png");
 
   const config = setupConfig({ environment: edge, seamColor: "#123456" }, {});
   const [cardEnvironment, setCardEnvironment] = createSignal<ControlUiEnvironment | null>(null);

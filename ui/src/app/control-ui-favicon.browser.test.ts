@@ -7,7 +7,7 @@ import { createSessionCapability } from "../lib/sessions/index.ts";
 import { sessionsResult } from "../lib/sessions/session-capability.test-support.ts";
 import { gatewayHelloForMethods } from "../test-helpers/gateway-methods.ts";
 import { createAgentSelectionCapability } from "./agent-selection.ts";
-import { bindControlUiDocumentHead } from "./control-ui-document-head.ts";
+import { initializeControlUiDocumentHead } from "./control-ui-document-head.ts";
 import {
   applyControlUiFaviconImage,
   applyControlUiFaviconStatus,
@@ -76,17 +76,19 @@ beforeEach(() => {
     [`data:image/svg+xml,${encodeURIComponent(faviconSvg)}`, "image/svg+xml"],
     [canvas.toDataURL("image/png"), "image/png"],
   ];
-  const createIcon = ([href, type]: [string, string]) => {
+  const createIcon = (id: string, type: string) => {
     const icon = document.createElement("link");
+    icon.id = id;
     icon.rel = "icon";
-    icon.setAttribute("href", href);
     icon.setAttribute("type", type);
     document.head.append(icon);
     return icon;
   };
-  svgIcon = createIcon(originals[0]);
-  pngIcon = createIcon(originals[1]);
-  bindControlUiDocumentHead({ themeColors: [], favicons: [svgIcon, pngIcon] });
+  svgIcon = createIcon("openclaw-favicon-svg", originals[0][1]);
+  pngIcon = createIcon("openclaw-favicon-png", originals[1][1]);
+  initializeControlUiDocumentHead();
+  svgIcon.setAttribute("href", originals[0][0]);
+  pngIcon.setAttribute("href", originals[1][0]);
 });
 
 afterEach(() => {
@@ -94,9 +96,9 @@ afterEach(() => {
   applyControlUiFaviconImage(null);
   applyControlUiFaviconStatus("idle");
   applyControlUiPresentation({ environment: null });
-  bindControlUiDocumentHead({ themeColors: [], favicons: [] });
   svgIcon.remove();
   pngIcon.remove();
+  initializeControlUiDocumentHead();
   document.head.append(...previousIcons);
   document.title = previousTitle;
   for (const [name, value] of previousAttributes) {
