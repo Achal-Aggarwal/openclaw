@@ -3,8 +3,12 @@ import fs from "node:fs";
 import path from "node:path";
 import { expect } from "vitest";
 import { resolveRepoToolBinPath } from "../../scripts/lib/local-check-runtime.mts";
-import { TSDOWN_PLUGIN_SDK_DTS_CONFIG_GROUPS } from "../../scripts/lib/tsdown-config-groups.mts";
+import {
+  TSDOWN_PLUGIN_SDK_DTS_CONFIG_GROUPS,
+  TSDOWN_UNIFIED_DTS_CONFIG_GROUPS,
+} from "../../scripts/lib/tsdown-config-groups.mts";
 import type { CommandFixture } from "../helpers/command-fixture.js";
+import { materializeNativeCompiler } from "./native-boundary-fixture.js";
 import {
   createDeclarationFixture,
   createDeclarationTest,
