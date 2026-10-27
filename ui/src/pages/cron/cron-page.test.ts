@@ -13,6 +13,7 @@ import {
   createCronViewRun,
   cronRunsResponse,
   getButtonByText,
+  getElement,
   openCronMenu,
   scheduledJob,
   selectSegmented,
@@ -33,6 +34,14 @@ function expectRpc(request: unknown, method: string, params: unknown) {
   return waitFor(() => expect(request).toHaveBeenCalledWith(method, params));
 }
 
+function expectRpcFields(request: unknown, method: string, params: object) {
+  return expectRpc(request, method, expect.objectContaining(params));
+}
+
+function button(page: Element, id: string) {
+  return getElement(page, dom.testId(id), HTMLButtonElement);
+}
+
 function expectHistoryTab(page: ParentNode) {
   expect(dom.attribute(page, dom.testId("cron-detail-tab-history"), "aria-selected")).toBe("true");
 }
@@ -50,11 +59,7 @@ function pacedJob(id: string, overrides: Partial<CronJob> = {}) {
 }
 
 async function submitWhenReady(page: ReturnType<typeof harness.createPage>) {
-  await waitFor(() => {
-    const button = page.querySelector<HTMLButtonElement>(dom.testId("cron-submit"));
-    expect(button).not.toBeNull();
-    expect(button?.disabled).toBe(false);
-  });
+  await waitFor(() => expect(button(page, "cron-submit").disabled).toBe(false));
   dom.click(page, dom.testId("cron-submit"));
 }
 
@@ -85,9 +90,9 @@ it("allows offline drafting but disables submission without a live connection", 
     expect(page.cron.cronFieldErrors).toEqual({});
     expect(page.querySelector<HTMLInputElement>("#cron-name")!.matches(":disabled")).toBe(false);
     for (const id of ["cron-submit", "cron-submit-run"]) {
-      const button = page.querySelector<HTMLButtonElement>(dom.testId(id))!;
-      expect(button.disabled, id).toBe(true);
-      button.click();
+      const submit = button(page, id);
+      expect(submit.disabled, id).toBe(true);
+      submit.click();
     }
     expect(request).not.toHaveBeenCalledWith("cron.add", expect.anything());
     expect(page.cron.cronForm.name).toBe("Offline draft");
@@ -163,16 +168,11 @@ it.each([1, 2])("scopes %i attached jobs and opens a sole match", async (count) 
   const jobs = Array.from({ length: count }, (_, index) =>
     createCronViewJob(`linked-${index}`, { name: `Linked ${index}` }),
   );
-  const fallback = harness.createRequest();
-  const request = vi.fn(async (method: string, _params?: unknown) =>
-    method === "cron.list" ? harness.cronListResponse(jobs) : fallback(method),
-  );
+  const request = cronRpc({ "cron.list": () => harness.cronListResponse(jobs) });
   const { page } = mountCronPage(request);
   if (count === 2) {
-    await dom.waitForElement(page, "[data-test-id=cron-list-tab-activity]");
-    page
-      .querySelector<HTMLElement>("[data-test-id=cron-list-tab-activity]")!
-      .dispatchEvent(new MouseEvent("click", { bubbles: true, composed: true, detail: 1 }));
+    const activity = await dom.waitForElement(page, dom.testId("cron-list-tab-activity"));
+    activity.dispatchEvent(new MouseEvent("click", { bubbles: true, composed: true, detail: 1 }));
     await page.settle();
   }
   page.routeSearch = "?session=agent%3Aops%3Anight-watch&agent=ops";
@@ -411,15 +411,11 @@ it.each([
     dom.fillInput(page, "#cron-name", "Agent-scoped task");
     dom.fillInput(page, "#cron-payload-text", "Run for the selected agent");
     await submitWhenReady(page);
-    await expectRpc(
-      request,
-      "cron.add",
-      expect.objectContaining({
-        name: "Agent-scoped task",
-        agentId: "writer",
-        delivery: { mode: "none" },
-      }),
-    );
+    await expectRpcFields(request, "cron.add", {
+      name: "Agent-scoped task",
+      agentId: "writer",
+      delivery: { mode: "none" },
+    });
   },
 );
 
@@ -545,7 +541,7 @@ it.each([
       expect(betaReads).toBe(1);
       expect(page.querySelector(dom.testId("cron-detail-tab-history"))).not.toBeNull();
     });
-    (page.querySelector(dom.testId("cron-detail-tab-history")) as HTMLElement).dispatchEvent(
+    getElement(page, dom.testId("cron-detail-tab-history"), HTMLElement).dispatchEvent(
       new MouseEvent("click", { detail: 1, bubbles: true }),
     );
     await page.settle();
@@ -553,11 +549,7 @@ it.each([
     expect(page.querySelector(".cron-history")).not.toBeNull();
     emitEvent(gateway, "cron", { jobId: alpha.id, action: "finished" });
     run.resolve(result);
-    await waitFor(() =>
-      expect((page.querySelector(dom.testId("cron-run-now")) as HTMLButtonElement).disabled).toBe(
-        false,
-      ),
-    );
+    await waitFor(() => expect(button(page, "cron-run-now").disabled).toBe(false));
     firstBeta.resolve(selected);
     await waitFor(() => {
       expect(dom.text(page, ".cron-detail-title")).toContain(beta.name);
@@ -589,8 +581,7 @@ it("syncs form enabled after header pause", async () => {
   const { page } = mountCronPage(request);
   (await dom.waitForElement(page, ".cron-table__row")).click();
   await waitFor(() => expect(page.cron.cronEditingJob?.id).toBe("job-1"));
-  expect(page.cron.cronRunsScope).toBe("job");
-  expect(page.cron.cronForm.enabled).toBe(true);
+  expect(page.cron).toMatchObject({ cronRunsScope: "job", cronForm: { enabled: true } });
   const enabledToggle = await dom.waitForElement<HTMLInputElement>(
     page,
     '[data-test-id="cron-toggle-enabled"] input.settings-toggle__input',
@@ -623,19 +614,15 @@ it.each([
   await openCronMenu(page, ".cron-job-menu");
   dom.click(page, '.cron-job-menu [data-value="clone"]');
   await dom.waitForElement(page, "#cron-name");
-  expect((page.querySelector("#cron-name") as HTMLInputElement).value).toBe("Daily ping copy");
+  expect(dom.inputValue(page, "#cron-name")).toBe("Daily ping copy");
   if (once) {
     await chooseOneTime(page);
   }
   await submitWhenReady(page);
-  await expectRpc(
-    request,
-    "cron.add",
-    expect.objectContaining({
-      name: "Daily ping copy",
-      schedule: expect.objectContaining({ kind: once ? "at" : kind }),
-    }),
-  );
+  await expectRpcFields(request, "cron.add", {
+    name: "Daily ping copy",
+    schedule: expect.objectContaining({ kind: once ? "at" : kind }),
+  });
   await waitFor(() => expect(page.cron.cronCreateOpen).toBe(false));
   const submitted = request.mock.calls.find(([method]) => method === "cron.add")?.[1];
   if (pacing && !once) {
@@ -669,13 +656,13 @@ it.each([false, true])("preserves valid pacing when editing (once: %s)", async (
     await chooseOneTime(page);
     await page.settle();
   }
-  const submit = page.querySelector(dom.testId("cron-submit")) as HTMLButtonElement;
+  const submit = button(page, "cron-submit");
   expect(submit.disabled).toBe(false);
   submit.click();
   await waitFor(() => expect(page.cron.cronEditingJob?.configRevision).toBe("saved-revision"));
   await waitFor(() => expect(page.cron.cronBusy).toBe(false));
   expect(page.cron.cronEditingJob?.name).toBe(saved.name);
-  expect(page.querySelector<HTMLButtonElement>(dom.testId("cron-submit"))!.disabled).toBe(false);
+  expect(button(page, "cron-submit").disabled).toBe(false);
   const submitted = request.mock.calls.find(([method]) => method === "cron.update")?.[1];
   expect(submitted).toMatchObject({
     id: source.id,
