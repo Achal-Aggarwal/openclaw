@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { createServer, type ServerResponse } from "node:http";
 import { expect } from "vitest";
 import { readRequestText } from "../../test/helpers/gateway-integration-fixtures.js";
+import { waitForGatewayStartup } from "../../test/helpers/gateway-startup.js";
 import { writeOpenAiResponsesText } from "../../test/helpers/openai-responses-sse.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { setTestEnvValue } from "../test-utils/env.js";
@@ -75,6 +76,8 @@ export function createChatFixture(
       origin: `http://127.0.0.1:${portClaim.port}`,
     });
     await gateway.server.startupSettled;
+    // Sidecar completion can precede orphan marking; wait for public request admission.
+    await waitForGatewayStartup(portClaim.port);
   };
   return {
     requests,
