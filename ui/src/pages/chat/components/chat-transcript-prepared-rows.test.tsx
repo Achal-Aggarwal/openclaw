@@ -588,29 +588,23 @@ it("prepares ahead during scrolling and waits for measurement before admitting a
     [...view.container.querySelectorAll<HTMLElement>("[data-index]:not([data-prepared-row])")].map(
       (row) => Number(row.dataset.index),
     );
-  const rendered = view.renderRow.mock.calls.length;
   await view.frame(1, false);
-  const preparedKey = view.renderRow.mock.calls.at(-1)?.[0].key;
-  const preparing = view.container.querySelector<HTMLElement>(
-    `[data-virtual-row-key="${preparedKey}"]`,
-  );
+  const rendered = view.renderRow.mock.calls.length;
+  const preparing = view.container.querySelector<HTMLElement>("[data-preparing-row]");
   expect(preparing).not.toBeNull();
   expect(preparing!.getAttribute("data-preparing-row")).toBe("true");
   expect(view.container.querySelectorAll("[data-preparing-row]")).toHaveLength(1);
   expect(Number(preparing!.dataset.index)).toBeGreaterThan(Math.max(...activeIndexes()));
-  expect(view.renderRow.mock.calls).toHaveLength(rendered + 1);
   await view.frame(2, false);
-  expect(view.renderRow.mock.calls).toHaveLength(rendered + 1);
+  expect(view.renderRow.mock.calls).toHaveLength(rendered);
   emitTranscriptResize(preparing!, 800, 100);
   await settle();
-  // A scroll-frame ResizeObserver receipt must not trigger another Solid
-  // layout pass until the next frame admits its measured geometry.
-  expect(view.container.querySelectorAll("[data-preparing-row]")).toHaveLength(1);
-  expect(view.renderRow.mock.calls).toHaveLength(rendered + 1);
-  await view.frame(1, false);
+  // Measurement releases this row immediately; the next admission still
+  // waits for the next frame's preparation budget.
   expect(view.container.querySelectorAll("[data-preparing-row]")).toHaveLength(0);
+  expect(view.renderRow.mock.calls).toHaveLength(rendered);
   await view.frame(1, false);
-  expect(view.renderRow.mock.calls).toHaveLength(rendered + 2);
+  expect(view.renderRow.mock.calls).toHaveLength(rendered + 1);
   expect(view.container.querySelectorAll("[data-preparing-row]")).toHaveLength(1);
 });
 
@@ -673,7 +667,6 @@ it("materializes one predicted row between scroll frames and uses the latest vie
 
   emitTranscriptResize(prepared!, 800, 100);
   await settle();
-  await view.frame(1, false);
   await view.scrollTo(6);
   const afterScroll = transcriptRows(view.container);
   await view.frame(1, false);

@@ -211,9 +211,6 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
       onChange: (view, sync) => {
         // Settled motion redraws locally; initial placement and held history need the caller.
         const redraw = view.isScrolling && this.isPositionSettled && !this.prependAnchor.hasPrepend;
-        // Avoid repeated post-layout measurement/render passes in one scroll frame.
-        // Initial placement and held history still reconcile before paint.
-        view.options.useAnimationFrameWithResizeObserver = redraw;
         // Read while measured layout is clean; a native clamp needs its rows now.
         const { threadInnerElement: inner, headerHeight: top, offsetState } = this;
         const moved = redraw && inner && this.layout.commitRange(inner, view.getTotalSize() + top);
