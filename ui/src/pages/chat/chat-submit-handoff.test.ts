@@ -23,6 +23,7 @@ import {
 } from "./chat-send-actions.ts";
 import { handleSendChat } from "./chat-send-submit.ts";
 import { buildChatItems } from "./chat-thread-build.ts";
+import { pendingText } from "./chat-thread-fixtures.test-support.ts";
 import { createProps } from "./chat-thread.test-support.ts";
 import { updateStoredChatComposerQueueItems } from "./composer-queue-persistence.ts";
 import { installOutboxBrowserStorage } from "./outbox-browser.test-support.ts";
@@ -59,13 +60,10 @@ afterEach(() => {
 describe("chat submission handoff", () => {
   it("keeps a setup-held original ahead of a steer through dispatch, custody, and persistence", async () => {
     const originalRunId = "setup-run";
-    const original = {
+    const original = pendingText("Original request", 10_000, {
       id: "original-input",
       runId: originalRunId,
-      acceptedAt: 10_000,
-      state: "queued" as const,
-      message: { role: "user", content: "Original request", timestamp: 10_000 },
-    };
+    });
     const pendingInputs = { items: [original], total: 1 };
     const dispatched = createDeferred();
     const ack = createDeferred<unknown>();
@@ -91,36 +89,21 @@ describe("chat submission handoff", () => {
     const sending = handleSendChat(host, "Later steer", { followUpMode: "steer" });
     await dispatched.promise;
     const steer = expectDefined(host.chatQueue.at(-1), "steer submission");
-    ack.resolve({ runId: steer.sendRunId, status: "accepted" });
+    const steerRunId = expectDefined(steer.sendRunId, "steer send identity");
+    ack.resolve({ runId: steerRunId, status: "accepted" });
     try {
       expect(rows()).toEqual(["Original request"]);
     } finally {
       await sending;
     }
     expect(rows()).toEqual(["Original request", "Later steer"]);
-    applyChatPendingInputs(host, {
-      items: [
-        ...pendingInputs.items,
-        {
-          id: "steer-input",
-          runId: steer.sendRunId,
-          acceptedAt: 9_000,
-          state: "queued",
-          message: { role: "user", content: "Later steer", timestamp: 9_000 },
-        },
-      ],
-      total: 2,
-    });
-    expect(rows()).toEqual(["Original request", "Later steer"]);
-    for (const [index, input] of [
+    const inputs = [
       original,
-      {
-        ...original,
-        id: "steer-input",
-        runId: steer.sendRunId,
-        message: { role: "user", content: "Later steer", timestamp: 9_000 },
-      },
-    ].entries()) {
+      pendingText("Later steer", 9_000, { id: "steer-input", runId: steerRunId }),
+    ];
+    applyChatPendingInputs(host, { items: inputs, total: inputs.length });
+    expect(rows()).toEqual(["Original request", "Later steer"]);
+    for (const [index, input] of inputs.entries()) {
       applySessionMessagePayload(
         host,
         {

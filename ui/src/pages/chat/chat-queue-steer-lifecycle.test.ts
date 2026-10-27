@@ -203,9 +203,11 @@ it.each(["custody", "receipt", "retry", "remount", "deferred", "deferred-remount
         queue: [queued.text],
       };
       expect(snapshot()).toEqual(waiting);
+      expect(container.querySelector(".chat-queue__remove")).not.toBeNull();
       container.querySelector<HTMLButtonElement>(".chat-queue__steer")!.click();
       await requested.promise;
       expect.soft(snapshot(), "request dispatch").toEqual(waiting);
+      expect(container.querySelector(".chat-queue__remove")).toBeNull();
       let deferred = false;
       let consumed = false;
       let continued = false;
