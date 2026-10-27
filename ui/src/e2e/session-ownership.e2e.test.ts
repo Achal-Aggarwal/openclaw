@@ -286,15 +286,17 @@ suite.define(() => {
           toggle: box("[data-child-session-toggle]"),
         };
       });
-    const header = await page
-      .locator("#sidebar-session-owner-title")
-      .evaluate((element) => element.getBoundingClientRect().bottom);
+    const [toolbar, personalGroups] = await Promise.all([
+      page.locator(".sidebar-session-toolbar").evaluate(geometry),
+      page.locator(".sidebar-sessions > .personal-session-groups").evaluate(geometry),
+    ]);
     const [idle, unread, running] = await Promise.all([
       rowGeometry("idle"),
       rowGeometry("unread"),
       rowGeometry("running"),
     ]);
-    expect(idle.top - header).toBeLessThanOrEqual(12);
+    expect(personalGroups.top - toolbar.bottom).toBe(4);
+    expect(idle.top - personalGroups.bottom).toBe(8);
     expect(idle.indicator).toBeUndefined();
     for (const status of [unread, running]) {
       expect(status.text?.left).toBeCloseTo(idle.text?.left ?? 0, 5);

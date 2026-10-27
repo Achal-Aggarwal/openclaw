@@ -150,7 +150,7 @@ it.each(["retry", "discard"])(
     const sessionKey = "agent:main:rejected-file";
     const attachment = registerTextPayload("private");
     onTestFinished(() => releaseChatAttachmentPayloads([attachment]));
-    const clearDraft = vi.fn(async () => {});
+    const clearDraft = vi.fn(async (_releasePayloads: boolean) => {});
     await completeInitialSessionTurn({
       context,
       client,
@@ -167,7 +167,8 @@ it.each(["retry", "discard"])(
       completeInBackground: () => true,
       finishNavigation: vi.fn(),
     });
-    expect(clearDraft).toHaveBeenCalledWith(false);
+    expect(clearDraft).toHaveBeenCalledOnce();
+    expect(clearDraft.mock.calls[0]?.[0]).toBe(false);
     const originalAccount = client.recoveryScope;
     const discarded = vi.fn();
     const fixture = custodyHost(

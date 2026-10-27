@@ -11,6 +11,7 @@ const runtimeImport = vi.hoisted(() => ({
   release: Promise.withResolvers<void>(),
 }));
 
+// mock-isolation: Hold and reject module evaluation to prove pre-runtime draft custody.
 vi.mock("../../app/session-placement-startup.runtime.ts", async () => {
   runtimeImport.entered.resolve();
   await runtimeImport.release.promise;
@@ -27,11 +28,16 @@ it("creates and retains placement while its app runtime is held, then exposes it
   const { context, flow } = createDraftFixture({
     methods: ["sessions.create", "sessions.dispatch"],
   });
-  const startup = createApplicationPlacementStartup({
-    gateway: context.gateway,
-    sessions: context.sessions,
-    chatSubmissions: context.chatSubmissions,
-  });
+  // Vitest treats a concurrent import on the same importer stack as a circular mock.
+  // Keep the owner's held import separate from the speculative warm import.
+  const startup = createApplicationPlacementStartup(
+    {
+      gateway: context.gateway,
+      sessions: context.sessions,
+      chatSubmissions: context.chatSubmissions,
+    },
+    () => import("../../app/session-placement-startup.runtime.ts"),
+  );
   Object.assign(context, { placementStartup: startup });
   const sessionKey = "agent:main:held-placement";
   vi.mocked(context.sessions.createResult).mockResolvedValue({
@@ -62,13 +68,14 @@ it("creates and retains placement while its app runtime is held, then exposes it
     expect(flow.error).toBeNull();
 
     runtimeImport.release.resolve();
-    await vi.dynamicImportSettled();
-    expect(startup.get(sessionKey)).toMatchObject({
-      phase: "failed",
-      error: expect.stringContaining("App placement runtime unavailable"),
-      retryable: true,
-      initialTurn: { text: "Retain this placement prompt" },
-    });
+    await vi.waitFor(() =>
+      expect(startup.get(sessionKey)).toMatchObject({
+        phase: "failed",
+        error: expect.stringContaining("App placement runtime unavailable"),
+        retryable: true,
+        initialTurn: { text: "Retain this placement prompt" },
+      }),
+    );
     expect(context.sessions.createResult).toHaveBeenCalledOnce();
   } finally {
     startup.dispose();

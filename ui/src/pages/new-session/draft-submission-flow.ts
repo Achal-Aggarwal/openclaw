@@ -1,4 +1,5 @@
 import type { ProjectsAddResult } from "../../../../packages/gateway-protocol/src/index.js";
+import { preloadApplicationPlacementStartupRuntime } from "../../app/session-placement-startup.ts";
 import { t } from "../../i18n/index.ts";
 import { registerNewSessionSetupEnglish } from "../../i18n/locales/en-new-session-setup.ts";
 import type { HumanMention } from "../../lib/chat/chat-types.ts";
@@ -62,7 +63,7 @@ export function preloadDraftSubmissionOperations() {
 function preloadDraftPlacementOperations() {
   // The app owner must retain the created session even while its runtime is
   // unavailable. Warm those bytes now without holding creation on evaluation.
-  void import("../../app/session-placement-startup.runtime.ts").catch(() => undefined);
+  void preloadApplicationPlacementStartupRuntime().catch(() => undefined);
   return import("./draft-placement-operations.runtime.ts");
 }
 

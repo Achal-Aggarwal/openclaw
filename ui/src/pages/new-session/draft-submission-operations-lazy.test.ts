@@ -33,6 +33,7 @@ const placementImport = vi.hoisted(() => ({
   runtimeReady: Promise.withResolvers<void>(),
 }));
 
+// mock-isolation: Fail the held module before evaluation to test retained placement retry.
 vi.mock("./draft-placement-operations.runtime.ts", async () => {
   placementImport.calls++;
   placementImport.entered.resolve();
@@ -40,6 +41,7 @@ vi.mock("./draft-placement-operations.runtime.ts", async () => {
   throw new Error("Placement code unavailable");
 });
 
+// mock-isolation: Observe speculative loading without starting the application runtime.
 vi.mock("../../app/session-placement-startup.runtime.ts", async () => {
   placementImport.runtimeCalls++;
   placementImport.runtimeEntered.resolve();

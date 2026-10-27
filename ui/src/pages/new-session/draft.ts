@@ -143,7 +143,6 @@ export class NewSessionDraft {
       if (this.privateDraftReview && !this.privateDraftReview.isCurrent()) {
         this.privateDraftReview.controller.abort("draft-changed");
       }
-      this.submission?.preloadPlacementOperations();
       callbacks.changed();
     });
     this.gateway = new DraftGatewayState(
