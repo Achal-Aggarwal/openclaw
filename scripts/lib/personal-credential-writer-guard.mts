@@ -1207,6 +1207,13 @@ export function inspectPersonalCredentialWriters(
       );
     };
     const references: ts.Node[] = [];
+    const commandExpressions: { node: ts.Node; initializer: ts.Expression }[] = [];
+    const checkCommand = (node: ts.Node, command: string) => {
+      const owner = credentialCommandOwners.get(command);
+      if (owner && key(file, operation(node)) !== owner) {
+        fail(node, `${command} credential writes require the host publication adapter`);
+      }
+    };
     const visit = (node: ts.Node) => {
       if (
         ts.isTypeNode(node) ||
@@ -1222,19 +1229,10 @@ export function inspectPersonalCredentialWriters(
       ) {
         const initializer = ts.isPropertyAssignment(node) ? node.initializer : node.name;
         // Literal command values are already exact; only expressions need semantic resolution.
-        const type = ts.isStringLiteralLikeNode(initializer)
-          ? undefined
-          : checker.getTypeAtLocation(initializer);
-        const commands = ts.isStringLiteralLikeNode(initializer)
-          ? [initializer.text]
-          : (type?.isUnionType() ? type.getTypes() : type ? [type] : [])
-              .filter((value) => value.isStringLiteralType())
-              .map((value) => value.value);
-        for (const command of commands) {
-          const owner = credentialCommandOwners.get(command);
-          if (owner && key(file, operation(node)) !== owner) {
-            fail(node, `${command} credential writes require the host publication adapter`);
-          }
+        if (ts.isStringLiteralLikeNode(initializer)) {
+          checkCommand(node, initializer.text);
+        } else {
+          commandExpressions.push({ node, initializer });
         }
       }
       if (
@@ -1360,6 +1358,19 @@ export function inspectPersonalCredentialWriters(
       node.forEachChild(visit);
     };
     source.forEachChild(visit);
+    // These immutable snapshot queries are independent. Batch the same locations
+    // so each file pays one compiler round trip, while every command keeps its owner check.
+    const commandTypes = commandExpressions.length
+      ? checker.getTypeAtLocation(commandExpressions.map(({ initializer }) => initializer))
+      : [];
+    for (const [index, { node }] of commandExpressions.entries()) {
+      const type = commandTypes[index]!;
+      for (const value of type.isUnionType() ? type.getTypes() : [type]) {
+        if (value.isStringLiteralType()) {
+          checkCommand(node, value.value);
+        }
+      }
+    }
     const symbols = references.length ? checker.getSymbolAtLocation(references) : [];
     for (const [index, node] of references.entries()) {
       const symbol = ts.isShorthandPropertyAssignment(node.parent)

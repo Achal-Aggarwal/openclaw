@@ -551,6 +551,28 @@ it("requires the host publication adapter for direct and aliased machine-state c
   }
 });
 
+it("keeps mixed command expressions attached to their own credential owners", () => {
+  expectDenied(
+    {
+      "src/new-writer.ts": `declare const choose: boolean;
+        declare const unknown: unknown;
+        const type = 'machineState.write' as const;
+        const command = choose ? 'authProfiles.update' as const : 'unrelated' as const;
+        scope.execute({ type: 'unrelated' });
+        scope.execute({ type });
+        scope.execute({ type: unknown });
+        scope.execute({ type: command });
+        scope.execute({ type: 'authProfiles.enrollAuthorization' });
+      `,
+    },
+    [
+      "machineState.write credential writes require the host publication adapter",
+      "authProfiles.update credential writes require the host publication adapter",
+      "authProfiles.enrollAuthorization credential writes require the host publication adapter",
+    ],
+  );
+});
+
 const authRuntime = "src/agents/auth-profiles/store-runtime.ts";
 const authStore = "src/agents/auth-profiles/store.ts";
 const authCells = "src/agents/auth-profiles/sqlite-json-write.ts";
