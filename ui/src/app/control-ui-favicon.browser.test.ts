@@ -77,12 +77,8 @@ beforeEach(() => {
     [canvas.toDataURL("image/png"), "image/png"],
   ];
   const createIcon = (id: string, type: string) => {
-    const icon = document.createElement("link");
-    icon.id = id;
-    icon.rel = "icon";
-    icon.setAttribute("type", type);
-    document.head.append(icon);
-    return icon;
+    const icon = Object.assign(document.createElement("link"), { id, rel: "icon", type });
+    return document.head.appendChild(icon);
   };
   svgIcon = createIcon("openclaw-favicon-svg", originals[0][1]);
   pngIcon = createIcon("openclaw-favicon-png", originals[1][1]);

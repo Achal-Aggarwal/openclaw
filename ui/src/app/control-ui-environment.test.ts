@@ -15,19 +15,14 @@ import { mountSolid } from "../test-helpers/mount-solid.ts";
 import { waitForSolid } from "../test-helpers/solid-settle.ts";
 import { makeBootRoster } from "./bootstrap.test-support.ts";
 import { createApplicationConfigCapability } from "./config.ts";
-import {
-  controlUiDocumentHead,
-  initializeControlUiDocumentHead,
-} from "./control-ui-document-head.ts";
+import * as documentHead from "./control-ui-document-head.ts";
 
 const root = document.documentElement;
 const bootstrap = { basePath: "", assistantName: "OpenClaw", assistantAvatar: "O" };
 const edge = { label: "edge", color: "amber" } as const;
 function icon(id: string, type: string) {
-  const link = document.createElement("link");
-  Object.assign(link, { id, rel: "icon", type });
-  document.head.append(link);
-  return link;
+  const link = Object.assign(document.createElement("link"), { id, rel: "icon", type });
+  return document.head.appendChild(link);
 }
 function setupConfig(...updates: Partial<ControlUiBootstrapConfig>[]) {
   root.style.setProperty("--control-ui-environment-amber", "#f59e0b");
@@ -49,8 +44,8 @@ function expectStyle(property: string, value: string) {
 afterEach(() => {
   vi.unstubAllGlobals();
   document.body.replaceChildren();
-  controlUiDocumentHead().favicons.forEach((link) => link.remove());
-  initializeControlUiDocumentHead();
+  documentHead.controlUiDocumentHead().favicons.forEach((link) => link.remove());
+  documentHead.initializeControlUiDocumentHead();
   root.removeAttribute("data-openclaw-environment");
   root.style.removeProperty("--control-ui-environment-color");
   root.style.removeProperty("--control-ui-environment-ink");
@@ -65,7 +60,7 @@ it("renders and clears environment presentation, including the sidebar badge and
   document.title = "OpenClaw Control";
   const favicon = icon("openclaw-favicon-svg", "image/svg+xml");
   const png = icon("openclaw-favicon-png", "image/png");
-  initializeControlUiDocumentHead();
+  documentHead.initializeControlUiDocumentHead();
   favicon.setAttribute("href", "/favicon.svg");
   png.setAttribute("href", "/favicon-32.png");
 
