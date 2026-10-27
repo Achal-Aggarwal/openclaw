@@ -1,4 +1,5 @@
 import { expect, it, onTestFinished, vi } from "vitest";
+import { GatewayRequestError } from "../../api/gateway-connect-errors.ts";
 import { createDeferred } from "../../../../test/helpers/promise.js";
 import { captureChatOutboxAdmission } from "../../lib/chat/outbox-store.ts";
 import { createTestGatewayClient } from "../../test-helpers/gateway-client.ts";
@@ -424,3 +425,21 @@ it.each([
     expect(source.chatQueue).toEqual([]);
   },
 );
+
+it("settles a retired in-flight row quietly after a retryable response", async () => {
+  const entered = createDeferred();
+  const reply = createDeferred<unknown>();
+  const host = makeChatHost({ chatMessage: "Delivered input", requestHandlers: {
+    "chat.send": () => { entered.resolve(); return reply.promise; },
+  }});
+  const sending = handleSendChat(host);
+  await entered.promise;
+  const original = host.chatQueue[0]!;
+  expect(chatOutboxOwner(host).remove(host, original.id)?.id).toBe(original.id);
+  reply.reject(new GatewayRequestError({code: "UNAVAILABLE", message: "temporary", retryable: true, retryAfterMs: 1}));
+  await sending;
+  expect(host.chatQueue).toEqual([]);
+  expect(host.chatMessage).toBe("");
+  expect(host.lastError).toBeNull();
+  expect(requestCalls(host.request, "chat.send")).toHaveLength(1);
+});
