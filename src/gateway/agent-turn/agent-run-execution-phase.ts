@@ -20,6 +20,7 @@ import {
   setChannelSourceTurnId,
   setChannelSourceTurnSameThreadRequired,
 } from "../../auto-reply/reply/source-turn-id.js";
+import { composeSessionSourceAssertion } from "../../config/sessions/session-source-authority.js";
 import { isAbortError } from "../../infra/abort-signal.js";
 import { assertAgentRunLifecycleGenerationCurrent } from "../../infra/agent-events.js";
 import { adoptExecRequestSession } from "../../infra/exec-request-context.js";
@@ -453,7 +454,14 @@ async function executeAgentRun(
               },
               cronCreatorAuthority: prepared.cronCreatorAuthority,
               ingressOpts: {
-                assertSourceCurrent: params.executionSource,
+                // An owner fact taken from the requester, such as a spawning channel owner,
+                // fences the run like a channel owner's own turn, not only its admission.
+                assertSourceCurrent: prepared.userTurn.assertRequesterCurrent
+                  ? composeSessionSourceAssertion([
+                      params.executionSource,
+                      prepared.userTurn.assertRequesterCurrent,
+                    ])
+                  : params.executionSource,
                 skillLibraryAuthoring,
                 message,
                 images: params.images,
