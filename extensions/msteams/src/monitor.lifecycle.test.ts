@@ -30,6 +30,7 @@ import {
   resetMSTeamsMonitorMocks,
 } from "./monitor-lifecycle.test-support.js";
 import { createNativeSsoProcessor, createSigninEvent } from "./monitor-sso.test-helpers.js";
+import { MSTEAMS_UNMATCHABLE_ALLOW_ENTRY } from "./resolve-allowlist.js";
 import { monitorMSTeamsProvider } from "./monitor.js";
 import type { MSTeamsPollStore } from "./polls.js";
 
@@ -737,6 +738,36 @@ describe("monitorMSTeamsProvider lifecycle", () => {
     await task;
   });
 
+
+  it("keeps unresolved name-only allowlists configured so they do not fall back or widen", async () => {
+    const cfg = createConfig();
+    updateMSTeamsConfig(cfg, {
+      dmPolicy: "open",
+      allowFrom: ["*"],
+      groupPolicy: "allowlist",
+      groupAllowFrom: ["Bob Builder"],
+      teams: { Engineering: {} },
+    });
+    resolveAllowlistMocks.resolveMSTeamsTeamsConfig.mockRejectedValueOnce(
+      new Error("Graph unavailable"),
+    );
+
+    const abort = new AbortController();
+    const task = runProvider(abort, cfg);
+    await waitForMSTeamsTestState(() => expect(createMSTeamsActivityHandler).toHaveBeenCalled());
+
+    // The operator's stored configuration keeps its original entries; only the in-memory
+    // projection handed to the handler carries the placeholder.
+    expect(cfg.channels?.msteams?.groupAllowFrom).toEqual(["Bob Builder"]);
+    expect(cfg.channels?.msteams?.teams).toEqual({ Engineering: {} });
+
+    const registered = requireRegisteredMSTeamsConfig().channels?.msteams;
+    expect(registered?.groupAllowFrom).toEqual([MSTEAMS_UNMATCHABLE_ALLOW_ENTRY]);
+    expect(Object.keys(registered?.teams ?? {})).toHaveLength(1);
+    expect(Object.keys(registered?.teams ?? {})).not.toContain("*");
+    abort.abort();
+    await task;
+  });
   it("keeps only stable allowlist entries when Graph resolution fails", async () => {
     resolveAllowlistMocks.resolveMSTeamsUserAllowlist.mockRejectedValueOnce(
       new Error("Graph unavailable"),
