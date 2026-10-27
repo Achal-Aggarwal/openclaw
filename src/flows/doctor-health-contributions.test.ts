@@ -819,7 +819,6 @@ describe("doctor health contributions", () => {
           shouldRepair: true,
           env: state.env,
           configResult: {
-            cfg,
             shouldWriteConfig: true,
             modelRetirementRepairRan: true,
             retirementOnly: true,
@@ -829,9 +828,9 @@ describe("doctor health contributions", () => {
 
         await runDoctorHealthContributions(ctx);
 
+        expect(transcripts).toHaveBeenCalledOnce();
         if (credentialWork !== "none") {
           expect(ctx.retirementOnly).toBe(false);
-          expect(transcripts).toHaveBeenCalledOnce();
           expect(mocks.detectLegacyStateMigrations).toHaveBeenCalled();
           return;
         }
@@ -846,7 +845,6 @@ describe("doctor health contributions", () => {
         expect(mocks.replaceConfigFile.mock.invocationCallOrder[0]).toBeLessThan(
           mocks.repairCronCodexModelRefsAfterConfigWrite.mock.invocationCallOrder[0]!,
         );
-        expect(transcripts).toHaveBeenCalledOnce();
         expect(mocks.detectLegacyStateMigrations).not.toHaveBeenCalled();
         expect(mocks.maybeScanExtraGatewayServices).not.toHaveBeenCalled();
         expect(mocks.noteMemorySearchHealth).not.toHaveBeenCalled();
@@ -869,13 +867,11 @@ describe("doctor health contributions", () => {
           warnings: ["Cron repair needs the full Doctor pass"],
         });
       }
-      const cfg = {};
       const ctx = createDoctorContext({
-        cfg,
         retirementOnly: true,
         shouldRepair: true,
         env: {},
-        configResult: { cfg, shouldWriteConfig: true, retirementOnly: true },
+        configResult: { shouldWriteConfig: true, retirementOnly: true },
       });
       const auth = createDoctorHealthContribution("doctor:auth-profile-migration", "Auth", {
         async run(current) {
