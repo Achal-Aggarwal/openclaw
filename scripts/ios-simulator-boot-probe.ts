@@ -125,7 +125,7 @@ type BootSnapshot = {
   hostAfter?: ReturnType<typeof host>;
   rows: CensusRow[];
 };
-const collectCensus = async (stage: "before-boot" | "after-headroom") => {
+const collectCensus = async (stage: "before-boot" | "after-headroom" | "after-late-window") => {
   phase = `census-${stage}`;
   const cycle = bootCycle;
   const hints = new Map<string, string>();
@@ -357,6 +357,113 @@ const waitForCpuHeadroom = async () => {
     console.error(`iOS boot probe: CPU headroom ${evidence.outcome}`);
   }
 };
+const collectLogCounts = async (device: string) => {
+  const counts = new Map<string, number>();
+  const logAbort = new AbortController();
+  let buffer = "";
+  let bytes = 0;
+  let parsed = 0;
+  let invalid = 0;
+  let outputLimit = false;
+  let outcome = "failed";
+  const started = performance.now();
+  const levels = new Set(["Default", "Info", "Debug", "Error", "Fault"]);
+  const consume = (line: string) => {
+    if (!line.trim()) {
+      return;
+    }
+    let row: Record<string, unknown>;
+    try {
+      row = JSON.parse(line);
+    } catch {
+      invalid += 1;
+      return;
+    }
+    if (!row || typeof row !== "object") {
+      invalid += 1;
+      return;
+    }
+    parsed += 1;
+    const image = typeof row.processImagePath === "string" ? row.processImagePath : "";
+    const name = path.posix.basename(image);
+    const role = roles.has(name) ? name : (runtimeLabels.get(name.slice(0, 16)) ?? "other");
+    const subsystem =
+      typeof row.subsystem === "string" &&
+      /^com\.apple\.[A-Za-z0-9_.-]{1,120}$/u.test(row.subsystem)
+        ? row.subsystem
+        : "other";
+    const level =
+      typeof row.messageType === "string" && levels.has(row.messageType)
+        ? row.messageType
+        : "other";
+    const key = JSON.stringify([role, subsystem, level]);
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  };
+  try {
+    const code = await runManagedCommand({
+      bin: "xcrun",
+      args: [
+        "simctl",
+        "spawn",
+        device,
+        "log",
+        "show",
+        "--last",
+        "5s",
+        "--style",
+        "ndjson",
+        "--info",
+        "--debug",
+      ],
+      timeoutMs: 20_000,
+      requireProcessTreeExit: true,
+      signal: AbortSignal.any([abort.signal, logAbort.signal]),
+      stdio: ["ignore", "pipe", "pipe"],
+      onReady(child) {
+        child.stderr?.resume();
+        child.stdout?.on("data", (chunk: Buffer) => {
+          bytes += chunk.length;
+          if (bytes > 4 * 1024 * 1024) {
+            outputLimit = true;
+            logAbort.abort();
+            return;
+          }
+          buffer += chunk.toString();
+          let newline: number;
+          while ((newline = buffer.indexOf("\n")) >= 0) {
+            consume(buffer.slice(0, newline));
+            buffer = buffer.slice(newline + 1);
+          }
+        });
+      },
+    });
+    if (buffer) {
+      consume(buffer);
+    }
+    outcome = code === 0 ? "passed" : "failed";
+  } catch (error) {
+    if (hasUnjoinedWork(error)) {
+      retainRoot = true;
+    }
+  }
+  // Event content and paths stay in pipe memory and are never exported.
+  proof.systemLogCounts = {
+    outcome,
+    ms: Math.round(performance.now() - started),
+    windowSeconds: 5,
+    bytes,
+    parsed,
+    invalid,
+    outputLimit,
+    groups: [...counts]
+      .toSorted((a, b) => b[1] - a[1])
+      .slice(0, 200)
+      .map(([key, count]) => {
+        const [role, subsystem, level] = JSON.parse(key);
+        return { role, subsystem, level, count };
+      }),
+  };
+};
 try {
   if ((await command("source-head", "git", ["rev-parse", "HEAD"])) !== targetSha) {
     throw new Error("source-mismatch");
@@ -459,6 +566,9 @@ print(json.dumps([[name, next(iter(labels))] for name, labels in buckets.items()
       headroomFailure = error;
     }
     await collectCensus("after-headroom");
+    await sleep(10_000, undefined, { signal: abort.signal });
+    await collectCensus("after-late-window");
+    await collectLogCounts(udid);
     if (headroomFailure) {
       phase = "host-headroom";
       throw new Error("host-headroom-unavailable", { cause: headroomFailure });
