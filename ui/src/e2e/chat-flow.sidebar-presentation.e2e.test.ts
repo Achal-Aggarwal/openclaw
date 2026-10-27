@@ -1,6 +1,9 @@
+import { writeFile } from "node:fs/promises";
+import path from "node:path";
 import type { Locator, Page } from "playwright";
 import { expect, it } from "vitest";
 import {
+  captureUiProofEnabled,
   chatMessage,
   newChatPage,
   chatSessionListResponse,
@@ -42,6 +45,9 @@ function rowLayout(locator: Locator) {
       row: rect(row),
       name: rect(name),
       lead: get(".sidebar-session-indicator"),
+      stateOnly: row
+        .querySelector(".sidebar-session-indicator")!
+        .classList.contains("sidebar-session-indicator--state-only"),
       unread: get(".sidebar-session-indicator .session-unread-dot"),
       endcap: get(".sidebar-recent-session__details-endcap"),
       atoms: Array.from(
@@ -56,8 +62,12 @@ function rowLayout(locator: Locator) {
   });
 }
 
-function expectUnreadLayout(layout: Awaited<ReturnType<typeof rowLayout>>, nameLeft: number) {
+function expectTrailingUnreadLayout(
+  layout: Awaited<ReturnType<typeof rowLayout>>,
+  nameLeft: number,
+) {
   const { unread, lead, name } = layout;
+  expect(layout.stateOnly).toBe(true);
   expect(unread).toMatchObject({ width: 7, height: 7 });
   for (const [start, end] of [
     ["left", "right"],
@@ -67,7 +77,8 @@ function expectUnreadLayout(layout: Awaited<ReturnType<typeof rowLayout>>, nameL
     expect(unread[start]).toBeGreaterThanOrEqual(lead[start]);
     expect(unread[end]).toBeLessThanOrEqual(lead[end]);
   }
-  expect(lead.right).toBeLessThanOrEqual(name.left);
+  expect(name.right).toBeLessThanOrEqual(lead.left);
+  expect(lead.right).toBeLessThanOrEqual(layout.row.right);
   expect(name.left).toBeCloseTo(nameLeft, 1);
 }
 
@@ -274,6 +285,27 @@ suite.define(() => {
           controlsLeft: actions.getBoundingClientRect().left,
         };
       });
+      if (captureUiProofEnabled && direction === "rtl") {
+        const { takeControlUiScreenshotFrame } =
+          await import("../test-helpers/control-ui-e2e-screenshot.ts");
+        const frame = await takeControlUiScreenshotFrame(
+          page,
+          page.locator("body"),
+          [row, controls],
+          {
+            elements: [row],
+          },
+        );
+        await writeFile(path.join(suite.artifactDir, "sidebar-rtl-actions.png"), frame.png);
+        await writeFile(
+          path.join(suite.artifactDir, "sidebar-rtl-actions-row.png"),
+          frame.elements[0]!.png,
+        );
+        await writeFile(
+          path.join(suite.artifactDir, "sidebar-rtl-actions.json"),
+          JSON.stringify(geometry),
+        );
+      }
       expect(geometry.right).toBeLessThanOrEqual(geometry.controlsLeft + 1);
       // At the endpoint, even the final glyph is inside the opaque part of the mask.
       await expect
@@ -451,7 +483,7 @@ suite.define(() => {
     expect(badgeBox.y).toBeGreaterThanOrEqual(layout.name.bottom - 1);
     expect(layout.name.right).toBeGreaterThan(badgeBox.x);
     expect(badgeBox.y + badgeBox.height / 2).toBeCloseTo(subtitleBox.y + subtitleBox.height / 2, 1);
-    expectUnreadLayout(layout, plain.nameLeft);
+    expectTrailingUnreadLayout(layout, plain.nameLeft);
     expect(await busyRow.locator(".session-row-state").count()).toBe(0);
     expect(layout.atoms).toHaveLength(1);
     for (const atom of layout.atoms) {
@@ -463,7 +495,7 @@ suite.define(() => {
       }
     }
 
-    // Long titles must not crush either the leading unread dot or trailing metadata.
+    // Long titles must not crush either the trailing unread dot or metadata.
     const longRow = sessionRow(page, longKey);
     const longLayout = await rowLayout(longRow);
     expect(longLayout.singleLine).toBe(true);
@@ -472,7 +504,7 @@ suite.define(() => {
     const intrinsicAtomWidth = longLayout.atoms.reduce((sum, atom) => sum + atom.width, 0);
     expect(intrinsicAtomWidth).toBeGreaterThan(0);
     expect(longLayout.endcap.width).toBeGreaterThanOrEqual(intrinsicAtomWidth);
-    expectUnreadLayout(longLayout, plain.nameLeft);
+    expectTrailingUnreadLayout(longLayout, plain.nameLeft);
 
     const unreadRow = sessionRow(page, unreadKey);
     const unreadBadge = unreadRow.locator(
@@ -482,6 +514,13 @@ suite.define(() => {
     await unreadBadge.waitFor({ state: "visible" });
     const restingBadge = await unreadBadge.boundingBox();
     const restingTitle = await unreadTitle.boundingBox();
+    const restingLead = expectDefined(
+      await unreadRow.locator(".sidebar-session-indicator").boundingBox(),
+      "artwork indicator",
+    );
+    expect(restingLead.x + restingLead.width).toBeLessThanOrEqual(
+      expectDefined(restingTitle, "artwork title").x,
+    );
     const restingWidth = await unreadTitle.evaluate((element) => element.clientWidth);
     await unreadRow.hover();
 

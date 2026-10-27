@@ -1807,7 +1807,7 @@ html.openclaw-native-desktop .shell:not(.shell--mobile-nav) {
     > .sidebar-recent-session__link > .sidebar-session-indicator--state-only
   ) {
   > .sidebar-recent-session__link {
-    padding-inline-end: var(--session-row-actions-reserve);
+    padding-right: var(--session-row-actions-reserve);
   }
 
   .sidebar-recent-session__text,

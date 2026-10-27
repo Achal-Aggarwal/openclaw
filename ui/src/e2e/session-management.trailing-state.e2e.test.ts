@@ -149,8 +149,12 @@ suite.define(() => {
       const restingTextBounds = await ui.bounds(actionOnlyText);
 
       await ui.forEachActionMode(page, actionOnlyRow, [actionOnlyPin], async () => {
-        await ui.expectRightPadding(actionOnlyText, "52px");
-        expect((await ui.bounds(actionOnlyText)).width).toBeCloseTo(restingTextBounds.width, 1);
+        await ui.expectRightPadding(actionOnlyLink, "52px");
+        await ui.expectRightPadding(actionOnlyText, "0px");
+        const textBounds = await ui.bounds(actionOnlyText);
+        expect(textBounds.x).toBeCloseTo(restingTextBounds.x, 1);
+        expect(textBounds.width).toBeCloseTo(restingTextBounds.width - 50, 1);
+        expect(ui.right(textBounds)).toBeLessThanOrEqual((await ui.bounds(actionOnlyPin)).x + 1);
       });
 
       const row = page.locator('[data-session-key="agent:main:hover-active"]');
@@ -186,14 +190,15 @@ suite.define(() => {
         ui.bounds(state),
       ]);
 
-      // A glyph-less row draws the compact 12px ring centered in its 20px lead
-      // slot; the title keeps its 8px distance from the slot, not from the ring.
+      // A glyph-less row keeps its compact ring in the trailing 20px slot,
+      // separate from the title and the actions revealed beside it.
       expect(restingStateBounds.width).toBeCloseTo(12, 1);
       expect(restingStateBounds.x + restingStateBounds.width / 2).toBeCloseTo(
         restingGlyphBounds.x + restingGlyphBounds.width / 2,
         1,
       );
-      expect(restingNameBounds.x - ui.right(restingGlyphBounds)).toBeCloseTo(8, 1);
+      expect(ui.right(await ui.bounds(row)) - ui.right(restingGlyphBounds)).toBeCloseTo(8, 1);
+      expect(ui.right(restingNameBounds)).toBeLessThanOrEqual(restingGlyphBounds.x);
 
       await ui.forEachActionMode(page, row, [state, pin, menu], async () => {
         const [nameBounds, pinBounds, menuBounds] = await Promise.all([
@@ -201,8 +206,11 @@ suite.define(() => {
           ui.bounds(pin),
           ui.bounds(menu),
         ]);
+        expect(await ui.bounds(state)).toEqual(restingStateBounds);
+        expect(nameBounds.x).toBeCloseTo(restingNameBounds.x, 1);
         expect(ui.centerY(nameBounds)).toBeCloseTo(ui.centerY(pinBounds), 1);
         expect(ui.right(pinBounds)).toBeLessThanOrEqual(menuBounds.x);
+        expect(ui.right(menuBounds)).toBeLessThanOrEqual(restingGlyphBounds.x);
       });
     }));
 
@@ -447,14 +455,16 @@ suite.define(() => {
 
       expect(ui.centerY(restingNameBounds)).toBeLessThan(ui.centerY(restingStateBounds));
       await ui.forEachActionMode(page, row, [state, pin, menu], async () => {
-        await ui.expectRightPadding(titleRow, "52px");
+        await ui.expectRightPadding(link, "52px");
+        await ui.expectRightPadding(titleRow, "0px");
         const [textBounds, nameBounds, pinBounds, menuBounds] = await Promise.all([
           ui.bounds(row.locator(".sidebar-recent-session__text")),
           ui.bounds(row.locator(".sidebar-recent-session__name")),
           ui.bounds(pin),
           ui.bounds(menu),
         ]);
-        expect(textBounds.width).toBeCloseTo(restingTextBounds.width, 1);
+        expect(textBounds.x).toBeCloseTo(restingTextBounds.x, 1);
+        expect(textBounds.width).toBeCloseTo(restingTextBounds.width - 50, 1);
         expect(ui.centerY(nameBounds)).toBeCloseTo(ui.centerY(pinBounds), 1);
         expect(ui.right(nameBounds)).toBeLessThanOrEqual(pinBounds.x + 1);
         expect(ui.right(pinBounds)).toBeLessThanOrEqual(menuBounds.x);
