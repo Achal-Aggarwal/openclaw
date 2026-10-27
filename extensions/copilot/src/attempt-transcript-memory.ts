@@ -22,6 +22,7 @@ export function findInMemoryMessage(
     if (entry.type === "message" && readIdempotencyKey(entry.message) === key) {
       return {
         appended: false,
+        // SAFETY: This in-memory manager stores only TranscriptMessage values appended below.
         message: entry.message as TranscriptMessage,
         messageId: entry.id,
       };
@@ -41,6 +42,7 @@ export async function appendInMemoryMessage(
   const result = await manager.appendMessageWithTranscriptAnchorAsync(message);
   return {
     appended: result.appended,
+    // SAFETY: The manager returns the TranscriptMessage this call appended (or its matching prior row).
     message: result.message as TranscriptMessage,
     messageId: result.entryId,
   };

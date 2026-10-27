@@ -7,6 +7,7 @@ export type AttemptTranscriptMessage =
   | Extract<AgentMessage, { role: "assistant" | "toolResult" }>;
 
 export function readIdempotencyKey(message: AgentMessage): string | undefined {
+  // SAFETY: Reads an optional transcript field as unknown and validates it before use.
   const key = (message as { idempotencyKey?: unknown }).idempotencyKey;
   return typeof key === "string" && key ? key : undefined;
 }
