@@ -23,11 +23,23 @@ function getSendStatus(accountId: string): SendStatus | undefined {
   });
 }
 
-export function recordIMessageSendFailure(accountId: string, error: unknown): void {
+function recordIMessageSendFailure(accountId: string, error: unknown): void {
   const guidance =
     error instanceof Error ? normalizeIMessageAutomationError(error.message) : undefined;
   if (guidance) {
     getSendStatus(accountId)?.setStatus({ accountId, lastError: guidance });
+  }
+}
+
+export async function withIMessageSendFailureStatus<T>(
+  accountId: string,
+  send: () => Promise<T>,
+): Promise<T> {
+  try {
+    return await send();
+  } catch (error) {
+    recordIMessageSendFailure(accountId, error);
+    throw error;
   }
 }
 

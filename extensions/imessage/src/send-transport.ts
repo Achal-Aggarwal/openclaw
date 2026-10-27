@@ -6,10 +6,8 @@ import {
 import { asOptionalRecord } from "openclaw/plugin-sdk/string-coerce-runtime";
 import { runIMessageCliJsonCommand } from "./cli-output.js";
 import { IMessageRpcRequestError, type IMessageRpcClient } from "./client.js";
-import { recordIMessageSendFailure } from "./send-status.js";
 
 export type IMessageSendHandoff = {
-  accountId?: string;
   assertDirectAdapterHandoff?: () => void;
   onPlatformSendDispatch?: () => Promise<void>;
 };
@@ -55,9 +53,6 @@ export async function requestIMessageRpcSend(
       assertCurrent: handoff.assertDirectAdapterHandoff,
     });
   } catch (error) {
-    if (handoff.accountId) {
-      recordIMessageSendFailure(handoff.accountId, error);
-    }
     throw normalizeIMessageRpcSendError(error);
   }
 }

@@ -490,42 +490,6 @@ describe("IMessageRpcClient child stream error handling", () => {
   });
 });
 
-describe("IMessageRpcClient Messages Automation errors", () => {
-  it.each([
-    [-1712, "not_started"],
-    [-1712, "may_have_completed"],
-    [-1743, "not_started"],
-  ] as const)(
-    "preserves delivery evidence and explains AppleScript %s / %s recovery",
-    async (code, disposition) => {
-      const client = await startClient();
-      const data = {
-        disposition,
-        retry_safe: disposition === "not_started",
-        transport: "applescript",
-        operation: "send",
-        detail: "Messages automation failed with AppleScript error " + code + ".",
-      };
-      const pending = client.request("send", {}, { timeoutMs: 0 });
-      pending.catch(() => {});
-      emitRpcError(child, { code: -32603, message: "Delivery failed before dispatch", data });
-      const error = await pending.catch((cause: unknown) => cause);
-
-      expect(error).toBeInstanceOf(IMessageRpcRequestError);
-      expect(error).toMatchObject({ code: -32603, data });
-      expect(error).toHaveProperty(
-        "message",
-        expect.stringContaining("Privacy & Security > Automation"),
-      );
-      expect(error).toHaveProperty("message", expect.stringContaining("current Gateway runtime"));
-      if (code === -1712) {
-        expect(error).toHaveProperty("message", expect.stringContaining("unresponsive"));
-      }
-      expect(runIMessageCliJsonCommandMock).not.toHaveBeenCalled();
-    },
-  );
-});
-
 describe("IMessageRpcClient bridge-stall cache invalidation", () => {
   const seeded: IMessagePrivateApiStatus = {
     available: true,

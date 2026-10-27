@@ -55,7 +55,7 @@ import {
 } from "./monitor/sanitize-outbound.js";
 import { withIMessageRemoteFile } from "./remote-file.js";
 import { resolveIMessageRemoteHost } from "./remote-host.js";
-import { clearIMessageSendFailure } from "./send-status.js";
+import { clearIMessageSendFailure, withIMessageSendFailureStatus } from "./send-status.js";
 import {
   bindIMessageCliSend,
   requestIMessageRpcSend,
@@ -85,6 +85,7 @@ type IMessageSendOpts = IMessageSendHandoff & {
   dbPath?: string;
   service?: IMessageService;
   region?: string;
+  accountId?: string;
   conversationReadOrigin?: "delegated" | "direct-operator";
   replyToId?: string;
   mediaUrl?: string;
@@ -263,6 +264,18 @@ export async function sendMessageIMessage(
       cfg,
       accountId: opts.accountId,
     });
+  return await withIMessageSendFailureStatus(account.accountId, () =>
+    sendMessageIMessageForAccount(to, text, opts, cfg, account),
+  );
+}
+
+async function sendMessageIMessageForAccount(
+  to: string,
+  text: string,
+  opts: IMessageSendOpts,
+  cfg: OpenClawConfig,
+  account: ResolvedIMessageAccount,
+): Promise<IMessageSendResult> {
   const cliPath = opts.cliPath?.trim() || account.config.cliPath?.trim() || "imsg";
   const dbPath = opts.dbPath?.trim() || account.config.dbPath?.trim();
   const remoteHost = await resolveIMessageRemoteHost({
@@ -377,10 +390,7 @@ export async function sendMessageIMessage(
       remoteHost,
     });
     try {
-      return await requestIMessageRpcSend(rpcClient, method, rpcParams, timeoutMs, {
-        ...opts,
-        accountId: account.accountId,
-      });
+      return await requestIMessageRpcSend(rpcClient, method, rpcParams, timeoutMs, opts);
     } finally {
       await rpcClient.stop();
     }
@@ -727,10 +737,7 @@ export async function sendMessageIMessage(
   const shouldClose = !opts.client;
   const requestSuccessfulSend = async (sendParams: Record<string, unknown>) => {
     const request = async (nativeParams: Record<string, unknown>) =>
-      await requestIMessageRpcSend(client, "send", nativeParams, timeoutMs, {
-        ...opts,
-        accountId: account.accountId,
-      });
+      await requestIMessageRpcSend(client, "send", nativeParams, timeoutMs, opts);
     const response = filePath
       ? await withOriginalIMessageAttachmentPath(filePath, async (attachmentPath) => {
           if (remoteHost) {
