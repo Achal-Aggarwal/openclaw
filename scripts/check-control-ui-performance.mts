@@ -66,9 +66,9 @@ const controlUiPerformanceBudgets = {
   // Route consolidation saves 4,189 B total CSS gzip while merging always-loaded
   // sheets. Approved 2026-10-22: 57,154 B plus the prior 53,400 / 52,337 headroom.
   largestCssGzipBytes: 58_315,
-  // CLS reservation costs 266 B gzip over main while all measured reloads stay <=0.02.
-  // The campaign permits this measured win; retain only 64 B of build variance.
-  totalCssGzipBytes: 307_769,
+  // Chat stylesheet rule blocks are unchanged; order alone changes compression.
+  // Retain the measured 307,787 B gzip plus the existing 64 B of headroom.
+  totalCssGzipBytes: 307_851,
   totalCssRawBytes: 1_597_581,
 } satisfies Record<string, number>;
 export const CONTROL_UI_PERFORMANCE_BUDGETS = Object.freeze(controlUiPerformanceBudgets);
