@@ -376,6 +376,19 @@ else console.log(JSON.stringify({id:202,workflow_id:88,head_branch:'main',event:
     expect(source).not.toContain("continuation_plan_json");
   });
 
+  it("routes compact reuse revalidation through the admitted verifier and exact target", () => {
+    expect(step("evidence_reuse", "Find reusable validation evidence").env).toMatchObject({
+      OPENCLAW_RELEASE_CI_SUMMARY_VALIDATOR:
+        "${{ fromJSON(needs.resolve_target.outputs.source_admission_json || '{}').qualificationAdmission != null && format('{0}/qualification-verifier/scripts/release-ci-summary.mjs', github.workspace) || format('{0}/workflow/scripts/release-ci-summary.mjs', github.workspace) }}",
+      TARGET_SHA: "${{ needs.resolve_target.outputs.sha }}",
+    });
+    expect(step("summary", "Write release validation manifest").env).toMatchObject({
+      OPENCLAW_RELEASE_CI_SUMMARY_VALIDATOR:
+        "${{ fromJSON(needs.resolve_target.outputs.source_admission_json || '{}').qualificationAdmission != null && format('{0}/qualification-verifier/scripts/release-ci-summary.mjs', github.workspace) || format('{0}/scripts/release-ci-summary.mjs', github.workspace) }}",
+      TARGET_SHA: "${{ needs.resolve_target.outputs.sha }}",
+    });
+  });
+
   it("restores the immutable attempt-one plan instead of rebuilding child identity", () => {
     const cache = step("release_execution_plan", "Cache immutable release execution plan");
     const restore = step(
