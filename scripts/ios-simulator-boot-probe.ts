@@ -38,7 +38,7 @@ const cancel = () => abort.abort();
 process.on("SIGTERM", cancel);
 process.on("SIGINT", cancel);
 const operations: Record<string, unknown>[] = [];
-const snapshots: Record<string, unknown>[] = [];
+const snapshots: BootSnapshot[] = [];
 let runtimeLabels = new Map<string, string>();
 const proof: Record<string, unknown> = {
   schema: 1,
@@ -49,6 +49,7 @@ const proof: Record<string, unknown> = {
   operations,
   snapshots,
   tests: [],
+  disabledBootJobs: ["com.apple.apsd"],
 };
 let phase = "startup";
 let bootCycle: "cold" | "warm" = "cold";
@@ -557,7 +558,12 @@ print(json.dumps([[name, next(iter(labels))] for name, labels in buckets.items()
   for (const cycle of ["cold"] as const) {
     bootCycle = cycle;
     await collectCensus("before-boot");
-    await command("simulator-boot", "xcrun", ["simctl", "boot", udid]);
+    await command("simulator-boot", "xcrun", [
+      "simctl",
+      "boot",
+      udid,
+      "--disabledJob=com.apple.apsd",
+    ]);
     await command("simulator-ready", "xcrun", ["simctl", "bootstatus", udid, "-b"], 180_000);
     let headroomFailure: unknown;
     try {
@@ -569,6 +575,16 @@ print(json.dumps([[name, next(iter(labels))] for name, labels in buckets.items()
     await sleep(10_000, undefined, { signal: abort.signal });
     await collectCensus("after-late-window");
     await collectLogCounts(udid);
+    const pushRunning = snapshots.some(
+      (snapshot) =>
+        snapshot.stage !== "before-boot" &&
+        snapshot.rows.some((row) => row.labelHint === "com.apple.apsd"),
+    );
+    proof.disabledPushJobAbsent = !pushRunning;
+    if (pushRunning) {
+      phase = "push-job-disable-verification";
+      throw new Error("push-job-still-running");
+    }
     if (headroomFailure) {
       phase = "host-headroom";
       throw new Error("host-headroom-unavailable", { cause: headroomFailure });
