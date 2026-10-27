@@ -114,7 +114,8 @@ type PlacementStartupRuntimeLoader = () => Promise<PlacementStartupRuntimeModule
 
 export function createApplicationPlacementStartup(
   dependencies: ApplicationPlacementStartupDependencies,
-  loadRuntime: PlacementStartupRuntimeLoader = () => import("./session-placement-startup.runtime.ts"),
+  loadRuntime: PlacementStartupRuntimeLoader = () =>
+    import("./session-placement-startup.runtime.ts"),
 ): ApplicationPlacementStartup {
   type PendingInput = { input: PlacementStartupInput; persisted: boolean };
   type PreparedPendingInput = PendingInput & {

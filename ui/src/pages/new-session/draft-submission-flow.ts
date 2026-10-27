@@ -10,7 +10,7 @@ import {
 } from "../../lib/session-method-access.ts";
 import type { SessionCreateParams } from "../../lib/sessions/create.ts";
 import type { SessionPlacementRecovery } from "../../lib/sessions/session-placement-recovery.ts";
-import { assertUploadsEnabled, uploadsEnabled, uploadsDisabledMessage } from "../../lib/uploads.ts";
+import { assertUploadsEnabled } from "../../lib/uploads.ts";
 import { CHAT_COMPOSER_DRAFT_STORAGE_ERROR } from "../chat/composer-persistence-feedback.ts";
 import type { buildLocalUserMessage } from "../chat/user-message-content.ts";
 import { NewSessionAttachmentDraft } from "./attachment-draft.ts";
@@ -19,9 +19,8 @@ import { NewSessionCapabilities } from "./capabilities.ts";
 import * as catalog from "./catalog-target.ts";
 import { createNewSessionComposerTextarea } from "./composer-textarea.ts";
 import type { DraftSessionCreateOverrides, NewSessionVisibility } from "./create-params.ts";
-import { retainCreatedComposer } from "./creation-composer-registry.ts";
 import type { CreationComposer } from "./creation-composer.ts";
-import { buildSelectedSessionCreateParams } from "./draft-create-params.ts";
+import { buildDraftSessionCreateParams } from "./draft-create-params.ts";
 import type { DraftGatewayState } from "./draft-gateway-state.ts";
 import { NewSessionDraftPersistence, type NewSessionDraftHandoff } from "./draft-persistence.ts";
 import type { DraftPlaceState } from "./draft-place-state.ts";
@@ -35,7 +34,10 @@ import type {
   RestoredDraftState,
   DraftSubmissionSnapshot,
 } from "./draft-submission-contract.ts";
-import { prepareDraftSubmission } from "./draft-submission-input.ts";
+import {
+  prepareDraftSubmission,
+  readPreparedDraftSubmissionAccess,
+} from "./draft-submission-input.ts";
 import type { InstantThreadHandoff } from "./instant-thread-handoff.ts";
 import {
   PendingSessionPlacementRecoveryState,
@@ -278,15 +280,7 @@ export class DraftSubmissionFlow {
   }
 
   private buildDraftSessionCreateParams = (options: DraftSessionCreateOverrides = {}) =>
-    buildSelectedSessionCreateParams(this.place, {
-      ...options,
-      message: options.message ?? "",
-      toolOverrides: this.capabilities.toolOverrides,
-      permissionMode: this.permissionMode,
-      visibility: options.visibility ?? this.visibility,
-      catalogId: this.read().data?.catalogId,
-      category: catalog.resolvedGroupName(this.read().data, this.read().context?.sessions),
-    });
+    buildDraftSessionCreateParams(this.place, this, () => this.read(), options);
 
   submissionAccess = (
     createParams: Record<string, unknown> = this.pendingPlacement.createParams ??
@@ -426,32 +420,16 @@ export class DraftSubmissionFlow {
       return;
     }
     this.blockedSubmitAttempt = false;
-    if (
-      !uploadsEnabled(context.config) &&
-      (this.attachmentDraft.attachments.length ||
-        pending.attachments?.length ||
-        startup?.params.attachments?.length)
-    ) {
-      this.error = uploadsDisabledMessage();
-      this.callbacks.changed();
-      return;
-    }
-    if (startup) {
-      const access = readSessionMethodAccess(context.gateway.snapshot, {
-        method: "sessions.create",
-        params: startup.params,
-        sessionScope: true,
-      });
-      if (!access.allowed) {
-        this.sessionStartup.clear();
-        this.activeSubmission = null;
-        this.error = access.reason;
-        this.callbacks.changed();
-        return;
-      }
-    }
     const input = prepareDraftSubmission(context, this, this.place, startup, background);
     if (!input) {
+      return;
+    }
+    if (input.kind !== "prepared") {
+      if (input.kind === "startup-access-denied") {
+        this.sessionStartup.clear();
+        this.activeSubmission = null;
+      }
+      this.setError(input.error);
       return;
     }
     const helloRecoveryScope = context.gateway.snapshot.hello?.auth?.recoveryScope;
@@ -496,37 +474,24 @@ export class DraftSubmissionFlow {
       ]);
       const { CreationComposer, prepareInstantThreadHandoff, completeInitialSessionTurn } =
         operations;
-      if (
-        requestSignal.aborted ||
-        !this.read().isConnected ||
-        this.read().context !== context ||
-        context.gateway.snapshot.client !== input.client ||
-        context.gateway.connection.gatewayUrl !== input.gatewayUrl ||
-        context.gateway.snapshot.hello?.auth?.recoveryScope !== helloRecoveryScope ||
-        input.client.recoveryScope !== input.recoveryScope ||
-        this.gateway.client !== input.client ||
-        this.gateway.gatewayUrl !== input.gatewayUrl ||
-        this.gateway.recoveryScope !== draftRecoveryScope
-      ) {
-        return;
-      }
-      // In particular, projects.add below must use authority current after the import.
-      const preparationAccess = startup
-        ? readSessionMethodAccess(context.gateway.snapshot, {
-            method: "sessions.create",
-            params: startup.params,
-            sessionScope: true,
-          })
-        : readNewSessionSubmissionAccess({
-            gateway: context.gateway.snapshot,
-            place: this.place,
-            pendingPlacement: pending,
-            hasInitialTurn: input.hasInitialTurn,
-            createParams: pending.createParams ?? this.buildDraftSessionCreateParams(),
-          });
-      if (!preparationAccess.allowed) {
-        this.sessionStartup.clear();
-        this.error = preparationAccess.reason;
+      const preparationAccess = readPreparedDraftSubmissionAccess({
+        context,
+        gateway: this.gateway,
+        read: () => this.read(),
+        input,
+        requestSignal,
+        helloRecoveryScope,
+        draftRecoveryScope,
+        place: this.place,
+        pending,
+        startup,
+        createParams: this.buildDraftSessionCreateParams,
+      });
+      if (!preparationAccess?.allowed) {
+        if (preparationAccess) {
+          this.sessionStartup.clear();
+          this.error = preparationAccess.reason;
+        }
         return;
       }
       this.activeSubmission = { phase: "creating", message: submittedMessage };
@@ -663,47 +628,23 @@ export class DraftSubmissionFlow {
       if (placementTarget && submissionPlacementRecovery && placementOperations) {
         await placementOperations.completeDraftSessionPlacement({
           context,
-          client: input.client,
-          agentId: input.agentId,
+          input,
+          result,
           pending,
           submittedRecovery: submissionPlacementRecovery,
-          sessionKey: result.key,
-          createdAt: input.turn.createdAt,
-          startupError:
-            result.initialRun.status === "rejected" ? result.initialRun.error : undefined,
-          isRequestCurrent: () => !requestSignal.aborted,
-          isLifecycleCurrent: () =>
-            this.read().isConnected &&
-            input.client.recoveryScopeReady &&
-            !requestSignal.aborted &&
-            this.gateway.client === input.client &&
-            this.gateway.gatewayUrl === input.gatewayUrl &&
-            this.gateway.recoveryScope === input.recoveryScope,
+          requestSignal,
+          gateway: this.gateway,
+          read: () => this.read(),
+          getComposer: () => this.creationComposer,
+          retainSubmittedSession,
           clearRecovery: () => this.clearPendingPlacementRecovery(),
           setError: (error) => this.setError(error),
-          onRecoveryUnavailable: () => {
-            this.error = t("newSession.placementStartFailed", {
-              error: "placement recovery storage is unavailable",
-            });
+          onRecoveryUnavailable: (error) => {
+            this.error = error;
           },
-          clearDraft: () => {
-            const composer = this.creationComposer;
-            if (composer) {
-              composer.accept(result);
-              retainCreatedComposer(context, result.key, composer);
-            }
-            retainSubmittedSession(result.key);
-            return this.clearSubmittedDraft(true, submittedDraft);
-          },
-          consumeWorktreeName: input.consumeWorktreeName,
-          completeInBackground: input.completeInBackground,
-          onAccepted: () => this.callbacks.onAccepted?.({ ...result, agentId: input.agentId }),
-          navigate: () =>
-            this.startedSession.navigate(context, {
-              client: input.client,
-              key: result.key,
-              agentId: input.agentId,
-            }),
+          clearDraft: () => this.clearSubmittedDraft(true, submittedDraft),
+          onAccepted: (accepted) => this.callbacks.onAccepted?.(accepted),
+          navigation: this.startedSession,
         });
         return;
       }
@@ -725,15 +666,9 @@ export class DraftSubmissionFlow {
         composer: this.creationComposer,
         navigation: this.startedSession,
         isCurrent: () => !requestSignal.aborted,
-        clearDraft: (release, keepPending) => {
-          if (keepPending !== false) {
-            retainSubmittedSession(
-              result.key,
-              result.initialRun.status === "rejected" ? result.initialRun.error : undefined,
-            );
-          }
-          return this.clearSubmittedDraft(release, submittedDraft, keepPending);
-        },
+        retainSubmittedSession,
+        clearDraft: (release, keepPending) =>
+          this.clearSubmittedDraft(release, submittedDraft, keepPending),
         completeInBackground: input.completeInBackground,
         onAccepted: () => this.callbacks.onAccepted?.({ ...result, agentId: input.agentId }),
         finishNavigation: () => this.sessionStartup.clear(),

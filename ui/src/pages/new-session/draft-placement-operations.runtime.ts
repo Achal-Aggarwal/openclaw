@@ -1,44 +1,65 @@
-import type { GatewayBrowserClient } from "../../api/gateway.ts";
 import type { ApplicationContext } from "../../app/context.ts";
 import { t } from "../../i18n/index.ts";
 import { registerNewSessionSetupEnglish } from "../../i18n/locales/en-new-session-setup.ts";
+import type { SessionCreateOutcome } from "../../lib/sessions/create.ts";
 import {
   pauseSessionPlacementRecovery,
   type SessionPlacementRecovery,
 } from "../../lib/sessions/session-placement-recovery.ts";
 import { deleteSessionPlacementDraft } from "../../lib/sessions/session-placement-startup.ts";
+import { retainCreatedComposer } from "./creation-composer-registry.ts";
+import type { CreationComposer } from "./creation-composer.ts";
+import type { DraftGatewayState } from "./draft-gateway-state.ts";
+import type {
+  DraftSubmissionCallbacks,
+  DraftSubmissionSnapshot,
+} from "./draft-submission-contract.ts";
+import type { PreparedDraftSubmission } from "./draft-submission-input.ts";
 import type { PendingSessionPlacementRecoveryState } from "./session-placement-recovery-state.ts";
+import type { StartedSessionNavigation } from "./started-session-navigation.ts";
 
 registerNewSessionSetupEnglish();
 
 /** Transfer startup custody before retiring the source draft or navigating. */
 export async function completeDraftSessionPlacement(params: {
   context: ApplicationContext;
-  client: GatewayBrowserClient;
-  agentId: string;
+  input: PreparedDraftSubmission;
+  result: SessionCreateOutcome;
   pending: PendingSessionPlacementRecoveryState;
   submittedRecovery: SessionPlacementRecovery;
-  sessionKey: string;
-  createdAt: number;
-  startupError?: string;
-  isRequestCurrent: () => boolean;
-  isLifecycleCurrent: () => boolean;
+  requestSignal: AbortSignal;
+  gateway: DraftGatewayState;
+  read: () => DraftSubmissionSnapshot;
+  getComposer: () => CreationComposer | undefined;
+  retainSubmittedSession: ReturnType<StartedSessionNavigation["captureSubmission"]>;
   clearRecovery: () => void;
   setError: (error: string) => void;
-  onRecoveryUnavailable: () => void;
+  onRecoveryUnavailable: (error: string) => void;
   clearDraft: () => Promise<void>;
-  consumeWorktreeName?: () => void | Promise<void>;
-  completeInBackground: (sessionKey: string, runId: string) => boolean;
-  onAccepted: () => void;
-  navigate: () => Promise<void>;
+  onAccepted: DraftSubmissionCallbacks["onAccepted"];
+  navigation: StartedSessionNavigation;
 }) {
-  const { pending, submittedRecovery, sessionKey } = params;
+  const { pending, submittedRecovery, input, result, requestSignal } = params;
+  const sessionKey = result.key;
+  const isLifecycleCurrent = () =>
+    params.read().isConnected &&
+    input.client.recoveryScopeReady &&
+    !requestSignal.aborted &&
+    params.gateway.client === input.client &&
+    params.gateway.gatewayUrl === input.gatewayUrl &&
+    params.gateway.recoveryScope === input.recoveryScope;
+  const recoveryUnavailable = () =>
+    params.onRecoveryUnavailable(
+      t("newSession.placementStartFailed", {
+        error: "placement recovery storage is unavailable",
+      }),
+    );
   const { gatewayUrl, recoveryScope } = submittedRecovery;
   const ownsRecovery = (key: string) => pending.owns(gatewayUrl, recoveryScope, key);
   const ownsSubmissionRecovery = () => ownsRecovery(submittedRecovery.sessionKey);
   if (
     submittedRecovery.phase === "creating" &&
-    (!params.isLifecycleCurrent() || !ownsSubmissionRecovery())
+    (!isLifecycleCurrent() || !ownsSubmissionRecovery())
   ) {
     // A remounted surface can claim the same idempotent creating record.
     // Its live retry, not this departed submitter, now owns settlement.
@@ -46,9 +67,9 @@ export async function completeDraftSessionPlacement(params: {
       return;
     }
     const cleanupError = await deleteSessionPlacementDraft(
-      { client: params.client, describe: params.context.sessions.describe },
+      { client: input.client, describe: params.context.sessions.describe },
       sessionKey,
-      params.agentId,
+      input.agentId,
     );
     if (cleanupError) {
       if (ownsSubmissionRecovery()) {
@@ -63,44 +84,55 @@ export async function completeDraftSessionPlacement(params: {
   }
   if (
     submittedRecovery.phase === "creating" &&
-    params.isLifecycleCurrent() &&
+    isLifecycleCurrent() &&
     ownsSubmissionRecovery() &&
     !pending.promoteToDispatching(sessionKey)
   ) {
-    params.onRecoveryUnavailable();
+    recoveryUnavailable();
     return;
   }
   const captured = pending.capture();
   if (!captured || captured.phase === "creating") {
-    params.onRecoveryUnavailable();
+    recoveryUnavailable();
     return;
   }
-  if (!params.isRequestCurrent()) {
+  if (requestSignal.aborted) {
     return;
   }
-  const recovery = params.startupError
-    ? pauseSessionPlacementRecovery(captured, params.startupError, pending.persistent).recovery
+  const startupError =
+    result.initialRun.status === "rejected" ? result.initialRun.error : undefined;
+  const recovery = startupError
+    ? pauseSessionPlacementRecovery(captured, startupError, pending.persistent).recovery
     : captured;
   params.context.placementStartup.start({
     recovery,
     persistRecovery: pending.persistent,
     mode: submittedRecovery.phase === "creating" ? "dispatch" : "recover",
-    createdAt: params.createdAt,
+    createdAt: input.turn.createdAt,
   });
-  await params.consumeWorktreeName?.();
-  const ownsStartedPlacement = () =>
-    params.isLifecycleCurrent() && ownsRecovery(recovery.sessionKey);
+  await input.consumeWorktreeName?.();
+  const ownsStartedPlacement = () => isLifecycleCurrent() && ownsRecovery(recovery.sessionKey);
   if (!ownsStartedPlacement()) {
     return;
   }
+  const composer = params.getComposer();
+  if (composer) {
+    composer.accept(result);
+    retainCreatedComposer(params.context, sessionKey, composer);
+  }
+  params.retainSubmittedSession(sessionKey);
   await params.clearDraft();
   if (!ownsStartedPlacement()) {
     return;
   }
   pending.reset();
-  if (params.completeInBackground(recovery.sessionKey, recovery.messageId)) {
-    params.onAccepted();
+  if (input.completeInBackground(recovery.sessionKey, recovery.messageId)) {
+    params.onAccepted?.({ ...result, agentId: input.agentId });
     return;
   }
-  await params.navigate();
+  await params.navigation.navigate(params.context, {
+    client: input.client,
+    key: sessionKey,
+    agentId: input.agentId,
+  });
 }

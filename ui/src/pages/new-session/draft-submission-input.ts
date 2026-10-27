@@ -2,16 +2,24 @@ import type { ApplicationContext } from "../../app/context.ts";
 import type { ChatAttachment, HumanMention } from "../../lib/chat/chat-types.ts";
 import { resolveCurrentUserIdentity } from "../../lib/chat/current-user-identity.ts";
 import { trimHumanMentions } from "../../lib/chat/human-mentions.ts";
+import {
+  readSessionMethodAccess,
+  type SessionMethodAccess,
+} from "../../lib/session-method-access.ts";
 import { normalizeAgentId } from "../../lib/sessions/session-key.ts";
 import { showToast } from "../../lib/toast.ts";
+import { uploadsEnabled, uploadsDisabledMessage } from "../../lib/uploads.ts";
 import { buildChatApiAttachments } from "../chat/attachment-api.ts";
 import { attachmentBatchRejection } from "../chat/components/chat-attachment-admission.ts";
 import { prepareBackgroundSessionCompletion } from "./background-session-notice.ts";
 import type { NewSessionVisibility } from "./create-params.ts";
 import { buildSelectedSessionCreateParams } from "./draft-create-params.ts";
+import type { DraftGatewayState } from "./draft-gateway-state.ts";
 import type { DraftPlaceState } from "./draft-place-state.ts";
 import type { DraftStartupResumption } from "./draft-session-startup.ts";
+import type { DraftSubmissionSnapshot } from "./draft-submission-contract.ts";
 import type { PendingSessionPlacementRecoveryState } from "./session-placement-recovery-state.ts";
+import { readNewSessionSubmissionAccess } from "./submit-gates.ts";
 
 /** Freeze the selected or recovered input before creation can yield to another draft. */
 export function prepareDraftSubmission(
@@ -28,6 +36,24 @@ export function prepareDraftSubmission(
   background = false,
 ) {
   const pending = draft.pendingPlacement;
+  if (
+    !uploadsEnabled(context.config) &&
+    (draft.attachmentDraft.attachments.length ||
+      pending.attachments?.length ||
+      startup?.params.attachments?.length)
+  ) {
+    return { kind: "uploads-disabled" as const, error: uploadsDisabledMessage() };
+  }
+  if (startup) {
+    const access = readSessionMethodAccess(context.gateway.snapshot, {
+      method: "sessions.create",
+      params: startup.params,
+      sessionScope: true,
+    });
+    if (!access.allowed) {
+      return { kind: "startup-access-denied" as const, error: access.reason };
+    }
+  }
   const pendingPlacement = !startup && Boolean(pending.sessionKey);
   const submitted = trimHumanMentions(draft.message, draft.mentions);
   const message = startup?.params.message ?? (pendingPlacement ? pending.message : submitted.text);
@@ -56,6 +82,9 @@ export function prepareDraftSubmission(
   if (!client || !context.gateway.snapshot.hello) {
     return null;
   }
+  if (!startup && !pendingPlacement) {
+    place.modelControl.initializeAccessProgram();
+  }
   const completeInBackground = prepareBackgroundSessionCompletion({
     enabled: background,
     agentId: submissionAgentId,
@@ -70,6 +99,7 @@ export function prepareDraftSubmission(
       : buildSelectedSessionCreateParams(place, { message, visibility: draft.visibility }));
   const { hello, selfUser } = context.gateway.snapshot;
   return {
+    kind: "prepared" as const,
     turn: {
       text: message,
       mentions,
@@ -97,4 +127,54 @@ export function prepareDraftSubmission(
     completeInBackground,
     hasInitialTurn: Boolean(message || apiAttachments?.length),
   };
+}
+
+export type PreparedDraftSubmission = Extract<
+  NonNullable<ReturnType<typeof prepareDraftSubmission>>,
+  { kind: "prepared" }
+>;
+
+/** Recheck the captured connection and current permission before preparation writes. */
+export function readPreparedDraftSubmissionAccess(options: {
+  context: ApplicationContext;
+  gateway: DraftGatewayState;
+  read: () => DraftSubmissionSnapshot;
+  input: PreparedDraftSubmission;
+  requestSignal: AbortSignal;
+  helloRecoveryScope: string | undefined;
+  draftRecoveryScope: string;
+  place: DraftPlaceState;
+  pending: PendingSessionPlacementRecoveryState;
+  startup: DraftStartupResumption | undefined;
+  createParams: () => Record<string, unknown>;
+}): SessionMethodAccess | null {
+  const { context, gateway, input, requestSignal } = options;
+  if (
+    requestSignal.aborted ||
+    !options.read().isConnected ||
+    options.read().context !== context ||
+    context.gateway.snapshot.client !== input.client ||
+    context.gateway.connection.gatewayUrl !== input.gatewayUrl ||
+    context.gateway.snapshot.hello?.auth?.recoveryScope !== options.helloRecoveryScope ||
+    input.client.recoveryScope !== input.recoveryScope ||
+    gateway.client !== input.client ||
+    gateway.gatewayUrl !== input.gatewayUrl ||
+    gateway.recoveryScope !== options.draftRecoveryScope
+  ) {
+    return null;
+  }
+  // In particular, projects.add must use authority current after the import.
+  return options.startup
+    ? readSessionMethodAccess(context.gateway.snapshot, {
+        method: "sessions.create",
+        params: options.startup.params,
+        sessionScope: true,
+      })
+    : readNewSessionSubmissionAccess({
+        gateway: context.gateway.snapshot,
+        place: options.place,
+        pendingPlacement: options.pending,
+        hasInitialTurn: input.hasInitialTurn,
+        createParams: options.pending.createParams ?? options.createParams(),
+      });
 }

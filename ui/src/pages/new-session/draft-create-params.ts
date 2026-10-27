@@ -2,8 +2,11 @@ import { normalizeOptionalString } from "@openclaw/normalization-core/string-coe
 import { truncateUtf16Safe } from "@openclaw/normalization-core/utf16-slice";
 import type { SessionCreateParams } from "../../lib/sessions/create.ts";
 import { normalizeAgentId } from "../../lib/sessions/session-key.ts";
-import type { DraftSessionCreateSelection } from "./create-params.ts";
+import type { NewSessionCapabilities } from "./capabilities.ts";
+import * as catalog from "./catalog-target.ts";
+import type { DraftSessionCreateOverrides, DraftSessionCreateSelection } from "./create-params.ts";
 import type { DraftPlaceState } from "./draft-place-state.ts";
+import type { DraftSubmissionSnapshot, RestoredDraftState } from "./draft-submission-contract.ts";
 
 export function buildSelectedSessionCreateParams(
   place: DraftPlaceState,
@@ -18,6 +21,7 @@ export function buildSelectedSessionCreateParams(
     contextWindow: place.modelControl.contextWindow,
     thinkingLevel: place.modelControl.thinkingLevel,
     fastMode: place.modelControl.fastMode,
+    cyberAccessProgram: place.modelControl.accessProgramForSubmission(),
     projectId: place.hostedEnvironment
       ? undefined
       : (place.browser.remoteProject?.projectId ?? place.browser.projectId),
@@ -95,6 +99,9 @@ export function buildSelectedSessionCreateParams(
     ...(!catalogId && contextWindow ? { contextWindow } : {}),
     ...(!catalogId && thinkingLevel ? { thinkingLevel } : {}),
     ...(!catalogId && draft.fastMode !== undefined ? { fastMode: draft.fastMode } : {}),
+    ...(!catalogId && draft.cyberAccessProgram !== undefined
+      ? { cyberAccessProgram: draft.cyberAccessProgram }
+      : {}),
     ...(draft.toolOverrides ? { toolOverrides: draft.toolOverrides } : {}),
     ...(draft.permissionMode ? { permissionMode: draft.permissionMode } : {}),
     ...(projectId ? { projectId } : {}),
@@ -112,4 +119,23 @@ export function buildSelectedSessionCreateParams(
         }
       : {}),
   };
+}
+
+export function buildDraftSessionCreateParams(
+  place: DraftPlaceState,
+  draft: Pick<RestoredDraftState, "permissionMode" | "visibility"> & {
+    capabilities: Pick<NewSessionCapabilities, "toolOverrides">;
+  },
+  read: () => DraftSubmissionSnapshot,
+  options: DraftSessionCreateOverrides = {},
+) {
+  return buildSelectedSessionCreateParams(place, {
+    ...options,
+    message: options.message ?? "",
+    toolOverrides: draft.capabilities.toolOverrides,
+    permissionMode: draft.permissionMode,
+    visibility: options.visibility ?? draft.visibility,
+    catalogId: read().data?.catalogId,
+    category: catalog.resolvedGroupName(read().data, read().context?.sessions),
+  });
 }

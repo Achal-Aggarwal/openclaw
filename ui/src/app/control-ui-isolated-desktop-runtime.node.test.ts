@@ -275,7 +275,8 @@ it("prioritizes signing and route dependencies over unevaluated interaction hint
   const signerChunk = chunkFor(entries.signer).fileName;
   const chatChunk = chunkFor(entries.chat).fileName;
   const staticClosure = (id: string) => {
-    const entry = chunks.find((chunk) => chunk.facadeModuleId === id) ?? chunkFor(id);
+    const entry =
+      chunks.find((chunk) => chunk.fileName === id || chunk.facadeModuleId === id) ?? chunkFor(id);
     const files = new Set<string>();
     const visit = (file: string) => {
       if (files.has(file)) {
@@ -287,12 +288,23 @@ it("prioritizes signing and route dependencies over unevaluated interaction hint
     visit(entry.fileName);
     return [...files];
   };
-  const submissionChunks = staticClosure(submissionOperations);
+  const initialChunks = new Set(
+    chunks.filter((chunk) => chunk.isEntry).flatMap((chunk) => staticClosure(chunk.fileName)),
+  );
+  for (const id of [entries.placement, entries.placementOperations, placementDependency]) {
+    expect(initialChunks.has(chunkFor(id).fileName)).toBe(false);
+  }
+  const submissionChunks = staticClosure(submissionOperations).filter(
+    (file) => !initialChunks.has(file),
+  );
   const placementChunks = [
     ...staticClosure(entries.placement),
     ...staticClosure(entries.placementOperations),
-  ].filter((file) => !commonChunks.includes(file));
+  ].filter((file) => !commonChunks.includes(file) && !initialChunks.has(file));
   expect(chunkFor(entries.placement)).not.toBe(chunkFor(submissionOperations));
+  expect(staticClosure(entries.placementOperations)).not.toContain(
+    chunkFor(entries.placement).fileName,
+  );
   const chatPreloads = routePreloads(html, "chat");
   expect(chatPreloads.toSorted()).toEqual(
     [...new Set([signerChunk, chatChunk, ...commonChunks])].toSorted(),

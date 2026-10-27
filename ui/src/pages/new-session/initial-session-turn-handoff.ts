@@ -57,6 +57,7 @@ export async function completeInitialSessionTurn(
     navigation: StartedSessionNavigation;
     isCurrent: () => boolean;
     clearDraft: (releasePayloads: boolean, keepPending?: boolean) => Promise<void>;
+    retainSubmittedSession?: ReturnType<StartedSessionNavigation["captureSubmission"]>;
     completeInBackground: (key: string, runId?: string) => boolean;
     finishNavigation: () => void;
     onAccepted?: () => void;
@@ -65,6 +66,15 @@ export async function completeInitialSessionTurn(
 ) {
   const { context, client, agentId, result, instant } = options;
   const { key, initialRun } = result;
+  const clearDraft = (release: boolean, keepPending?: boolean) => {
+    if (keepPending !== false) {
+      options.retainSubmittedSession?.(
+        key,
+        initialRun.status === "rejected" ? initialRun.error : undefined,
+      );
+    }
+    return options.clearDraft(release, keepPending);
+  };
   // Capture attachment display bytes before consuming the accepted draft. Lazy
   // preview navigation must not keep sent input in the new-session cache.
   const acceptedSubmission =
@@ -76,7 +86,7 @@ export async function completeInitialSessionTurn(
   }
   const clearing =
     initialRun.status !== "rejected"
-      ? options.clearDraft(
+      ? clearDraft(
           true,
           options.isCurrent() && (!instant || instant.isCurrent()) ? undefined : false,
         )
@@ -113,7 +123,7 @@ export async function completeInitialSessionTurn(
       }
     } else {
       const handedOffAttachments = retainInitialSessionTurn(options, retry?.promise);
-      await options.clearDraft(!handedOffAttachments);
+      await clearDraft(!handedOffAttachments);
     }
     if (!options.isCurrent() || (instant && !instant.isCurrent())) {
       return;
