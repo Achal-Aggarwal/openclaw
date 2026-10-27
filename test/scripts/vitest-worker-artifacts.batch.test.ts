@@ -31,11 +31,25 @@ const codeModeWorker = "src/agents/code-mode.import-boundary.test.ts";
 const agentsCoreConfig = agentVitestProjectOwners.core.config;
 const discordCapture = "test/e2e/gateway-transcripts-discord-capture.e2e.test.ts";
 const e2eConfig = "test/vitest/vitest.e2e.config.ts";
+const subscriptions = "src/gateway/server-runtime-subscriptions.test.ts";
+const gatewayServerConfig = "test/vitest/vitest.gateway-server.config.ts";
 
 it.for([
   ["ordinary infra", infraConfig, ["src/infra/node-sqlite.test.ts"], false],
   ["root config", "vitest.config.ts", [coreWorker], true],
   ["custom config", "custom.config.ts", [coreWorker], false],
+  [
+    "gateway runtime excluded",
+    gatewayServerConfig,
+    [subscriptions, "--exclude", subscriptions],
+    false,
+  ],
+  [
+    "unrelated gateway stays lazy",
+    gatewayServerConfig,
+    ["src/gateway/server-health.test.ts"],
+    false,
+  ],
   ...[
     ["channels", channelsConfig, "src/channels/chat-type.test.ts"],
     ["gateway methods", gatewayMethodsConfig, "src/gateway/server-methods/health.test.ts"],
@@ -80,6 +94,7 @@ subprocess.for([
       : [
           "code-mode",
           "capture",
+          "gateway-runtime",
           "failure",
           "cancel",
           "excluded",
@@ -106,7 +121,9 @@ subprocess.for([
             ? [codeModeWorker, agentsCoreConfig]
             : mode === "capture"
               ? [discordCapture, e2eConfig]
-              : [coreWorker, infraConfig];
+              : mode === "gateway-runtime"
+                ? [subscriptions, gatewayServerConfig]
+                : [coreWorker, infraConfig];
         const compiled = path.join(directory, "compiled.jsonl");
         const launched = path.join(directory, "launched.json");
         const compilerReceipt = path.join(directory, "compiler.json");
@@ -260,6 +277,7 @@ process.exitCode = await runVitestBatch({config:${JSON.stringify(infraConfig)},a
           "gateway-methods",
           "code-mode",
           "capture",
+          "gateway-runtime",
         ].includes(mode);
         const prepared = ready || mode === "failure" || mode === "cancel";
         expect(fs.existsSync(compilerReceipt)).toBe(prepared);

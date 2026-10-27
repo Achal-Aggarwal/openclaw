@@ -94,6 +94,11 @@ export function shouldPrepareVitestCoreWorkers(
     ...(includesProject("test/vitest/vitest.e2e.config.ts")
       ? ["test/e2e/gateway-transcripts-discord-capture.e2e.test.ts"]
       : []),
+    // This file opens real stores during setup; a cold compiler can outlast
+    // its startup shard's watchdog before the first test begins.
+    ...(includesProject("test/vitest/vitest.gateway-server.config.ts")
+      ? ["src/gateway/server-runtime-subscriptions.test.ts"]
+      : []),
   ];
   const codeModeWorker = "src/agents/code-mode.import-boundary.test.ts";
   return (
