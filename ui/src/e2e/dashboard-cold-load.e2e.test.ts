@@ -27,7 +27,7 @@ const otherSessionKey = sessionKey.replace("agent:main:", "agent:other:");
 suite.define(() => {
   const sandbox = useCanvasSandboxFixture();
   it.each(["mission-control-1234567890ab4def8234567890abcdef", "mission-control"])(
-    "restores /dashboard/main/%s before the socket opens",
+    "restores /dashboard/main/%s before hello",
     async (reference) => {
       const delayTranscriptValidation =
         reference === "mission-control-1234567890ab4def8234567890abcdef";
@@ -229,14 +229,16 @@ suite.define(() => {
           const historyValidator = delayTranscriptValidation
             ? await holdModuleResponse(page, /\/assets\/history-state-[^/]+\.js(?:\?.*)?$/u)
             : undefined;
-          await gateway.setOnline(false);
           reloading = true;
           try {
             await page.goto(`${suite.server.baseUrl}dashboard/main/${reference}`, {
               waitUntil: "domcontentloaded",
             });
+            await gateway.waitForRequest("connect");
             if (historyValidator) {
               await historyValidator.request;
+              // A cached dashboard does not depend on transcript receipt validation.
+              await page.locator(".board-widget__frame").waitFor({ state: "attached" });
               historyValidator.release();
               await page.getByText("Synthetic mission briefing.", { exact: true }).waitFor();
             }
@@ -261,9 +263,8 @@ suite.define(() => {
                 expect(transcript).toBe(true);
               }
             }
+            expect(await gateway.getRequests("connect")).toHaveLength(1);
             expect(await gateway.getRequests("board.get")).toHaveLength(0);
-            expect(await gateway.getRequests("connect")).toHaveLength(0);
-            await page.locator(".chat-pane__connection-state").waitFor({ state: "visible" });
             const frame = page.locator(".board-widget__frame");
             await frame.waitFor({ state: "attached" });
             const warmFrame = await frame.elementHandle();
@@ -278,12 +279,9 @@ suite.define(() => {
               .getByText("All systems ready")
               .waitFor();
             await skeleton.waitFor({ state: "detached" });
-            await gateway.setOnline(true);
-            await gateway.waitForRequest("connect");
             await gateway.resolveDeferred("connect");
             await gateway.waitForRequest("board.get");
             await gateway.resolveDeferred("board.get");
-            await page.locator(".chat-pane__connection-state").waitFor({ state: "hidden" });
             await page.evaluate(
               () =>
                 new Promise<void>((resolve) => {

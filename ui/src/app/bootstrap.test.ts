@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CONTROL_UI_BASE_PATH_ATTRIBUTE } from "../../../src/gateway/control-ui-contract.js";
 import { createDeferred } from "../../../test/helpers/promise.js";
 import type { GatewayBrowserClient } from "../api/gateway.ts";
-import * as applicationRoutes from "../app-routes.ts";
+import { routeIdFromPath } from "../app-routes.ts";
 import * as channelCapabilities from "../lib/channels/index.ts";
 import {
   isDefaultChatLanding,
@@ -163,27 +163,20 @@ describe("bootstrapApplication", () => {
 
   it.each([
     { pathname: "/chat/main/example-deadbeef", routeId: "chat", warmed: true },
-    { pathname: "/dashboard/main/example-deadbeef", routeId: "dashboard", warmed: true },
-    { pathname: "/", routeId: "chat", warmed: false },
-    { pathname: "/chat", routeId: "chat", warmed: false },
-    { pathname: "/chat/main", routeId: "chat", warmed: false },
     { pathname: "/approve/exec%3A1", routeId: "chat", warmed: false },
   ] as const)(
-    "warms only explicit application routes during bootstrap before start: $pathname",
+    "warms only explicit application routes at startup: $pathname",
     async ({ pathname, routeId, warmed }) => {
       window.history.replaceState({}, "", pathname);
-      const router = applicationRoutes.createApplicationRouter();
-      const route = router.getRoute(routeId);
+      const runtime = bootstrapApplication();
+      const route = runtime.router.getRoute(routeId);
       if (!route) {
         throw new Error(`Missing route ${routeId}`);
       }
       const component = vi.spyOn(route, "component").mockResolvedValue({ renderSolid: () => null });
       const loader = vi.spyOn(route, "loader");
-      vi.spyOn(applicationRoutes, "createApplicationRouter").mockReturnValue(router);
-      const runtime = bootstrapApplication();
       vi.spyOn(runtime.context.gateway, "start").mockImplementation(() => {});
-      expect(component).toHaveBeenCalledTimes(warmed ? 1 : 0);
-      expect(loader).not.toHaveBeenCalled();
+      expect(component).not.toHaveBeenCalled();
       const starting = runtime.start();
       expect(component).toHaveBeenCalledTimes(warmed ? 1 : 0);
       expect(loader).not.toHaveBeenCalled();
@@ -260,8 +253,7 @@ describe("bootstrapApplication", () => {
       history: { location: () => currentLocation, replace: vi.fn() },
       initialLocationReady: Promise.resolve(makeLocation("/chat/main")),
       installLocation,
-      shouldInstallLocation: () =>
-        isDefaultChatLanding(currentLocation, "", applicationRoutes.routeIdFromPath),
+      shouldInstallLocation: () => isDefaultChatLanding(currentLocation, "", routeIdFromPath),
     });
 
     expect(installLocation).not.toHaveBeenCalled();

@@ -138,8 +138,9 @@ it.each([false, true])(
     vi.spyOn(SessionSnapshotStore.prototype, "read").mockImplementation(async function (
       this: SessionSnapshotStore,
       key,
+      onBoard,
     ) {
-      const snapshot = await originalRead.call(this, key);
+      const snapshot = await originalRead.call(this, key, onBoard);
       if (key === mainSnapshotKey) {
         entered.resolve();
         await release.promise;

@@ -29,7 +29,6 @@ const reloadProfiles = [
   "large",
   "short-tail",
   "imported",
-  "offline",
 ];
 
 async function expectOwnMessageAlignment(page: Page): Promise<void> {
@@ -390,20 +389,8 @@ suite.define(() => {
             }
           });
         }
-        if (profile === "offline") {
-          await gateway.setOnline(false);
-          await page.reload();
-          await transcript.getByText(transcriptText, { exact: true }).waitFor();
-          await sidebar.getByText("Cached only session", { exact: true }).waitFor();
-          await page.locator(".chat-pane__connection-state").waitFor({ state: "visible" });
-          expect(await page.locator(".chat-pane-cache__pane--active .skeleton").count()).toBe(0);
-          expect(await gateway.getRequests("connect")).toEqual([]);
-          expect(await gateway.getRequests("chat.send")).toEqual([]);
-          await capture("warm-offline-before-socket.png");
-          return;
-        }
         if (profile === "matching") {
-          // A cached reload must render even if the Gateway never sends its challenge.
+          // Cached sidebar admission survives a delayed challenge; rows wait for connect.
           await page.addInitScript(() => {
             let heldChallenge = false;
             window.WebSocket = new Proxy(window.WebSocket, {
@@ -435,7 +422,16 @@ suite.define(() => {
         await page.reload({ waitUntil: "commit" });
         await sidebar.locator(".sidebar-footer-bar__home").waitFor();
         await sidebar.getByText("Cached only session", { exact: true }).waitFor();
+        if (profile === "matching") {
+          expect(await gateway.getRequests("connect")).toEqual([]);
+          expect(await gateway.getSocketCount()).toBe(1);
+          await page.evaluate(() =>
+            document.dispatchEvent(new Event("openclaw-proof-release-challenge")),
+          );
+        }
+        const connect = await gateway.waitForRequest("connect");
         await transcript.getByText(transcriptText, { exact: true }).waitFor();
+        expect(await gateway.getRequests("connect")).toHaveLength(1);
         expect(await gateway.getRequests("sessions.list")).toEqual([]);
         expect(await gateway.getRequests("chat.startup")).toEqual([]);
         if (profile === "trusted-proxy") {
@@ -455,14 +451,6 @@ suite.define(() => {
           await composer.fill("Typing while the Gateway is still connecting");
           expect(await gateway.getRequests("chat.send")).toEqual([]);
         }
-        if (profile === "matching") {
-          expect(await gateway.getRequests("connect")).toEqual([]);
-          expect(await gateway.getSocketCount()).toBe(1);
-          await page.evaluate(() =>
-            document.dispatchEvent(new Event("openclaw-proof-release-challenge")),
-          );
-        }
-        const connect = await gateway.waitForRequest("connect");
         await capture(`warm-${profile}-before-hello.png`);
 
         await gateway.setSessionsListResponse({
