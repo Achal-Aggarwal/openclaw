@@ -193,6 +193,10 @@ jobs:
         if: inputs.boot_probe
         run: xcrun clang -O2 -Wall -Wextra -Werror scripts/ios-simulator-boot-census.c -o "$RUNNER_TEMP/ios-boot-census"
 
+      - name: Disable host filesystem indexing for startup comparison
+        if: inputs.boot_probe
+        run: sudo -n /usr/bin/mdutil -i off /System/Volumes/Data
+
       - name: Probe simulator startup without app tests
         if: inputs.boot_probe
         env:

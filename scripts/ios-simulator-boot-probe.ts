@@ -546,6 +546,14 @@ print(json.dumps(maps))`,
   proof.runtimeLabelHintCount = runtimeLabels.size;
   proof.hostLabelHintCount = hostLabels.size;
   proof.unreadableLabelMetadata = labelMaps.map(({ unreadable }) => unreadable);
+  const indexingStatus = await command("host-indexing-status", "/usr/bin/mdutil", [
+    "-s",
+    "/System/Volumes/Data",
+  ]);
+  proof.hostIndexingDisabled = /^\s*Indexing disabled\.\s*$/mu.test(indexingStatus);
+  if (!proof.hostIndexingDisabled) {
+    throw new Error("host-indexing-still-enabled");
+  }
   phase = "gateway-install";
   const gateway = await prepareIOSReleaseGateway({
     targetSha,
