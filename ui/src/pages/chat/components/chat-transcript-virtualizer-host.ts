@@ -183,7 +183,7 @@ export class ChatSessionVirtualizerHost implements ChatTranscriptSession {
       invalidate,
       () => this.connected && this.renderer.isPresented(),
       (element, entry) => this.presentation.measureElement(element, entry),
-      (index) => this.renderer.prewarmRow(index),
+      (index, prepareCachedFragment) => this.renderer.prewarmRow(index, prepareCachedFragment),
     );
     this.mcpAppUnmountGate = createMcpAppUnmountGate(invalidate);
     this.positionRail = createPositionRailGutter(

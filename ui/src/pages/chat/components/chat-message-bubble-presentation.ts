@@ -161,6 +161,7 @@ function messageMarkdownRenderOptions(
 export function prewarmGroupedMessage(
   message: unknown,
   opts: Pick<GroupedMessageOptions, "onOpenImage" | "fetchLinkFavicon">,
+  prepareCachedFragment = false,
 ): boolean {
   const role = asNullableRecord(message)?.role;
   if (
@@ -187,6 +188,7 @@ export function prewarmGroupedMessage(
     prewarmSanitizedMarkdown(
       markdown,
       messageMarkdownRenderOptions(role, prepared, markdown, { ...opts, isStreaming: false }),
+      prepareCachedFragment,
     )
   );
 }

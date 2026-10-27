@@ -45,6 +45,20 @@ it("hands idle-prepared DOM to the first visible caller without parsing it again
   });
   expect(second.container.innerHTML).toBe(view.container.innerHTML);
   expect(parses).toBe(1);
+  // A return scroll can prepare DOM from the retained sanitized HTML before
+  // its next mount. Ordinary idle warming must still finish after one pass.
+  expect(prewarmSanitizedMarkdown(source, {})).toBe(false);
+  expect(prewarmSanitizedMarkdown(source, {}, true)).toBe(true);
+  expect(prewarmSanitizedMarkdown(source, {}, true)).toBe(false);
+  const preparedParses = parses;
+  const rewarmed = toSanitizedMarkdownContent(source);
+  expect(typeof rewarmed).not.toBe("string");
+  const third = renderSolidRef(() => createMarkdownRef(() => ({ content: rewarmed })), {
+    targetElement: document.createElement("div"),
+  });
+  expect(third.container.innerHTML).toBe(view.container.innerHTML);
+  expect(third.container.querySelector("[onerror]")).toBeNull();
+  expect(parses).toBe(preparedParses);
   expect(prewarmSanitizedMarkdown(source, { interactiveImages: true })).toBe(true);
   expect(prewarmSanitizedMarkdown("oversized ".repeat(6000), {})).toBe(false);
 });
@@ -57,6 +71,12 @@ it("bounds prepared DOM while keeping evicted HTML reusable", () => {
   expect(typeof toSanitizedMarkdownContent(source(0))).toBe("string");
   expect(typeof toSanitizedMarkdownContent(source(32))).not.toBe("string");
   expect(typeof toSanitizedMarkdownContent(source(32))).toBe("string");
+  for (let index = 0; index < 33; index++) {
+    toSanitizedMarkdownContent(source(index));
+    expect(prewarmSanitizedMarkdown(source(index), {}, true)).toBe(true);
+  }
+  expect(typeof toSanitizedMarkdownContent(source(0))).toBe("string");
+  expect(typeof toSanitizedMarkdownContent(source(32))).not.toBe("string");
 });
 
 it("mounts fresh chat Markdown without reparsing and keeps only HTML in its cache", () => {

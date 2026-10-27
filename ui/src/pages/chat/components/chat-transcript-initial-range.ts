@@ -33,7 +33,7 @@ export class TranscriptInitialRange {
       element: HTMLElement,
       entry: ResizeObserverEntry | undefined,
     ) => number,
-    private readonly prewarmRow?: (index: number) => boolean,
+    private readonly prewarmRow?: (index: number, prepareCachedFragment: boolean) => boolean,
   ) {
     this.tailRows = initialOffset === null ? 1 : 0;
   }
@@ -302,7 +302,7 @@ export class TranscriptInitialRange {
         }
         const index = origin + step * searchDirection;
         const row = rows?.[index];
-        if (row && prewarm && !rendered.has(row.key) && this.prewarmRow?.(index)) {
+        if (row && prewarm && !rendered.has(row.key) && this.prewarmRow?.(index, warmOnly)) {
           // The shared cache owns readiness; no DOM or range invalidation is needed.
           if (warmOnly) {
             warmed = true;

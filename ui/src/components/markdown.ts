@@ -236,8 +236,9 @@ export function toSanitizedMarkdownContent(
 export function prewarmSanitizedMarkdown(
   markdownLocal: string,
   options: MarkdownRenderOptions,
+  prepareCachedFragment = false,
 ): boolean {
-  return prepareSanitizedMarkdown(markdownLocal, options, false, true);
+  return prepareSanitizedMarkdown(markdownLocal, options, false, true, prepareCachedFragment);
 }
 
 function prepareSanitizedMarkdown(
@@ -250,12 +251,14 @@ function prepareSanitizedMarkdown(
   options: MarkdownRenderOptions,
   returnFragment: boolean,
   prewarm: true,
+  prepareCachedFragment?: boolean,
 ): boolean;
 function prepareSanitizedMarkdown(
   markdownLocal: string,
   options: MarkdownRenderOptions,
   returnFragment: boolean,
   prewarm = false,
+  prepareCachedFragment = false,
 ): MarkdownContent | boolean {
   const renderOptions = normalizeMarkdownRenderOptions(options);
   const prepared =
@@ -312,7 +315,15 @@ function prepareSanitizedMarkdown(
       pruneMapToMaxSize(preparedFragments, PREPARED_FRAGMENT_LIMIT);
     }
   } else if (prewarm) {
-    return false;
+    if (!prepareCachedFragment || preparedFragments.has(cached)) {
+      return false;
+    }
+    // The cache owns sanitized HTML. Rebuild its consumed DOM ahead of a return
+    // scroll, without reparsing Markdown or rerunning the sanitizer.
+    const template = document.createElement("template");
+    template.innerHTML = cached.html;
+    preparedFragments.set(cached, template.content);
+    pruneMapToMaxSize(preparedFragments, PREPARED_FRAGMENT_LIMIT);
   } else if (returnFragment) {
     const fragment = preparedFragments.get(cached);
     if (fragment) {

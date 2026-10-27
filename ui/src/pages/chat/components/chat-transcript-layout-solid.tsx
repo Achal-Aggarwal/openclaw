@@ -193,12 +193,12 @@ export class ChatTranscriptRenderer {
     return this.contentSource.getContent;
   }
 
-  prewarmRow(index: number): boolean {
+  prewarmRow(index: number, prepareCachedFragment = false): boolean {
     const content = this.contentSource?.getContent(index);
     const view = content instanceof GuardedTranscriptItem ? content.native : undefined;
     if (view?.kind === "group" && !view.group.isStreaming) {
       for (const message of view.group.messages) {
-        if (prewarmGroupedMessage(message.message, view.options)) {
+        if (prewarmGroupedMessage(message.message, view.options, prepareCachedFragment)) {
           return true;
         }
       }
@@ -211,7 +211,7 @@ export class ChatTranscriptRenderer {
         }
         const options = view.options.renderGroupOptions(part);
         for (const message of part.messages) {
-          if (prewarmGroupedMessage(message.message, options)) {
+          if (prewarmGroupedMessage(message.message, options, prepareCachedFragment)) {
             return true;
           }
         }
