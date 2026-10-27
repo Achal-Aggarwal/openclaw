@@ -10,8 +10,10 @@ import type { OpenClawConfig } from "../../config/config.js";
 import type { SessionEntry } from "../../config/sessions.js";
 import { createPluginMetadataSnapshotFixture } from "../../plugins/plugin-metadata.test-support.js";
 import * as activeThinkingPolicy from "../../plugins/provider-thinking-active.js";
-import { prepareModelCatalogThinkingPolicies } from "../../plugins/provider-thinking.js";
-import { createEmptyPluginRegistry } from "../../plugins/registry-empty.js";
+import {
+  PREPARED_THINKING_POLICY,
+  type PreparedThinkingPolicy,
+} from "../../plugins/provider-thinking-catalog.js";
 import { isThinkingLevelSupported } from "../thinking.js";
 import { prepareModelSelectionRuntime } from "./model-runtime-normalization.js";
 import { createInitialState, makeEntry } from "./model-selection.inputs.test-support.js";
@@ -20,19 +22,12 @@ import { createModelSelectionState } from "./model-selection.js";
 type PersistReplySessionEntry =
   (typeof import("./session-entry-persistence.js"))["persistReplySessionEntry"];
 
-const DEFAULT_MOCK_CATALOG_ENTRIES = vi.hoisted(() => [
-  { provider: "anthropic", id: "claude-opus-4-6", name: "Claude Opus 4.5" },
-  { provider: "openai", id: "gpt-4o-mini", name: "GPT-4o mini" },
-  { provider: "openai", id: "gpt-4o", name: "GPT-4o" },
-]);
-
 const { persist } = vi.hoisted(() => ({ persist: vi.fn<PersistReplySessionEntry>() }));
 
 const catalogMocks = vi.hoisted(() => ({
-  loadModelCatalog: async () => DEFAULT_MOCK_CATALOG_ENTRIES,
   loadModelCatalogSnapshot: vi.fn(async () => ({
-    entries: DEFAULT_MOCK_CATALOG_ENTRIES,
-    routeVariants: DEFAULT_MOCK_CATALOG_ENTRIES,
+    entries: [],
+    routeVariants: [],
     authoritative: true,
   })),
 }));
@@ -40,7 +35,7 @@ const catalogMocks = vi.hoisted(() => ({
 // mock-isolation: Model selection consumes this fixture's prepared catalog without provider discovery.
 vi.mock("../../agents/model-catalog.runtime.js", () => ({
   loadProviderScopedThinkingCatalog: vi.fn(async () => []),
-  readPreparedModelCatalog: catalogMocks.loadModelCatalog,
+  readPreparedModelCatalog: async () => [],
   loadPreparedModelCatalogSnapshot: catalogMocks.loadModelCatalogSnapshot,
 }));
 
@@ -242,38 +237,26 @@ describe("catalog and thinking selection", () => {
   it("keeps prepared thinking ownership", async () => {
     const provider = "fixture-provider";
     const model = "fixture-model";
-    const preparedModelCatalog = preparedCatalog([
-      { provider, id: model, name: "Fixture", reasoning: true },
-    ]);
-    prepareModelCatalogThinkingPolicies({
-      catalog: preparedModelCatalog,
-      metadataSnapshot: createPluginMetadataSnapshotFixture(),
-      pluginRegistry: {
-        ...createEmptyPluginRegistry(),
-        providers: [
-          {
-            pluginId: provider,
-            source: "test",
-            provider: {
-              id: provider,
-              label: provider,
-              auth: [],
-              resolveThinkingProfile: () => ({
-                levels: [{ id: "off" }, { id: "max" }, { id: "ultra" }],
-                defaultLevel: "ultra",
-              }),
-            },
-          },
-        ],
-      },
-    });
+    const policy: PreparedThinkingPolicy = {
+      resolve: () => ({
+        levels: [{ id: "off" }, { id: "max" }, { id: "ultra" }],
+        defaultLevel: "ultra",
+      }),
+    };
+    const row = {
+      provider,
+      id: model,
+      name: "Fixture",
+      reasoning: true,
+      [PREPARED_THINKING_POLICY]: policy,
+    };
     using ambient = vi
       .spyOn(activeThinkingPolicy, "resolveActiveProviderThinkingProfile")
       .mockReturnValue({ levels: [{ id: "off" }], defaultLevel: "off" });
 
     const state = await createInitialState({}, provider, model, {
       hasModelDirective: true,
-      preparedModelCatalog,
+      preparedModelCatalog: preparedCatalog([row]),
     });
     await expect(
       state.resolveDefaultThinkingLevel({ provider, model, agentRuntime: "codex" }),

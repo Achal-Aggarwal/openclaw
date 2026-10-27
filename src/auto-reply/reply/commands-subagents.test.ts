@@ -112,7 +112,7 @@ describe("subagents status", () => {
     expectText(text, ["🤖 Subagents: 0 active · 1 done"], ["  • finished task"]);
   });
 
-  it("keeps the newest three details and two pending children in the full counts", async () => {
+  it("keeps the newest three details, pending children, and non-finite duration in the full counts", async () => {
     const children = 2;
     const now = Date.now();
     const parentKey = "agent:main:subagent:tie-a";
@@ -130,6 +130,11 @@ describe("subagents status", () => {
         createdAt: now - ageMs,
         startedAt: now - ageMs,
         endedAt: ended ? now - 500 : undefined,
+        ...(name === "first"
+          ? {
+              execution: { status: "running", startedAt: now - ageMs, endedAt: Infinity },
+            }
+          : {}),
       });
     }
     for (let index = 0; index < children; index++) {
@@ -145,27 +150,15 @@ describe("subagents status", () => {
       });
     }
 
-    const text = await statusText(now);
+    const text = await statusText(now, false);
     const details = text?.split("\n").slice(1);
 
     expect(text).toContain("Subagents: 4 active · 1 done");
     expect(details).toEqual([
-      expect.stringMatching(/first worker.*1s/),
+      expect.stringMatching(/first worker.*0s/),
       expect.stringMatching(/tie-b worker.*2s/),
       expect.stringMatching(new RegExp(`tie-a worker.*2s.*\\b${children} child`)),
     ]);
-  });
-
-  it("preserves active duration for non-finite end Infinity", async () => {
-    const run = commandRun({
-      runId: "non-finite-end",
-      task: "active worker",
-      createdAt: 1_000,
-      execution: { status: "running", startedAt: 1_000, endedAt: Infinity },
-    });
-    seedSubagentRunForReadTest(run);
-    const text = await statusText(5_000, false);
-    expectText(text, ["Subagents: 1 active", "active worker · 0s"]);
   });
 });
 
@@ -267,6 +260,20 @@ describe("subagents command snapshots", () => {
 });
 
 describe("subagents global-session inspection", () => {
+  const privateHistory = [
+    { role: "assistant", content: "PRIVATE_COMMENTARY", phase: "commentary" },
+    {
+      role: "assistant",
+      content: [
+        { type: "text", text: "PRIVATE_LEGACY" },
+        {
+          type: "text",
+          text: "   ",
+          textSignature: JSON.stringify({ v: 1, phase: "final_answer" }),
+        },
+      ],
+    },
+  ];
   const cfg: OpenClawConfig = {
     ...baseCommandTestConfig,
     agents: { ownership: "explicit", entries: { research: {}, ops: {} } },
@@ -275,7 +282,13 @@ describe("subagents global-session inspection", () => {
 
   beforeEach(async () => {
     setRuntimeConfigSnapshot(cfg);
-    callGatewayMock.mockReset().mockResolvedValue({ messages: [] });
+    callGatewayMock.mockReset().mockResolvedValue({
+      messages: [
+        { role: "user", content: "Here [Tool Call: foo (ID: 1)] ok" },
+        { role: "assistant", content: "log line" },
+        ...privateHistory,
+      ],
+    });
     for (const agentId of ["research", "ops"]) {
       seedRun({
         runId: `global-${agentId}`,
@@ -291,7 +304,7 @@ describe("subagents global-session inspection", () => {
     }
   });
 
-  it.each(["/subagents info 1", "/subagents log 1", "/agents"])(
+  it.each(["/subagents info 1", "/subagents log 1 5", "/agents"])(
     "keeps the selected agent's global children visible through %s",
     async (command) => {
       const params = buildCommandTestParams(command, cfg, { SessionKey: "global" });
@@ -301,11 +314,22 @@ describe("subagents global-session inspection", () => {
       const text = await replyText(handleSubagentsCommand(params, true));
 
       expectText(text, ["research worker"], ["ops worker"]);
-      if (command === "/subagents log 1") {
+      if (command === "/subagents log 1 5") {
+        expectText(
+          text,
+          ["User: Here [Tool Call: foo (ID: 1)] ok", "Assistant: log line"],
+          ["Assistant: Here [Tool Call: foo (ID: 1)] ok", "PRIVATE_COMMENTARY", "PRIVATE_LEGACY"],
+        );
         expect(callGatewayMock).toHaveBeenCalledWith({
           method: "chat.history",
-          params: { sessionKey: "agent:research:subagent:worker", limit: 20 },
+          params: { sessionKey: "agent:research:subagent:worker", limit: 5 },
         });
+        callGatewayMock.mockResolvedValue({ messages: privateHistory });
+        expectText(
+          await replyText(handleSubagentsCommand(params, true)),
+          ["(no messages)"],
+          ["PRIVATE_COMMENTARY", "PRIVATE_LEGACY"],
+        );
       }
     },
   );
@@ -439,13 +463,14 @@ describe("subagents info", () => {
     ]);
   });
 
-  it("uses displayed indices for info and log when stale unended runs exist", async () => {
+  it("uses displayed indices and killed status for info and log beside stale unended runs", async () => {
     const now = Date.now();
     const runs: SubagentRunRecord[] = [
       timedRun("numbering-stale", "stale worker", now - 3 * 60 * 60_000),
       timedRun("numbering-recent", "recent worker", now - 120_000, {
         endedAt: now - 60_000,
-        outcome: { status: "ok" },
+        endedReason: SUBAGENT_ENDED_REASON_KILLED,
+        outcome: { status: "error", error: "agent run aborted" },
       }),
     ];
     for (const run of runs) {
@@ -453,28 +478,17 @@ describe("subagents info", () => {
     }
     const context = buildInfoContext(runs);
     const listing = await replyText(handleSubagentsListAction(context));
-    expectText(listing, ["1. recent worker"], ["stale worker"]);
-    expect(await replyText(handleSubagentsInfoAction(context))).toContain("Run: numbering-recent");
+    expectText(listing, ["1. recent worker", " killed"], ["stale worker"]);
+    expectText(await replyText(handleSubagentsInfoAction(context)), [
+      "Run: numbering-recent",
+      "Status: killed",
+    ]);
     callGatewayMock.mockResolvedValue({ messages: [] });
     await handleSubagentsLogAction(context);
     expect(callGatewayMock).toHaveBeenLastCalledWith({
       method: "chat.history",
       params: { sessionKey: "agent:main:subagent:numbering-recent", limit: 20 },
     });
-  });
-
-  it("keeps info and list aligned for a killed run despite its provider error", async () => {
-    const now = Date.now();
-    const run = timedRun("killed-run", "report the actual child outcome", now - 2_000, {
-      endedAt: now - 1_000,
-      endedReason: SUBAGENT_ENDED_REASON_KILLED,
-      outcome: { status: "error", error: "agent run aborted" },
-    });
-    seedSubagentRunForReadTest(run);
-    const context = buildInfoContext([run]);
-
-    expect(await replyText(handleSubagentsInfoAction(context))).toContain("Status: killed");
-    expect(await replyText(handleSubagentsListAction(context))).toContain(" killed");
   });
 
   it("omits Date-invalid subagent timestamps", async () => {
