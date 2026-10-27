@@ -129,10 +129,7 @@ it("delegates compaction with caller identity overriding runtime context", async
     ok: true,
     compacted: false,
     reason: "mock compaction",
-    result: {
-      summary: "retained summary",
-      sessionTarget,
-    },
+    result: { summary: "retained summary", sessionTarget },
   };
   compactRuntime.mockResolvedValue(result);
   const runtimeContext = {
@@ -450,23 +447,21 @@ it("does not construct or quarantine discovery factories or replace runtime regi
   expect(readOnly).not.toHaveBeenCalled();
 });
 
-const invalid = "contract-validation";
-it.each<[Parameters<typeof register>[1], string, RegExp]>([
-  [() => createPassthroughEngineMethods() as ContextEngine, invalid, /missing info/],
+it.each<[Parameters<typeof register>[1], RegExp]>([
+  [() => createPassthroughEngineMethods() as ContextEngine, /missing info/],
   [
     () =>
       ({
         info: raw.info,
         ingest: (params: Parameters<ContextEngine["ingest"]>[0]) => raw.ingest(params),
       }) as unknown as ContextEngine,
-    invalid,
     /missing assemble\(\), missing compact\(\)/,
   ],
-  [() => 42n as unknown as ContextEngine, invalid, /BigInt/],
-])("falls back for %s failures (%s, %s)", async (factory, operation, reason) => {
+  [() => 42n as unknown as ContextEngine, /BigInt/],
+])("falls back for contract-validation failures (%s, %s)", async (factory, reason) => {
   await register(id, factory, "plugin:fixture", refresh);
   expect(await resolvedId()).toBe("legacy");
-  await expectQuarantine(operation, expect.stringMatching(reason));
+  await expectQuarantine("contract-validation", expect.stringMatching(reason));
 });
 
 it("coalesces fallback initialization across concurrent lifecycle failures", async () => {
