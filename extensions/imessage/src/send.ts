@@ -55,6 +55,7 @@ import {
 } from "./monitor/sanitize-outbound.js";
 import { withIMessageRemoteFile } from "./remote-file.js";
 import { resolveIMessageRemoteHost } from "./remote-host.js";
+import { clearIMessageSendFailure } from "./send-status.js";
 import {
   bindIMessageCliSend,
   requestIMessageRpcSend,
@@ -84,7 +85,6 @@ type IMessageSendOpts = IMessageSendHandoff & {
   dbPath?: string;
   service?: IMessageService;
   region?: string;
-  accountId?: string;
   conversationReadOrigin?: "delegated" | "direct-operator";
   replyToId?: string;
   mediaUrl?: string;
@@ -377,7 +377,10 @@ export async function sendMessageIMessage(
       remoteHost,
     });
     try {
-      return await requestIMessageRpcSend(rpcClient, method, rpcParams, timeoutMs, opts);
+      return await requestIMessageRpcSend(rpcClient, method, rpcParams, timeoutMs, {
+        ...opts,
+        accountId: account.accountId,
+      });
     } finally {
       await rpcClient.stop();
     }
@@ -487,6 +490,9 @@ export async function sendMessageIMessage(
         approvalKind: opts.approvalPrompt.approvalKind,
         allowedDecisions: opts.approvalPrompt.allowedDecisions,
       });
+    }
+    if (messageId !== "unknown") {
+      clearIMessageSendFailure(account.accountId);
     }
     const replyToId = isMessage ? effectiveReplyToId : resolvedReplyToId;
     const receiptMessageId = messageId.trim();
@@ -721,7 +727,10 @@ export async function sendMessageIMessage(
   const shouldClose = !opts.client;
   const requestSuccessfulSend = async (sendParams: Record<string, unknown>) => {
     const request = async (nativeParams: Record<string, unknown>) =>
-      await requestIMessageRpcSend(client, "send", nativeParams, timeoutMs, opts);
+      await requestIMessageRpcSend(client, "send", nativeParams, timeoutMs, {
+        ...opts,
+        accountId: account.accountId,
+      });
     const response = filePath
       ? await withOriginalIMessageAttachmentPath(filePath, async (attachmentPath) => {
           if (remoteHost) {

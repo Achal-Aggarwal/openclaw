@@ -16,7 +16,10 @@ import { recoverIMessageBridge } from "./bridge-recovery.js";
 import { expandIMessageUserPath } from "./cli-path.js";
 import { DEFAULT_IMESSAGE_PROBE_TIMEOUT_MS } from "./constants.js";
 import { invalidateCachedIMessagePrivateApiStatus } from "./private-api-status.js";
-import { normalizeIMessageFullDiskAccessError } from "./process-diagnostics.js";
+import {
+  normalizeIMessageAutomationError,
+  normalizeIMessageFullDiskAccessError,
+} from "./process-diagnostics.js";
 
 // Match only the documented Contacts reconciliation diagnostic; other Apple
 // framework messages must keep their error level.
@@ -447,8 +450,13 @@ export class IMessageRpcClient {
           }
         }
         const msg = suffixes.length > 0 ? `${baseMessage}: ${suffixes.join(" ")}` : baseMessage;
+        const automation = normalizeIMessageAutomationError(msg);
         pending.reject(
-          new IMessageRpcRequestError(msg, typeof code === "number" ? code : undefined, details),
+          new IMessageRpcRequestError(
+            automation ? msg + " " + automation : msg,
+            typeof code === "number" ? code : undefined,
+            details,
+          ),
         );
         return;
       }

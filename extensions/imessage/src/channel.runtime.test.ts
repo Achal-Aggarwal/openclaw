@@ -1,11 +1,18 @@
 import { readFile, writeFile } from "node:fs/promises";
+import type {
+  ChannelAccountSnapshot,
+  ChannelGatewayContextV2,
+} from "openclaw/plugin-sdk/channel-contract";
+import { PlatformMessageNotDispatchedError } from "openclaw/plugin-sdk/error-runtime";
 import { createTestPluginServiceScheduler } from "openclaw/plugin-sdk/plugin-test-api";
+import { createPluginRuntimeMock } from "openclaw/plugin-sdk/plugin-test-runtime";
 import { createOpenClawTestState } from "openclaw/plugin-sdk/test-state";
 import { expect, it, vi } from "vitest";
-import { IMessageRpcClient } from "./client.js";
+import { IMessageRpcClient, IMessageRpcRequestError } from "./client.js";
+import { setIMessageRuntime } from "./runtime.js";
 import { sendMessageIMessage } from "./send.js";
 
-const monitorMock = vi.hoisted(() => vi.fn(async () => undefined));
+const monitorMock = vi.hoisted(() => vi.fn(async (): Promise<void> => undefined));
 const createRpcClientMock = vi.hoisted(() => vi.fn());
 
 vi.mock("./monitor/monitor-provider.js", async (importOriginal) => ({
@@ -184,6 +191,97 @@ it("enforces the resolved account cap for work", async () => {
     await client.stop();
     await state.cleanup();
   }
+});
+
+it("reports Automation send failures without mistaking read health for recovery", async () => {
+  const runtime = createPluginRuntimeMock();
+  setIMessageRuntime(runtime);
+  const cfg = accountConfig({ work: { cliPath: "/gateway/work-imsg" } });
+  const account = resolveIMessageAccount({ cfg, accountId: "work" });
+  let snapshot: ChannelAccountSnapshot = { accountId: "work", connected: true };
+  let finishMonitor: (() => void) | undefined;
+  monitorMock.mockImplementationOnce(
+    () =>
+      new Promise<void>((resolve) => {
+        finishMonitor = resolve;
+      }),
+  );
+  const ctx: ChannelGatewayContextV2<typeof account> = {
+    scheduler: createTestPluginServiceScheduler(),
+    cfg,
+    account,
+    accountId: "work",
+    runtime: { log: vi.fn(), error: vi.fn(), exit: vi.fn() },
+    abortSignal: new AbortController().signal,
+    channelRuntime: runtime.channel,
+    getStatus: () => snapshot,
+    setStatus: (patch) => {
+      snapshot = { ...snapshot, ...patch };
+    },
+  };
+  const start = imessagePlugin.gateway!.startAccount!(ctx);
+  try {
+    await vi.waitFor(() => expect(finishMonitor).toBeTypeOf("function"));
+    const data = {
+      disposition: "not_started",
+      retry_safe: true,
+      transport: "applescript",
+      operation: "send",
+      detail: "Messages automation failed with AppleScript error -1712.",
+    };
+    const request = vi
+      .fn()
+      .mockRejectedValueOnce(new IMessageRpcRequestError(data.detail, -32603, data));
+    request.mockResolvedValue({ guid: "p:0/automation-recovered" });
+    createRpcClientMock.mockReset().mockResolvedValue({ request, stop: vi.fn(async () => {}) });
+    const send = () =>
+      sendIMessageOutbound({ cfg, accountId: "work", to: "+15551234567", text: "test" });
+    await expect(send()).rejects.toBeInstanceOf(PlatformMessageNotDispatchedError);
+    expect(snapshot.lastError).toContain("Privacy & Security > Automation");
+    expect(snapshot.connected).toBe(true);
+    const issues = imessagePlugin.status!.collectStatusIssues!([snapshot]);
+    expect(issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          accountId: "work",
+          message: expect.stringContaining("Automation"),
+        }),
+      ]),
+    );
+
+    // A read probe is not an outbound permission check and must not clear the warning.
+    const probed = await imessagePlugin.status!.buildAccountSnapshot!({
+      account,
+      cfg,
+      runtime: snapshot,
+      probe: { ok: true },
+    });
+    expect(probed.lastError).toContain("Automation");
+    await send();
+    expect(snapshot.lastError).toBeNull();
+    snapshot.lastError = "unrelated watcher failure";
+    await send();
+    expect(snapshot.lastError).toBe("unrelated watcher failure");
+  } finally {
+    finishMonitor?.();
+    await start;
+  }
+  // A stopped monitor must not retain a callable status publisher.
+  createRpcClientMock.mockResolvedValue({
+    request: vi
+      .fn()
+      .mockRejectedValue(
+        new IMessageRpcRequestError(
+          "Messages automation failed with AppleScript error -1712.",
+          -32603,
+        ),
+      ),
+    stop: vi.fn(async () => {}),
+  });
+  await expect(
+    sendIMessageOutbound({ cfg, accountId: "work", to: "+15551234567", text: "test" }),
+  ).rejects.toThrow();
+  expect(snapshot.lastError).toBe("unrelated watcher failure");
 });
 
 const pairingCfg = accountConfig(
