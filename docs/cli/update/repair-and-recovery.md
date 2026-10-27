@@ -517,9 +517,11 @@ openclaw update repair --accept-capabilities
 An interrupted automatic triage can leave an uncertain installation handoff after
 its updater and helper exit. Explicit `openclaw update repair` can reclaim that
 handoff when both recorded PID/start identities are provably dead, a complete
-host census finds no remaining references to its run or retained paths, and at
-least 45 minutes have passed since the lease's last recorded activity. A
-recoverable larger recorded timeout extends that grace period. Gateway startup
+host census finds no remaining references to its run or retained paths. Proven
+death of every recorded owner permits immediate repair. Unknown or missing
+owner identities retain the 45-minute grace since the lease's last activity;
+a recoverable larger recorded timeout extends it. Grace expiration never
+substitutes for the required process-identity and descendant checks. Gateway startup
 and borrowed update processes do not reclaim these leases. The census matches
 process arguments and working directories. On macOS it does not read process
 environments, which some macOS releases report without a bounded end; a process
@@ -551,8 +553,7 @@ occupied-slot and candidate roots bound to that generation, and every child
 lease beneath them. Repair requires the evidence it uses for triage handoffs:
 every recorded updater, child, and command process and process group has exited;
 the update run is identifiable in the selected state and has no unverified
-rollback or restoration; the 45-minute grace, or a longer recorded timeout, has
-passed since the family's latest recorded activity; and the host census finds no
+rollback or restoration; and the host census finds no
 process referencing the run, its retained paths, or any family key, including the
 installation and service roots. A process that matches only because it runs from
 the installation or service root, or is an OpenClaw process, does not block repair
@@ -564,8 +565,8 @@ its own claim in one transaction, records the settled keys in the
 `finalize:handoff-settlement` step, and releases its claim after finalization.
 A failed or deferred repair keeps the original custody record in its claim and
 reports it as retained custody. A later repair resumes that claim once the
-interrupted repair process has exited; the grace still counts from the cancelled
-custody's activity, not from the claim.
+interrupted repair process has exited. Proven-dead owners need no grace; any
+remaining grace counts from the cancelled custody's activity, not from the claim.
 
 When any condition fails, or the family contains custody repair cannot inspect,
 repair leaves every row unchanged and still finishes its other maintenance.
@@ -633,8 +634,23 @@ This finishes Doctor and post-core convergence through a fresh owner. Check the
 repair result before restarting an already stopped Gateway through its service
 owner. Updating the candidate cannot change the older updater already in memory.
 
-When a managed Gateway was already stopped before standalone repair, repair leaves
-it offline and warns that you must run `openclaw gateway start` to bring it online.
+When update history records that the recovered update's managed handoff stopped
+the Gateway and never successfully started or verified it again, successful
+standalone repair starts it through its service manager and verifies readiness.
+The existing `service-stop` step and verification facts provide this evidence;
+the service merely being stopped does not. A recorded named data risk prevents
+startup. Successful restoration reports `restart: true` and verified health in
+JSON and update history, and a startup or health failure names
+`openclaw gateway status --deep`.
+If startup succeeded but readiness failed, a later repair retries verification
+while the Gateway is running. If it was subsequently stopped, repair leaves it
+stopped and reports a warning. Repair retains successful native starts and
+observations of a running service as steps in its own run history before waiting
+for readiness. Failed, cancelled, or stopped readiness results cannot erase them.
+
+When a managed Gateway was stopped by its operator without this update stop
+record, repair leaves it offline and warns that you must run
+`openclaw gateway start` to bring it online.
 If its service definition points to a different installation, repair instead reports
 the installation repair command. These maintenance warnings also appear in
 `postUpdate.doctor.warnings`; otherwise successful finalization reports
@@ -647,7 +663,7 @@ the installation repair command. These maintenance warnings also appear in
 | `--timeout <seconds>`                            | Override each repair phase deadline in seconds. Defaults vary by phase (see below).                                                                                                                                                                                                              |
 | `--yes`                                          | Skip confirmation prompts.                                                                                                                                                                                                                                                                       |
 | `--accept-capabilities`                          | Accept each plugin's reviewed capability changes while repairing plugin state.                                                                                                                                                                                                                   |
-| `--no-restart`                                   | Accepted for parity; repair does not request update activation. The repair parent restores a Gateway it stopped for maintenance.                                                                                                                                                                 |
+| `--no-restart`                                   | Accepted for parity; repair does not request update activation. The repair parent restores a Gateway stopped for maintenance or by the recovered update's managed handoff.                                                                                                                       |
 
 An invalid `--channel` exits with status 1 without changing the configured channel.
 With `--json`, stdout contains a JSON error object (`ok: false`, `error.type: "cli_error"`)
@@ -768,7 +784,8 @@ Configured runtime plugins whose versions follow OpenClaw are checked against
 the newly installed core during post-update repair, even when the updater process
 started on the previous version.
 It does not install a new core package or request update activation. The repair
-parent restores a service it stopped for maintenance, as described above.
+parent restores a service it stopped for maintenance or that the recovered
+update's managed handoff stopped, as described above.
 Human output ends with a finalization result that distinguishes completion,
 completion with warnings, and failure.
 

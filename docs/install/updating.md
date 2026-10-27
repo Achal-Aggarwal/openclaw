@@ -311,6 +311,16 @@ next update's admission can record the failed outcome without waiting for the
 inactivity grace period. Live or unverifiable drivers and retained recovery
 continue to preserve their ownership.
 
+When both the managed-update helper and updater are proven dead, explicit
+`openclaw update repair` can reclaim their handoff immediately; unknown custody
+keeps the 45-minute (or longer recorded) grace. The descendant census still
+refuses live or unverified work. After finalization succeeds, repair starts and
+verifies the managed Gateway only when update history records that the update
+stopped it without a subsequent successful start or verification. A Gateway
+stopped by its operator stays stopped. A recorded named data risk prevents
+automatic startup. The repairing CLI must contain this fix; no new stop-time
+record is required from older updaters.
+
 A successful foreground update hands completion to the replacement Gateway.
 Automatic history reconciliation preserves that handoff while startup verifies
 the running build. If the replacement never starts, `openclaw update repair`

@@ -66,6 +66,7 @@ import { updateFinalizeCommand, type UpdateCoreCompletion } from "./update-comma
 import { refuseImmutableUpdateActivation } from "./update-command-immutable.js";
 import { resolveServiceRefreshEnv } from "./update-command-service-env.js";
 import { updateMaintenanceError } from "./update-maintenance-error.js";
+import { findRepairGatewayStop } from "./update-repair-service.js";
 import {
   reportRetainedUpdateCustody,
   type RetainedUpdateCustodyReport,
@@ -236,11 +237,15 @@ async function repairUpdate(opts: UpdateFinalizeOptions): Promise<void> {
     ? Math.min(...recoveryRuns.map((run) => run.createdAtMs))
     : undefined;
   const history = inspectNewerRecoveryHistory(recoverySinceMs, recentRuns);
+  const interruptedGateway = findRepairGatewayStop(recentRuns);
   const recoveryRunIds = [
     ...new Set(
       [...recoveryRuns, ...historicalRuns, ...history.postCoreRuns].map((run) => run.runId),
     ),
   ];
+  if (interruptedGateway && !recoveryRunIds.includes(interruptedGateway.runId)) {
+    recoveryRunIds.push(interruptedGateway.runId);
+  }
   const finalizeRepair = async () => {
     try {
       // Driver death is a historical fact; maintenance completion is acknowledged separately.
@@ -258,6 +263,7 @@ async function repairUpdate(opts: UpdateFinalizeOptions): Promise<void> {
 
   if (
     handoff ||
+    interruptedGateway ||
     opts.channel !== undefined ||
     opts.acceptCapabilities ||
     recoverySinceMs === undefined ||
