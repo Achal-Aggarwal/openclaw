@@ -720,7 +720,6 @@ describe("runDoctorConfigPreflight", () => {
               message: {
                 ...historicalEvent.message,
                 content: [{ type: "text", text: "Historical answer" }],
-                display: true,
                 openclawDelivery: { replyToCurrent: true },
               },
             });
