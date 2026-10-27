@@ -40,6 +40,7 @@ process.on("SIGINT", cancel);
 const operations: Record<string, unknown>[] = [];
 const snapshots: BootSnapshot[] = [];
 let runtimeLabels = new Map<string, string>();
+let hostLabels = new Map<string, string>();
 const proof: Record<string, unknown> = {
   schema: 1,
   kind: "simulator-boot-probe",
@@ -49,7 +50,6 @@ const proof: Record<string, unknown> = {
   operations,
   snapshots,
   tests: [],
-  disabledBootJobs: ["com.apple.apsd"],
 };
 let phase = "startup";
 let bootCycle: "cold" | "warm" = "cold";
@@ -115,6 +115,7 @@ type CensusRow = {
   runningThreads?: number;
 };
 type BootSnapshot = {
+  privileged: boolean;
   stage: string;
   receivedAtMs: number;
   bootCycle: "cold" | "warm";
@@ -145,10 +146,14 @@ const collectCensus = async (stage: "before-boot" | "after-headroom" | "after-la
   let byPid = new Map<number, CensusRow>();
   let labelHints = new Map<number, string>();
   let bytes = 0;
+  let privileged = false;
   const observeLine = (line: string) => {
     const fields = line.split("\t");
-    if (fields[0] === "BEGIN") {
+    if (fields[0] === "COLLECTOR") {
+      privileged = fields[1] === "0";
+    } else if (fields[0] === "BEGIN") {
       active = {
+        privileged,
         stage,
         receivedAtMs: Date.now(),
         bootCycle: cycle,
@@ -170,15 +175,19 @@ const collectCensus = async (stage: "before-boot" | "after-headroom" | "after-la
       };
       active.rows.push(row);
       byPid.set(row.pid, row);
-      const label = runtimeLabels.get(fields[5] ?? "");
+      const label =
+        row.parentPid === 1 ? hostLabels.get(fields[5] ?? "") : runtimeLabels.get(fields[5] ?? "");
       if (label) {
         labelHints.set(row.pid, label);
       }
     } else if (active && fields[0] === "CENSUS_END") {
-      // Restrict public runtime metadata hints to direct simulator launchd children.
+      // Match public system metadata only within its host or simulator launchd domain.
       for (const row of active.rows) {
         const label = labelHints.get(row.pid);
-        if (label && byPid.get(row.parentPid)?.roleHint === "launchd_sim") {
+        if (
+          label &&
+          (row.parentPid === 1 || byPid.get(row.parentPid)?.roleHint === "launchd_sim")
+        ) {
           row.labelHint = label;
         }
       }
@@ -205,8 +214,8 @@ const collectCensus = async (stage: "before-boot" | "after-headroom" | "after-la
   };
   const started = performance.now();
   observerDone = runManagedCommand({
-    bin: collector,
-    args: [],
+    bin: "/usr/bin/sudo",
+    args: ["-n", collector],
     timeoutMs: 65_000,
     requireProcessTreeExit: true,
     signal: AbortSignal.any([abort.signal, observerAbort.signal]),
@@ -260,7 +269,7 @@ const collectCensus = async (stage: "before-boot" | "after-headroom" | "after-la
       throw new Error("observer-baseline-unavailable");
     }
     await observerDone;
-    if (!observerPassed) {
+    if (!observerPassed || !privileged) {
       throw new Error("observer-failed");
     }
   } finally {
@@ -502,29 +511,32 @@ try {
   if (typeof runtime.runtimeRoot !== "string" || !path.isAbsolute(runtime.runtimeRoot)) {
     throw new Error("runtime-root-missing");
   }
-  runtimeLabels = new Map(
-    JSON.parse(
-      await command("runtime-job-labels", "python3", [
-        "-c",
-        `import json, pathlib, plistlib, re, sys
+  const labelMaps: [string, string][][] = JSON.parse(
+    await command("runtime-job-labels", "python3", [
+      "-c",
+      `import json, pathlib, plistlib, re, sys
 from collections import defaultdict
-root = pathlib.Path(sys.argv[1])
-buckets = defaultdict(set)
-for directory in ("System/Library/LaunchDaemons", "System/Library/LaunchAgents"):
-    for file in (root / directory).glob("*.plist"):
-        data = plistlib.loads(file.read_bytes())
-        args = data.get("ProgramArguments") or []
-        program = data.get("Program") or (args[0] if args else "")
-        label = data.get("Label", "")
-        name = pathlib.PurePosixPath(program).name
-        if re.fullmatch(r"[A-Za-z0-9_.+-]{1,160}", name) and re.fullmatch(r"com\\.apple\\.[A-Za-z0-9_.-]{1,120}", label):
-            buckets[name[:16]].add(label)
-print(json.dumps([[name, next(iter(labels))] for name, labels in buckets.items() if len(labels) == 1]))`,
-        runtime.runtimeRoot,
-      ]),
-    ),
+maps = []
+for root in (pathlib.Path(sys.argv[1]), pathlib.Path("/")):
+    buckets = defaultdict(set)
+    for directory in ("System/Library/LaunchDaemons", "System/Library/LaunchAgents"):
+        for file in (root / directory).glob("*.plist"):
+            data = plistlib.loads(file.read_bytes())
+            args = data.get("ProgramArguments") or []
+            program = data.get("Program") or (args[0] if args else "")
+            label = data.get("Label", "")
+            name = pathlib.PurePosixPath(program).name
+            if re.fullmatch(r"[A-Za-z0-9_.+-]{1,160}", name) and re.fullmatch(r"com\\.apple\\.[A-Za-z0-9_.-]{1,120}", label):
+                buckets[name[:16]].add(label)
+    maps.append([[name, next(iter(labels))] for name, labels in buckets.items() if len(labels) == 1])
+print(json.dumps(maps))`,
+      runtime.runtimeRoot,
+    ]),
   );
+  runtimeLabels = new Map(labelMaps[0]);
+  hostLabels = new Map(labelMaps[1]);
   proof.runtimeLabelHintCount = runtimeLabels.size;
+  proof.hostLabelHintCount = hostLabels.size;
   phase = "gateway-install";
   const gateway = await prepareIOSReleaseGateway({
     targetSha,
@@ -558,12 +570,7 @@ print(json.dumps([[name, next(iter(labels))] for name, labels in buckets.items()
   for (const cycle of ["cold"] as const) {
     bootCycle = cycle;
     await collectCensus("before-boot");
-    await command("simulator-boot", "xcrun", [
-      "simctl",
-      "boot",
-      udid,
-      "--disabledJob=com.apple.apsd",
-    ]);
+    await command("simulator-boot", "xcrun", ["simctl", "boot", udid]);
     await command("simulator-ready", "xcrun", ["simctl", "bootstatus", udid, "-b"], 180_000);
     let headroomFailure: unknown;
     try {
@@ -575,16 +582,6 @@ print(json.dumps([[name, next(iter(labels))] for name, labels in buckets.items()
     await sleep(10_000, undefined, { signal: abort.signal });
     await collectCensus("after-late-window");
     await collectLogCounts(udid);
-    const pushRunning = snapshots.some(
-      (snapshot) =>
-        snapshot.stage !== "before-boot" &&
-        snapshot.rows.some((row) => row.labelHint === "com.apple.apsd"),
-    );
-    proof.disabledPushJobAbsent = !pushRunning;
-    if (pushRunning) {
-      phase = "push-job-disable-verification";
-      throw new Error("push-job-still-running");
-    }
     if (headroomFailure) {
       phase = "host-headroom";
       throw new Error("host-headroom-unavailable", { cause: headroomFailure });

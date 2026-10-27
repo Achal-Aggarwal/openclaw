@@ -8,6 +8,7 @@
 #include <sys/proc_info.h>
 #include <sys/sysctl.h>
 #include <time.h>
+#include <unistd.h>
 
 static mach_timebase_info_data_t timebase;
 
@@ -76,8 +77,12 @@ static int sample(unsigned int index, uint64_t started) {
 }
 
 int main(void) {
+  // Bound the privileged read-only collector independently of its unprivileged caller.
+  alarm(50);
   if (mach_timebase_info(&timebase) != KERN_SUCCESS || timebase.denom == 0) {
     return 1;
   }
+  printf("COLLECTOR\t%u\n", (unsigned int)geteuid());
+  fflush(stdout);
   return sample(0, monotonic_ms());
 }
