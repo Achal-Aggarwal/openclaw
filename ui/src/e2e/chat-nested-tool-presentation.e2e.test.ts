@@ -107,7 +107,7 @@ suite.define(() => {
       });
       await page.goto(`${suite.server.baseUrl}chat`);
       await page.getByText(conclusion, { exact: true }).waitFor();
-      await gateway.waitForRequest("chat.startup");
+      await gateway.waitForRequest("sessions.messages.subscribe");
       const work = page.locator(".chat-activity-group").first();
       const summary = work.locator(":scope > .chat-activity-group__summary");
       await summary.waitFor();
@@ -132,13 +132,14 @@ suite.define(() => {
       const diagnostics = activityBody.locator(".chat-tool-msg-body", {
         hasText: "gh: command not found",
       });
-      expect(await diagnostics.isVisible()).toBe(true);
+      await diagnostics.waitFor({ state: "visible" });
+      await diagnostics.getByText("gh: command not found", { exact: true }).waitFor();
       await activityBody.locator(".chat-tool-wrapper-details > summary").click();
       await activityBody.getByText(wrapperCode, { exact: false }).first().waitFor();
       await summary.click();
       expect(await summary.getAttribute("aria-expanded")).toBe("false");
       await page.reload();
-      await gateway.waitForRequest("chat.startup");
+      await gateway.waitForRequest("sessions.messages.subscribe");
       await summary.waitFor();
       await expectCollapsed(work);
       await page.emulateMedia({ reducedMotion: "reduce" });
