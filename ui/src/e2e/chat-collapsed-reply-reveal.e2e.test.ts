@@ -7,7 +7,7 @@ import {
   requireRecord,
   requireString,
 } from "./chat-flow.test-support.ts";
-import { polledAttribute, polledCount, polledText } from "./chat-presentation.test-support.ts";
+import { polledCount, polledText } from "./chat-presentation.test-support.ts";
 import { createControlUiE2eContextOptions } from "./control-ui-e2e-suite.test-support.ts";
 
 const suite = createChatFlowE2eSuite();
@@ -17,8 +17,8 @@ const finalText = "The lunar exhibit inventory is complete.";
 suite.define(() => {
   it.each([
     ["visible final answer", "inventory-final_answer", false],
-    ["folded earlier assistant message", "inventory-earlier", false],
-    ["deep earlier message in standalone work", "inventory-earlier", true],
+    ["earlier assistant narration", "inventory-earlier", false],
+    ["deep earlier narration after standalone work", "inventory-earlier", true],
   ] as const)(
     "reveals the %s after replying through transcript search",
     async (_name, sourceId, deepWork) => {
@@ -74,10 +74,26 @@ suite.define(() => {
         const pane = page.locator(".chat-pane-cache__pane--active");
         const source = pane.locator(`.chat-bubble[data-entry-id="${sourceId}"]`);
         const earlierMessage = pane.locator('.chat-bubble[data-entry-id="inventory-earlier"]');
-        const workToggle = pane.locator(".chat-work-group button");
+        // Completed narration stays inline; only tool stretches fold, one disclosure each.
+        const workToggles = pane.locator(".chat-work-group > .chat-activity-group__summary");
+        const expectSettledPresentation = async () => {
+          await earlierMessage.waitFor({ state: "visible" });
+          if (deepWork) {
+            await expect
+              .poll(() =>
+                workToggles.evaluateAll(
+                  (toggles) =>
+                    toggles.length > 0 &&
+                    toggles.every((toggle) => toggle.getAttribute("aria-expanded") === "false"),
+                ),
+              )
+              .toBe(true);
+          } else {
+            expect(await workToggles.count()).toBe(0);
+          }
+        };
         await page.goto(controlUiSessionUrl(suite.server.baseUrl, sessionKey));
-        await polledAttribute(workToggle, "aria-expanded").toBe("false");
-        expect(await earlierMessage.count()).toBe(0);
+        await expectSettledPresentation();
 
         const composer = pane.locator(".agent-chat__composer-combobox textarea");
         await composer.focus();
@@ -109,8 +125,7 @@ suite.define(() => {
           text: "Here is more detail about the inventory step.",
         });
         await exactButton(pane, "Close search").click();
-        await polledAttribute(workToggle, "aria-expanded").toBe("false");
-        expect(await earlierMessage.count()).toBe(0);
+        await expectSettledPresentation();
         const preview = pane.locator(".chat-reply-attribution--inline");
         await expect.poll(() => preview.getByRole("button").count()).toBe(1);
 
