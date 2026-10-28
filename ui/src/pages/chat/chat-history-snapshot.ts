@@ -194,6 +194,45 @@ export function reconcileHistoryTail(options: {
   };
 }
 
+/**
+ * Offset of the older page a bounded tail would cut from a transcript this pane
+ * holds from its start and grew live past its last read. Live rows do not prove
+ * contiguous coverage (tool results arrive as activity), so only a read can
+ * fill the gap. Windows without live growth keep the lazy boundary.
+ */
+export function heldHistoryGapOffset(options: {
+  result: ChatHistoryResult;
+  previousMessages: unknown[];
+  previousPagination: ChatHistoryPagination;
+  previousSessionId: string | null;
+}): number | null {
+  const nextPagination = resolveChatHistoryPagination(options.result);
+  if (
+    !nextPagination.hasMore ||
+    options.previousPagination.hasMore ||
+    options.result.windowReset === true
+  ) {
+    return null;
+  }
+  const readEnd = options.previousPagination.totalMessages ?? 0;
+  if (
+    !options.previousMessages.some(
+      (message) => (readSessionMessageSequence(message) ?? 0) > readEnd,
+    )
+  ) {
+    return null;
+  }
+  const tail = reconcileHistoryTail({
+    nextMessages: options.result.messages ?? [],
+    nextPagination,
+    nextSessionId: historySessionId(options.result),
+    previousMessages: options.previousMessages,
+    previousPagination: options.previousPagination,
+    previousSessionId: options.previousSessionId,
+  });
+  return tail?.pagination.hasMore ? nextPagination.nextOffset : null;
+}
+
 export function applyChatHistoryRefill(state: ChatState, result: ChatHistoryResult): void {
   // A byte-limited refill can be smaller than the cache. Replace its
   // window; the projection owner alone retains live and pending rows.

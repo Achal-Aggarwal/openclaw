@@ -306,6 +306,73 @@ it.each([
   },
 );
 
+describe("full tail after a long live turn", () => {
+  const prompt = message("user", "opening prompt", { id: "prompt", seq: 1 });
+  const call = (seq: number) => message("assistant", `call ${seq}`, { id: `call-${seq}`, seq });
+  const result = (seq: number) => ({
+    role: "toolResult",
+    content: [{ type: "text", text: `result ${seq}` }],
+    __openclaw: { id: `result-${seq}`, seq },
+  });
+  const transcript = [prompt, call(2), result(3), call(4), result(5), call(6), call(7)];
+  const sessionInfo = { key: "main", kind: "direct" as const, updatedAt: 1, sessionId: "session" };
+  // Stop persists an aborted reply, so the delta cursor resets to a bounded tail.
+  const tail = {
+    messages: transcript.slice(3),
+    hasMore: true,
+    nextOffset: 4,
+    totalMessages: 7,
+    sessionInfo: { ...sessionInfo, hasActiveRun: false, status: "killed" as const },
+  };
+
+  async function stopLongTurn(older: () => Promise<ChatHistoryResult>) {
+    const state = createState(tail);
+    state.currentSessionId = "session";
+    state.chatDisplayedLeafEntryId = undefined;
+    const pages = [
+      { messages: [prompt], totalMessages: 1, sessionInfo: { ...sessionInfo, hasActiveRun: true } },
+      tail,
+    ];
+    const request = vi
+      .spyOn(state.client!, "request")
+      .mockImplementation(async (_method, params) =>
+        (params as { offset?: number }).offset === undefined ? pages.shift() : older(),
+      );
+    await loadChatHistory(state);
+    // Live rows carry assistant turns only; tool results arrive as activity.
+    const scope = { sessionKey: state.sessionKey, sessionId: "session", activeLeafEntryId: null };
+    for (const row of [call(2), call(4), call(6)]) {
+      publishLive(state, row, scope);
+    }
+    await loadChatHistory(state);
+    return { state, request };
+  }
+
+  it("reads the gap before replacing a transcript held from its start", async () => {
+    const { state, request } = await stopLongTurn(async () => ({
+      messages: transcript.slice(0, 3),
+      totalMessages: 7,
+      sessionInfo,
+    }));
+    expect(request).toHaveBeenCalledWith(
+      "chat.history",
+      expect.objectContaining({ offset: 4 }),
+      expect.anything(),
+    );
+    expect(state.chatMessages).toEqual(transcript);
+    expect(state.chatHistoryPagination).toEqual({ hasMore: false, totalMessages: 7 });
+  });
+
+  it("keeps the retryable boundary when the gap read fails", async () => {
+    const { state } = await stopLongTurn(async () => {
+      throw new Error("offline");
+    });
+    expect(state.chatMessages).not.toContainEqual(result(3));
+    expect(state.chatHistoryPagination).toEqual({ hasMore: true, nextOffset: 4, totalMessages: 7 });
+    expect(state.lastError).toBeNull();
+  });
+});
+
 it("clears live projection ownership after history access is denied", async () => {
   const state = createState({ messages: [] });
   const scopeError = missingScopeErrorShape({

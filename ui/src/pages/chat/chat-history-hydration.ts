@@ -1,5 +1,6 @@
 import { GatewayRequestError } from "../../api/gateway-connect-errors.ts";
 import { isAssistantHeartbeatAckForDisplay } from "../../lib/chat/heartbeat-display.ts";
+import { prependUniqueNativeMessages } from "../../lib/chat/history-message-identity.ts";
 import {
   isHiddenAssistantStreamText,
   isVisibleChatHistoryMessage,
@@ -14,11 +15,13 @@ import { subscribeToSharedRequest } from "../../lib/shared-request-subscription.
 import {
   captureChatHistoryRun,
   chatHistoryRequestParams,
+  requestOlderChatHistoryPage,
   requestSharedHistory,
 } from "./chat-history-request.ts";
 import { formatChatHistoryLoadError, isRetryableChatReadError } from "./chat-history-retry.ts";
 import {
   type ObservedChatHistoryResult,
+  heldHistoryGapOffset,
   isHistoryCursor,
   resolveChatHistoryPagination,
   historySessionId,
@@ -187,6 +190,44 @@ export async function hydrateChatHistory(
       response = await request();
       if (!isCurrent()) {
         return undefined;
+      }
+    }
+    const gapOffset = isHistoryCursor(response)
+      ? null
+      : heldHistoryGapOffset({
+          result: response,
+          previousMessages: state.chatMessages,
+          previousPagination: state.chatHistoryPagination,
+          previousSessionId: state.currentSessionId ?? null,
+        });
+    if (gapOffset !== null) {
+      // A reset after a long turn returns a bounded tail. Read the rows between
+      // it and the start this pane already shows before publishing, so the
+      // opening prompt never turns into an earlier-history boundary. A failed
+      // read keeps the tail and its retryable boundary.
+      const older = await requestOlderChatHistoryPage(
+        client,
+        sessionKey,
+        requestAgentId,
+        gapOffset,
+        isCurrent,
+        read.signal,
+      ).catch(() => undefined);
+      if (!isCurrent()) {
+        return undefined;
+      }
+      if (
+        older &&
+        !isHistoryCursor(response) &&
+        historySessionId(older) === historySessionId(response)
+      ) {
+        response = {
+          ...response,
+          messages: prependUniqueNativeMessages(older.messages ?? [], response.messages ?? []),
+          hasMore: older.hasMore,
+          nextOffset: older.nextOffset,
+          totalMessages: older.totalMessages,
+        };
       }
     }
     const inFlightEvents =

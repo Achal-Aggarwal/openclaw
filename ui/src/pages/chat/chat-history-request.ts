@@ -361,7 +361,7 @@ export async function requestChatSessionSnapshot(
   };
 }
 
-async function requestOlderChatHistoryPage(
+export async function requestOlderChatHistoryPage(
   client: GatewayBrowserClient,
   sessionKey: string,
   requestAgentId: string | undefined,
