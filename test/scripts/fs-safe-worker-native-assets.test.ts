@@ -73,9 +73,9 @@ it("admits only pinned verified archives and the build consumes them without net
   await fs.writeFile(path.join(f.cache, "unrelated-private.tgz"), "must not copy");
   await fs.symlink(f.manifest, path.join(f.cache, "unrelated-link"));
   const receipts = await f.copy();
-  expect(await fs.readdir(path.join(f.snapshot, ".artifacts/worker-native-assets"))).toEqual(
-    f.filenames,
-  );
+  expect(
+    (await fs.readdir(path.join(f.snapshot, ".artifacts/worker-native-assets"))).toSorted(),
+  ).toEqual(f.filenames.toSorted());
   expect(receipts).toEqual(
     f.names.map((name) => ({
       name,
