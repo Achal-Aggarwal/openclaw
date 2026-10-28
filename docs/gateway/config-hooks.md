@@ -181,15 +181,25 @@ requests:
 
 The turn stays a non-owner: the grant only lifts the owner-only refusal for
 the tools it names, and everything else that depends on owner identity is
-unchanged. Accepted names are `gateway`, `plugins`, `nodes`, `computer`,
-`screen`, `mobile_ui`, `terminal` and `openclaw`. The conversation tools,
-`sessions`, `portal`, `intent` and `automations` check the sender themselves
-and cannot be granted; any other name is a config error. Plugin triggers and
-channel join introductions have no grant. Anyone with the hook token can drive
-granted tools with untrusted payload content, so grant only what the hook needs
-and keep the target agent's tool policy narrow. `openclaw security audit`
-warns about every grant (`hooks.owner_tools_granted`), and `openclaw doctor`
-notes enabled hooks without one.
+unchanged. So only owner-only tools without a sender check of their own can be
+granted:
+
+| Tool                                                                                     | Grantable | Reason                                                                                            |
+| ---------------------------------------------------------------------------------------- | --------- | ------------------------------------------------------------------------------------------------- |
+| `gateway`, `plugins`, `nodes`, `computer`, `screen`, `mobile_ui`, `terminal`, `openclaw` | yes       | Gated only by the owner-only refusal, which the grant lifts.                                      |
+| `conversations_list`, `conversations_send`, `conversations_turn`                         | no        | They refuse any non-owner turn themselves, so a grant could not make them work.                   |
+| `sessions`                                                                               | no        | It keeps its non-owner control-only mode; full control needs an owner identity.                   |
+| `portal`                                                                                 | no        | It keeps its non-owner mode, limited to the turn's own session target.                            |
+| `intent`                                                                                 | no        | Standing intents always require an explicit owner identity.                                       |
+| `automations`                                                                            | no        | Its scope comes from the run's execution context: a hook turn may act only on its own automation. |
+
+Any other or unknown name is a config error that lists the accepted names; it
+is never silently ignored. Plugin triggers, such as the IMAP trigger, and
+channel join introductions are non-owner and have no grant path. Anyone with the
+hook token can drive granted tools with untrusted payload content, so grant only
+what the hook needs and keep the target agent's tool policy narrow.
+`openclaw security audit` warns about every grant (`hooks.owner_tools_granted`),
+and `openclaw doctor` notes enabled hooks without one.
 
 ### Hook session and agent policy
 

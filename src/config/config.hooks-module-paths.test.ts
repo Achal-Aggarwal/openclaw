@@ -53,25 +53,33 @@ it("accepts owner-only tools a hook may grant", () => {
   expect(validateMapping({ allowedOwnerTools: ["nodes", "gateway"] }).ok).toBe(true);
 });
 
-it.each(["intent", "automations", "sessions", "conversations_send", "exec", "nodez"])(
-  "rejects %s as a hook owner-tool grant",
-  (tool) => {
-    for (const result of [
-      validateMapping({ allowedOwnerTools: [tool] }),
-      validateConfigObjectWithPlugins({
-        agents: { entries: { openclaw: {} } },
-        hooks: { allowedOwnerTools: [tool] },
-      }),
-    ]) {
-      expect(result).toMatchObject({
-        ok: false,
-        issues: expect.arrayContaining([
-          expect.objectContaining({
-            path: expect.stringMatching(/allowedOwnerTools\.0$/),
-            message: expect.stringContaining("owner-only tools a hook may grant"),
-          }),
-        ]),
-      });
-    }
-  },
-);
+// Non-grantable owner-only tools and unknown names both fail; neither is dropped silently.
+it.each([
+  "intent",
+  "automations",
+  "sessions",
+  "portal",
+  "conversations_list",
+  "conversations_send",
+  "conversations_turn",
+  "exec",
+  "nodez",
+])("rejects %s as a hook owner-tool grant", (tool) => {
+  for (const result of [
+    validateMapping({ allowedOwnerTools: [tool] }),
+    validateConfigObjectWithPlugins({
+      agents: { entries: { openclaw: {} } },
+      hooks: { allowedOwnerTools: [tool] },
+    }),
+  ]) {
+    expect(result).toMatchObject({
+      ok: false,
+      issues: expect.arrayContaining([
+        expect.objectContaining({
+          path: expect.stringMatching(/allowedOwnerTools\.0$/),
+          message: expect.stringContaining("owner-only tools a hook may grant"),
+        }),
+      ]),
+    });
+  }
+});
