@@ -54,7 +54,7 @@ import {
 import type { GitHubPublicationRequesterPolicyV2 } from "./github-publication-requester.js";
 import {
   prepareBoundGitHubPublication,
-  prepareGitHubPublicationTarget,
+  prepareGitHubPublicationExecutionTarget,
 } from "./github-publication-target.js";
 import { prepareGitHubPublicationWorkflowGuard } from "./github-publication-workflows.js";
 import { GatewayOperatorAccessUnavailableError } from "./operator-access-policy.js";
@@ -250,23 +250,21 @@ export async function executeGitHubPublication<Row extends PublicationRow>(param
         return await reconcileObservedPublication();
       }
     }
-    const { pushRepository, repository, branch, baseBranch, pushOwner, githubHost } =
-      await prepareGitHubPublicationTarget({
-        worktree,
-        identity,
-        pullRequest,
-        assertCurrent,
-      });
-    if (
-      params.target &&
-      (params.target.pushRepository !== pushRepository ||
-        params.target.repository !== repository ||
-        params.target.baseBranch !== baseBranch)
-    ) {
-      throw new GitHubPublicationWorkspaceChangedError(
-        "GitHub publication accepted repository target changed.",
-      );
+    const preparation = await prepareGitHubPublicationExecutionTarget({
+      worktree,
+      identity,
+      pullRequest,
+      row,
+      lifecycleRevision: loaded.entry.lifecycleRevision ?? null,
+      expectedTarget: params.target,
+      assertCurrent,
+    });
+    if (preparation.status === "reconcile") {
+      return await reconcileObservedPublication();
     }
+    const { target } = preparation;
+    const { pushRepository, repository, branch, baseBranch, pushOwner, githubHost } = target;
+    const { publishedPullRequest } = target;
     const remoteBaseSha = await readGitHubPublicationBaseSha(
       run,
       repository,
@@ -329,6 +327,7 @@ export async function executeGitHubPublication<Row extends PublicationRow>(param
       findGitHubPublicationPullRequest({
         repository,
         pullRequest,
+        publishedPullRequest,
         pushOwner,
         branch,
         baseBranch,
@@ -602,10 +601,11 @@ export async function executeGitHubPublication<Row extends PublicationRow>(param
       await params.recordEffect?.("push", { headCommit });
     }
 
-    if (pullRequest) {
+    if (pullRequest || publishedPullRequest) {
       const url = await reconcileGitHubPublicationPullRequest({
         requestId: row.request_id,
         pullRequest,
+        publishedPullRequest,
         pushRepository,
         repository,
         pushOwner,
@@ -616,7 +616,7 @@ export async function executeGitHubPublication<Row extends PublicationRow>(param
         workspaceTree,
         parentCommit: sourceHeadCommit,
         marker: pullRequestMarker,
-        knownPullRequestUrls: [pullRequest.url],
+        knownPullRequestUrls: [pullRequest?.url ?? publishedPullRequest!.url],
         refreshIdentity,
         assertCurrent: assertCustody,
         pushOnly: "observed",

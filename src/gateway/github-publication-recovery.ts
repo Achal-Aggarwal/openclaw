@@ -267,26 +267,40 @@ export async function reconcileGitHubPublication<
     const target = await prepareGitHubPublicationTarget({
       worktree,
       pullRequest: worktreeOwner.loaded.entry.worktree?.githubPullRequest,
+      session:
+        row.identity_source === "personal"
+          ? undefined
+          : {
+              agentId: row.agent_id,
+              sessionKey: row.session_key,
+              sessionId: row.session_id,
+              lifecycleRevision: worktreeOwner.loaded.entry.lifecycleRevision ?? null,
+            },
+      reconcile: true,
       identity: await refreshIdentity(),
       assertCurrent,
     });
     if (
       target.repository !== row.repository ||
       target.branch !== row.branch ||
-      target.baseBranch !== row.base_branch
+      (!target.publishedPullRequest && target.baseBranch !== row.base_branch)
     ) {
       throw new Error("GitHub publication's original target is unavailable.");
     }
     const knownPullRequestUrls = await readKnownGitHubPublicationPullRequestUrls(row);
+    if (target.publishedPullRequest) {
+      knownPullRequestUrls.push(target.publishedPullRequest.url);
+    }
     assertCurrent();
     url = await reconcileGitHubPublicationPullRequest({
       requestId: row.request_id,
       pullRequest: worktreeOwner.loaded.entry.worktree?.githubPullRequest,
+      publishedPullRequest: target.publishedPullRequest,
       pushRepository: target.pushRepository,
       repository: row.repository,
       pushOwner: target.pushOwner,
       branch: row.branch,
-      baseBranch: row.base_branch,
+      baseBranch: target.publishedPullRequest ? target.baseBranch : row.base_branch,
       headCommit: row.head_commit,
       workspaceTree: row.workspace_tree,
       parentCommit: row.source_head_commit,

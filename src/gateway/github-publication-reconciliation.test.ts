@@ -15,7 +15,10 @@ import { upsertSessionEntryCore } from "../config/sessions/session-accessor.js";
 import * as sqliteQueries from "../infra/kysely-sync.js";
 import * as stateReads from "../state/openclaw-state-db-readonly.js";
 import { GitHubPublicationRecoveryPendingError } from "./github-publication-git-index.js";
-import { createRealPublicationWorkspace } from "./github-publication-git.test-support.js";
+import {
+  createRealPublicationWorkspace,
+  publicationPullRequestResponse,
+} from "./github-publication-git.test-support.js";
 import {
   createRequesterPolicyFixture,
   capturePublicationGuest,
@@ -50,7 +53,7 @@ async function prepareExistingPullRequest(backend: Backend) {
     state: "open",
     body: JSON.parse(created![1].input).body,
     headSha: first.headCommit,
-    headRef: receipt.branch,
+    headRef: first.branch,
     baseRef: receipt.base_branch!,
   };
   expect(pullRequest.body).toContain(`<!-- openclaw-publication:${first.requestId} -->`);
@@ -136,8 +139,14 @@ it("recovers independent worktrees while preserving each worktree's publication 
   const independentDispatched = Promise.withResolvers<void>();
   const firstResponse = Promise.withResolvers<void>();
   const titles: string[] = [];
+  const remoteHeads = new Map<string, string>();
+  const pullRequests = new Map<string, Parameters<typeof publicationPullRequestResponse>[0]>();
   mocks.runCommand.mockImplementation(
     async (argv: string[], options?: { cwd?: string; input?: string }) => {
+      const observed = argv.map((arg) => pullRequests.get(arg)).find(Boolean);
+      if (argv.includes("GET") && observed) {
+        return commandResult(JSON.stringify(publicationPullRequestResponse(observed)));
+      }
       if (isPullCreation(argv)) {
         const title = JSON.parse(options!.input!).title as string;
         titles.push(title);
@@ -148,10 +157,41 @@ it("recovers independent worktrees while preserving each worktree's publication 
           independentDispatched.resolve();
         }
       }
-      return await (options?.cwd === first.local!.cwd ? firstTransport : secondTransport)(
+      const response = await (options?.cwd === first.local!.cwd ? firstTransport : secondTransport)(
         argv,
         options,
       );
+      if (argv.includes("push") && response.code === 0) {
+        const refspec = argv.find((arg) => /^[a-f0-9]+:refs\/heads\//u.test(arg))!;
+        const [headSha, headRef] = refspec.split(":refs/heads/");
+        remoteHeads.set(headRef!, headSha!);
+        for (const pr of pullRequests.values()) {
+          if (pr.headRef === headRef) {
+            pr.headSha = headSha!;
+          }
+        }
+      }
+      if (isPullCreation(argv) && response.code === 0) {
+        const input = JSON.parse(options!.input!);
+        const headRef = input.head.split(":")[1];
+        const number = headRef === secondWorktree.branch ? 125201 : 125200;
+        const url = `https://github.com/openclaw/openclaw/pull/${number}`;
+        const headSha = remoteHeads.get(headRef);
+        if (!headSha) {
+          throw new Error("Fixture PR has no accepted push");
+        }
+        pullRequests.set(`repos/openclaw/openclaw/pulls/${number}`, {
+          url,
+          userId: 42,
+          state: "open",
+          body: input.body,
+          headSha,
+          headRef,
+          baseRef: input.base,
+        });
+        return commandResult(JSON.stringify({ html_url: url }));
+      }
+      return response;
     },
   );
   for (const session of [first.session, secondSession]) {
@@ -231,7 +271,7 @@ it.each(["local", "repository"] as const)(
 );
 
 it.each([
-  { backend: "local", mode: "paged" },
+  { backend: "local", mode: "retargeted" },
   { backend: "local", mode: "interrupted" },
   { backend: "repository", mode: "paged" },
   { backend: "repository", mode: "interrupted" },
@@ -240,6 +280,9 @@ it.each([
   async ({ backend, mode }) => {
     const { f, first, pullRequest, transport, observePush } =
       await prepareExistingPullRequest(backend);
+    if (backend === "local") {
+      pullRequest.baseRef = "review/continuation";
+    }
     const closed = Array.from({ length: 30 }, (_, index) => ({
       ...pullRequest,
       url: pullRequest.url.replace(/\d+$/u, String(100 + index)),
@@ -254,6 +297,27 @@ it.each([
     const hostScans = vi.spyOn(sqliteQueries, "iterateSqliteQuerySync");
     let recoveryScanStart = 0;
     mocks.runCommand.mockImplementation(async (argv: string[], options?: { input?: string }) => {
+      if (backend === "local") {
+        const baseRef = argv.find((arg) =>
+          arg.startsWith("repos/openclaw/openclaw/git/ref/heads/"),
+        );
+        if (baseRef) {
+          return commandResult(
+            JSON.stringify({
+              ref: `refs/heads/${decodeURIComponent(baseRef.split("/heads/")[1]!)}`,
+              sha: await f.local!.git("rev-parse", "main"),
+            }),
+          );
+        }
+        if (argv.includes("GET") && argv.some((arg) => /\/pulls\/\d+$/u.test(arg))) {
+          recoveryLookup ||= pushed;
+          if (mode === "interrupted" && pushed && !readbackAvailable) {
+            unavailableLookups++;
+            return commandResult("", 1);
+          }
+          return commandResult(JSON.stringify(publicationPullRequestResponse(pullRequest)));
+        }
+      }
       if (argv.includes("state=all")) {
         recoveryLookup ||= pushed;
         if (mode === "paged") {
@@ -273,7 +337,7 @@ it.each([
       const response = await transport(argv, options);
       if (argv.includes("push") || argv.includes("graphql")) {
         await observePush();
-        if (mode === "paged") {
+        if (mode !== "interrupted") {
           await f.revoke();
         }
         pushed = true;
@@ -285,7 +349,7 @@ it.each([
     const idempotencyKey = `${mode}-update`;
     const publication = f.coordinator.requestForSessionV2(f.request(idempotencyKey, f.guest));
     let requestId: string;
-    if (mode === "paged") {
+    if (mode !== "interrupted") {
       const result = await publication;
       expect(result).toMatchObject(published(first.url, pullRequest.headSha));
       expect(result.requestId).not.toBe(first.requestId);
@@ -328,6 +392,9 @@ it.each([
       acceptedWrites = [...f.externalWrites];
       // Closing the known PR cannot undo an accepted update.
       pullRequest.state = "closed";
+      if (backend === "local") {
+        pullRequest.baseRef = "review/changed-after-push";
+      }
       await f.revoke();
       expect(f.guest.assertCurrent).toThrow();
       readbackAvailable = true;
@@ -358,8 +425,14 @@ it.each([
       expect(await restarted.readAsync(requestId)).toMatchObject(
         published(first.url, pullRequest.headSha),
       );
+      if (backend === "local") {
+        expect(f.readReceipt(requestId)?.base_branch).toBe("review/continuation");
+      }
     }
     expect(await f.coordinator.readAsync(first.requestId)).toEqual(first);
+    if (backend === "local") {
+      expect(f.readReceipt(first.requestId)?.base_branch).toBe("main");
+    }
     expect(f.externalWrites).toEqual(acceptedWrites);
     expect(f.publishedTitles).toEqual(["first-publication"]);
   },

@@ -9,8 +9,11 @@ import {
   requirePublicationCommand,
 } from "./github-publication-git-transport.js";
 
+export type PublishedGitHubPullRequest = { url: string; number: number; pushRepository: string };
+
 type GitHubPublicationPullRequestLookup = {
   pullRequest?: SessionGitHubPullRequestBinding;
+  publishedPullRequest?: PublishedGitHubPullRequest;
   repository: string;
   pushOwner: string;
   branch: string;
@@ -22,7 +25,7 @@ type GitHubPublicationPullRequestLookup = {
 };
 
 async function readGitHubPublicationApi(
-  params: GitHubPublicationPullRequestLookup,
+  params: Pick<GitHubPublicationPullRequestLookup, "host" | "refreshIdentity" | "assertCurrent">,
   endpoint: string,
   args: string[] = [],
 ) {
@@ -40,6 +43,55 @@ async function readGitHubPublicationApi(
     { env: identity.env },
   );
   return { identity, raw };
+}
+
+/** Read only the receipt-selected PR and verify both repository/branch boundaries. */
+export async function readPublishedGitHubPullRequest(
+  params: Pick<
+    GitHubPublicationPullRequestLookup,
+    "repository" | "branch" | "host" | "refreshIdentity" | "assertCurrent"
+  > & { publishedPullRequest: PublishedGitHubPullRequest; baseBranch?: string },
+) {
+  const pr = params.publishedPullRequest;
+  const { identity, raw } = await readGitHubPublicationApi(
+    params,
+    `repos/${params.repository}/pulls/${pr.number}`,
+  );
+  params.assertCurrent();
+  const value: unknown = JSON.parse(raw);
+  if (
+    !isRecord(value) ||
+    value.html_url !== pr.url ||
+    value.number !== pr.number ||
+    !isRecord(value.user) ||
+    value.user.id !== identity.account.accountId ||
+    !isRecord(value.head) ||
+    !isRecord(value.head.repo) ||
+    typeof value.head.repo.full_name !== "string" ||
+    value.head.repo.full_name.toLowerCase() !== pr.pushRepository.toLowerCase() ||
+    value.head.ref !== params.branch ||
+    !isRecord(value.base) ||
+    !isRecord(value.base.repo) ||
+    typeof value.base.repo.full_name !== "string" ||
+    value.base.repo.full_name.toLowerCase() !== params.repository.toLowerCase() ||
+    (params.baseBranch !== undefined && value.base.ref !== params.baseBranch)
+  ) {
+    throw new Error("The original published pull request target changed.");
+  }
+  const [candidate] = parseGitHubPublicationPullRequests(
+    JSON.stringify([
+      {
+        url: value.html_url,
+        userId: value.user.id,
+        state: value.state,
+        body: value.body ?? "",
+        headSha: value.head.sha,
+        headRef: value.head.ref,
+        baseRef: value.base.ref,
+      },
+    ]),
+  );
+  return { identity, candidate: candidate! };
 }
 
 async function loadGitHubPublicationPullRequests(params: GitHubPublicationPullRequestLookup) {
@@ -67,6 +119,13 @@ async function loadGitHubPublicationPullRequests(params: GitHubPublicationPullRe
       throw new Error("The original GitHub pull request target changed.");
     }
     return { identity, candidates: parseGitHubPublicationPullRequests(JSON.stringify([value])) };
+  }
+  if (params.publishedPullRequest) {
+    const { identity, candidate } = await readPublishedGitHubPullRequest({
+      ...params,
+      publishedPullRequest: params.publishedPullRequest,
+    });
+    return { identity, candidates: [candidate] };
   }
   const marker = JSON.stringify(params.marker);
   const { identity, raw } = await readGitHubPublicationApi(
@@ -137,6 +196,12 @@ export async function findGitHubPublicationPullRequest(
   },
 ): Promise<string | undefined> {
   const { identity, candidates } = await loadGitHubPublicationPullRequests(params);
+  if (params.publishedPullRequest && candidates.some((candidate) => candidate.state === "closed")) {
+    throw new GitHubPublicationKnownFailure("The original published pull request was closed.", {
+      code: "github_rejected",
+      nextAction: "Inspect the original pull request before requesting another publication.",
+    });
+  }
   const exact = candidates.filter(
     (candidate) =>
       (params.pullRequest || candidate.userId === identity.account.accountId) &&

@@ -9,6 +9,28 @@ import type {
   githubPublicationTestMocks,
 } from "./github-publication.test-support.js";
 
+type PublicationPullRequestFixture = {
+  url: string;
+  userId: number;
+  state: string;
+  body: string;
+  headSha: string;
+  headRef: string;
+  baseRef: string;
+};
+
+export function publicationPullRequestResponse(pr: PublicationPullRequestFixture) {
+  return {
+    html_url: pr.url,
+    number: Number(pr.url.split("/").at(-1)),
+    user: { id: pr.userId },
+    state: pr.state,
+    body: pr.body,
+    head: { ref: pr.headRef, sha: pr.headSha, repo: { full_name: "openclaw/openclaw" } },
+    base: { ref: pr.baseRef, repo: { full_name: "openclaw/openclaw" } },
+  };
+}
+
 /** Real local Git/index with synthetic remote effects; no credential helper reaches a subprocess. */
 export async function createRealPublicationWorkspace(params: {
   root: string;
@@ -109,6 +131,7 @@ export async function createRealPublicationWorkspace(params: {
   let interrupted = false;
   let remoteHead = "";
   let remoteBranch = branch;
+  let publishedPullRequest: PublicationPullRequestFixture | undefined;
   const remoteCommits = new Set([baseHead]);
   const effects: string[] = [];
   function interrupt(at: typeof interruptAt, message: string, ready = true) {
@@ -119,6 +142,20 @@ export async function createRealPublicationWorkspace(params: {
   }
   mocks.runCommand.mockImplementation(async (argv: string[], options?: CommandOptions) => {
     if (argv[0] === "gh") {
+      const pr = publishedPullRequest;
+      if (
+        pr &&
+        argv.includes("GET") &&
+        argv.some((arg) => arg === `repos/openclaw/openclaw/pulls/${pr.url.split("/").at(-1)}`)
+      ) {
+        return json(
+          publicationPullRequestResponse({
+            ...pr,
+            headSha: remoteHead,
+            headRef: remoteBranch,
+          }),
+        );
+      }
       const commitPath = "repos/openclaw/openclaw/git/commits/";
       const commit = argv.find((arg) => arg.startsWith(commitPath))?.slice(commitPath.length);
       if (commit) {
@@ -146,6 +183,20 @@ export async function createRealPublicationWorkspace(params: {
       if (argv.includes("POST")) {
         effects.push("pull_request");
         interrupt("create", "synthetic PR response lost");
+        const response = await remote(argv, options);
+        if (argv.some((arg) => arg.endsWith("/pulls")) && response.code === 0) {
+          const input = JSON.parse(options!.input!);
+          publishedPullRequest = {
+            url: JSON.parse(response.stdout.toString()).html_url,
+            userId: 42,
+            state: "open",
+            body: input.body,
+            headSha: remoteHead,
+            headRef: remoteBranch,
+            baseRef: input.base,
+          };
+        }
+        return response;
       }
       return await remote(argv, options);
     }
