@@ -11,10 +11,11 @@ export function nodeRuntimePathEntries(value) {
 /** Keep lifecycle children on the explicitly selected runtime without changing npm config. */
 export function withNodeRuntimePath(env, nodePath, platform = process.platform) {
   const paths = platform === "win32" ? path.win32 : path.posix;
-  const keys = Object.keys(env)
-    .sort()
-    .filter((key) => (platform === "win32" ? key.toUpperCase() === "PATH" : key === "PATH"));
-  const key = keys[0] ?? "PATH";
+  const keys = Object.keys(env).filter((key) =>
+    platform === "win32" ? key.toUpperCase() === "PATH" : key === "PATH",
+  );
+  // Select the same first lexical alias without requiring newer Array methods.
+  const key = keys.length ? keys.reduce((first, entry) => (entry < first ? entry : first)) : "PATH";
   const directory = paths.dirname(nodePath);
   const entries = (env[key] ? env[key].split(paths.delimiter) : []).filter(
     (entry) => entry !== directory,

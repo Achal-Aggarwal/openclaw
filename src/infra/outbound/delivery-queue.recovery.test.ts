@@ -1068,17 +1068,18 @@ describe("delivery-queue recovery", () => {
   ] as const)(
     "classifies a thrown %s unknown-send reconciliation with the delivery error policy",
     async (_kind, error, retryCount) => {
-      const id = await enqueueUnknown({ text: "unknown" });
+      const id = await enqueueUnknownRecovery({ text: "unknown" });
       const reconcileUnknownSend = vi.fn().mockRejectedValue(new Error(error));
-      installReconciler(reconcileUnknownSend);
-      const { result } = await recover({ deliver });
+      installUnknownSendAdapter(reconcileUnknownSend);
+      const deliver = vi.fn().mockResolvedValue([]);
+      const { result } = await runRecovery({ deliver });
       expect(reconcileUnknownSend).toHaveBeenCalledOnce();
       expect(deliver).not.toHaveBeenCalled();
       expect(result.failed).toBe(1);
       if (retryCount === undefined) {
-        await expectRemoved(id);
+        await expectFailedQueue(id);
       } else {
-        await expectPending({ id, retryCount, recoveryState: "unknown_after_send" });
+        await expectPendingEntry({ id, retryCount, recoveryState: "unknown_after_send" });
       }
     },
   );

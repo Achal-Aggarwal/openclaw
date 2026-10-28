@@ -786,6 +786,7 @@ describe("system events (session routing)", () => {
   });
 
   it("preserves deferred occurrences when consuming through the SDK", () => {
+    const key = "agent:main:deferred-sdk";
     enqueueSdkSystemEvent("Deferred", { sessionKey: key });
     enqueueSdkSystemEvent("Consumed", { sessionKey: key });
     const captured = peekSdkSystemEventEntries(key);

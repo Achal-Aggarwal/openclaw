@@ -510,7 +510,7 @@ describe("Git checkout execution", () => {
       expect(preserve?.stderrTail).toContain("?? operator-notes.txt");
       expect(await fs.readFile(path.join(root, "candidate.txt"), "utf8")).toBe("operator edit\n");
       expect(await fs.readFile(path.join(root, "operator-notes.txt"), "utf8")).toBe("keep me\n");
-      expect(await head()).toBe(target);
+      expect(await git(root, "rev-parse", "HEAD")).toBe(target);
       await expectRuntime(root, beforeSha);
 
       // After saving their work elsewhere, the printed commands restore the original commit.
@@ -527,7 +527,7 @@ describe("Git checkout execution", () => {
           .map((arg) => arg.replace(/^'(.*)'$/u, "$1"));
         await git(root, ...args);
       }
-      expect(await head()).toBe(beforeSha);
+      expect(await git(root, "rev-parse", "HEAD")).toBe(beforeSha);
       expect(await git(root, "branch", "--show-current")).toBe(startBranch);
       expect(await git(root, "status", "--porcelain")).toBe("");
     },
