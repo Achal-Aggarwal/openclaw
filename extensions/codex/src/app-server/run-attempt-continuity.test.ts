@@ -135,12 +135,29 @@ it("retains a protected parent through private completion and owner reentry", as
         ).resolves.toMatchObject({ success: false });
         expect(tool.execute).not.toHaveBeenCalled();
       }
+      const compacted = route.context.prepare(
+        { instructions: "Native compaction policy.", input: [] },
+        { requestKind: "compaction", threadId: "thread-1", generation },
+      );
+      expect(compacted.body.instructions).toBe("Native compaction policy.");
+      const afterCompaction = route.context.prepare(
+        { input: [] },
+        { requestKind: "turn", threadId: "thread-1", generation },
+      );
+      expect(afterCompaction.body.instructions).toContain(text);
+      expect(() =>
+        route.context.prepare(
+          { input: [] },
+          { requestKind: "turn", threadId: "thread-1", generation: "retired-generation" },
+        ),
+      ).toThrow("no current admitted parent generation");
       expect(prepared.body.instructions).toContain(text);
       expect(prepared.body.instructions).not.toContain(
         index === 2 ? "Owner conversation context." : "Private completion context.",
       );
       await harness.completeTurn({ threadId: "thread-1", turnId: "turn-1" });
       await run;
+      expect(() => afterCompaction.assertCurrent()).toThrow();
     }
     expect(bindings[0]?.dynamicToolsFingerprint).toEqual(expect.stringMatching(/\S+/));
     for (const binding of bindings) {
@@ -205,6 +222,27 @@ it("fails closed without a relay, then applies changed context through an idle n
     expect(request).toMatchObject({
       developerInstructions: expect.stringContaining("First conversation context."),
     });
+    const beforeUnchanged = harness.requests.length;
+    await expect(
+      runCodexAppServerAttempt({ ...params, runId: "unchanged-no-relay" }),
+    ).rejects.toThrow("requires a current parent-local inference relay");
+    expect(
+      harness.requests
+        .slice(beforeUnchanged)
+        .some(({ method }) =>
+          [
+            "thread/start",
+            "thread/resume",
+            "turn/start",
+            "turn/interrupt",
+            "thread/unsubscribe",
+          ].includes(method),
+        ),
+    ).toBe(false);
+    expect(await readCodexAppServerBinding(sessionFile)).toEqual(initialBinding);
+    expect(clientRuntime.isCodexAppServerLiveThreadProtected(harness.client, "thread-1")).toBe(
+      true,
+    );
     const changed = {
       ...params,
       runId: "changed-context",
