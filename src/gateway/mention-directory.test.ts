@@ -185,6 +185,34 @@ it("resolves verified handles and full names to the same recipient without expos
     });
   }));
 
+it("identifies an unnamed guest by their verified handle in the mention picker", () =>
+  withInbox(
+    async (f) => {
+      const guest = syncGitHubIdentity({
+        identity: { accountId: 51, login: "guest-reviewer" },
+        authenticationAlias: { kind: "github-login", login: "guest-reviewer" },
+      });
+      expect(guest.displayName).toBeNull();
+      setUserProfileRole(guest.id, "guest");
+      for (const query of ["", "guest-reviewer", "GUEST-REVIEWER"]) {
+        const { users } = await searchDirectory(f, query);
+        expect(users.find((user) => user.profileId === guest.id)).toEqual({
+          profileId: guest.id,
+          displayName: "guest-reviewer",
+          avatarUrl: expect.any(String),
+          online: false,
+        });
+      }
+    },
+    mentionRoles({
+      guest: {
+        agents: "*",
+        scopes: ["operator.sessions.write"],
+        sessions: { others: "view" },
+      },
+    }),
+  ));
+
 it("includes offline people without leaking administrative profile fields or binding raw presence", () =>
   withInbox(async (f) => {
     const offline = ensureProfileForEmail("offline@mentions.example.test");
