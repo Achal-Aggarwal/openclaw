@@ -7,7 +7,8 @@ import {
 import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { setRuntimeConfigSnapshot } from "../config/config.js";
 import {
   loadSessionEntryReadOnly,
   upsertSessionEntryCore,
@@ -89,15 +90,29 @@ describe("session PR actions through the agent tool and registered Gateway metho
       for (const raw of [false, true]) {
         await expect(
           f.invoke("guest", { ...args, ...extra }, SESSION_KEY, { raw }),
-        ).rejects.toThrow();
+        ).rejects.toThrow(
+          raw
+            ? new RegExp(
+                String.raw`^invalid sessions\.github\.action params:.*unexpected property '${Object.keys(extra)[0]}'`,
+                "u",
+              )
+            : "request_review only posts the fixed ClawSweeper command on the current session PR.",
+        );
       }
     }
-    for (const extra of [
-      { requestId: undefined },
-      { expectedHeadCommit: undefined },
-      { requestId: randomUUID() },
+    for (const { extra, refusal } of [
+      { extra: { requestId: undefined }, refusal: "publication changed" },
+      {
+        extra: { expectedHeadCommit: undefined },
+        refusal: /^invalid sessions\.github\.action params:.*expectedHeadCommit/u,
+      },
+      { extra: { requestId: randomUUID() }, refusal: "publication changed" },
     ]) {
-      await expect(f.invoke("guest", { ...args, ...extra })).rejects.toThrow();
+      for (const raw of [false, true]) {
+        await expect(
+          f.invoke("guest", { ...args, ...extra }, SESSION_KEY, { raw }),
+        ).rejects.toThrow(refusal);
+      }
     }
     f.state.head.sha = "f".repeat(40);
     await expect(f.invoke("guest", args)).rejects.toThrow("head changed");
@@ -140,7 +155,9 @@ describe("session PR actions through the agent tool and registered Gateway metho
       updatedAt: 1,
     };
     prepareGatewayConnectOperatorAccess(client);
-    await expect(f.invoke("guest", args, SESSION_KEY, { client })).rejects.toThrow();
+    await expect(f.invoke("guest", args, SESSION_KEY, { client })).rejects.toThrow(
+      "session is shared for this connection",
+    );
     const scope = { agentId: "main", sessionKey: SESSION_KEY };
     await upsertSessionEntryCore(scope, { visibility: "shared" });
     await addSessionMember(scope, { identityId: other.id, addedBy: f.guestProfile });
@@ -174,7 +191,9 @@ describe("session PR actions through the agent tool and registered Gateway metho
           mocks.matchesIdentity.mockReturnValue(false);
         }
       });
-      await expect(f.action("guest", "request_review")).rejects.toThrow();
+      await expect(f.action("guest", "request_review")).rejects.toThrow(
+        changed === "requester" ? "Your operator role changed" : "The GitHub publisher changed",
+      );
       expect(f.writes).toEqual([]);
     },
   );
@@ -225,6 +244,9 @@ describe("session PR actions through the agent tool and registered Gateway metho
       title: f.state.title,
     };
     const originalSession = loadSessionEntryReadOnly({ agentId: "main", sessionKey: SESSION_KEY });
+    const receipt = structuredClone(f.readReceipt(f.publication.requestId));
+    const headCommit = "b".repeat(40);
+    f.state.head.sha = headCommit;
     const commandsBefore = mocks.runCommand.mock.calls.length;
     const checkpointsBefore = checkpoint.mock.calls.length;
     await expect(f.invoke("guest", { body: "" })).rejects.toThrow(/invalid.*params/iu);
@@ -232,10 +254,22 @@ describe("session PR actions through the agent tool and registered Gateway metho
       body: before.body,
       title: before.title,
       publication: f.publication,
+      headCommit,
     });
     const body = `Fixes #123\n\n${before.body}`;
-    const result = await f.action("guest", "edit", { body, expectedBody: before.body });
-    expect(result).toMatchObject({ state: "draft", body, title: before.title });
+    const result = await f.action("guest", "edit", {
+      body,
+      expectedBody: before.body,
+      expectedHeadCommit: headCommit,
+    });
+    expect(result).toMatchObject({
+      state: "draft",
+      body,
+      title: before.title,
+      headCommit,
+      publication: f.publication,
+    });
+    expect(f.readReceipt(f.publication.requestId)).toEqual(receipt);
     expect(f.writes).toEqual([{ action: "edit", input: { body } }]);
     expect(
       mocks.runCommand.mock.calls.slice(commandsBefore).every(([argv]) => argv[0] === "gh"),
@@ -258,9 +292,24 @@ describe("session PR actions through the agent tool and registered Gateway metho
     const expectedTitle = f.state.title;
     f.state.body = `Human clarification\n\n${f.state.body}`;
     const body = f.state.body;
-    const args = { action: "edit", ...f.expected, title: "A clearer title", expectedTitle };
+    const receipt = structuredClone(f.readReceipt(f.publication.requestId));
+    const headCommit = "b".repeat(40);
+    f.state.head.sha = headCommit;
+    expect((await f.invoke("guest", { action: "edit" })).details).toMatchObject({
+      headCommit,
+      publication: f.publication,
+    });
+    const args = {
+      action: "edit",
+      ...f.expected,
+      expectedHeadCommit: headCommit,
+      title: "A clearer title",
+      expectedTitle,
+    };
     f.loseResponse();
-    expect((await f.invoke("guest", args)).details).toMatchObject({
+    expect((await f.invoke("guest", args, SESSION_KEY, { raw: true })).details).toMatchObject({
+      headCommit,
+      publication: f.publication,
       title: "A clearer title",
       body,
       state: "draft",
@@ -270,6 +319,7 @@ describe("session PR actions through the agent tool and registered Gateway metho
       body,
     });
     expect(f.writes).toEqual([{ action: "edit", input: { title: "A clearer title" } }]);
+    expect(f.readReceipt(f.publication.requestId)).toEqual(receipt);
   });
 
   it("preserves the original attribution after an edit appends another publication footer", async () => {
@@ -317,9 +367,12 @@ describe("session PR actions through the agent tool and registered Gateway metho
     const f = await fixture();
     const body = f.state.body;
     const title = f.state.title;
+    const headCommit = "b".repeat(40);
+    f.state.head.sha = headCommit;
     const args = {
       action: "edit",
       ...f.expected,
+      expectedHeadCommit: headCommit,
       body: `Description edit\n\n${body}`,
       expectedBody: body,
     };
@@ -340,8 +393,14 @@ describe("session PR actions through the agent tool and registered Gateway metho
       "publication changed",
     );
     await expect(
-      f.invoke("guest", { ...args, expectedHeadCommit: "f".repeat(40) }),
-    ).rejects.toThrow("publication changed");
+      f.invoke("guest", { ...args, expectedHeadCommit: f.publication.headCommit }),
+    ).rejects.toThrow("head changed");
+    f.state.head.sha = "c".repeat(40);
+    await expect(f.invoke("guest", args)).rejects.toThrow("head changed");
+    f.state.head.sha = headCommit;
+    await expect(f.invoke("guest", { ...args, requestId: undefined })).rejects.toThrow(
+      "publication changed",
+    );
     await expect(f.invoke("guest", { ...args, expectedBody: undefined })).rejects.toThrow(
       "expectedBody",
     );
@@ -357,11 +416,90 @@ describe("session PR actions through the agent tool and registered Gateway metho
 
   it("rejects an edit after the admitted guest loses authority during the GitHub read", async () => {
     const f = await fixture();
+    f.state.head.sha = "b".repeat(40);
     f.onRead(async () => await f.revoke());
     await expect(
-      f.action("guest", "edit", { title: "New title", expectedTitle: f.state.title }),
-    ).rejects.toThrow();
+      f.action("guest", "edit", {
+        title: "New title",
+        expectedTitle: f.state.title,
+        expectedHeadCommit: f.state.head.sha,
+      }),
+    ).rejects.toThrow("Your operator role changed");
     expect(f.writes).toEqual([]);
+  });
+
+  it("rejects metadata edits when the live target or selected publisher changes", async () => {
+    const f = await fixture();
+    const original = structuredClone(f.state);
+    const identity = await mocks.prepareIdentity();
+    const actual = await vi.importActual<typeof import("../agents/github-tool-identity.js")>(
+      "../agents/github-tool-identity.js",
+    );
+    mocks.matchesIdentity.mockImplementation(actual.matchesPreparedGitHubPublicationIdentity);
+    const config = { ...f.config, tools: { github: { profileId: identity.profileId } } };
+    for (const change of ["url", "repository", "branch", "publisher", "profile"]) {
+      Object.assign(f.state, structuredClone(original));
+      f.state.head.sha = "b".repeat(40);
+      setRuntimeConfigSnapshot(config);
+      mocks.prepareIdentity.mockResolvedValue(
+        change === "publisher"
+          ? { ...identity, account: { ...identity.account, accountId: 99 } }
+          : identity,
+      );
+      f.onRead(async () => {
+        if (change === "url") {
+          f.state.html_url += "0";
+        }
+        if (change === "repository") {
+          f.state.base.repo.full_name = "other/repository";
+        }
+        if (change === "branch") {
+          f.state.head.ref = "other-branch";
+        }
+        if (change === "profile") {
+          setRuntimeConfigSnapshot({
+            ...config,
+            tools: { github: { profileId: "ghp_22222222222222222222222222222222" } },
+          });
+        }
+      });
+      await expect(
+        f.action("guest", "edit", {
+          expectedHeadCommit: f.state.head.sha,
+          expectedTitle: f.state.title,
+          title: "New title",
+        }),
+        change,
+      ).rejects.toThrow(
+        change === "publisher"
+          ? "GitHub publication identity changed"
+          : change === "profile"
+            ? "publisher changed"
+            : "invalid pull request state",
+      );
+      expect(f.writes, change).toEqual([]);
+    }
+  });
+
+  it("reports a head change after PATCH without retrying or denying that metadata was applied", async () => {
+    const f = await fixture();
+    const receipt = structuredClone(f.readReceipt(f.publication.requestId));
+    f.state.head.sha = "b".repeat(40);
+    f.onRead(async () => {
+      if (f.writes.length) {
+        f.state.head.sha = "c".repeat(40);
+      }
+    });
+    await expect(
+      f.action("guest", "edit", {
+        expectedHeadCommit: f.state.head.sha,
+        expectedTitle: f.state.title,
+        title: "New title",
+      }),
+    ).rejects.toThrow(/head changed.*may already have completed/u);
+    expect(f.writes).toEqual([{ action: "edit", input: { title: "New title" } }]);
+    expect(f.state.title).toBe("New title");
+    expect(f.readReceipt(f.publication.requestId)).toEqual(receipt);
   });
 
   it("rejects guest readiness for another publishing target, foreign work or an unbound workspace", async () => {
@@ -430,7 +568,7 @@ describe("session PR actions through the agent tool and registered Gateway metho
     await expect(f.action("guest", "ready")).rejects.toThrow("publisher changed");
     mocks.matchesIdentity.mockReturnValue(true);
     f.onRead(async () => await f.revoke());
-    await expect(f.action("guest", "ready")).rejects.toThrow();
+    await expect(f.action("guest", "ready")).rejects.toThrow("Your operator role changed");
     expect(f.writes).toEqual([]);
   });
 
@@ -555,14 +693,14 @@ describe("session PR actions through the agent tool and registered Gateway metho
 
   it("rejects changed or unready publications before GitHub writes", async () => {
     const f = await fixture();
-    for (const change of [
-      "changed head",
-      "close changed head",
-      "different receipt",
-      "missing head",
-      "closed PR",
-      "blocked checks",
-    ]) {
+    for (const [change, refusal] of [
+      ["changed head", "The GitHub PR head changed"],
+      ["close changed head", "The GitHub PR head changed"],
+      ["different receipt", "The publication changed"],
+      ["missing head", "Read the current PR with edit or inspect"],
+      ["closed PR", "The published PR is closed without merging"],
+      ["blocked checks", "GitHub does not report this PR ready to merge"],
+    ] as const) {
       f.state.head.sha = f.publication.headCommit;
       f.state.state = "open";
       f.state.draft = true;
@@ -592,9 +730,37 @@ describe("session PR actions through the agent tool and registered Gateway metho
       await expect(
         f.invoke(args.action === "ready" ? "guest" : "admin", args),
         change,
-      ).rejects.toThrow(/changed|inspect|closed/iu);
+      ).rejects.toThrow(refusal);
       expect(f.writes, change).toEqual([]);
     }
+    f.state.head.sha = "b".repeat(40);
+    for (const action of ["inspect", "edit", "ready", "request_review", "close", "merge"]) {
+      await expect(
+        f.action("admin", action, {
+          expectedHeadCommit: f.state.head.sha,
+          ...(action === "merge" ? { mergeMethod: "merge" } : {}),
+        }),
+        action,
+      ).rejects.toThrow("publication changed");
+      expect(f.writes, action).toEqual([]);
+    }
+    await expect(
+      f.invoke(
+        "guest",
+        {
+          action: "upload_evidence",
+          ...f.expected,
+          expectedHeadCommit: f.state.head.sha,
+          evidence: {
+            path: "proof.png",
+            sha256: "a".repeat(64),
+            sizeBytes: 1,
+          },
+        },
+        SESSION_KEY,
+        { raw: true },
+      ),
+    ).rejects.toThrow("The publication changed; inspect the current PR");
   });
 
   it("revalidates the admitted person's role after GitHub state is read", async () => {
