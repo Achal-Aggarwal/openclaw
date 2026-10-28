@@ -1,4 +1,4 @@
-import type { GatewaySessionRow } from "../api/types.ts";
+import type { GatewaySessionRow, SessionsListResult } from "../api/types.ts";
 import type { ApplicationContext } from "../app/context.ts";
 import { gatewayPresentationScope } from "../app/gateway-presentation-scope.ts";
 import { prefValuesEqual } from "../app/server-prefs-state.ts";
@@ -11,11 +11,9 @@ import {
   type PersonalSessionGroup,
 } from "../lib/sessions/personal-groups.ts";
 import { isPinnableUiSessionRow, parseAgentSessionKey } from "../lib/sessions/session-key.ts";
-import {
-  buildSessionListParams,
-  requestSessionListParams,
-} from "../lib/sessions/session-requests.ts";
+import { buildSessionListParams } from "../lib/sessions/session-requests.ts";
 import { showToast } from "../lib/toast.ts";
+import { SESSION_SEARCH_SCOPE } from "./command-palette-session-search.ts";
 import { showPersonalSessionGroupDialog } from "./personal-session-group-dialog.tsx";
 
 export type PersonalSessionGroupCandidate = {
@@ -194,7 +192,10 @@ export function createPersonalSessionGroupActions(
       const client = context.gateway.snapshot.client;
       const viewer = viewerId();
       const projects = projectsForGateway(context.gateway);
-      await projects.refresh();
+      // The catalog is per Gateway; only the first editor open waits for it.
+      if (!projects.snapshot.ready) {
+        await projects.refresh();
+      }
       const load = async (
         scope: PersonalSessionGroupScope,
         search: string,
@@ -203,21 +204,18 @@ export function createPersonalSessionGroupActions(
           return null;
         }
         // The Gateway applies the viewer's access to every scope; the editor only narrows it.
-        const result = await requestSessionListParams(
-          client,
-          {
-            ...buildSessionListParams({
-              limit: SECTION_CANDIDATE_LIMIT,
-              rowMode: "sidebar",
-              search,
-              ...(scope.kind === "mine" && viewer ? { ownerId: viewer } : {}),
-              ...(scope.kind === "involving" ? { involvingMe: true } : {}),
-            }),
-            ...(scope.kind === "project" ? { projectId: scope.projectId } : {}),
-          },
-          current,
-        );
-        if (!result) {
+        // A plain request keeps per-keystroke queries out of the sidebar's conditional row cache.
+        const result = await client.request<SessionsListResult | undefined>("sessions.list", {
+          ...buildSessionListParams({
+            ...SESSION_SEARCH_SCOPE,
+            limit: SECTION_CANDIDATE_LIMIT,
+            search,
+            ...(scope.kind === "mine" && viewer ? { ownerId: viewer } : {}),
+            ...(scope.kind === "involving" ? { involvingMe: true } : {}),
+          }),
+          ...(scope.kind === "project" ? { projectId: scope.projectId } : {}),
+        });
+        if (!result || !current()) {
           return null;
         }
         const sessions = result.sessions

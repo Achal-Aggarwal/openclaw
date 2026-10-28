@@ -361,7 +361,7 @@ come from: **My sessions**, **Involving me**, **All sessions** (including
 teammates'), or one project. Then pick sessions from that list; the search button
 searches every session you can access, not only those loaded in the sidebar, and
 teammates' sessions show their owner. **Edit section** opens on the session list;
-**Change** returns to the name and source. Sessions inside a section follow the
+**Back** returns to the name and source. Sessions inside a section follow the
 sidebar's **Sort by** selection. Drag an existing session into a section to add it. Drag section headers
 to reorder them, or use **Move up** and **Move down** in the section menu.
 **Remove section** removes only that personal section; it never deletes sessions.

@@ -16,10 +16,10 @@ import { captureFrame } from "./sidebar-assertions.test-support.ts";
 
 const suite = createSessionManagementE2eSuite();
 
-/** New sections name and scope first; edits open on session choice and go back to rename. */
+/** New sections name and scope first; edits open on session choice and go Back to rename. */
 async function nameSection(dialog: Locator, name: string, options: { editing?: boolean } = {}) {
   if (options.editing) {
-    await dialog.getByRole("button", { name: "Change", exact: true }).click();
+    await dialog.getByRole("button", { name: "Back", exact: true }).click();
   }
   await dialog.getByLabel("Section name", { exact: true }).fill(name);
   await dialog.getByRole("button", { name: "Choose sessions", exact: true }).click();
@@ -167,16 +167,15 @@ suite.define(() => {
       expect(await created.getByText("Only you", { exact: true }).isVisible()).toBe(true);
       expect(
         await created
-          .getByText("Only in your sidebar. Adding a session doesn't move it from its group.", {
-            exact: true,
-          })
+          .getByText("Adding a session doesn't move it from its group.", { exact: true })
           .isVisible(),
       ).toBe(true);
       const scopes = created.getByRole("radiogroup", { name: "Choose sessions from" });
       expect(await scopes.getByRole("radio", { name: "My sessions" }).isChecked()).toBe(true);
       await capture("3-step1.png", created);
       await scopes.getByRole("radio", { name: "A project" }).check();
-      await created.getByRole("combobox", { name: "Project", exact: true }).selectOption("clawhub");
+      await created.locator("#personal-section-project").click();
+      await page.getByRole("option", { name: "clawhub", exact: true }).click();
       await capture("4-step1-project.png", created);
       await scopes.getByRole("radio", { name: "All sessions" }).check();
       const next = created.getByRole("button", { name: "Choose sessions", exact: true });
@@ -194,7 +193,8 @@ suite.define(() => {
       expect(await sessions.getByText("Maya", { exact: true }).first().isVisible()).toBe(true);
       expect((await created.boundingBox())?.height).toBe(height);
       await capture("5-step2-all.png", created);
-      await created.getByRole("button", { name: "Change", exact: true }).click();
+      // The source is chosen only on step 1; Back returns there.
+      await created.getByRole("button", { name: "Back", exact: true }).click();
       await scopes.getByRole("radio", { name: "My sessions" }).check();
       await next.click();
       await gateway.waitForRequest("sessions.list", { match: { ownerId: self } });
@@ -229,12 +229,15 @@ suite.define(() => {
       await search.fill("Release");
       // Search runs on the Gateway, so it reaches sessions outside the loaded sidebar page.
       await gateway.waitForRequest("sessions.list", { match: { search: "Release" } });
+      // Enter filters; it must not save and close the editor.
+      await search.press("Enter");
+      expect(await dialog.isVisible()).toBe(true);
       await expect
         .poll(() => list.getByRole("checkbox", { name: "Roadmap review" }).count())
         .toBe(0);
       expect((await list.boundingBox())?.height).toBe(listHeight);
       // Leave the close button so its tooltip neither covers the proof nor takes Escape.
-      await dialog.getByText("Only in your sidebar.", { exact: false }).hover();
+      await dialog.getByText("Adding a session doesn't move", { exact: false }).hover();
       await capture("7-search.png", dialog);
       await search.press("Escape");
       expect(await search.inputValue()).toBe("");

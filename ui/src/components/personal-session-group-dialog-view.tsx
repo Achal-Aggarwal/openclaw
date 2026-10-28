@@ -9,6 +9,7 @@ import type {
   PersonalSessionGroupScopeChoices,
 } from "./personal-session-group-actions.ts";
 import { Icon } from "./solid/icon.tsx";
+import { Picker } from "./solid/select-picker.tsx";
 import { renderSessionOwnerAvatar } from "./solid/session-presentation.tsx";
 
 export type PersonalSessionGroupDialogOptions = {
@@ -72,16 +73,16 @@ function SessionChoice(props: {
   onToggle(checked: boolean): void;
 }) {
   return (
-    <label class="personal-section-dialog__row">
+    <label class="personal-section-dialog__option">
       <input
         type="checkbox"
         checked={props.checked}
         onChange={(event) => props.onToggle(event.currentTarget.checked)}
       />
-      <span class="personal-section-dialog__row-label">{props.row.label}</span>
+      <span class="personal-section-dialog__label">{props.row.label}</span>
       <Show when={props.row.ownedBy}>
         {(owner) => (
-          <span class="personal-section-dialog__owner" title={owner().label}>
+          <span class="muted personal-section-dialog__aside" title={owner().label}>
             {renderSessionOwnerAvatar(owner())}
             <span>{owner().label?.split(" ")[0] ?? owner().id}</span>
           </span>
@@ -243,168 +244,162 @@ export function PersonalSessionGroupDialogView(props: {
           }
         }}
       >
-        <header class="personal-section-dialog__header">
-          <div class="personal-section-dialog__title-row">
+        <header>
+          <div class="personal-section-dialog__row">
             <div class="exec-approval-title">{title()}</div>
             <span class="chip personal-section-dialog__chip">
               <Icon name="eye" />
               {t("sessionsView.personalGroupChip")}
             </span>
           </div>
-          <p class="muted personal-section-dialog__description">
-            {t("sessionsView.personalGroupHint")}
-          </p>
+          <p class="exec-approval-sub">{t("sessionsView.personalGroupHint")}</p>
         </header>
-        <div class="personal-section-dialog__body">
-          <Show
-            when={step() === 2}
-            fallback={
-              <>
-                <label class="field">
-                  <span>{t("sessionsView.personalGroupName")}</span>
-                  <input
-                    ref={(element) => (nameInput = element)}
-                    type="text"
-                    maxlength={80}
-                    placeholder={t("sessionsView.personalGroupNamePlaceholder")}
-                    value={label()}
-                    onInput={(event) => setLabel(event.currentTarget.value)}
-                    required
-                  />
-                </label>
-                <div
-                  class="personal-section-dialog__group"
-                  role="radiogroup"
-                  aria-label={t("sessionsView.personalGroupScopeLabel")}
-                >
-                  <span>{t("sessionsView.personalGroupScopeLabel")}</span>
-                  <div class="personal-section-dialog__scopes">
-                    <For each={scopeOptions(props.options.scopes)}>
-                      {(option) => (
-                        <label class="personal-section-dialog__scope">
-                          <input
-                            type="radio"
-                            name="personal-section-scope"
-                            value={option[0]}
-                            checked={kind() === option[0]}
-                            onChange={() => setKind(option[0])}
-                          />
-                          <span>{t(option[1])}</span>
-                          <Show
-                            when={option[0] === "project" && kind() === "project"}
-                            fallback={<span class="muted">{t(option[2])}</span>}
-                          >
-                            <select
-                              aria-label={t("sessionsView.personalGroupProject")}
-                              value={projectId()}
-                              onChange={(event) => setProjectId(event.currentTarget.value)}
-                            >
-                              <For each={props.options.scopes.projects}>
-                                {(project) => <option value={project.id}>{project.label}</option>}
-                              </For>
-                            </select>
-                          </Show>
-                        </label>
-                      )}
-                    </For>
-                  </div>
-                </div>
-              </>
-            }
-          >
-            <div class="personal-section-dialog__list-head">
-              <Show
-                when={searching()}
-                fallback={
-                  <>
-                    <span class="personal-section-dialog__scope-name">{scopeLabel()}</span>
-                    <button type="button" class="btn btn--sm btn--ghost" onClick={() => setStep(1)}>
-                      {t("sessionsView.personalGroupChange")}
-                    </button>
-                    <span class="muted personal-section-dialog__count">
-                      {t("sessionsView.personalGroupSelected", { count: String(selectedCount()) })}
-                    </span>
-                    <button
-                      ref={(element) => (searchToggle = element)}
-                      type="button"
-                      class="btn btn--sm btn--icon btn--ghost"
-                      aria-label={t("sessionsView.personalGroupSearch")}
-                      title={t("sessionsView.personalGroupSearch")}
-                      onClick={() => setSearching(true)}
-                    >
-                      <Icon name="search" />
-                    </button>
-                  </>
-                }
-              >
+        <Show
+          when={step() === 2}
+          fallback={
+            <>
+              <label class="field">
+                <span>{t("sessionsView.personalGroupName")}</span>
                 <input
-                  ref={(element) => {
-                    // Escape clears, then closes, search before the dialog treats it as cancel.
-                    element.addEventListener("keydown", (event) => {
-                      if (event.key !== "Escape" || event.isComposing) {
-                        return;
-                      }
-                      event.preventDefault();
-                      event.stopPropagation();
-                      if (element.value) {
-                        element.value = "";
-                        setQuery("");
-                        run(0);
-                      } else {
-                        closeSearch();
-                      }
-                    });
-                    queueMicrotask(() => element.focus());
-                  }}
-                  type="search"
-                  class="input personal-section-dialog__search"
-                  aria-label={t("sessionsView.personalGroupSearch")}
-                  placeholder={t("sessionsView.personalGroupSearch")}
-                  value={query()}
-                  onInput={(event) => {
-                    setQuery(event.currentTarget.value);
-                    run(SEARCH_DELAY_MS);
-                  }}
+                  ref={(element) => (nameInput = element)}
+                  type="text"
+                  maxlength={80}
+                  placeholder={t("sessionsView.personalGroupNamePlaceholder")}
+                  value={label()}
+                  onInput={(event) => setLabel(event.currentTarget.value)}
+                  required
                 />
-                <button
-                  type="button"
-                  class="btn btn--sm btn--icon btn--ghost"
-                  aria-label={t("sessionsView.personalGroupSearchClose")}
-                  title={t("sessionsView.personalGroupSearchClose")}
-                  onClick={closeSearch}
-                >
-                  <Icon name="x" />
-                </button>
-              </Show>
-            </div>
-            <div
-              role="group"
-              aria-label={t("sessionsView.personalGroupSessions")}
-              aria-busy={state().status === "loading" ? "true" : "false"}
-              class="personal-session-group-dialog__sessions"
+              </label>
+              <div
+                class="field"
+                role="radiogroup"
+                aria-label={t("sessionsView.personalGroupScopeLabel")}
+              >
+                <span>{t("sessionsView.personalGroupScopeLabel")}</span>
+                <div class="personal-section-dialog__list personal-section-dialog__scopes">
+                  <For each={scopeOptions(props.options.scopes)}>
+                    {(option) => (
+                      <label class="personal-section-dialog__option">
+                        <input
+                          type="radio"
+                          name="personal-section-scope"
+                          value={option[0]}
+                          checked={kind() === option[0]}
+                          onChange={() => setKind(option[0])}
+                        />
+                        <span class="personal-section-dialog__label">{t(option[1])}</span>
+                        <Show
+                          when={option[0] === "project" && kind() === "project"}
+                          fallback={
+                            <span class="muted personal-section-dialog__aside">{t(option[2])}</span>
+                          }
+                        >
+                          <span class="personal-section-dialog__aside">
+                            <Picker
+                              id="personal-section-project"
+                              label={t("sessionsView.personalGroupProject")}
+                              value={projectId()}
+                              options={props.options.scopes.projects.map((project) => ({
+                                value: project.id,
+                                label: project.label,
+                              }))}
+                              searchable
+                              onChange={setProjectId}
+                            />
+                          </span>
+                        </Show>
+                      </label>
+                    )}
+                  </For>
+                </div>
+              </div>
+            </>
+          }
+        >
+          <div class="personal-section-dialog__row personal-section-dialog__head">
+            <Show
+              when={searching()}
+              fallback={
+                <>
+                  <span class="exec-approval-title personal-section-dialog__label">
+                    {scopeLabel()}
+                  </span>
+                  <span class="muted">
+                    {t("sessionsView.personalGroupSelected", { count: String(selectedCount()) })}
+                  </span>
+                  <button
+                    ref={(element) => (searchToggle = element)}
+                    type="button"
+                    class="btn btn--sm btn--icon btn--ghost"
+                    aria-label={t("sessionsView.personalGroupSearch")}
+                    title={t("sessionsView.personalGroupSearch")}
+                    onClick={() => setSearching(true)}
+                  >
+                    <Icon name="search" />
+                  </button>
+                </>
+              }
             >
-              <Show when={pinned().length > 0}>
-                <p class="personal-section-dialog__subhead">
-                  {t(
-                    editing()
-                      ? "sessionsView.personalGroupInSection"
-                      : "sessionsView.personalGroupAdded",
-                  )}
-                </p>
-                <For each={pinned()} keyed={(row) => row.key}>
-                  {(row) => (
-                    <SessionChoice
-                      row={row()}
-                      checked={selected().has(row().key)}
-                      onToggle={(checked) => toggle(row().key, checked)}
-                    />
-                  )}
-                </For>
-                <Show when={results().length > 0}>
-                  <p class="personal-section-dialog__subhead">{scopeLabel()}</p>
-                </Show>
-              </Show>
-              <For each={results()} keyed={(row) => row.key}>
+              <input
+                ref={(element) => {
+                  // Escape clears, then closes, search before the dialog treats it as cancel.
+                  element.addEventListener("keydown", (event) => {
+                    if (event.key === "Enter" && !event.isComposing) {
+                      // Enter filters; it must not submit (save) the section.
+                      event.preventDefault();
+                      return;
+                    }
+                    if (event.key !== "Escape" || event.isComposing) {
+                      return;
+                    }
+                    event.preventDefault();
+                    event.stopPropagation();
+                    if (element.value) {
+                      element.value = "";
+                      setQuery("");
+                      run(0);
+                    } else {
+                      closeSearch();
+                    }
+                  });
+                  queueMicrotask(() => element.focus());
+                }}
+                type="search"
+                class="input personal-section-dialog__label"
+                aria-label={t("sessionsView.personalGroupSearch")}
+                placeholder={t("sessionsView.personalGroupSearch")}
+                value={query()}
+                onInput={(event) => {
+                  setQuery(event.currentTarget.value);
+                  run(SEARCH_DELAY_MS);
+                }}
+              />
+              <button
+                type="button"
+                class="btn btn--sm btn--icon btn--ghost"
+                aria-label={t("sessionsView.personalGroupSearchClose")}
+                title={t("sessionsView.personalGroupSearchClose")}
+                onClick={closeSearch}
+              >
+                <Icon name="x" />
+              </button>
+            </Show>
+          </div>
+          <div
+            role="group"
+            aria-label={t("sessionsView.personalGroupSessions")}
+            aria-busy={state().status === "loading" ? "true" : "false"}
+            class="personal-section-dialog__list personal-session-group-dialog__sessions"
+          >
+            <Show when={pinned().length > 0}>
+              <p class="muted personal-section-dialog__note">
+                {t(
+                  editing()
+                    ? "sessionsView.personalGroupInSection"
+                    : "sessionsView.personalGroupAdded",
+                )}
+              </p>
+              <For each={pinned()} keyed={(row) => row.key}>
                 {(row) => (
                   <SessionChoice
                     row={row()}
@@ -413,51 +408,63 @@ export function PersonalSessionGroupDialogView(props: {
                   />
                 )}
               </For>
-              <Show when={state().status === "loading" && results().length === 0}>
-                <p class="muted personal-section-dialog__note">
-                  {t("sessionsView.personalGroupLoading")}
-                </p>
+              <Show when={results().length > 0}>
+                <p class="muted personal-section-dialog__note">{scopeLabel()}</p>
               </Show>
-              <Show when={state().status === "failed"}>
-                <p class="muted personal-section-dialog__note">
-                  {t("sessionsView.personalGroupLoadFailed")}{" "}
-                  <button type="button" class="btn btn--sm btn--ghost" onClick={() => run(0)}>
-                    {t("sessionsView.personalGroupRetry")}
-                  </button>
-                </p>
-              </Show>
-              <Show
-                when={state().status === "ready" && results().length === 0 && pinned().length === 0}
-              >
-                <p class="muted personal-section-dialog__note">
-                  {t("sessionsView.personalGroupNoMatches")}
-                </p>
-              </Show>
-              <Show when={page()?.hasMore}>
-                <p class="muted personal-section-dialog__note">
-                  {t("sessionsView.personalGroupMore")}
-                </p>
-              </Show>
-            </div>
-          </Show>
-          <Show when={error()}>
-            <div role="alert" class="exec-approval-error">
-              {error()}
-            </div>
-          </Show>
-        </div>
-        <openclaw-modal-actions class="exec-approval-actions personal-section-dialog__actions">
+            </Show>
+            <For each={results()} keyed={(row) => row.key}>
+              {(row) => (
+                <SessionChoice
+                  row={row()}
+                  checked={selected().has(row().key)}
+                  onToggle={(checked) => toggle(row().key, checked)}
+                />
+              )}
+            </For>
+            <Show when={state().status === "loading" && results().length === 0}>
+              <p class="muted personal-section-dialog__note">
+                {t("sessionsView.personalGroupLoading")}
+              </p>
+            </Show>
+            <Show when={state().status === "failed"}>
+              <p class="muted personal-section-dialog__note">
+                {t("sessionsView.personalGroupLoadFailed")}{" "}
+                <button type="button" class="btn btn--sm btn--ghost" onClick={() => run(0)}>
+                  {t("sessionsView.personalGroupRetry")}
+                </button>
+              </p>
+            </Show>
+            <Show
+              when={state().status === "ready" && results().length === 0 && pinned().length === 0}
+            >
+              <p class="muted personal-section-dialog__note">
+                {t("sessionsView.personalGroupNoMatches")}
+              </p>
+            </Show>
+            <Show when={page()?.hasMore}>
+              <p class="muted personal-section-dialog__note">
+                {t("sessionsView.personalGroupMore")}
+              </p>
+            </Show>
+          </div>
+        </Show>
+        <Show when={error()}>
+          <div role="alert" class="exec-approval-error">
+            {error()}
+          </div>
+        </Show>
+        <openclaw-modal-actions>
           <Show
             when={step() === 2}
             fallback={
-              <span class="muted personal-section-dialog__step">
+              <span class="muted personal-section-dialog__lead">
                 {t("sessionsView.personalGroupStep")}
               </span>
             }
           >
             <button
               type="button"
-              class="btn btn--ghost personal-section-dialog__back"
+              class="btn btn--ghost personal-section-dialog__lead"
               onClick={() => setStep(1)}
             >
               <Icon name="chevronLeft" />
