@@ -426,7 +426,11 @@ async function handleSessionFilesRead(
                   : undefined,
               );
           } else if (typeof file.content !== "string" && file.previewKind !== "unsupported") {
-            failure = () => respondSessionFileTooLarge(respond, file, request.params.path);
+            failure = () =>
+              respondSessionFileTooLarge(respond, file, request.params.path, {
+                root: repository ? undefined : loaded.root,
+                source: source.source,
+              });
           }
           result = fileResult;
         }

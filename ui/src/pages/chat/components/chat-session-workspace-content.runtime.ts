@@ -14,6 +14,7 @@ import { formatUiError } from "../../../lib/format-error.ts";
 import { isGatewayMethodAdvertised } from "../../../lib/gateway-methods.ts";
 import { isTextAttachment } from "../../../lib/media-file-extension.ts";
 import { pathDisplayName } from "../../../lib/path-display.ts";
+import { isSessionFileReadMetadata } from "../../../lib/protocol-validators.generated/session-input.js";
 import { listen } from "../../../lib/reactive/listener.ts";
 import { resolveSessionDisplayName } from "../../../lib/session-display.ts";
 import { TEXT_ATTACHMENT_PREVIEW_MAX_BYTES } from "./chat-attachment-text-reader.ts";
@@ -460,8 +461,13 @@ async function readSessionFileReference(
         "size" in details &&
         typeof details.size === "number"
       ) {
+        const metadata = {
+          root: "root" in details ? details.root : undefined,
+          source: "source" in details ? details.source : undefined,
+        };
         const result: SessionWorkspaceGetResult = {
           sessionKey,
+          ...(isSessionFileReadMetadata(metadata) ? metadata : {}),
           file: {
             path: actionPath,
             name: pathDisplayName(actionPath),

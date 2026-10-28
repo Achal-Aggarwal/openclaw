@@ -398,6 +398,7 @@ from the document's folder. For example, a report in `reports/review.md` can ope
 `[Evidence](evidence/log.md#details)` as `reports/evidence/log.md` in Files.
 This also works for extensionless files such as `../LICENSE` and in
 repository-backed workspaces that do not expose a Gateway filesystem path.
+Files that exceed the inline preview limit retain their metadata and download action.
 The link opens the file without selecting a Markdown heading. Fragment-only links, external URLs, and
 conversation links retain their existing behavior. File access still uses the
 source session's current permissions. If the document's workspace has changed,

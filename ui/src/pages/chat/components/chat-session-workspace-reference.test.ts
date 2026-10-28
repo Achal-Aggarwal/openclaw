@@ -232,6 +232,80 @@ describe("session workspace file reference resolution", () => {
     expect(sidebarContent.rawText).toContain(`/workspace/${nestedPath}`);
   });
 
+  it.each([
+    { label: "managed", root: "/workspace", replaced: false },
+    { label: "rootless repository", root: undefined, replaced: false },
+    { label: "replaced managed", root: "/workspace", replaced: true },
+    { label: "replaced rootless repository", root: undefined, replaced: true },
+  ])(
+    "keeps contextual oversized-file navigation in its $label source",
+    async ({ root, replaced }) => {
+      const source = { workspaceId: "workspace-a", root: root ?? null, fileRoot: root ?? null };
+      const requestPath = root ? "/workspace/docs/run.log" : "./docs/run.log";
+      const getFile = vi.fn<SessionWorkspaceHost["sessions"]["getFile"]>(
+        async (sessionKey, path) => {
+          if (path === "docs/README.md") {
+            return {
+              sessionKey,
+              root,
+              source,
+              file: textFile("docs/README.md", "[Log](run.log)", {
+                workspacePath: "docs/README.md",
+              }),
+            };
+          }
+          if (path === requestPath) {
+            throw new GatewayRequestError({
+              code: "INVALID_REQUEST",
+              message: "session file is too large to preview",
+              details: {
+                type: "session_file_too_large",
+                path: "docs/run.log",
+                size: 300 * 1024,
+                maxPreviewBytes: 256 * 1024,
+                ...(root ? { root } : {}),
+                source: { ...source, workspaceId: replaced ? "workspace-b" : "workspace-a" },
+              },
+            });
+          }
+          throw missingFileError();
+        },
+      );
+      const state = createReferenceState(createSessionCapabilityFixture({ getFile }));
+      await openSessionWorkspaceFile(state, { path: "docs/README.md" });
+      const document = await loadedSidebarContent(state);
+      if (document.kind !== "file") {
+        throw new Error("expected the source Markdown document");
+      }
+      const documentPreviewId = state.sessionWorkspaceState?.activePreviewId;
+
+      await openSessionWorkspaceFile(state, { path: "run.log", relativeTo: document });
+
+      if (replaced) {
+        expect(state.sessionWorkspaceState?.error).toContain("The document's workspace changed");
+        expect(state.sessionWorkspaceState?.activePreviewId).toBe(documentPreviewId);
+        expect(await loadedSidebarContent(state)).toBe(document);
+        expect(state.sessionWorkspaceState?.previews).toHaveLength(1);
+        return;
+      }
+      expect(state.sessionWorkspaceState?.error).toBeNull();
+      const content = await loadedSidebarContent(state);
+      expect(content.kind).toBe("markdown");
+      if (content.kind !== "markdown" || !content.fileDownload) {
+        throw new Error("expected oversized-file metadata with a download action");
+      }
+      expect(content.rawText).toContain("This file is not previewable inline.");
+      expect(content.rawText).toContain("307,200 bytes");
+      expect(content.fileDownload).toMatchObject({ path: requestPath, name: "run.log" });
+      await content.fileDownload.download(new AbortController().signal);
+      expect(downloadSessionFile).toHaveBeenLastCalledWith(
+        state,
+        { sessionKey: "agent:main:current", agentId: "main", path: requestPath },
+        expect.any(AbortSignal),
+      );
+    },
+  );
+
   it.each<{ label: string; browser: SearchEntries }>([
     {
       label: "several files share the name",

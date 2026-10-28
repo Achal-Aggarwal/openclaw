@@ -427,6 +427,14 @@ it.each(["second-München.txt", "second-Mu\u0308nchen.txt"])(
     writeFile(storedName, "retained second\n");
     writeFile("oversized.txt", oversizedBytes);
     await publishCheckpoint(base, await capture());
+    expect((await files.error("get", "oversized.txt")).details).toEqual({
+      type: "session_file_too_large",
+      maxPreviewBytes: WORKSPACE_PREVIEW_MAX_BYTES,
+      path: "oversized.txt",
+      size: oversizedBytes.length,
+      source: { workspaceId: source.workspaceId, root: null, fileRoot: null },
+    });
+    expect(run).toHaveBeenCalledOnce();
     active = false;
     const originalGitRead = worktreeGit.runGitBuffered;
     using hostReads = vi.spyOn(worktreeGit, "runGitBuffered");
@@ -464,6 +472,7 @@ it.each(["second-München.txt", "second-Mu\u0308nchen.txt"])(
         path: "oversized.txt",
         maxPreviewBytes: WORKSPACE_PREVIEW_MAX_BYTES,
         size: oversizedBytes.length,
+        source: retained.source,
       },
     });
     expect(blobsRead()).toBe(beforeOversized);
@@ -471,7 +480,7 @@ it.each(["second-München.txt", "second-Mu\u0308nchen.txt"])(
     const diff = await loadSessionDiff({ sessionKey }, context as never);
     expect(diff.unavailableReason).toBe("workspace_stopped");
     expect(diff.files.map((file) => file.path)).toEqual(changedPaths);
-    expect(run).not.toHaveBeenCalled();
+    expect(run).toHaveBeenCalledOnce();
     expect(mocks.workspace).not.toHaveBeenCalled();
 
     hostReads.mockImplementation(async (...args) => {
