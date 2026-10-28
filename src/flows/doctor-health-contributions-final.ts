@@ -241,6 +241,17 @@ export function resolveFinalDoctorHealthContributions(params: {
           return detectHooksOwnerToolsFindings(ctx.cfg);
         },
       },
+      // The finding is informational, so doctor shows it as a note, not a repair.
+      async run(ctx) {
+        const { detectHooksOwnerToolsFindings } =
+          await import("./doctor-hooks-owner-tools-check.js");
+        const [finding] = detectHooksOwnerToolsFindings(ctx.cfg);
+        if (!finding) {
+          return;
+        }
+        const { note } = await import("../../packages/terminal-core/src/note.js");
+        note(`${finding.message}\n${finding.fixHint}`, "Hooks");
+      },
     }),
     ...(
       [
