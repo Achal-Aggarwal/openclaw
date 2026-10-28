@@ -31,6 +31,140 @@ export function publicationPullRequestResponse(pr: PublicationPullRequestFixture
   };
 }
 
+/** Synthetic Git/GitHub transport for coordinator tests; real-Git fixtures wrap it below. */
+export function createSyntheticPublicationTransport(params: {
+  root: string;
+  syntheticIndex: string;
+  branch: string;
+  oldHead: string;
+  newHead: string;
+  workspaceTree: string;
+  baseHead: string;
+  commands: string[][];
+  commandCalls: Array<{ argv: string[]; input?: string }>;
+  commandResult: typeof publicationCommandResult;
+}) {
+  const {
+    root,
+    syntheticIndex,
+    branch,
+    oldHead,
+    newHead,
+    workspaceTree,
+    baseHead,
+    commands,
+    commandCalls,
+    commandResult,
+  } = params;
+  const replies: Record<string, [string?, number?]> = {
+    "git symbolic-ref --quiet --short HEAD": [`${branch}\n`],
+    [`git symbolic-ref --quiet refs/heads/${branch}`]: ["", 1],
+    "git rev-parse --verify --quiet MERGE_HEAD": ["", 1],
+    "git rev-parse --verify HEAD^{commit}": [`${oldHead}\n`],
+    "git show -s --no-show-signature --format=%H%n%T%n%P%n%B HEAD": [
+      `${oldHead}\n${workspaceTree}\n${oldHead}\nexisting commit\n`,
+    ],
+    "git config --local --includes --bool --get extensions.worktreeConfig": ["", 1],
+    "git rev-parse --git-path info/attributes": [path.join(root, "missing-info-attributes")],
+    "git rev-parse --git-path info/grafts": [path.join(root, "missing-grafts")],
+    "git var GIT_ATTR_GLOBAL": [path.join(root, "missing-global-attributes")],
+    "git var GIT_ATTR_SYSTEM": [path.join(root, "missing-global-attributes")],
+    [`git rev-parse ${baseHead}^{tree}`]: ["e".repeat(40) + "\n"],
+    "git rev-parse --verify --end-of-options origin/main^{commit}": [`${baseHead}\n`],
+  };
+  let remotePublished = false;
+  let publicationMessage = "";
+  const pullRequest = {
+    html_url: "https://github.com/openclaw/openclaw/pull/125200",
+    number: 125200,
+    user: { id: 42 },
+    state: "open",
+    body: "",
+    head: { ref: branch, sha: newHead, repo: { full_name: "openclaw/openclaw" } },
+    base: { ref: "main", repo: { full_name: "openclaw/openclaw" } },
+  };
+  return async (argv: string[], options?: { input?: string }) => {
+    commands.push(argv);
+    commandCalls.push({ argv, input: options?.input });
+    const command = argv.join(" ");
+    if (replies[command]) {
+      return commandResult(...replies[command]);
+    }
+
+    if (
+      command.startsWith(
+        "gh api --hostname github.com repos/openclaw/openclaw --jq {fork, default_branch, parent:",
+      )
+    ) {
+      return commandResult('{"fork":false,"default_branch":"main"}\n');
+    }
+    const baseRefPrefix = "gh api --hostname github.com repos/openclaw/openclaw/git/ref/heads/";
+    if (command.startsWith(baseRefPrefix)) {
+      const selectedBranch = command.slice(baseRefPrefix.length).split(" --jq", 1)[0];
+      return commandResult(JSON.stringify({ ref: `refs/heads/${selectedBranch}`, sha: baseHead }));
+    }
+
+    if (
+      (argv.includes("--includes") && argv.includes("--get-regexp")) ||
+      (argv[0] === "git" &&
+        argv[1] === "config" &&
+        (argv.includes("--global") || argv.includes("--system")) &&
+        argv.includes("core.attributesFile"))
+    ) {
+      return commandResult("", 1);
+    }
+    if (command.startsWith("git ls-tree -r -z --full-tree ")) {
+      return commandResult();
+    }
+    if (argv.includes("rev-parse") && argv.includes("--git-path") && argv.at(-1) === "index") {
+      return commandResult(syntheticIndex);
+    }
+    if (command.endsWith("write-tree")) {
+      return commandResult(`${workspaceTree}\n`);
+    }
+    if (command.startsWith("git commit-tree ")) {
+      publicationMessage = options?.input ?? "";
+      return commandResult(`${newHead}\n`);
+    }
+
+    if (
+      command.startsWith(
+        "git -c credential.helper= -c credential.helper=!gh auth git-credential ls-remote",
+      )
+    ) {
+      return commandResult(remotePublished ? `${newHead}\trefs/heads/${branch}\n` : "");
+    }
+    if (argv.includes("push")) {
+      remotePublished = true;
+      return commandResult();
+    }
+    if (command.includes(" repos/openclaw/openclaw/pulls ") && command.includes("state=all")) {
+      return commandResult("[]\n");
+    }
+    if (argv.includes("GET") && argv.includes("repos/openclaw/openclaw/pulls/125200")) {
+      return commandResult(JSON.stringify(pullRequest));
+    }
+    if (argv.includes(`repos/openclaw/openclaw/git/commits/${newHead}`)) {
+      return commandResult(
+        JSON.stringify({
+          sha: newHead,
+          tree: { sha: workspaceTree },
+          parents: [{ sha: oldHead }],
+          message: publicationMessage,
+        }),
+      );
+    }
+    if (
+      command ===
+      "gh api --hostname github.com --method POST repos/openclaw/openclaw/pulls --input -"
+    ) {
+      pullRequest.body = JSON.parse(options!.input!).body;
+      return commandResult(JSON.stringify(pullRequest));
+    }
+    return commandResult();
+  };
+}
+
 /** Real local Git/index with synthetic remote effects; no credential helper reaches a subprocess. */
 export async function createRealPublicationWorkspace(params: {
   root: string;

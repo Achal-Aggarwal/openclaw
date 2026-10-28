@@ -43,7 +43,7 @@ type GitHubPublicationTarget = {
 };
 
 /** A current workspace receipt selects its own PR without granting arbitrary import authority. */
-async function preparePublishedPullRequestTarget(
+export async function preparePublishedPullRequestTarget(
   params: {
     session?: PublicationSessionIdentity;
     identity: PreparedGitHubPublicationIdentity;
@@ -69,10 +69,7 @@ async function preparePublishedPullRequestTarget(
       "The original publication's repository or publisher changed; saved work was preserved.",
     );
   }
-  assertExpectedSharedGitHubPublisher(projectGitHubPublicationResult(receipt).publisher, {
-    source: params.identity.source,
-    ...params.identity.account,
-  });
+  const publisher = projectGitHubPublicationResult(receipt).publisher;
   const url = URL.parse(receipt.pull_request_url ?? "");
   const number = Number(url?.pathname.split("/").at(-1));
   if (
@@ -88,6 +85,7 @@ async function preparePublishedPullRequestTarget(
     repository: target.repository,
     branch: target.branch,
     host: target.githubHost,
+    publisherAccountId: publisher?.accountId,
     refreshIdentity: async () => params.identity,
     assertCurrent: params.assertCurrent,
   });
@@ -96,6 +94,10 @@ async function preparePublishedPullRequestTarget(
   if (!params.reconcile && candidate.state === "closed") {
     return target;
   }
+  assertExpectedSharedGitHubPublisher(publisher, {
+    source: params.identity.source,
+    ...params.identity.account,
+  });
   return {
     ...target,
     baseBranch: candidate.baseRef,
@@ -132,7 +134,6 @@ export async function prepareGitHubPublicationTarget(params: {
   identity: PreparedGitHubPublicationIdentity;
   pullRequest?: SessionGitHubPullRequestBinding;
   session?: PublicationSessionIdentity;
-  reconcile?: boolean;
   assertCurrent: () => void;
 }): Promise<GitHubPublicationTarget> {
   const { worktree, assertCurrent } = params;
@@ -258,12 +259,9 @@ export async function prepareGitHubPublicationExecutionTarget(params: {
     );
   }
   if (row.head_commit && row.base_branch && row.base_branch !== target.baseBranch) {
-    if (row.last_effect) {
-      return { status: "reconcile" };
-    }
-    throw new GitHubPublicationWorkspaceChangedError(
-      "The original publication destination changed before its push; saved work was preserved.",
-    );
+    // Shared effects are invocation-local. An absent effect receipt after restart
+    // cannot establish that the recorded commit was never pushed.
+    return { status: "reconcile" };
   }
   return { status: "ready", target };
 }

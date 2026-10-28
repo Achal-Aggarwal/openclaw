@@ -24,7 +24,10 @@ import {
 } from "./github-publication-git-transport.js";
 import { reconcileGitHubPublicationPullRequest } from "./github-publication-pull-requests.js";
 import { projectGitHubPublicationResult } from "./github-publication-receipt.js";
-import { prepareGitHubPublicationTarget } from "./github-publication-target.js";
+import {
+  prepareGitHubPublicationTarget,
+  preparePublishedPullRequestTarget,
+} from "./github-publication-target.js";
 
 export type GitHubPublicationRecoveryBackoff = ReturnType<
   typeof createGitHubPublicationRecoveryBackoff
@@ -264,48 +267,55 @@ export async function reconcileGitHubPublication<
     releaseWorktree = worktreeOwner.release;
     const { worktree } = worktreeOwner;
     assertCurrent();
+    const pullRequest = worktreeOwner.loaded.entry.worktree?.githubPullRequest;
+    const sharedOriginal = row.identity_source !== "personal" && !pullRequest;
     const target = await prepareGitHubPublicationTarget({
       worktree,
-      pullRequest: worktreeOwner.loaded.entry.worktree?.githubPullRequest,
-      session:
-        row.identity_source === "personal"
-          ? undefined
-          : {
-              agentId: row.agent_id,
-              sessionKey: row.session_key,
-              sessionId: row.session_id,
-              lifecycleRevision: worktreeOwner.loaded.entry.lifecycleRevision ?? null,
-            },
-      reconcile: true,
+      pullRequest,
       identity: await refreshIdentity(),
       assertCurrent,
     });
     if (
       target.repository !== row.repository ||
       target.branch !== row.branch ||
-      (!target.publishedPullRequest && target.baseBranch !== row.base_branch)
+      (!sharedOriginal && target.baseBranch !== row.base_branch)
     ) {
       throw new Error("GitHub publication's original target is unavailable.");
     }
-    const knownPullRequestUrls = await readKnownGitHubPublicationPullRequestUrls(row);
-    if (target.publishedPullRequest) {
-      knownPullRequestUrls.push(target.publishedPullRequest.url);
-    }
+    const knownPullRequestUrls = sharedOriginal
+      ? []
+      : await readKnownGitHubPublicationPullRequestUrls(row);
     assertCurrent();
     url = await reconcileGitHubPublicationPullRequest({
       requestId: row.request_id,
-      pullRequest: worktreeOwner.loaded.entry.worktree?.githubPullRequest,
-      publishedPullRequest: target.publishedPullRequest,
+      pullRequest,
       pushRepository: target.pushRepository,
       repository: row.repository,
       pushOwner: target.pushOwner,
       branch: row.branch,
-      baseBranch: target.publishedPullRequest ? target.baseBranch : row.base_branch,
+      baseBranch: row.base_branch,
       headCommit: row.head_commit,
       workspaceTree: row.workspace_tree,
       parentCommit: row.source_head_commit,
       marker: `<!-- openclaw-publication:${row.request_id} -->`,
       knownPullRequestUrls,
+      readContinuation: sharedOriginal
+        ? async () =>
+            preparePublishedPullRequestTarget(
+              {
+                session: {
+                  agentId: row.agent_id,
+                  sessionKey: row.session_key,
+                  sessionId: row.session_id,
+                  lifecycleRevision: worktreeOwner.loaded.entry.lifecycleRevision ?? null,
+                },
+                reconcile: true,
+                identity: await refreshIdentity(),
+                assertCurrent,
+              },
+              target,
+            )
+        : undefined,
       refreshIdentity,
       assertCurrent,
       pushOnly: params.pushOnly,

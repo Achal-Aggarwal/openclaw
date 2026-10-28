@@ -50,7 +50,11 @@ export async function readPublishedGitHubPullRequest(
   params: Pick<
     GitHubPublicationPullRequestLookup,
     "repository" | "branch" | "host" | "refreshIdentity" | "assertCurrent"
-  > & { publishedPullRequest: PublishedGitHubPullRequest; baseBranch?: string },
+  > & {
+    publishedPullRequest: PublishedGitHubPullRequest;
+    baseBranch?: string;
+    publisherAccountId?: number;
+  },
 ) {
   const pr = params.publishedPullRequest;
   const { identity, raw } = await readGitHubPublicationApi(
@@ -64,7 +68,7 @@ export async function readPublishedGitHubPullRequest(
     value.html_url !== pr.url ||
     value.number !== pr.number ||
     !isRecord(value.user) ||
-    value.user.id !== identity.account.accountId ||
+    value.user.id !== (params.publisherAccountId ?? identity.account.accountId) ||
     !isRecord(value.head) ||
     !isRecord(value.head.repo) ||
     typeof value.head.repo.full_name !== "string" ||
@@ -94,7 +98,9 @@ export async function readPublishedGitHubPullRequest(
   return { identity, candidate: candidate! };
 }
 
-async function loadGitHubPublicationPullRequests(params: GitHubPublicationPullRequestLookup) {
+async function loadGitHubPublicationPullRequests(
+  params: Omit<GitHubPublicationPullRequestLookup, "baseBranch"> & { baseBranch?: string },
+) {
   if (params.pullRequest) {
     const pr = params.pullRequest;
     const { identity, raw } = await readGitHubPublicationApi(
@@ -134,8 +140,7 @@ async function loadGitHubPublicationPullRequests(params: GitHubPublicationPullRe
     [
       "-f",
       `head=${params.pushOwner}:${params.branch}`,
-      "-f",
-      `base=${params.baseBranch}`,
+      ...(params.baseBranch ? ["-f", `base=${params.baseBranch}`] : []),
       "-f",
       "state=all",
       "--paginate",
@@ -257,6 +262,9 @@ export async function reconcileGitHubPublicationPullRequest(
     parentCommit: string;
     pushOnly?: "observed" | "dispatched";
     knownPullRequestUrls: readonly string[];
+    readContinuation?: () => Promise<
+      Pick<GitHubPublicationPullRequestLookup, "publishedPullRequest" | "baseBranch"> | undefined
+    >;
     recordPushObserved?: (headCommit: string) => void | Promise<void>;
   },
 ): Promise<string | undefined> {
@@ -314,16 +322,43 @@ export async function reconcileGitHubPublicationPullRequest(
     }
     return comparison.sha === params.headCommit;
   };
-  const { identity: lookupIdentity, candidates } = await loadGitHubPublicationPullRequests(params);
+  let { identity: lookupIdentity, candidates } = await loadGitHubPublicationPullRequests({
+    ...params,
+    baseBranch: params.readContinuation ? undefined : params.baseBranch,
+  });
+  let baseBranch: string | undefined = params.baseBranch;
+  let knownPullRequestUrls = params.knownPullRequestUrls;
+  if (params.readContinuation) {
+    // A request that created a new PR after closure owns its marker. Observe it
+    // before consulting the previous publication, even if either PR was retargeted.
+    candidates = candidates.filter(
+      (candidate) =>
+        candidate.userId === lookupIdentity.account.accountId &&
+        candidate.headRef === params.branch &&
+        candidate.body.includes(params.marker),
+    );
+    baseBranch = undefined;
+    if (candidates.length === 0) {
+      const continuation = await params.readContinuation();
+      if (continuation?.publishedPullRequest) {
+        ({ identity: lookupIdentity, candidates } = await loadGitHubPublicationPullRequests({
+          ...params,
+          ...continuation,
+        }));
+        baseBranch = continuation.baseBranch;
+        knownPullRequestUrls = [continuation.publishedPullRequest.url];
+      }
+    }
+  }
   let unrelated = false;
   for (const candidate of candidates) {
     if (
       (!params.pullRequest && candidate.userId !== lookupIdentity.account.accountId) ||
       candidate.headRef !== params.branch ||
-      candidate.baseRef !== params.baseBranch ||
+      (baseBranch !== undefined && candidate.baseRef !== baseBranch) ||
       (!params.pullRequest &&
         !candidate.body.includes(params.marker) &&
-        !params.knownPullRequestUrls.includes(candidate.url) &&
+        !knownPullRequestUrls.includes(candidate.url) &&
         !(params.pushOnly && candidate.state === "open"))
     ) {
       continue;
