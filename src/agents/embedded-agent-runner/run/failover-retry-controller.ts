@@ -13,18 +13,20 @@ import {
   resolveFailoverStatus,
 } from "../../failover-error.js";
 import {
-  hasOrganizationTpmRateLimitEvidence,
   hasLongWindowRateLimitEvidence,
+  hasOrganizationTpmRateLimitEvidence,
 } from "../../failover/retry-evidence.js";
 import type { FailoverReason } from "../../failover/signal.js";
-import { renderRateLimitRetryExhaustion } from "../../failover/user-copy.js";
+import {
+  renderRateLimitRecoveryStopped,
+  renderRateLimitRetryExhaustion,
+} from "../../failover/user-copy.js";
 import { isConfigBackedInlineProviderApiKey } from "../../model-auth.js";
-import { markProbeAttempt, resolveProbeThrottleKey } from "../../model-fallback-cooldown.js";
 import { log } from "../logger.js";
 import type { TraceAttempt } from "../types.js";
 import { resolveAuthProfileFailureReason } from "./auth-profile-failure-policy.js";
 import type { PreparedEmbeddedRunInput } from "./execution-context.js";
-import type { prepareEmbeddedRunRuntime } from "./runtime-preparation.js";
+import type { prepareEmbeddedRunRuntime } from "./runtime.js";
 import type { EmbeddedRunAttemptResult } from "./types.js";
 
 const MAX_TRANSIENT_RETRIES = 8;
@@ -32,36 +34,42 @@ const MAX_OUTPUT_LIMIT_RETRIES = 1;
 const MAX_TRANSIENT_RETRY_TIME_MS = 90_000;
 const TRANSIENT_RETRY_BASE_DELAY_MS = 1_000;
 const TRANSIENT_RETRY_MAX_DELAY_MS = 30_000;
+const RATE_LIMIT_RETRY_MAX_DELAY_MS = 60_000;
+const SHARED_TPM_FALLBACK_MAX_RETRIES = 2;
+const SHARED_TPM_FALLBACK_RETRY_TIME_MS = 15_000;
 
 function resolveTransientRetryDelayMs(params: {
   retryNumber: number;
   retryAfterMs?: number;
   elapsedMs?: number;
+  maxElapsedMs?: number;
+  rateLimit: boolean;
 }): number | undefined {
   const remainingMs =
     params.elapsedMs === undefined
       ? Infinity
-      : MAX_TRANSIENT_RETRY_TIME_MS - Math.max(0, params.elapsedMs);
+      : (params.maxElapsedMs ?? MAX_TRANSIENT_RETRY_TIME_MS) - Math.max(0, params.elapsedMs);
   // The header parser uses Infinity for a floor too large to represent safely.
   if (remainingMs <= 0 || params.retryAfterMs === Infinity) {
     return undefined;
   }
+  const maxDelayMs = params.rateLimit
+    ? RATE_LIMIT_RETRY_MAX_DELAY_MS
+    : TRANSIENT_RETRY_MAX_DELAY_MS;
   const exponentialMs = Math.min(
-    TRANSIENT_RETRY_MAX_DELAY_MS,
+    maxDelayMs,
     TRANSIENT_RETRY_BASE_DELAY_MS * 2 ** Math.max(0, params.retryNumber - 1),
   );
-  const jitteredMs = Math.min(
-    TRANSIENT_RETRY_MAX_DELAY_MS,
-    Math.round(exponentialMs * (0.5 + Math.random())),
-  );
-  const retryAfterMs = Number.isFinite(params.retryAfterMs)
-    ? Math.max(0, Math.ceil(params.retryAfterMs ?? 0))
-    : 0;
+  const jitteredMs = Math.min(maxDelayMs, Math.round(exponentialMs * (0.5 + Math.random())));
+  const providerTiming = Number.isFinite(params.retryAfterMs);
+  const retryAfterMs = providerTiming ? Math.max(0, Math.ceil(params.retryAfterMs ?? 0)) : 0;
+  // Provider timing is a floor for jittered backoff: short rate-limit hints under
+  // sustained org saturation exhaust the budget in seconds and synchronize sessions.
   const delayMs = Math.max(jitteredMs, retryAfterMs);
   return delayMs <= remainingMs ? delayMs : undefined;
 }
 
-const MAX_RATE_LIMIT_ATTEMPTS = 10;
+const MAX_RATE_LIMIT_ATTEMPTS = 16;
 const MAX_OVERLOAD_PROFILE_ROTATIONS = 1;
 const MAX_RATE_LIMIT_PROFILE_ROTATIONS = 1;
 const RETRY_SLEEP_CHUNK_MS = 24 * 60 * 60 * 1000;
@@ -92,19 +100,20 @@ export function createEmbeddedRunFailoverRetryController(input: {
       lastProfileId?: string;
       pluginHarnessOwnsTransport: boolean;
       agentHarness: { id: string };
+      transportConfig?: PreparedEmbeddedRunInput["runParams"]["config"];
     };
   };
   getSessionId: () => string;
 }) {
   const { runInput, preparedRuntime } = input;
   const { runParams: params, globalLane, agentDir, fallbackConfigured } = runInput;
-  const { provider, modelId, profileFailureStore } = preparedRuntime;
+  const { provider, modelId } = preparedRuntime;
   const advanceAttemptAuthProfile = preparedRuntime.advanceAttemptAuthProfile;
   let rateLimitProfileRotations = 0;
-  let organizationTpmExhausted = false;
   let transientRetryCount = 0;
   let outputLimitRetryCount = 0;
   let rateLimitSeen = false;
+  let sharedTpmFallback = false;
   let transientRetryBudget: number | undefined;
   let rateLimitRetriesExhausted: number | undefined;
   // Consecutive outages count failed-request time as well as backoff. A completed
@@ -118,7 +127,7 @@ export function createEmbeddedRunFailoverRetryController(input: {
     resolveAuthProfileFailureReason({
       failoverReason,
       providerStarted: opts?.providerStarted,
-      transientRateLimit: organizationTpmExhausted ? false : opts?.transientRateLimit,
+      transientRateLimit: opts?.transientRateLimit,
       policy: params.authProfileFailurePolicy,
     });
 
@@ -126,6 +135,7 @@ export function createEmbeddedRunFailoverRetryController(input: {
     profileId?: string;
     reason?: AuthProfileFailureReason | null;
     modelId?: string;
+    retryAfterMs?: number;
   }) => {
     const { profileId, reason } = failure;
     if (
@@ -145,12 +155,13 @@ export function createEmbeddedRunFailoverRetryController(input: {
       return;
     }
     const failureParams = {
-      store: profileFailureStore,
+      store: preparedRuntime.profileFailureStore,
       reason,
-      cfg: params.config,
+      cfg: preparedRuntime.snapshot().transportConfig ?? params.config,
       agentDir,
       runId: params.runId,
       modelId: failure.modelId,
+      retryAfterMs: failure.retryAfterMs,
     };
     if (profileId) {
       await markAuthProfileFailure({
@@ -163,10 +174,10 @@ export function createEmbeddedRunFailoverRetryController(input: {
     if (
       apiKeyInfo?.mode !== "api-key" ||
       !isConfigBackedInlineProviderApiKey({
-        cfg: params.config,
+        cfg: preparedRuntime.snapshot().transportConfig ?? params.config,
         provider,
         source: apiKeyInfo.source,
-        store: profileFailureStore,
+        store: preparedRuntime.profileFailureStore,
       })
     ) {
       return;
@@ -178,7 +189,9 @@ export function createEmbeddedRunFailoverRetryController(input: {
   };
 
   const advanceRateLimitAuthProfile = async (context: RateLimitAuthProfileContext) => {
-    if (organizationTpmExhausted) {
+    // The shared organization/model bucket also constrains this profile's peers.
+    // A replay-safe model fallback avoids spending another same-model budget there.
+    if (sharedTpmFallback) {
       return false;
     }
     if (rateLimitProfileRotations >= MAX_RATE_LIMIT_PROFILE_ROTATIONS && fallbackConfigured) {
@@ -217,23 +230,40 @@ export function createEmbeddedRunFailoverRetryController(input: {
     get rateLimitRetriesExhausted() {
       return rateLimitRetriesExhausted;
     },
+    get sharedTpmRetryDeadline() {
+      return sharedTpmFallback && transientRetryWindowStartMs !== null
+        ? transientRetryWindowStartMs + SHARED_TPM_FALLBACK_RETRY_TIME_MS
+        : undefined;
+    },
     observeAttempt: (
       attempt: Pick<
         EmbeddedRunAttemptResult,
         "providerRetryMaxRetries" | "hasSuccessfulModelResponse"
       >,
     ) => {
-      organizationTpmExhausted = false;
       transientRetryBudget = attempt.providerRetryMaxRetries;
       rateLimitRetriesExhausted = undefined;
       if (attempt.hasSuccessfulModelResponse) {
         transientRetryCount = 0;
         rateLimitSeen = false;
+        sharedTpmFallback = false;
         transientRetryWindowStartMs = null;
       }
     },
-    advanceAuthProfile: (reason: FailoverReason | null, context: RateLimitAuthProfileContext) =>
-      reason === "rate_limit" ? advanceRateLimitAuthProfile(context) : advanceAttemptAuthProfile(),
+    advanceAuthProfile: (reason: FailoverReason | null, context: RateLimitAuthProfileContext) => {
+      if (
+        params.retryTransientErrors === false &&
+        (reason === "rate_limit" ||
+          reason === "overloaded" ||
+          reason === "server_error" ||
+          reason === "timeout")
+      ) {
+        return Promise.resolve(false);
+      }
+      return reason === "rate_limit"
+        ? advanceRateLimitAuthProfile(context)
+        : advanceAttemptAuthProfile();
+    },
     maybeMarkAuthProfileFailure,
     resolveAuthProfileFailureReason: resolveProfileFailureReason,
     recoverThrownHarnessAuthFailure: async (error: unknown): Promise<AuthRetryTrace | null> => {
@@ -287,14 +317,15 @@ export function createEmbeddedRunFailoverRetryController(input: {
         reason: TransientRetryReason;
       }) => void | Promise<void>;
     }): Promise<boolean> => {
+      params.abortSignal?.throwIfAborted();
       rateLimitRetriesExhausted = undefined;
       const recordDecision = (
         decision: "accepted" | "rejected",
         reason:
           | "non_transient"
           | "connection_retry_disabled"
+          | "transient_retry_disabled"
           | "long_window_rate_limit"
-          | "organization_tpm_exhausted"
           | "retry_budget_exhausted"
           | "retry_delay_unavailable"
           | "retry_delay_exceeds_cap"
@@ -310,6 +341,10 @@ export function createEmbeddedRunFailoverRetryController(input: {
           },
           { config: params.config },
         );
+      if (params.retryTransientErrors === false && retry.reason !== "output_limit") {
+        recordDecision("rejected", "transient_retry_disabled");
+        return false;
+      }
       if (
         params.retryConnectionErrors === false &&
         retry.code !== undefined &&
@@ -329,21 +364,14 @@ export function createEmbeddedRunFailoverRetryController(input: {
         return false;
       }
       const rateLimit = retry.reason === "rate_limit";
-      if (rateLimit && hasLongWindowRateLimitEvidence(retry.message)) {
-        recordDecision("rejected", "long_window_rate_limit");
-        return false;
-      }
-      if (
+      sharedTpmFallback =
         rateLimit &&
         fallbackConfigured &&
         params.isFinalFallbackAttempt !== true &&
         retry.failoverEligible !== false &&
-        hasOrganizationTpmRateLimitEvidence(retry.message)
-      ) {
-        organizationTpmExhausted = true;
-        // This failed request already checked the primary; defer its next cooldown probe.
-        markProbeAttempt(Date.now(), resolveProbeThrottleKey(provider, agentDir));
-        recordDecision("rejected", "organization_tpm_exhausted");
+        (sharedTpmFallback || hasOrganizationTpmRateLimitEvidence(retry.message));
+      if (rateLimit && hasLongWindowRateLimitEvidence(retry.message)) {
+        recordDecision("rejected", "long_window_rate_limit");
         return false;
       }
       if (retry.sameModelRetry === false) {
@@ -376,6 +404,7 @@ export function createEmbeddedRunFailoverRetryController(input: {
       const retryBudget = Math.min(
         transientRetryBudget ?? (rateLimit ? MAX_RATE_LIMIT_ATTEMPTS - 1 : MAX_TRANSIENT_RETRIES),
         rateLimitSeen ? MAX_RATE_LIMIT_ATTEMPTS - 1 : Infinity,
+        sharedTpmFallback ? SHARED_TPM_FALLBACK_MAX_RETRIES : Infinity,
       );
       if (
         retryCount >= retryBudget ||
@@ -385,6 +414,13 @@ export function createEmbeddedRunFailoverRetryController(input: {
           rateLimitRetriesExhausted = retryBudget === 0 ? 0 : retryCount;
         }
         recordDecision("rejected", "retry_budget_exhausted");
+        log.error("same-model retries exhausted", {
+          provider,
+          model: modelId,
+          reason: retry.reason,
+          retries: retryCount,
+          runId: params.runId,
+        });
         return false;
       }
       const nowMs = Date.now();
@@ -395,10 +431,14 @@ export function createEmbeddedRunFailoverRetryController(input: {
       const delayMs = resolveTransientRetryDelayMs({
         retryNumber: retryCount + 1,
         retryAfterMs: retry.retryAfterMs,
+        rateLimit,
+        maxElapsedMs: sharedTpmFallback ? SHARED_TPM_FALLBACK_RETRY_TIME_MS : undefined,
         // Reaching an output ceiling can take minutes of useful generation.
         // Keep its count budget and timeout controls without the outage time window.
         elapsedMs:
-          rateLimit || retry.reason === "output_limit" ? undefined : nowMs - retryWindowStartMs,
+          (rateLimit && !sharedTpmFallback) || retry.reason === "output_limit"
+            ? undefined
+            : nowMs - retryWindowStartMs,
       });
       if (delayMs === undefined) {
         recordDecision("rejected", "retry_delay_unavailable");
@@ -408,14 +448,29 @@ export function createEmbeddedRunFailoverRetryController(input: {
         );
         return false;
       }
+      if (rateLimit) {
+        try {
+          await maybeMarkAuthProfileFailure({
+            profileId: preparedRuntime.snapshot().lastProfileId,
+            reason: resolveProfileFailureReason("rate_limit", { transientRateLimit: true }),
+            modelId,
+            retryAfterMs: retry.retryAfterMs,
+          });
+        } catch (error) {
+          log.warn(`profile failure mark failed: ${String(error)}`);
+        }
+      }
+      params.abortSignal?.throwIfAborted();
       const outputLimit = retry.reason === "output_limit";
       const attempt = (outputLimit ? outputLimitRetryCount : retryCount) + 1;
       const maxRetries = outputLimit
         ? Math.min(retryBudget, MAX_OUTPUT_LIMIT_RETRIES)
         : retryBudget;
-      log.warn(
-        `${outputLimit ? "output-limit continuation" : "transient same-model retry"} ${attempt}/${maxRetries} for ${sanitizeForLog(provider)}/${sanitizeForLog(modelId)} reason=${retry.reason}: delayMs=${delayMs} runId=${JSON.stringify(params.runId)} sessionId=${JSON.stringify(input.getSessionId())}`,
-      );
+      if (outputLimit || log.isEnabled("debug")) {
+        log[outputLimit ? "warn" : "debug"](
+          `${outputLimit ? "output-limit continuation" : "transient same-model retry"} ${attempt}/${maxRetries} for ${sanitizeForLog(provider)}/${sanitizeForLog(modelId)} reason=${retry.reason}: delayMs=${delayMs} runId=${JSON.stringify(params.runId)} sessionId=${JSON.stringify(input.getSessionId())}`,
+        );
+      }
       try {
         await retry.onRetry?.({
           attempt,
@@ -426,14 +481,27 @@ export function createEmbeddedRunFailoverRetryController(input: {
       } catch {
         log.warn("transient retry status callback failed; continuing retry");
       }
-      const closeRetryWait = params.onRetryWait?.(Date.now() + delayMs, params.abortSignal);
+      params.abortSignal?.throwIfAborted();
+      const closeRetryWait = params.onRetryWait?.(
+        Date.now() + delayMs,
+        params.abortSignal,
+        // A watchdog stop during this backoff reports the limit with this copy.
+        rateLimit
+          ? { rateLimitStopMessage: renderRateLimitRecoveryStopped(retryCount) }
+          : undefined,
+      );
       let completed = false;
       try {
         // Provider floors can exceed one native timer; protect the whole wait.
         let remainingMs = delayMs;
         while (remainingMs > 0) {
           const chunkMs = Math.min(remainingMs, RETRY_SLEEP_CHUNK_MS);
-          await sleepWithAbort(chunkMs, params.abortSignal);
+          try {
+            await sleepWithAbort(chunkMs, params.abortSignal);
+          } catch (error) {
+            params.abortSignal?.throwIfAborted();
+            throw error;
+          }
           remainingMs -= chunkMs;
         }
         completed = true;

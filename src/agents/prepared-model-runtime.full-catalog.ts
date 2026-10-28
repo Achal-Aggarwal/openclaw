@@ -396,16 +396,20 @@ export function createPreparedModelRuntimeSnapshot(
       pluginMetadataSnapshot,
     ),
     inlineProviderModels,
-    createStores: () => {
+    createStores: (publishedModels?: ReadonlyMap<string, readonly Model[]>) => {
       // Runtime keys and session extensions mutate per-run stores; parsed inputs stay shared.
       const authStorage = AuthStorage.inMemory(credentials);
-      return { authStorage, modelRegistry: templateModelRegistry.fork(authStorage) };
+      return {
+        authStorage,
+        modelRegistry: templateModelRegistry.fork(authStorage, publishedModels),
+      };
     },
     routeModelResolutionMemo: new Map<string, Promise<Model>>(),
   });
   bindPreparedModelRuntimeAuth(snapshot, {
     labels: catalogAccess.initialAuth.providerAuthLabels,
     store: catalogAccess.initialAuth.authStore,
+    readUsage: catalogAccess.readUsage,
     load: catalogAccess.loadAuth,
     materializations: Object.freeze([...getPreparedRuntimeAuthMaterializations(input.agentDir)]),
   });

@@ -4,17 +4,12 @@ import {
   resolveAvatar,
   resolveAvatarInitials,
   type IdentityAvatarInput,
-  type ResolvedIdentityAvatar,
 } from "./identity-avatar.ts";
 
-export type IdentityAvatarView = {
-  fallback: Extract<ResolvedIdentityAvatar, { kind: "initials" }>;
-  imageUrl: string | Promise<string | null> | null;
-  pending: boolean;
-};
+export type IdentityAvatarView = ReturnType<typeof resolveIdentityAvatarView>;
 
 /** Resolve one user identity consistently across the roster, profile, and chat. */
-export function resolveIdentityAvatarView(identity: IdentityAvatarInput): IdentityAvatarView {
+export function resolveIdentityAvatarView(identity: IdentityAvatarInput) {
   const avatar = resolveAvatar(identity);
   const fallback = avatar.kind === "initials" ? avatar : resolveAvatarInitials(identity);
   const imageUrl = avatar.kind === "profile" ? resolveAvatarImageUrl(avatar.url) : null;
@@ -36,7 +31,7 @@ export type AgentIdentity = {
 export function resolveAgentIdentityAvatarView(agent: AgentIdentity) {
   const imageUrl =
     !isReservedSystemAgentId(agent.id) && agent.avatar && !agent.pending
-      ? (resolveAvatarImageUrl(agent.avatar) ?? agent.avatar)
+      ? resolveAvatarImageUrl(agent.avatar, agent.avatar)
       : null;
   return {
     imageUrl,

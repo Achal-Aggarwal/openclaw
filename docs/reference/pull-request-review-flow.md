@@ -48,14 +48,14 @@ Maintainers still decide whether and when a PR is ready to merge.
 ClawSweeper is queue-based. When you open a non-draft PR or mark a draft ready
 for review, it posts a short receipt comment right away, but the review itself
 still waits for a queue slot. Do not expect an immediate review after opening a
-PR, pushing a commit, or adding a review request. Label updates after a
-ClawSweeper run can also take time.
+PR or adding a review request. Label updates after a ClawSweeper run can also
+take time.
 
-New PRs enter the ClawSweeper review queue. Maintainers can also queue review,
-repair, or automerge flows with labels or commands. For ordinary contributor
-updates, ask ClawSweeper for another review only after you have updated the
-branch, PR description, proof, or code. Then request a fresh review with a new
-PR comment:
+ClawSweeper reviews each PR automatically once. Later pushes, description edits,
+and reopens do not start another review on their own. Maintainers can also queue
+review, repair, or automerge flows with labels or commands. After you have
+updated the branch, PR description, proof, or code, request a fresh review with
+a new PR comment:
 
 ```text
 @clawsweeper re-review
@@ -114,11 +114,9 @@ to review production-path, provider-request, and failure/reconstruction evidence
 Redacting sensitive data is the contributor's responsibility. Remove secrets,
 tokens, private URLs, user data, and unrelated logs before posting proof.
 
-OpenClaw also uses separate stale automation. Unassigned issues and PRs can be
-marked stale after 14 days of inactivity, then closed after 7 more idle days.
-Assigned PRs are marked stale 27 days after opening, regardless of later
-updates, then closed after 7 stale days without activity. If an assigned PR is
-still active, coordinate with the maintainer working on it.
+OpenClaw also uses a separate [Barnacle inactivity lifecycle](/ci/scheduled-workflows#barnacle-inactivity-lifecycle).
+Its human-activity clock, full notice grace and durable holds apply independently
+of advisory review labels. Coordinate with the maintainer working on an active item.
 
 ## Maintainer review artifacts
 

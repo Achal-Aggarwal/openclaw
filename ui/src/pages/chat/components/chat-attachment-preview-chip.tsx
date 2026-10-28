@@ -1,37 +1,31 @@
 import type { JSX } from "@solidjs/web";
-import { createEffect, Show } from "solid-js";
+import { Show } from "solid-js";
 import { Icon } from "../../../components/solid/icon.tsx";
+import { attachmentAdmissionRef } from "./chat-attachment-admission-ref.ts";
 import "../../../styles/chat/selection-annotations.css";
-
-export type AttachmentChipRemoval = {
-  label: string;
-  onRemove: (event: Event) => void;
-  disabled: boolean;
-};
 
 export function AttachmentPreviewChip(props: {
   label: string;
   icon: JSX.Element;
   onClick?: () => void;
   onReveal?: () => void;
-  removal?: AttachmentChipRemoval;
+  removal?: {
+    label: string;
+    onRemove: (event: Event) => void;
+    disabled: boolean;
+  };
   elementRef?: (element: Element | undefined) => void;
+  triggerRef?: JSX.Ref<HTMLButtonElement>;
 }) {
-  let element!: HTMLSpanElement;
-  createEffect(
-    () => props.elementRef,
-    (ref) => {
-      ref?.(element);
-      return () => ref?.(undefined);
-    },
-  );
+  const ref = attachmentAdmissionRef(() => props.elementRef);
   const label = () => (
     <>
       <span aria-hidden="true">{props.icon}</span>
       <span
-        class={
-          props.removal ? "chat-selection-annotations__label" : "chat-attachment-preview-label"
-        }
+        class={{
+          "chat-selection-annotations__label": Boolean(props.removal),
+          "chat-attachment-preview-label": !props.removal,
+        }}
         dir="auto"
       >
         {props.label}
@@ -40,9 +34,7 @@ export function AttachmentPreviewChip(props: {
   );
   return (
     <span
-      ref={(node) => {
-        element = node;
-      }}
+      ref={ref}
       class="chat-attachment-thumb chat-attachment-thumb--file chat-selection-annotations__chip"
       role={props.removal ? undefined : "button"}
       tabindex={props.removal ? undefined : 0}
@@ -57,7 +49,11 @@ export function AttachmentPreviewChip(props: {
       }}
     >
       <Show when={props.removal} fallback={<span class="chat-attachment-file">{label()}</span>}>
-        <button type="button" class="chat-attachment-file chat-selection-annotations__trigger">
+        <button
+          ref={props.triggerRef}
+          type="button"
+          class="chat-attachment-file chat-selection-annotations__trigger"
+        >
           {label()}
         </button>
       </Show>

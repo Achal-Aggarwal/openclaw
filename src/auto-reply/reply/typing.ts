@@ -54,7 +54,6 @@ export function createTypingController(params: {
   let active = false;
   let runComplete = false;
   let dispatchIdle = false;
-  let triggerInFlight = false;
   // Late streaming callbacks must not restart a completed controller.
   let sealed = false;
   let typingTtlTimer: NodeJS.Timeout | undefined;
@@ -84,35 +83,33 @@ export function createTypingController(params: {
     if (sealed || typingIntervalMs <= 0) {
       return;
     }
-    clearTimeout(typingTtlTimer);
-    typingTtlTimer = setTimeout(() => {
-      if (!typingLoop.isRunning()) {
-        return;
-      }
-      log?.(`typing TTL reached (${typingTtlLabel}); stopping typing indicator`);
-      cleanup();
-    }, typingTtlMs);
+    typingTtlTimer =
+      typingTtlTimer?.refresh() ??
+      setTimeout(() => {
+        if (!typingLoop.isRunning()) {
+          return;
+        }
+        log?.(`typing TTL reached (${typingTtlLabel}); stopping typing indicator`);
+        cleanup();
+      }, typingTtlMs);
   };
 
   const isActive = () => active && !sealed;
 
   const triggerTyping = async () => {
-    if (triggerInFlight || sealed || runComplete) {
+    if (sealed || runComplete) {
       return;
     }
-    triggerInFlight = true;
     try {
       await onReplyStart?.();
       refreshTypingTtl();
     } catch (err) {
       log?.(`typing start failed: ${String(err)}`);
-    } finally {
-      triggerInFlight = false;
     }
   };
 
   const scheduleTyping = async () => {
-    void triggerTyping();
+    void typingLoop.tick();
     await Promise.resolve();
   };
 

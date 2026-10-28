@@ -1,24 +1,28 @@
-import { createMemo, createSignal, Match, Show, Switch } from "solid-js";
-import type { NodePermissionRequest } from "../../../../../packages/gateway-protocol/src/node-permissions.js";
+import { lazy, Match, Show, Switch } from "solid-js";
 import { Icon } from "../../../components/solid/icon.tsx";
 import { MarkdownHtml } from "../../../components/solid/markdown-html.tsx";
 import type { ChatItem } from "../../../lib/chat/chat-types.ts";
 import { formatTimeMs } from "../../../lib/format.ts";
 import { t } from "../../../lib/reactive/i18n.ts";
 import { detectTextDirection } from "../../../lib/text-direction.ts";
-import "./chat-permission-card.tsx";
-import "./chat-run-failure-notice.tsx";
-import { ChatSkillLearnedNotice } from "./chat-skill-learned-notice.tsx";
 import type { ChatThreadProps } from "./chat-thread-interactions.ts";
 
-export function ChatPermissionCard(props: {
-  request: NodePermissionRequest;
-  onRetry?: (message: string) => void;
-}) {
-  return (
-    <openclaw-chat-permission-card prop:request={props.request} prop:onRetry={props.onRetry} />
-  );
-}
+export type ChatNoticeProps = {
+  item: Extract<ChatItem, { kind: "notice" }>;
+  onPermissionRetry?: (message: string) => void;
+  recovery?: Pick<
+    ChatThreadProps,
+    "failureActionsRunId" | "runActive" | "runWorking" | "onRetryRun" | "onDismissPendingInput"
+  >;
+};
+
+// Text-only notices paint with their transcript row; only interactive cards load later.
+const ChatPermissionCard = lazy(() => import("./chat-permission-card.tsx"), {
+  export: "ChatPermissionCard",
+});
+const ChatSkillLearnedNotice = lazy(() => import("./chat-skill-learned-notice.tsx"), {
+  export: "ChatSkillLearnedNotice",
+});
 
 function SystemLine(props: {
   icon?: Extract<ChatItem, { kind: "divider" }>["icon"];
@@ -94,48 +98,6 @@ export function ChatDivider(props: { item: Extract<ChatItem, { kind: "divider" }
   );
 }
 
-export type ChatNoticeRecovery = Pick<
-  ChatThreadProps,
-  "failureActionsRunId" | "runActive" | "runWorking" | "onRetryRun"
->;
-
-type ChatNoticeProps = {
-  item: Extract<ChatItem, { kind: "notice" }>;
-  onPermissionRetry?: (message: string) => void;
-  recovery?: ChatNoticeRecovery;
-};
-
-function FailureNotice(props: ChatNoticeProps) {
-  const failure = () => props.item.runError!;
-  const actions = createMemo(() => {
-    const runId = failure().runId;
-    const recovery = props.recovery;
-    if (
-      !recovery ||
-      runId !== recovery.failureActionsRunId ||
-      recovery.runActive ||
-      recovery.runWorking
-    ) {
-      return undefined;
-    }
-    return {
-      onRetry: recovery.onRetryRun ? () => recovery.onRetryRun?.(runId) : undefined,
-    };
-  });
-  return (
-    <div
-      data-chat-row-key={props.item.key}
-      data-ts={String(props.item.timestamp)}
-      data-run-failure={failure().runId}
-    >
-      <openclaw-chat-run-failure-notice
-        prop:summary={failure().summary}
-        prop:onRetry={actions()?.onRetry}
-      />
-    </div>
-  );
-}
-
 function NoticeBody(props: { text: string }) {
   return (
     <MarkdownHtml
@@ -147,8 +109,32 @@ function NoticeBody(props: { text: string }) {
   );
 }
 
+/** Context injected mid-run reads as part of the agent's turn, not as a session divider. */
+function InlineNotice(props: ChatNoticeProps) {
+  return (
+    <details
+      class="chat-notice-inline"
+      data-chat-row-key={props.item.key}
+      data-ts={String(props.item.timestamp)}
+    >
+      <summary>
+        <span class="chat-notice-inline__icon" aria-hidden="true">
+          <Icon name={props.item.icon ?? "cpu"} />
+        </span>
+        <strong class="chat-notice-inline__label">{props.item.label}</strong>
+        <Show when={props.item.showTimestamp}>
+          <span class="chat-notice-inline__time">{formatTimeMs(props.item.timestamp)}</span>
+        </Show>
+        <span class="chat-notice-inline__chevron" aria-hidden="true">
+          <Icon name="chevronRight" />
+        </span>
+      </summary>
+      <NoticeBody text={props.item.text} />
+    </details>
+  );
+}
+
 function OrdinaryNotice(props: ChatNoticeProps) {
-  const [expanded, setExpanded] = createSignal(false);
   return (
     <div
       class={[
@@ -166,34 +152,39 @@ function OrdinaryNotice(props: ChatNoticeProps) {
           metric={props.item.showTimestamp ? formatTimeMs(props.item.timestamp) : undefined}
         />
       </Show>
-      <Show
-        when={props.item.collapsedBody && props.item.text}
-        fallback={
-          <Show when={props.item.text}>
-            <NoticeBody text={props.item.text} />
+      <Show when={props.item.text}>
+        <NoticeBody text={props.item.text} />
+      </Show>
+      <Show when={props.item.retiredPendingInput}>
+        {(retired) => (
+          <Show when={props.recovery?.onDismissPendingInput}>
+            {(dismiss) => (
+              <div class="chat-notice__actions">
+                <button
+                  class="btn btn--sm"
+                  type="button"
+                  aria-label={t(
+                    retired().status === "interrupted"
+                      ? "chat.pendingInputs.dismissInterrupted"
+                      : "chat.pendingInputs.dismissCancelled",
+                    { preview: retired().preview },
+                  )}
+                  onClick={() => dismiss()(retired().id)}
+                >
+                  {t("chat.pendingInputs.dismiss")}
+                </button>
+              </div>
+            )}
           </Show>
-        }
-      >
-        <details
-          class="chat-notice__collapse"
-          onToggle={(event) => setExpanded(event.currentTarget.open)}
-        >
-          <summary class="chat-notice__toggle">
-            {t(expanded() ? "chat.systemNotice.hideContent" : "chat.systemNotice.showContent")}
-          </summary>
-          <NoticeBody text={props.item.text} />
-        </details>
+        )}
       </Show>
     </div>
   );
 }
 
-export function ChatNotice(props: ChatNoticeProps) {
+export function ChatNoticeDetails(props: ChatNoticeProps) {
   return (
-    <Switch fallback={<OrdinaryNotice item={props.item} />}>
-      <Match when={props.item.runError}>
-        <FailureNotice item={props.item} recovery={props.recovery} />
-      </Match>
+    <Switch fallback={<OrdinaryNotice item={props.item} recovery={props.recovery} />}>
       <Match when={props.item.permissionMissing}>
         <div data-chat-row-key={props.item.key} data-ts={String(props.item.timestamp)}>
           <ChatPermissionCard
@@ -201,6 +192,9 @@ export function ChatNotice(props: ChatNoticeProps) {
             onRetry={props.onPermissionRetry}
           />
         </div>
+      </Match>
+      <Match when={props.item.collapsedBody && props.item.text}>
+        <InlineNotice item={props.item} />
       </Match>
       <Match when={props.item.skillChanges}>
         <div data-chat-row-key={props.item.key} data-ts={String(props.item.timestamp)}>
