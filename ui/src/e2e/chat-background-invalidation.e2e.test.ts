@@ -140,6 +140,9 @@ suite.define(() => {
       await pauseVirtualClock(page);
       // Advance delayed swarm scheduling and queued render frames before measuring events.
       await page.clock.runFor(1_000);
+      // Virtual time starts idle menu imports, but their requests finish in real time.
+      // Settle their English-catalog publications before counting foreign-session work.
+      await page.waitForLoadState("networkidle");
       const probe = await observePaneRenders(page);
       const counts = { foreign: [] as number[], presence: 0, selected: 0, viewer: 0 };
       try {
