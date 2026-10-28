@@ -685,6 +685,103 @@ describe("plugin-owned CLI same-turn input", () => {
 });
 
 describe("plugin turn assessments through the operation watchdog", () => {
+  it.each([
+    "obsolete",
+    "becomes obsolete",
+    "currentness throws",
+    "unavailable",
+    "capture throws",
+  ] as const)(
+    "consumes one unavailable assessment for %s without delaying recovery",
+    async (mode) => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(0);
+      const { context } = await createExecution({ timeoutMs: 600_000 });
+      const operation = attachReplyOperation(context);
+      operation.setPhase("running");
+      operation.watchdog.attachAttempt({ assertCurrent() {} });
+      context.params.abortSignal = operation.abortSignal;
+      const ready = createDeferred();
+      const finish = createDeferred();
+      const response = createDeferred<CliBackendTurnAssessment>();
+      const turn = {};
+      // Native completion clears currentTurn before host iterator cleanup can finish.
+      const native: { currentTurn?: object } = {
+        currentTurn: mode === "obsolete" ? undefined : turn,
+      };
+      let assessmentSignal: AbortSignal | undefined;
+      const assess = vi.fn(({ signal }: { signal: AbortSignal }) => {
+        assessmentSignal = signal;
+        return response.promise;
+      });
+      const capture = vi.fn(() => {
+        if (mode === "capture throws") {
+          throw new Error("private capture failure");
+        }
+        if (mode === "unavailable") {
+          return undefined;
+        }
+        return {
+          isCurrent() {
+            if (mode === "currentness throws") {
+              throw new Error("private native currentness failure");
+            }
+            return native.currentTurn === turn;
+          },
+          assess,
+        };
+      });
+      const aborts = vi.fn();
+      operation.abortSignal.addEventListener("abort", aborts);
+      const run = runPlugin(
+        context,
+        async function* (execution) {
+          execution.registerTurnStatus?.({ capture });
+          ready.resolve();
+          await finish.promise;
+          yield SUCCESS_RESULT;
+        },
+        { noOutputTimeoutMs: 600_000 },
+      );
+      const outcome = run.catch((error: unknown) => error);
+      try {
+        await awaitGateBeforeSettlement(ready.promise, run, "plugin never became ready");
+        vi.setSystemTime(360_000);
+        await operation.watchdog.tick();
+        if (mode === "becomes obsolete") {
+          expect(assessmentSignal?.aborted).toBe(false);
+          native.currentTurn = undefined;
+        }
+        vi.setSystemTime(370_000);
+        await operation.watchdog.tick();
+        expect(capture).toHaveBeenCalledOnce();
+        expect(assess).toHaveBeenCalledTimes(mode === "becomes obsolete" ? 1 : 0);
+        expect(aborts).toHaveBeenCalledOnce();
+        expect(operation.result).toMatchObject({ kind: "failed", code: "run_stalled" });
+        expect(operation.abortSignal.reason).toMatchObject({
+          message: "Reply operation stalled",
+          assessment: {
+            state: "unknown",
+            basis: mode === "capture throws" ? "failed" : "status_unsupported",
+          },
+        });
+        if (mode === "becomes obsolete") {
+          expect(assessmentSignal?.aborted).toBe(true);
+        }
+        response.resolve({ state: "closed", basis: "transport_closed" });
+        await operation.watchdog.tick();
+        expect(aborts).toHaveBeenCalledOnce();
+        expect(capture).toHaveBeenCalledOnce();
+        expect(operation.abortSignal.reason.assessment.state).toBe("unknown");
+      } finally {
+        response.resolve({ state: "closed", basis: "transport_closed" });
+        finish.resolve();
+        await outcome;
+        operation.complete();
+        operation.abortSignal.removeEventListener("abort", aborts);
+      }
+    },
+  );
   it.each(["absent", "invalid", "throw", "closed", "busy", "transient", "unsupported"] as const)(
     "preserves bounded recovery and finite metadata for %s",
     async (mode) => {
