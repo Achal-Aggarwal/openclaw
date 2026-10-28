@@ -19,7 +19,10 @@ import {
   isManagedCodexDesktopCommand,
 } from "./app-server/managed-binary.js";
 import { createStdioTransport } from "./app-server/transport-stdio.js";
-import { resolveCodexWorkerAuthHelper } from "./node-app-server-command.js";
+import {
+  deriveCodexWorkerConfigurationVersion,
+  resolveCodexWorkerAuthHelper,
+} from "./node-app-server-command.js";
 import { createCodexNodeAppServerProcessOwner } from "./node-app-server-process-owner.js";
 import { createCodexNodeWorkspaceEnvironment } from "./node-app-server-workspace-environment.js";
 import { createCodexNodeResourceReadiness } from "./node-resource-readiness.js";
@@ -38,7 +41,7 @@ async function readPrivateFile(file: string) {
   return await fs.readFile(file, "utf8");
 }
 
-export async function readWorkerCodexRuntime() {
+export async function readWorkerCodexRuntime(command: string) {
   const directory = path.join(resolveStateDir(process.env), "codex-runtime");
   const stat = await fs.lstat(directory);
   if (
@@ -52,14 +55,14 @@ export async function readWorkerCodexRuntime() {
     readPrivateFile(path.join(directory, "version")),
     readPrivateFile(path.join(directory, "config.toml")),
   ]);
+  const helperPath = resolveCodexWorkerAuthHelper(config, directory);
+  const helperScript = await readPrivateFile(helperPath);
   if (
-    !/^[a-f0-9]{64}$/.test(version) ||
-    (process.env.OPENCLAW_WORKER_CODEX_CONFIG_VERSION &&
-      version !== process.env.OPENCLAW_WORKER_CODEX_CONFIG_VERSION)
+    !command.endsWith("." + version) ||
+    version !== deriveCodexWorkerConfigurationVersion(config, helperPath, helperScript)
   ) {
-    throw new Error("Worker Codex configuration version is invalid");
+    throw new Error("Worker Codex configuration version is invalid; reprovision the worker");
   }
-  await readPrivateFile(resolveCodexWorkerAuthHelper(config, directory));
   return { directory, config };
 }
 
@@ -89,6 +92,7 @@ function decodeFrame(frame: Uint8Array): Record<string, unknown> {
 }
 
 export async function runCodexNodeAppServer(params: {
+  command: string;
   workspace: OpenClawPluginNodeWorkspaceLease;
   io: OpenClawPluginNodeHostCommandIo;
   activeProcesses: Set<() => Promise<void>>;
@@ -139,7 +143,7 @@ export async function runCodexNodeAppServer(params: {
     if (!frames) {
       throw new Error("Worker app-server requires duplex frames");
     }
-    const runtime = await readWorkerCodexRuntime();
+    const runtime = await readWorkerCodexRuntime(params.command);
     // HOME belongs to the existing workspace retention owner; no separate retained-disk promise.
     if (!workspace.homeDir) {
       throw new Error("Worker app-server requires an owned workspace home");

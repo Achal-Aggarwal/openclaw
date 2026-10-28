@@ -134,6 +134,7 @@ describe.skipIf(process.platform !== "linux")("Codex worker-hosted app-server co
             import.meta.url,
           );
           catalogPreload.searchParams.set("fixture", provider.baseUrl);
+          catalogPreload.searchParams.set("provisioning", staged.sourceHome);
           gateway = await gatewayOwner.start({
             repoRoot: process.cwd(),
             initializeCurrentRuntimeState: true,
@@ -158,9 +159,6 @@ describe.skipIf(process.platform !== "linux")("Codex worker-hosted app-server co
               // No ambient credentials: these are newly authored synthetic sources.
               OPENAI_API_KEY: GATEWAY_BEARER,
               CODEX_HOME: staged.sourceHome,
-              OPENCLAW_WORKER_CODEX_CONFIG_PATH: staged.sourceConfig,
-              OPENCLAW_WORKER_CODEX_HELPER_PATH: staged.sourceHelper,
-              OPENCLAW_WORKER_CODEX_CONFIG_VERSION: staged.version,
             },
             mutateConfig: (config) => {
               config.auth = {};
@@ -233,7 +231,6 @@ describe.skipIf(process.platform !== "linux")("Codex worker-hosted app-server co
               OPENCLAW_CONFIG_PATH: nodeConfigPath,
               OPENCLAW_GATEWAY_TOKEN: gateway.token,
               OPENCLAW_ALLOW_INSECURE_PRIVATE_WS: "1",
-              OPENCLAW_WORKER_CODEX_CONFIG_VERSION: staged.version,
             },
           });
           expect(nodeEnv).not.toHaveProperty("OPENAI_API_KEY");

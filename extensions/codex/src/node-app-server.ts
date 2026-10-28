@@ -29,8 +29,9 @@ function parseRequest(value: unknown) {
 
 export function createCodexNodeAppServerCommand(): OpenClawPluginNodeHostCommand {
   const activeProcesses = new Set<() => Promise<void>>();
+  const command = resolveCodexWorkerAppServerCommand();
   return {
-    command: resolveCodexWorkerAppServerCommand(),
+    command,
     cap: "codex.app-server",
     dangerous: true,
     duplex: true,
@@ -41,7 +42,7 @@ export function createCodexNodeAppServerCommand(): OpenClawPluginNodeHostCommand
         return;
       }
       const { readWorkerCodexRuntime } = await import("./node-app-server.runtime.js");
-      await readWorkerCodexRuntime();
+      await readWorkerCodexRuntime(command);
     },
     hasActiveWork: () => activeProcesses.size > 0,
     onDisconnect: async () => {
@@ -67,6 +68,7 @@ export function createCodexNodeAppServerCommand(): OpenClawPluginNodeHostCommand
       assertExecAuthorized();
       const workspace = await context.acquireManagedWorkspaceAsync(request.workspace);
       return await runCodexNodeAppServer({
+        command,
         workspace,
         io: { ...io, signal },
         activeProcesses,

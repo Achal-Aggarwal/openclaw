@@ -13,6 +13,7 @@ import {
 } from "./app-server/dynamic-tool-catalog.js";
 import { setManagedCodexPluginRoot } from "./app-server/managed-binary.js";
 import { buildCodexRuntimeThreadConfig } from "./app-server/thread-requests.js";
+import { deriveCodexWorkerConfigurationVersion } from "./node-app-server-command.js";
 import { createCodexNodeAppServerCommand } from "./node-app-server.js";
 import * as nodeExecRuntime from "./node-exec-server.runtime.js";
 
@@ -97,7 +98,6 @@ describe("Codex worker model process", () => {
           const workspaceDir = path.join(root, "repo");
           await fs.mkdir(configDir, { recursive: true, mode: 0o700 });
           await fs.mkdir(workspaceDir);
-          await fs.writeFile(path.join(configDir, "version"), "a".repeat(64), { mode: 0o600 });
           await fs.writeFile(
             path.join(configDir, "config.toml"),
             `model = "codex-test-model"\nmodel_provider = "autodev"\n[model_providers.autodev]\nname = "AutoDev"\nbase_url = "http://127.0.0.1:${address.port}/v1"\nwire_api = "responses"\nrequires_openai_auth = false\nsupports_websockets = false\nrequest_max_retries = 0\nstream_max_retries = 0\n[model_providers.autodev.auth]\ncommand = "node"\nargs = ["${path.join(configDir, "autodev-token.mjs")}"]\n`,
@@ -108,6 +108,13 @@ describe("Codex worker model process", () => {
             "process.stdout.write('synthetic-worker-bearer\\n')\n",
             { mode: 0o600 },
           );
+          const helperPath = path.join(configDir, "autodev-token.mjs");
+          const version = deriveCodexWorkerConfigurationVersion(
+            await fs.readFile(path.join(configDir, "config.toml"), "utf8"),
+            helperPath,
+            await fs.readFile(helperPath, "utf8"),
+          );
+          await fs.writeFile(path.join(configDir, "version"), version, { mode: 0o600 });
           vi.stubEnv("OPENCLAW_STATE_DIR", state);
           setManagedCodexPluginRoot(fileURLToPath(new URL("../", import.meta.url)));
           const runExecServer = nodeExecRuntime.runCodexNodeExecServer;
@@ -129,6 +136,23 @@ describe("Codex worker model process", () => {
           let connections = 0;
           const command = createCodexNodeAppServerCommand();
           expect(command.isAvailable?.({ config: {}, env: process.env })).toBe(true);
+          const originalHelper = await fs.readFile(helperPath, "utf8");
+          const changedHelper = originalHelper + "// replacement";
+          await fs.writeFile(helperPath, changedHelper);
+          await fs.writeFile(
+            path.join(configDir, "version"),
+            deriveCodexWorkerConfigurationVersion(
+              await fs.readFile(path.join(configDir, "config.toml"), "utf8"),
+              helperPath,
+              changedHelper,
+            ),
+          );
+          await expect(command.prepare?.({ config: {}, env: process.env })).rejects.toThrow(
+            "configuration version",
+          );
+          expect(requests).toHaveLength(0);
+          await fs.writeFile(helperPath, originalHelper);
+          await fs.writeFile(path.join(configDir, "version"), version);
           await command.prepare?.({ config: {}, env: process.env });
           const placement = {
             cwd: workspaceDir,

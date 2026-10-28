@@ -249,7 +249,15 @@ export async function stageWorkerCodex(params: {
     `args = [${JSON.stringify(sourceHelper)}]`,
     "",
   ].join("\n");
-  const version = createHash("sha256").update(config).update("\0").update(helper).digest("hex");
+  const version = createHash("sha256")
+    .update(
+      JSON.stringify([
+        "codex-worker-provisioning-v1",
+        config.replace(sourceHelper, path.basename(sourceHelper)),
+        helper,
+      ]),
+    )
+    .digest("hex");
   const sourceConfig = path.join(sourceHome, "config.toml");
   await fs.writeFile(sourceConfig, config, { mode: 0o600 });
   await fs.writeFile(sourceHelper, helper, { mode: 0o600 });

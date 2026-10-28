@@ -1,6 +1,7 @@
 import path from "node:path";
 import { createPluginRuntimeMock } from "openclaw/plugin-sdk/plugin-test-runtime";
 import { describe, expect, it, vi } from "vitest";
+import { useCodexWorkerProvisioningFixture } from "../node-app-server-command.test-support.js";
 import { codexAppServerStartOptionsKey } from "./config-options.js";
 import { shouldRequireCodexSandboxExecServerEnvironment } from "./dynamic-tool-build.js";
 import { prepareCodexAttemptConnection } from "./run-attempt-connection.js";
@@ -24,6 +25,8 @@ import {
   startOrResumeThread,
 } from "./thread-lifecycle.test-fixtures.js";
 import { resolveCodexAppServerSpawnEnv } from "./transport-stdio.js";
+
+const provisionWorker = useCodexWorkerProvisioningFixture();
 
 setupRunAttemptTestHooks();
 
@@ -201,7 +204,7 @@ describe("Codex local tool environment placement", () => {
 });
 
 it("selects the enrolled worker client without forwarding Gateway auth or local environment", async () => {
-  vi.stubEnv("OPENCLAW_WORKER_CODEX_CONFIG_VERSION", "a".repeat(64));
+  provisionWorker();
   const params = createParams(path.join(tempDir, "worker.jsonl"), path.join(tempDir, "workspace"));
   params.permissionMode = "full";
   const sandbox = {
@@ -250,7 +253,7 @@ it("selects the enrolled worker client without forwarding Gateway auth or local 
 it.each(["api-key", "subscription"] as const)(
   "keeps worker %s route constraints through actual client startup without local login",
   async (authRequirement) => {
-    vi.stubEnv("OPENCLAW_WORKER_CODEX_CONFIG_VERSION", "a".repeat(64));
+    provisionWorker();
     const params = createParams(
       path.join(tempDir, "worker-auth.jsonl"),
       path.join(tempDir, "worker-auth-workspace"),

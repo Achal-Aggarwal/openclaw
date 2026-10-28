@@ -227,20 +227,29 @@ and the exact versioned `codex.app-server.stdio.v1.<version>` node command.
 Allow that exact command through the existing Gateway node command policy.
 There is no local fallback when the worker cannot start.
 
-Provision the Gateway with these operator-owned inputs before enrollment:
+Provision a worker-only private bundle under the Gateway's configured state directory:
 
-- `OPENCLAW_WORKER_CODEX_CONFIG_PATH`: absolute path to the native TOML config.
-- `OPENCLAW_WORKER_CODEX_HELPER_PATH`: absolute path to the Node `.mjs` auth helper
-  referenced exactly once by the config.
-- `OPENCLAW_WORKER_CODEX_CONFIG_VERSION`: a 64-character lowercase hexadecimal
-  deployment identity. Change it when changing the config or helper.
+- `worker-provisioning/codex/config.toml`: the native configuration.
+- One Node `.mjs` auth helper in that same directory, referenced by its absolute
+  path exactly once in the selected provider's auth arguments.
 
-The selected native provider must use the Responses wire API and command auth
-with `command = "node"` and the helper path as its sole argument. Config and
-helper are limited to 16 KiB each. They are trusted executable deployment inputs,
-not user-provided session data. Enrollment delivers them privately into the
-lease's `codex-runtime` directory; image preparation does not capture them.
-A changed configuration on an existing lease requires reprovisioning.
+Use directory mode `0700` and file mode `0600` on POSIX. Symlinks, nonregular
+files, malformed configuration, missing helpers and inputs larger than 16 KiB
+are rejected before pairing credentials are issued. Windows uses its existing
+private worker setup; POSIX mode-bit qualification does not attest Windows ACLs.
+The selected provider must use Responses with `command = "node"` and that helper
+as its sole argument, without competing provider credentials.
+
+The provisioning owner derives the command's 64-hex identity from the configuration
+and helper bytes; relocating the helper into the lease preserves that identity.
+There is no separately supplied version or environment selector. These are trusted
+operator-authored executable deployment inputs, separate from the Gateway's
+`CODEX_HOME`, local auth profiles and session data. Missing bundle means opt-out;
+an incomplete bundle fails closed. Publish both files while the Gateway is stopped,
+then restart and reprovision affected workers when changing them. Existing lease
+replay rejects changed bytes or identity; runtime verifies the enrolled content.
+Enrollment delivers the bundle privately into the lease's `codex-runtime`
+directory; image preparation does not capture it.
 
 Only dedicated ephemeral, non-container nodes retain their platform-managed
 identity transport and CA settings. Ordinary paired nodes and container workers

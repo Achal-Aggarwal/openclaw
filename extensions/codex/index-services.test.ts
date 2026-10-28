@@ -4,6 +4,9 @@ import { createTestPluginApi } from "openclaw/plugin-sdk/plugin-test-api";
 import { createPluginRuntimeMock } from "openclaw/plugin-sdk/plugin-test-runtime";
 import { describe, expect, it, vi } from "vitest";
 import plugin from "./index.js";
+import { useCodexWorkerProvisioningFixture } from "./src/node-app-server-command.test-support.js";
+
+const provisionWorker = useCodexWorkerProvisioningFixture();
 
 function registerServices(pluginConfig: Record<string, unknown>) {
   const registerService = vi.fn();
@@ -44,11 +47,11 @@ function registeredService(id: string, stoppable = true) {
 
 describe("Codex plugin services", () => {
   it("registers the worker placement contract before runtime config is prepared", () => {
-    vi.stubEnv("OPENCLAW_WORKER_CODEX_CONFIG_VERSION", "a".repeat(64));
+    const { configVersion } = provisionWorker();
     try {
       const { harness } = registerServices({ appServer: { workerHostedCloud: true } });
       expect(harness?.cloudPlacement?.devicePlacement?.requiredNodeCommands).toEqual([
-        `codex.app-server.stdio.v1.${"a".repeat(64)}`,
+        `codex.app-server.stdio.v1.${configVersion}`,
       ]);
     } finally {
       vi.unstubAllEnvs();

@@ -1,13 +1,16 @@
 import type { PluginRuntime } from "openclaw/plugin-sdk/plugin-runtime";
 import { createSandboxTestContext } from "openclaw/plugin-sdk/test-fixtures";
 import { afterEach, expect, it, vi } from "vitest";
+import { useCodexWorkerProvisioningFixture } from "../node-app-server-command.test-support.js";
 import { createCodexWorkerClientFactory } from "./node-app-server-transport.js";
 import { releaseCodexProbeClient } from "./shared-client.js";
+
+const provisionWorker = useCodexWorkerProvisioningFixture();
 
 afterEach(() => vi.unstubAllEnvs());
 
 async function connect() {
-  vi.stubEnv("OPENCLAW_WORKER_CODEX_CONFIG_VERSION", "a".repeat(64));
+  const { configVersion } = provisionWorker();
   const closed = Promise.withResolvers<void>();
   const closing = Promise.withResolvers<void>();
   let receive: ((frame: Uint8Array) => void | Promise<void>) | undefined;
@@ -72,6 +75,7 @@ async function connect() {
   const client = await factory();
   return {
     client,
+    configVersion,
     factory,
     closed,
     closing,
@@ -87,7 +91,7 @@ async function connect() {
 it("uses the versioned placement duplex and joins caller-owned probe shutdown", async () => {
   const fixture = await connect();
   expect(fixture.open.mock.calls[0]?.[0]).toMatchObject({
-    command: "codex.app-server.stdio.v1." + "a".repeat(64),
+    command: "codex.app-server.stdio.v1." + fixture.configVersion,
     nodeId: "node",
     params: {
       authorization: "session-full",

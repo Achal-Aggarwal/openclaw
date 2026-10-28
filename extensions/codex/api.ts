@@ -39,3 +39,8 @@ export function registerCodexManagedAppServerDoctorChecks(host: {
     host.registerHealthCheck(codexNativeProfileRecoveryHealthCheck);
   }
 }
+
+export {
+  readCodexWorkerProvisioningBundle,
+  resolveCodexWorkerAppServerCommand,
+} from "./src/node-app-server-command.js";

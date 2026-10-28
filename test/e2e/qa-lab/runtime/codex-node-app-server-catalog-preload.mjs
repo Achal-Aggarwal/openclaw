@@ -1,6 +1,8 @@
 // External catalog transport simulation only: official route identity and all
 // model/auth decisions stay in production. This shim never sends a commercial fetch.
+import fs from "node:fs";
 import { createRequire, syncBuiltinESMExports } from "node:module";
+import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { isMainThread, threadId } from "node:worker_threads";
 
@@ -16,6 +18,24 @@ if (
 // The real catalog worker clears inherited execArgv. Carry only this external-I/O
 // fixture into that exact built entry; retain its environment, authority, and transport.
 if (isMainThread) {
+  // Synthetic operator provisioning into the actual child state before registration.
+  // This is file staging, not a catalog/availability or native-client override.
+  const source = new URL(import.meta.url).searchParams.get("provisioning");
+  if (source) {
+    const directory = path.join(process.env.OPENCLAW_STATE_DIR, "worker-provisioning", "codex");
+    fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
+    const helperPath = path.join(source, "token.mjs");
+    fs.writeFileSync(path.join(directory, "token.mjs"), fs.readFileSync(helperPath), {
+      mode: 0o600,
+    });
+    fs.writeFileSync(
+      path.join(directory, "config.toml"),
+      fs
+        .readFileSync(path.join(source, "config.toml"), "utf8")
+        .replace(helperPath, path.join(directory, "token.mjs")),
+      { mode: 0o600 },
+    );
+  }
   const workers = createRequire(import.meta.url)("node:worker_threads");
   const Worker = workers.Worker;
   const catalogWorker = new URL(

@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { Agent, fetch as fetchWithDispatcher } from "undici";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { resolveCodexWorkerAppServerCommand } from "../../../extensions/codex/api.js";
 import type { OpenClawConfig } from "../../config/types.js";
 import { ensureDevicePairSetupBootstrapToken } from "../../infra/device-bootstrap.js";
 import { decodePairingSetupCode } from "../../pairing/setup-code.js";
@@ -140,14 +141,8 @@ describe("worker node enrollment", () => {
   };
 
   beforeEach(async () => {
-    for (const name of [
-      "OPENCLAW_WORKER_CODEX_CONFIG_PATH",
-      "OPENCLAW_WORKER_CODEX_HELPER_PATH",
-      "OPENCLAW_WORKER_CODEX_CONFIG_VERSION",
-    ]) {
-      vi.stubEnv(name, undefined);
-    }
     root = await fs.mkdtemp(path.join(await fs.realpath(os.tmpdir()), "openclaw-node-enrollment-"));
+    vi.stubEnv("OPENCLAW_STATE_DIR", root);
     database = openOpenClawStateDatabase({ env: { OPENCLAW_STATE_DIR: root } });
     store = await createWorkerEnvironmentStore({ database, now: () => 1_000 });
     transfer = createWorkerBootstrapArtifactTransferService();
@@ -180,18 +175,17 @@ describe("worker node enrollment", () => {
   });
 
   it("delivers only explicitly configured Codex inputs at lease enrollment, never warm preparation", async () => {
-    const configPath = path.join(root, "codex.toml");
-    const helperPath = path.join(root, "token.mjs");
+    const directory = path.join(root, "worker-provisioning", "codex");
+    await fs.mkdir(directory, { recursive: true, mode: 0o700 });
+    const configPath = path.join(directory, "config.toml");
+    const helperPath = path.join(directory, "token.mjs");
     const configToml =
-      'model = "codex-test-model"\nauth = { command = "node", args = [' +
+      'model_provider = "worker"\n[model_providers.worker]\nwire_api = "responses"\nauth = { command = "node", args = [' +
       JSON.stringify(helperPath) +
       "] }\n";
     const helperScript = 'process.stdout.write("synthetic-worker-token")\n';
     await fs.writeFile(configPath, configToml, { mode: 0o600 });
     await fs.writeFile(helperPath, helperScript, { mode: 0o600 });
-    vi.stubEnv("OPENCLAW_WORKER_CODEX_CONFIG_PATH", configPath);
-    vi.stubEnv("OPENCLAW_WORKER_CODEX_HELPER_PATH", helperPath);
-    vi.stubEnv("OPENCLAW_WORKER_CODEX_CONFIG_VERSION", "a".repeat(64));
     vi.stubEnv("OPENAI_API_KEY", "synthetic-gateway-only-token");
     const record = await createProvisioning();
     const manager = createManager();
@@ -202,46 +196,61 @@ describe("worker node enrollment", () => {
       configToml,
       helperScript,
       helperPath,
-      configVersion: "a".repeat(64),
+      configVersion: expect.stringMatching(/^[a-f0-9]{64}$/),
     });
+    const command = resolveCodexWorkerAppServerCommand(process.env, true);
+    expect(command).toBe("codex.app-server.stdio.v1." + enrollment.workerCodex!.configVersion);
+    await fs.writeFile(helperPath, helperScript + "// changed\n");
+    const changed = await manager.begin(record);
+    expect(changed.workerCodex!.configVersion).not.toBe(enrollment.workerCodex!.configVersion);
+    expect(resolveCodexWorkerAppServerCommand(process.env, true)).toBe(
+      "codex.app-server.stdio.v1." + changed.workerCodex!.configVersion,
+    );
     expect(JSON.stringify(enrollment.nodeBootstrap)).not.toContain("synthetic-worker-token");
     expect(JSON.stringify(enrollment)).not.toContain("synthetic-gateway-only-token");
   });
 
-  it.each(["incomplete", "invalid version", "relative path", "empty", "oversized", "missing"])(
-    "rejects %s Codex enrollment inputs without issuing pairing credentials",
-    async (invalid) => {
-      const configPath = path.join(root, "codex.toml");
-      const helperPath = path.join(root, "token.mjs");
-      await fs.writeFile(configPath, invalid === "empty" ? "" : 'model = "fixture"\n');
+  it.each([
+    "incomplete",
+    "malformed",
+    "outside helper",
+    "empty",
+    "oversized",
+    "public file",
+    "symlink",
+  ])("rejects %s private Codex bundle without issuing pairing credentials", async (invalid) => {
+    const directory = path.join(root, "worker-provisioning", "codex");
+    await fs.mkdir(directory, { recursive: true, mode: 0o700 });
+    const helperPath = path.join(directory, "token.mjs");
+    const selectedHelper =
+      invalid === "outside helper" ? path.join(root, "outside.mjs") : helperPath;
+    const config =
+      'model_provider = "worker"\n[model_providers.worker]\nwire_api = "responses"\nauth = { command = "node", args = [' +
+      JSON.stringify(selectedHelper) +
+      "] }\n";
+    await fs.writeFile(
+      path.join(directory, "config.toml"),
+      invalid === "empty" ? "" : invalid === "malformed" ? "invalid [" : config,
+      { mode: 0o600 },
+    );
+    if (invalid !== "incomplete") {
       await fs.writeFile(
         helperPath,
-        invalid === "oversized" ? "x".repeat(16 * 1024 + 1) : "// helper\n",
+        invalid === "oversized" ? "x".repeat(16 * 1024 + 1) : "// private helper\n",
+        { mode: invalid === "public file" ? 0o644 : 0o600 },
       );
-      vi.stubEnv(
-        "OPENCLAW_WORKER_CODEX_CONFIG_PATH",
-        invalid === "relative path" ? "codex.toml" : configPath,
-      );
-      vi.stubEnv("OPENCLAW_WORKER_CODEX_HELPER_PATH", helperPath);
-      vi.stubEnv(
-        "OPENCLAW_WORKER_CODEX_CONFIG_VERSION",
-        invalid === "incomplete"
-          ? undefined
-          : invalid === "invalid version"
-            ? "bad-version"
-            : "a".repeat(64),
-      );
-      if (invalid === "missing") {
-        await fs.unlink(helperPath);
-      }
-      const manager = createManager();
-      vi.mocked(ensureDevicePairSetupBootstrapToken).mockClear();
-      await expect(manager.begin(await createProvisioning())).rejects.toThrow(
-        "Worker Codex configuration",
-      );
-      expect(ensureDevicePairSetupBootstrapToken).not.toHaveBeenCalled();
-    },
-  );
+    }
+    if (invalid === "symlink") {
+      await fs.rename(helperPath, path.join(root, "actual.mjs"));
+      await fs.symlink(path.join(root, "actual.mjs"), helperPath);
+    }
+    const manager = createManager();
+    vi.mocked(ensureDevicePairSetupBootstrapToken).mockClear();
+    await expect(manager.begin(await createProvisioning())).rejects.toThrow(
+      /Worker Codex|Cloud worker Codex/,
+    );
+    expect(ensureDevicePairSetupBootstrapToken).not.toHaveBeenCalled();
+  });
 
   it("prepares requested-state artifacts without enrollment or transfer grants", async () => {
     const record = await createRequested();
