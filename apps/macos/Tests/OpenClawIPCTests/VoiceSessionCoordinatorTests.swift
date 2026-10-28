@@ -210,7 +210,10 @@ private final class VoiceSendFixture {
 
     private func prepare(_ text: String, trigger: String?) async -> GatewayAgentInvocation {
         let invocation = VoiceWakeForwarder.makeInvocation(
-            transcript: text, sessionKey: self.sessionKey, routeEntries: self.route.map { [$0] } ?? [], voiceWakeTrigger: trigger)
+            transcript: text,
+            sessionKey: self.sessionKey,
+            routeEntries: self.route.map { [$0] } ?? [],
+            voiceWakeTrigger: trigger)
         return self.holdPreparation ? await self.preparation.request(invocation) : invocation
     }
 
