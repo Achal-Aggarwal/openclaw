@@ -5,40 +5,17 @@ import { prefValuesEqual } from "../app/server-prefs-state.ts";
 import { t } from "../i18n/index.ts";
 import { projectsForGateway } from "../lib/projects.ts";
 import { resolveSessionDisplayName } from "../lib/session-display.ts";
-import type { SessionOwnerOption } from "../lib/session-owner.ts";
 import {
   normalizePersonalSessionGroups,
   type PersonalSessionGroup,
+  type PersonalSessionGroupCandidate,
+  type PersonalSessionGroupPage,
+  type PersonalSessionGroupScope,
 } from "../lib/sessions/personal-groups.ts";
 import { isPinnableUiSessionRow, parseAgentSessionKey } from "../lib/sessions/session-key.ts";
 import { buildSessionListParams, SESSION_SEARCH_SCOPE } from "../lib/sessions/session-requests.ts";
 import { showToast } from "../lib/toast.ts";
 import { showPersonalSessionGroupDialog } from "./personal-session-group-dialog.tsx";
-
-export type PersonalSessionGroupCandidate = {
-  key: string;
-  label: string;
-  pinnable: boolean;
-  archived?: boolean;
-  /** Present only when someone other than the viewer owns the session. */
-  ownedBy?: Pick<SessionOwnerOption, "id" | "label" | "avatarUrl" | "identity">;
-};
-
-/** Where the section editor draws its session choices from. */
-export type PersonalSessionGroupScope =
-  | { kind: "mine" | "involving" | "all" }
-  | { kind: "project"; projectId: string };
-
-export type PersonalSessionGroupScopeChoices = {
-  /** Owner-relative scopes need a signed-in profile. */
-  personal: boolean;
-  projects: readonly { id: string; label: string }[];
-};
-
-export type PersonalSessionGroupPage = {
-  sessions: readonly PersonalSessionGroupCandidate[];
-  hasMore: boolean;
-};
 
 const SECTION_CANDIDATE_LIMIT = 100;
 

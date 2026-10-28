@@ -1,14 +1,15 @@
 import "./personal-session-group-dialog.css";
-import { createEffect, createMemo, createSignal, For, onCleanup, Show, untrack } from "solid-js";
+import { createMemo, createSignal, For, onSettled, Show } from "solid-js";
 import { registerSessionOrganizationEnglish } from "../i18n/locales/en-session-organization.ts";
 import { registerEnglishCatalog, t } from "../lib/reactive/i18n.ts";
-import type { PersonalSessionGroup } from "../lib/sessions/personal-groups.ts";
 import type {
+  PersonalSessionGroup,
   PersonalSessionGroupCandidate,
   PersonalSessionGroupPage,
   PersonalSessionGroupScope,
   PersonalSessionGroupScopeChoices,
-} from "./personal-session-group-actions.ts";
+} from "../lib/sessions/personal-groups.ts";
+import { nativeListener } from "../lib/solid-native-listener.ts";
 import { Icon } from "./solid/icon.tsx";
 import { Picker } from "./solid/select-picker.tsx";
 import { renderSessionOwnerAvatar } from "./solid/session-presentation.tsx";
@@ -118,7 +119,7 @@ export function PersonalSessionGroupDialogView(props: {
   );
   const [error, setError] = createSignal<string | null>(null);
   // Every row seen so far, so selected sessions keep their labels across scopes and searches.
-  const seen = untrack(() => new Map(props.options.known.map((row) => [row.key, row])));
+  const seen = createMemo(() => new Map(props.options.known.map((row) => [row.key, row])));
   const scope = (): PersonalSessionGroupScope => {
     const current = kind();
     return current === "project" ? { kind: current, projectId: projectId() } : { kind: current };
@@ -144,6 +145,10 @@ export function PersonalSessionGroupDialogView(props: {
     const id = ++request;
     setState({ status: "loading" });
     timer = setTimeout(() => {
+      // A closed or disconnected editor drops its pending query.
+      if (props.options.signal.aborted) {
+        return;
+      }
       props.options.load(scope(), query().trim()).then(
         (page) => {
           if (id !== request || props.options.signal.aborted) {
@@ -154,7 +159,7 @@ export function PersonalSessionGroupDialogView(props: {
             return;
           }
           for (const row of page.sessions) {
-            seen.set(row.key, row);
+            seen().set(row.key, row);
           }
           setState({ status: "ready", page });
         },
@@ -166,15 +171,12 @@ export function PersonalSessionGroupDialogView(props: {
       );
     }, delay);
   };
-  createEffect(
-    () => [step(), kind(), projectId()] as const,
-    ([current]) => {
-      if (current === 2) {
-        run(0);
-      }
-    },
-  );
-  onCleanup(() => clearTimeout(timer));
+  // Edits open on the session list, so their first query starts once mounted.
+  onSettled(() => {
+    if (step() === 2) {
+      run(0);
+    }
+  });
   const page = () => {
     const current = state();
     return current.status === "ready" ? current.page : undefined;
@@ -185,13 +187,13 @@ export function PersonalSessionGroupDialogView(props: {
     const listed = new Set(results().map((row) => row.key));
     const needle = query().trim().toLocaleLowerCase();
     return [...selected()].flatMap((key) => {
-      const row = seen.get(key);
+      const row = seen().get(key);
       return row && !listed.has(key) && (!needle || row.label.toLocaleLowerCase().includes(needle))
         ? [row]
         : [];
     });
   });
-  const selectedCount = createMemo(() => [...selected()].filter((key) => seen.has(key)).length);
+  const selectedCount = createMemo(() => [...selected()].filter((key) => seen().has(key)).length);
   const title = () =>
     t(editing() ? "sessionsView.personalGroupEdit" : "sessionsView.personalGroupNew");
   let nameInput: HTMLInputElement | undefined;
@@ -205,6 +207,7 @@ export function PersonalSessionGroupDialogView(props: {
   const next = () => {
     if (label().trim()) {
       setStep(2);
+      run(0);
     }
   };
   const toggle = (key: string, checked: boolean) =>
@@ -344,29 +347,28 @@ export function PersonalSessionGroupDialogView(props: {
               }
             >
               <input
-                ref={(element) => {
+                ref={[
                   // Escape clears, then closes, search before the dialog treats it as cancel.
-                  element.addEventListener("keydown", (event) => {
-                    if (event.key === "Enter" && !event.isComposing) {
+                  nativeListener("keydown", (event) => {
+                    if (event.isComposing) {
+                      return;
+                    }
+                    if (event.key === "Enter") {
                       // Enter filters; it must not submit (save) the section.
                       event.preventDefault();
-                      return;
+                    } else if (event.key === "Escape") {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      if (query()) {
+                        setQuery("");
+                        run(0);
+                      } else {
+                        closeSearch();
+                      }
                     }
-                    if (event.key !== "Escape" || event.isComposing) {
-                      return;
-                    }
-                    event.preventDefault();
-                    event.stopPropagation();
-                    if (element.value) {
-                      element.value = "";
-                      setQuery("");
-                      run(0);
-                    } else {
-                      closeSearch();
-                    }
-                  });
-                  queueMicrotask(() => element.focus());
-                }}
+                  }),
+                  (element: HTMLInputElement) => queueMicrotask(() => element.focus()),
+                ]}
                 type="search"
                 class="input personal-section-dialog__label"
                 aria-label={t("sessionsView.personalGroupSearch")}
