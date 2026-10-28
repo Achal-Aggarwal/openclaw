@@ -65,6 +65,7 @@ function resultBlock(card: ToolCard): Record<string, unknown> {
       id: card.resultMessageId,
       toolOutput: card.toolOutput,
       truncated: card.outputTruncated,
+      ...(card.catalogTruncated ? { catalogTruncated: true } : {}),
     },
   };
 }
@@ -177,6 +178,7 @@ function readProjections(item: MessageItem, index: number): Projection[] {
                 id: card?.resultMessageId,
                 toolOutput: card?.toolOutput,
                 truncated: card?.outputTruncated,
+                ...(card?.catalogTruncated ? { catalogTruncated: true } : {}),
               },
             }),
         ...(card?.details !== undefined ? { details: card.details } : {}),
@@ -266,11 +268,8 @@ function coalesceTurn(items: ChatItem[]): ChatItem[] {
       projections: [],
     };
     invocation.projections.push(projection);
-    if (projection.call) {
-      invocation.call = preferProjection(invocation.call, projection);
-    } else {
-      invocation.result = preferProjection(invocation.result, projection);
-    }
+    const kind = projection.call ? "call" : "result";
+    invocation[kind] = preferProjection(invocation[kind], projection);
     if (projection.source.message["__openclawToolStreamLive"] === true) {
       invocation.live = projection.source.message;
     }

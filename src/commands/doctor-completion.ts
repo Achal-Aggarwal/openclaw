@@ -1,5 +1,6 @@
 import { spawnSync } from "node:child_process";
-import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { resolveOpenClawCliInvocation } from "../../cli-invocation.mjs";
 import { note } from "../../packages/terminal-core/src/note.js";
 import { CLI_NAME } from "../cli/cli-name.js";
 import {
@@ -18,6 +19,7 @@ import {
 } from "../cli/completion-runtime.js";
 import type { HealthFinding, HealthRepairEffect } from "../flows/health-checks.js";
 import { resolveOpenClawPackageRoot } from "../infra/openclaw-root.js";
+import { resolveExternalPackageRuntimeEntrypointUrl } from "../infra/runtime-process-url.js";
 import { resolveRuntimeArgs } from "../infra/runtime-worker-url.js";
 import type { DoctorPrompter } from "./doctor-prompter.js";
 
@@ -33,11 +35,10 @@ export type CompletionCacheGenerationOptions = ShellCompletionStatusOptions & {
 
 async function installCompletionForDoctor(
   { shell, cachePath }: ShellCompletionStatus,
-  cliName: string,
   action: "installed" | "upgraded",
 ): Promise<void> {
   try {
-    await installCompletion(shell, true, cliName);
+    await installCompletion(shell, true, CLI_NAME);
     const reloadCommand = formatCompletionReloadCommand(shell, resolveCompletionProfileHint(shell));
     note(
       `Shell completion ${action}. Restart your shell or run: ${reloadCommand}`,
@@ -70,8 +71,8 @@ async function generateCompletionCache(
     return false;
   }
 
-  const binPath = path.join(root, "openclaw.mjs");
-  const args = [...resolveRuntimeArgs(), binPath, "completion", "--write-state"];
+  const binPath = fileURLToPath(resolveExternalPackageRuntimeEntrypointUrl("cliLauncher", root));
+  const args = ["completion", "--write-state"];
   if (options.shell) {
     args.push("--shell", options.shell);
   }
@@ -82,7 +83,12 @@ async function generateCompletionCache(
   } else {
     delete env[COMPLETION_SKIP_PLUGIN_COMMANDS_ENV];
   }
-  const result = spawnSync(process.execPath, args, {
+  const invocation = resolveOpenClawCliInvocation({
+    entryPath: binPath,
+    execArgv: resolveRuntimeArgs(),
+    args,
+  });
+  const result = spawnSync(invocation.command, invocation.args, {
     cwd: root,
     env,
     encoding: "utf-8",
@@ -159,10 +165,6 @@ export function shellCompletionStatusToRepairEffects(
   return effects;
 }
 
-type DoctorCompletionOptions = {
-  nonInteractive?: boolean;
-};
-
 /**
  * Repairs shell completion setup when doctor runs interactively.
  *
@@ -171,26 +173,20 @@ type DoctorCompletionOptions = {
  */
 export async function doctorShellCompletion(
   prompter: DoctorPrompter,
-  options: DoctorCompletionOptions = {},
+  options: { nonInteractive?: boolean } = {},
 ): Promise<void> {
   const status = await checkShellCompletionStatus(CLI_NAME);
   const regenerate = !status.usesSlowPattern && status.profileInstalled;
+  const [finding] = shellCompletionStatusToHealthFindings(status);
 
   // Slow dynamic completion runs the CLI during shell startup; cache it to keep login shells fast.
-  if (status.usesSlowPattern) {
+  if (finding) {
     note(
-      `Your ${status.shell} profile uses slow dynamic completion (source <(...)).\nUpgrading to cached completion for faster shell startup...`,
-      "Shell completion",
-    );
-  } else if (status.profileInstalled) {
-    if (status.cacheExists) {
-      return;
-    }
-    note(
-      `Shell completion is configured in your ${status.shell} profile but the cache is missing.\nRegenerating cache...`,
+      `${finding.message}\n${status.usesSlowPattern ? "Upgrading to cached completion for faster shell startup..." : "Regenerating cache..."}`,
       "Shell completion",
     );
   } else if (
+    status.profileInstalled ||
     options.nonInteractive ||
     !(await prompter.confirm({
       message: `Enable ${status.shell} shell completion for ${CLI_NAME}?`,
@@ -214,11 +210,7 @@ export async function doctorShellCompletion(
     note(`Completion cache regenerated at ${status.cachePath}`, "Shell completion");
     return;
   }
-  await installCompletionForDoctor(
-    status,
-    CLI_NAME,
-    status.usesSlowPattern ? "upgraded" : "installed",
-  );
+  await installCompletionForDoctor(status, status.usesSlowPattern ? "upgraded" : "installed");
 }
 
 /** Ensures the shell completion cache exists without prompting during setup/update flows. */
@@ -227,9 +219,7 @@ export async function ensureCompletionCacheExists(
   options: CompletionCacheGenerationOptions,
 ): Promise<boolean> {
   const shell = options.shell ?? resolveShellFromEnv();
-  const cacheExists = await completionCacheExists(shell, binName);
-
-  if (cacheExists) {
+  if (await completionCacheExists(shell, binName)) {
     return true;
   }
 

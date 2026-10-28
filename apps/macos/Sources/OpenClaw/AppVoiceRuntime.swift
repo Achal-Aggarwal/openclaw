@@ -2,12 +2,10 @@ import Foundation
 import OpenClawKit
 
 struct VoicePermissions: Sendable {
-    let supported: @Sendable () -> Bool
     let granted: @Sendable () -> Bool
     let ensure: @Sendable (Bool) async -> Bool
 
     static let live = Self(
-        supported: { voiceWakeSupported },
         granted: { PermissionManager.voiceWakePermissionsGranted() },
         ensure: { await PermissionManager.ensureVoiceWakePermissions(interactive: $0) })
 }
@@ -18,7 +16,8 @@ final class AppVoiceRuntime {
     typealias Controller = @MainActor @Sendable () -> TalkModeController?
     typealias UIAction = @MainActor @Sendable () -> Void
     typealias PrepareForward = @Sendable (String, String?) async -> GatewayAgentInvocation
-    typealias Forward = @Sendable (GatewayAgentInvocation) async -> Result<Void, VoiceWakeForwarder.VoiceWakeForwardError>
+    typealias Forward = @Sendable (GatewayAgentInvocation) async
+        -> Result<Void, VoiceWakeForwarder.VoiceWakeForwardError>
     typealias PublishTalk = @Sendable (Bool, String) async -> Void
     typealias Bootstrap = @Sendable () async throws -> GatewayConnection.RealtimeTalkBootstrap
 
@@ -91,18 +90,7 @@ final class AppVoiceRuntime {
             presentation: environment.wakePresentation,
             actions: { [weak state] in
                 guard let state else { return nil }
-                let sessions = state.voiceRuntime.sessions
-                return .init(
-                    send: { sessions.sendNow(token: $0, reason: $1) },
-                    updateEditedText: { sessions.updateEditedText(token: $0, text: $1) },
-                    didPresent: { state.earBoostActive = true },
-                    willDismiss: { sessions.overlayWillDismiss(token: $0) },
-                    didDismiss: { token, outcome in
-                        if outcome == .empty { state.blinkOnce() }
-                        if outcome == .sent { state.celebrateSend() }
-                        state.earBoostActive = false
-                        sessions.overlayDidDismiss(token: token)
-                    })
+                return VoiceWakeOverlayController.liveActions(state: state)
             })
         let sessions = VoiceSessionCoordinator(
             overlay: overlay,

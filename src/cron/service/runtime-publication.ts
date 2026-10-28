@@ -1,5 +1,5 @@
 import type { CronJob } from "../types.js";
-import { emit, type CronServiceState } from "./state.js";
+import { emit, emitCronDefinitionChanges, type CronServiceState } from "./state.js";
 
 /** Applies committed target rows locally without copying any unrelated store snapshot. */
 export function applyCronRuntimeRowsToState(
@@ -20,9 +20,11 @@ export function applyCronRuntimeRowsToState(
   const importedJobs = [...jobsById.values()].filter(
     (job) => !residentJobIds.has(job.id) && !deleted.has(job.id),
   );
+  const previousJobs = state.store.jobs;
   state.store.jobs = [...residentJobs, ...importedJobs];
+  emitCronDefinitionChanges(state, previousJobs, state.store.jobs);
   if (opts?.publish !== false) {
-    publishCronRuntimeRows(state);
+    publishDurableNextRunChanges({ state, storeJobs: state.store.jobs });
   }
 }
 
@@ -55,12 +57,4 @@ export function publishDurableNextRunChanges(params: {
       nextRunAtMs: job.state.nextRunAtMs,
     });
   }
-}
-
-/** Publishes scheduled-row changes after a targeted runtime transaction commits. */
-export function publishCronRuntimeRows(state: CronServiceState): void {
-  if (!state.store) {
-    return;
-  }
-  publishDurableNextRunChanges({ state, storeJobs: state.store.jobs });
 }

@@ -12,7 +12,7 @@ struct VoiceSessionCoordinatorTests {
     func manualAndQueuedAutoSendShareAdmissionAndRetryIdentity(change: RetryChange) async throws {
         try await withVoiceSendFixture { fixture in
             var requests = fixture.forwarding.requests.makeAsyncIterator()
-            let token = fixture.sessions.startSession(source: .wakeWord, text: "original", forwardEnabled: true)
+            let token = fixture.sessions.startSession(text: "original", forwardEnabled: true)
             fixture.sessions.finalize(token: token, text: "original", sendChime: .none, autoSendAfter: nil)
             // These are the two entry points after the delayed callback has already queued.
             fixture.overlay.requestSend(token: token)
@@ -82,7 +82,7 @@ struct VoiceSessionCoordinatorTests {
             fixture.holdPreparation = boundary == .preparation
             var preparations = fixture.preparation.requests.makeAsyncIterator()
             var forwards = fixture.forwarding.requests.makeAsyncIterator()
-            let token = fixture.sessions.startSession(source: .pushToTalk, text: "retired", forwardEnabled: true)
+            let token = fixture.sessions.startSession(text: "retired", forwardEnabled: true)
             fixture.overlay.requestSend(token: token)
             let task = try #require(fixture.tasks.last)
             let pendingPreparation = boundary == .preparation ? await preparations.next() : nil
@@ -91,7 +91,7 @@ struct VoiceSessionCoordinatorTests {
             let replacement: UUID?
             switch retirement {
             case .replacement:
-                replacement = fixture.sessions.startSession(source: .wakeWord, text: "replacement", forwardEnabled: true)
+                replacement = fixture.sessions.startSession(text: "replacement", forwardEnabled: true)
             case .dismissal:
                 replacement = nil
                 fixture.overlay.cancelEditingAndDismiss()
@@ -181,7 +181,7 @@ private final class VoiceSendFixture {
     var completedOutcomes: [VoiceWakeOverlayController.SendOutcome] = []
     private var finishDismissal: (@MainActor () -> Void)?
 
-    lazy var overlay = VoiceWakeOverlayController(
+    lazy var overlay: VoiceWakeOverlayController = .init(
         enableUI: false,
         presentation: .init(
             present: { _, _ in }, updateFrame: { _, _ in }, bringToFront: { _ in },
@@ -202,7 +202,7 @@ private final class VoiceSendFixture {
                     self.sessions.overlayDidDismiss(token: token)
                 })
         })
-    lazy var sessions = VoiceSessionCoordinator(
+    lazy var sessions: VoiceSessionCoordinator = .init(
         overlay: self.overlay,
         prepareForward: { [unowned self] text, trigger in await self.prepare(text, trigger: trigger) },
         forward: { [forwarding] in await forwarding.request($0) },
@@ -210,7 +210,7 @@ private final class VoiceSendFixture {
 
     private func prepare(_ text: String, trigger: String?) async -> GatewayAgentInvocation {
         let invocation = VoiceWakeForwarder.makeInvocation(
-            transcript: text, sessionKey: self.sessionKey, routeEntry: self.route, voiceWakeTrigger: trigger)
+            transcript: text, sessionKey: self.sessionKey, routeEntries: self.route.map { [$0] } ?? [], voiceWakeTrigger: trigger)
         return self.holdPreparation ? await self.preparation.request(invocation) : invocation
     }
 

@@ -84,6 +84,13 @@ export function isSessionStoreReadCandidateCurrent(candidate: SessionStoreReadCa
     candidate.path,
     candidate.scope,
   ).physicalPath;
+  return matchesSessionStoreReadCandidatePhysicalPath(candidate, currentPhysicalPath);
+}
+
+function matchesSessionStoreReadCandidatePhysicalPath(
+  candidate: SessionStoreReadCandidate,
+  currentPhysicalPath: string,
+): boolean {
   const capturedPhysicalPath = resolveCapturedSessionStoreReadCandidatePhysicalPath(candidate);
   if (currentPhysicalPath === capturedPhysicalPath) {
     return true;
@@ -177,7 +184,10 @@ export function assertSessionStoreReadCandidate(
           { ...candidate, path: resolveCapturedSessionStoreReadCandidatePhysicalPath(candidate) },
           physicalPath,
         )) &&
-      isSessionStoreReadCandidateCurrent(candidate)
+      // The exact selected path was resolved above in this synchronous assertion.
+      (!candidate.scope && candidate.path === path.resolve(pathname)
+        ? matchesSessionStoreReadCandidatePhysicalPath(candidate, physicalPath)
+        : isSessionStoreReadCandidateCurrent(candidate))
     ) {
       return physicalPath;
     }
@@ -185,4 +195,43 @@ export function assertSessionStoreReadCandidate(
   throw new Error(
     `Session database target changed outside captured discovery custody: ${pathname}`,
   );
+}
+
+/** Unlisted siblings inherit absence only from a complete inventory of the original physical family. */
+export function qualifyAbsentSessionStoreReadCandidate(
+  pathname: string,
+  captured: { candidates: readonly SessionStoreReadCandidate[]; familyListingComplete: boolean },
+) {
+  const physicalPath = assertSessionStoreReadCandidate(pathname, captured.candidates);
+  const family = captured.candidates.find(
+    (candidate) =>
+      candidate.scope === "sibling-family" &&
+      matchesAgentDatabaseReadCandidatePath(candidate, pathname) &&
+      matchesAgentDatabaseReadCandidatePath(
+        { ...candidate, path: candidate.physicalPath },
+        physicalPath,
+      ),
+  );
+  const listed = captured.candidates.some(
+    (candidate) =>
+      !candidate.scope &&
+      (matchesAgentDatabaseReadCandidatePath(candidate, pathname) ||
+        matchesAgentDatabaseReadCandidatePath(
+          { ...candidate, path: candidate.physicalPath },
+          physicalPath,
+        )),
+  );
+  if (
+    listed ||
+    !captured.familyListingComplete ||
+    !family ||
+    !isSessionStoreReadCandidateCurrent(family)
+  ) {
+    throw new Error("Session database absence was not captured before discovery");
+  }
+  const identity = readDatabasePathIdentitySync(pathname);
+  if (identity.key.startsWith("file:") || identity.canonicalPath !== physicalPath) {
+    throw new Error("Session database appeared after its initial inventory");
+  }
+  return identity;
 }

@@ -43,21 +43,21 @@ final class VoiceWakeOverlayController {
     let presentation: Presentation
     let actions: ActionsProvider
 
-    static func liveActions() -> Actions? {
-        Actions(
-            send: { VoiceSessionCoordinator.shared.sendNow(token: $0, reason: $1) },
-            updateEditedText: { VoiceSessionCoordinator.shared.updateEditedText(token: $0, text: $1) },
-            didPresent: { AppStateStore.shared.earBoostActive = true },
-            willDismiss: { VoiceSessionCoordinator.shared.overlayWillDismiss(token: $0) },
+    static func liveActions(state: AppState) -> Actions {
+        let sessions = state.voiceRuntime.sessions
+        return Actions(
+            send: { sessions.sendNow(token: $0, reason: $1) },
+            updateEditedText: { sessions.updateEditedText(token: $0, text: $1) },
+            didPresent: { state.earBoostActive = true },
+            willDismiss: { sessions.overlayWillDismiss(token: $0) },
             didDismiss: { token, outcome in
-                if outcome == .empty { AppStateStore.shared.blinkOnce() }
-                if outcome == .sent { AppStateStore.shared.celebrateSend() }
-                AppStateStore.shared.earBoostActive = false
-                VoiceSessionCoordinator.shared.overlayDidDismiss(token: token)
+                if outcome == .empty { state.blinkOnce() }
+                if outcome == .sent { state.celebrateSend() }
+                state.earBoostActive = false
+                sessions.overlayDidDismiss(token: token)
             })
     }
 
-    let logger = Logger(subsystem: "ai.openclaw", category: "voicewake.overlay")
     let enableUI: Bool
 
     /// Keep the voice wake overlay above any other OpenClaw windows, but below the system’s pop-up menus.
@@ -105,7 +105,9 @@ final class VoiceWakeOverlayController {
     init(
         enableUI: Bool = true,
         presentation: Presentation = .live,
-        actions: @escaping ActionsProvider = VoiceWakeOverlayController.liveActions)
+        actions: @escaping ActionsProvider = {
+            VoiceWakeOverlayController.liveActions(state: AppStateStore.shared)
+        })
     {
         self.enableUI = enableUI
         self.presentation = presentation
