@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import type { Dirent } from "node:fs";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -177,6 +178,7 @@ it.skipIf(process.platform === "win32").for(["complete", "cancel"] as const)(
     const second = path.join(root, "second.sqlite");
     const sources = [shared, second];
     const stagingRoot = path.join(root, "staging");
+    const workerCacheRoot = path.join(root, "worker-cache");
     const backupRoot = path.join(root, "backup");
     const directory = backupRoot + ".databases";
     const marker = path.join(root, "held.json");
@@ -189,6 +191,45 @@ it.skipIf(process.platform === "win32").for(["complete", "cancel"] as const)(
         >
       | undefined;
     let retirementFailure: Error | undefined;
+    const unexpectedEntry = (scope: string, entry: Dirent) =>
+      new Error(
+        `Unexpected ${scope} entry ${JSON.stringify({
+          name: entry.name.slice(0, 128),
+          type: entry.isDirectory()
+            ? "directory"
+            : entry.isFile()
+              ? "file"
+              : entry.isSymbolicLink()
+                ? "symlink"
+                : "other",
+        })}; fixture retained`,
+      );
+    const assertWorkerCacheEmpty = async () => {
+      const cacheStat = await fs.lstat(workerCacheRoot).catch((error: unknown) => {
+        if (hasErrnoCode(error, "ENOENT")) {
+          return undefined;
+        }
+        throw error;
+      });
+      if (!cacheStat) {
+        return;
+      }
+      if (!cacheStat.isDirectory()) {
+        throw new Error("Worker cache root is not a real directory; fixture retained");
+      }
+      for (const entry of await fs.readdir(workerCacheRoot, { withFileTypes: true })) {
+        if (entry.name !== "openclaw" || !entry.isDirectory()) {
+          throw unexpectedEntry("worker cache", entry);
+        }
+        // The canonical cache root may remain, but no snapshot work may survive the joined worker.
+        const remaining = await fs.readdir(path.join(workerCacheRoot, entry.name), {
+          withFileTypes: true,
+        });
+        if (remaining.length) {
+          throw unexpectedEntry("SQLite cache", remaining[0]!);
+        }
+      }
+    };
     const retireSnapshot = (location: string) => {
       try {
         let cause: unknown;
@@ -231,29 +272,21 @@ it.skipIf(process.platform === "win32").for(["complete", "cancel"] as const)(
         });
       for (const entry of remaining) {
         if (!entry.isDirectory() || !isSqliteSnapshotStagingName(entry.name)) {
-          const entryDetails = JSON.stringify({
-            name: entry.name.slice(0, 128),
-            type: entry.isDirectory()
-              ? "directory"
-              : entry.isFile()
-                ? "file"
-                : entry.isSymbolicLink()
-                  ? "symlink"
-                  : "other",
-          });
-          throw new Error(`Unexpected staging entry ${entryDetails}; fixture retained`);
+          throw unexpectedEntry("staging", entry);
         }
         retireSnapshot(path.join(stagingRoot, entry.name));
       }
+      await assertWorkerCacheEmpty();
       await fs.rm(root, { recursive: true });
       releaseFixture?.();
     }, onTestFinished);
     let bodyFailure: { error: unknown } | undefined;
     try {
-      for (const location of [path.dirname(shared), stagingRoot, directory]) {
+      for (const location of [path.dirname(shared), stagingRoot, workerCacheRoot, directory]) {
         await fs.mkdir(location, { recursive: true });
       }
       expect((await fs.stat(stagingRoot)).dev).toBe((await fs.stat(directory)).dev);
+      expect((await fs.stat(workerCacheRoot)).dev).toBe((await fs.stat(directory)).dev);
       await fs.writeFile(sentinel, "preserved");
       for (const [index, file] of sources.entries()) {
         using db = openNodeSqliteDatabase(file);
@@ -265,11 +298,18 @@ it.skipIf(process.platform === "win32").for(["complete", "cancel"] as const)(
       }
       const original = await Promise.all(sources.map((file) => fs.readFile(file)));
       const sizes = await Promise.all(sources.map(async (file) => (await fs.stat(file)).size));
-      const sourceEnv = { HOME: root, OPENCLAW_HOME: root, OPENCLAW_STATE_DIR: stateDir };
+      const sourceEnv = {
+        HOME: root,
+        OPENCLAW_HOME: root,
+        OPENCLAW_STATE_DIR: stateDir,
+        // Match the held-worker preload policy so Bun's compiler cache is not SQLite scratch.
+        BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0",
+      };
       const worker = {
         nodeRunner: process.execPath,
         sourceEnv,
-        stagingRoot,
+        // Worker cache ownership is separate from the explicit retained-image input below.
+        stagingRoot: workerCacheRoot,
         signal: AbortSignal.any([signal, controller.signal]),
         databases: await Promise.all(
           sources.map(async (file) => ({
@@ -440,6 +480,7 @@ require("node:module").syncBuiltinESMExports();
         }
       }
       expect(await fs.readdir(stagingRoot)).toEqual([]);
+      await assertWorkerCacheEmpty();
       expect(await fs.readFile(sentinel, "utf8")).toBe("preserved");
       for (const [index, file] of sources.entries()) {
         expect((await fs.readFile(file)).equals(original[index]!)).toBe(true);
