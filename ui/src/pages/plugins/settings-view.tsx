@@ -20,8 +20,8 @@ import { PluginManager } from "../../plugins/control-ui-manager.solid.tsx";
 import { renderPluginReadme } from "./catalog-detail.tsx";
 import { PluginArtTile } from "./consent-dialog.tsx";
 import { renderPluginDetailShell as PluginDetailShell } from "./detail-shell.tsx";
-import "./custom-elements.ts";
 import type { InstalledPluginDetailTab } from "./detail-tabs.ts";
+import "./custom-elements.ts";
 import { PluginInstallAction, type PluginInstallActionProps } from "./install-action.tsx";
 import type { PluginInstallProgress } from "./install-progress.ts";
 import { PluginNativeUiDisclosure } from "./native-ui-disclosure.tsx";
@@ -41,6 +41,7 @@ import {
 } from "./plugin-row-message.tsx";
 import type { PluginDetailRead } from "./plugins-detail-reads.ts";
 import type { PluginMutationAction } from "./plugins-page-model.ts";
+import { InstalledPluginRecommendedPrompts } from "./recommended-prompts.tsx";
 import {
   flattenPluginSettingsFields,
   pluginSettingsNodeOptions,
@@ -88,6 +89,9 @@ export type DetailProps = SharedProps &
   PluginSettingsEditorModel & {
     resolveCredential?: PluginSettingsEditorProps["resolveCredential"];
     onAskPlugin?: () => void;
+    onSelectPrompt?: (prompt: string) => void;
+    promptBusy?: boolean;
+    promptBlockedReason?: string | null;
     mcpLoginBusy?: boolean;
     canMcpLogin?: boolean;
     onMcpLogin?: (serverName: string) => void;
@@ -592,6 +596,7 @@ function PluginOverview(props: DetailProps): JSX.Element {
             <PluginNativeUiDisclosure />
           ) : undefined
         }
+        recommendations={<InstalledPluginRecommendedPrompts plugin={plugin()} state={props} />}
         titleAction={
           <Show
             when={Boolean(props.installProgress)}

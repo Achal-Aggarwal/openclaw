@@ -222,6 +222,7 @@ function updateTextareaOverflow(
   const fadeBottom = canFade && el.scrollTop + clientHeight < scrollHeight - 1;
   const state = composerTextareaResizeObservers.get(el);
   setTextareaScrollbarGutter(el, scrollable, state);
+  el.toggleAttribute("data-composer-overflow", scrollable);
   el.toggleAttribute("data-scroll-fade-top", fadeTop);
   el.toggleAttribute("data-scroll-fade-bottom", fadeBottom);
   if (state) {
@@ -258,6 +259,7 @@ export function adjustTextareaHeight(
     el.style.height = "";
     el.style.overflowY = "";
     el.removeAttribute("data-composer-scrollable");
+    el.removeAttribute("data-composer-overflow");
     el.removeAttribute("data-scroll-fade-top");
     el.removeAttribute("data-scroll-fade-bottom");
     return;

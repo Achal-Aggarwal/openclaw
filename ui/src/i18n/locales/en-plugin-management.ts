@@ -151,6 +151,9 @@ const enPluginManagement = {
       description:
         "This plugin runs code in the OpenClaw web app. It can read and modify the app’s interface and use the Gateway permissions of the signed-in user. Only enable plugins you trust.",
     },
+    recommendedPrompts: {
+      label: "Recommended prompts",
+    },
     compatibilityDeprecatedDated:
       "Uses OpenClaw APIs that retire on {date}. It keeps working until then; check for a plugin update.",
     compatibilityDeprecatedUndated:
