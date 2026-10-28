@@ -311,7 +311,10 @@ suite.define(() => {
     );
     expect(refreshedSession).toMatchObject({ lastRunId: runId, runtimeMs: 13_000 });
     await operationLabel.waitFor();
-    await expect.poll(() => operationLabel.textContent()).toBe("Worked for 13 seconds");
+    await expect.poll(() => operationLabel.textContent()).toBe("Worked");
+    const recap = page.locator(".chat-turn-recap");
+    await expect.poll(() => recap.textContent()).toContain("Done in 13 seconds");
+    expect(await recap.textContent()).toContain("42 output tokens");
     expect(await stopButton(page).count()).toBe(0);
 
     const successorSession = {
@@ -337,18 +340,17 @@ suite.define(() => {
     );
     await writeFile(join(suite.artifactDir, "worked-duration.png"), screenshot.png);
     console.log("WORKED_DURATION_PROOF", suite.artifactDir);
-    await expect.poll(() => operationLabel.textContent()).toBe("Worked for 13 seconds");
-    expect(await page.locator(".chat-turn-recap").allTextContents()).not.toEqual(
-      expect.arrayContaining([expect.stringContaining("Done in")]),
-    );
-    expect(await page.locator(".chat-turn-recap").textContent()).toBe("42 output tokens");
+    await expect.poll(() => operationLabel.textContent()).toBe("Worked");
+    expect(await recap.textContent()).toContain("Done in 13 seconds");
+    expect(await recap.textContent()).toContain("42 output tokens");
     await gateway.setSessionsListResponse({ sessions: [completedSession] });
 
     await page.reload();
     await gateway.waitForRequest("sessions.messages.subscribe", { match: { key: sessionKey } });
     await replyBody.waitFor();
     await operationLabel.waitFor();
-    expect(await operationLabel.textContent()).toBe("Worked for 13 seconds");
+    expect(await operationLabel.textContent()).toBe("Worked");
+    await expect.poll(() => recap.textContent()).toBe("Done in 13 seconds");
     expect(await page.locator(".chat-group.user").count()).toBe(2);
     await operationLabel.click();
     await expect
