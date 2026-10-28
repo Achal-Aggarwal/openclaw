@@ -875,7 +875,7 @@ var External = [
     /(^mcpServers$|^mcpToolsDeny$|^skills$|^webSearch$)/u,
     /^.*$/u,
     /^.*$/u,
-    /(^sessionKey$|^agentId$|^runId$|^preserveSideRuns$|^discardPendingInput$)/u,
+    /(^sessionKey$|^agentId$|^sessionId$|^runId$|^preserveSideRuns$|^discardPendingInput$)/u,
     /(^sessionKey$|^agentId$|^message$|^label$)/u,
     /(^limit$|^cursor$|^query$|^providerId$|^accountId$|^agentId$|^startedAfter$|^startedBefore$)/u,
     IsDateTime,
@@ -6334,6 +6334,7 @@ var External = [
     ) &&
     check_6(value.sessionKey) &&
     (value.agentId === void 0 || !("agentId" in value) || check_63(value.agentId)) &&
+    (value.sessionId === void 0 || !("sessionId" in value) || check_63(value.sessionId)) &&
     (value.runId === void 0 || !("runId" in value) || check_63(value.runId)) &&
     (value.preserveSideRuns === void 0 ||
       !("preserveSideRuns" in value) ||
