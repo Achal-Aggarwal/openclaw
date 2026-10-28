@@ -2,6 +2,8 @@ import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { resolvePnpmRunner } from "../pnpm-runner.mts";
+import { resolveFsSafePackageManifest } from "./fs-safe-windows-helper-asset.mts";
+import { copyWorkerNativeArchiveCache } from "./fs-safe-worker-native-assets.mts";
 import { hasUnjoinedWork, runManagedCommand, signalExitCode } from "./managed-child-process.mts";
 import { isRecord } from "./record-shared.mjs";
 import {
@@ -541,6 +543,14 @@ export async function runIsolatedVitest(
       throw new Error("Stage the isolated adapter's new source files before running it.");
     }
     const mounts = prepareIsolatedVitestDependencies(root, snapshot, source.copied);
+    if (resolveIsolatedVitestBuild(argv, CONTAINER_ENV)) {
+      const archives = await copyWorkerNativeArchiveCache(
+        root,
+        snapshot,
+        resolveFsSafePackageManifest(root),
+      );
+      console.error(`[vitest:isolated] offline worker native archives ${JSON.stringify(archives)}`);
+    }
     const name = `openclaw-vitest-${randomUUID()}`;
     console.error(
       `[vitest:isolated] source sha256:${source.digest}; ${source.copied.size} working-tree files; network=none; container=${name}`,
