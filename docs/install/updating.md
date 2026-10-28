@@ -45,20 +45,6 @@ backup.
 
 ## Update implementation contract
 
-Candidate Doctor imports historical image-project snapshots as non-repository
-runtime preparation while retaining the original serialized snapshot as evidence.
-Historical shared-schema-21 placements retain their existing preparation evidence
-and cleanup custody under current constraints; unsettled worker claims refuse
-the atomic cutover without advancing either marker. Missing predicate columns
-are derived from their original JSON before publication.
-Historical agent-schema-24 recovery envelopes remain archival columns; queued
-inputs become interrupted before the schema markers advance, never restart replay
-authority. Both repairs use the existing maintenance transaction and verified
-backup. Malformed or conflicting image preparation refuses the cutover without
-discarding its record. The candidate must contain these repairs; the installed
-updater needs no new protocol. Restore the verified pre-migration database with
-its matching binary for rollback rather than lowering version markers.
-
 When artifact-preserving SQLite inspection exhausts its stabilization attempts,
 update failures retain the final consistency reason code and attempt count in
 `openclaw update status` and the prepared failure report. The candidate worker
@@ -86,6 +72,20 @@ Gateway shutdown cancellation stays quiet; unexpected scheduled task failures
 are reported by the scheduler without restarting the Gateway.
 
 **Updates always work** (`openclaw update` finishes best effort everywhere). Changes to update, Doctor, service lifecycle, migrations, plugin loading: state their update behavior. Installed updater runs first, can't be patched; candidate fixes key on markers shipped drivers set; existing operator state = input. Recoverable hiccups → recorded warnings; back up before mutating, let rollback restore it; refuse only for named data risk with previous Gateway kept running. Timeouts and budgets: generous, derived from measured state, sized for slow hardware. Proof: published-driver × candidate cell.
+
+Candidate Doctor imports historical image-project snapshots as non-repository
+runtime preparation while retaining the original serialized snapshot as evidence.
+Historical shared-schema-21 placements retain their existing preparation evidence
+and cleanup custody under current constraints; unsettled worker claims refuse
+the atomic cutover without advancing either marker. Missing predicate columns
+are derived from their original JSON before publication.
+Historical agent-schema-24 recovery envelopes remain archival columns; queued
+inputs become interrupted before the schema markers advance, never restart replay
+authority. Both repairs use the existing maintenance transaction and verified
+backup. Malformed or conflicting image preparation refuses the cutover without
+discarding its record. The candidate must contain these repairs; the installed
+updater needs no new protocol. Restore the verified pre-migration database with
+its matching binary for rollback rather than lowering version markers.
 
 During overlapping Gateway restarts, config recovery reads health facts through
 the same isolated read-only transaction used for startup plugin metadata while
