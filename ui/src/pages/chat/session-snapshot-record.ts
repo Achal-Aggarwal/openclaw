@@ -1,5 +1,4 @@
 import { readSessionMessageSequence } from "@openclaw/gateway-client/browser";
-import { detailsSnapshotSchema } from "./session-details-snapshot-schema.ts";
 import { asOptionalRecord } from "@openclaw/normalization-core/record-coerce";
 import { removePairingQrContent } from "../../lib/chat/pairing-qr.ts";
 import {
@@ -23,6 +22,7 @@ import {
 } from "./chat-header-viewers-snapshot.ts";
 import { projectChatMessageReactions } from "./chat-message-reactions-snapshot.ts";
 import { chatSessionStateSnapshotSchema } from "./chat-session-state-snapshot.ts";
+import { detailsSnapshotSchema } from "./session-details-snapshot-schema.ts";
 import type { ChatSessionSnapshot } from "./session-message-cache.ts";
 import {
   loadChatHistoryStateValidator,
@@ -177,7 +177,7 @@ export async function parseSnapshotRecord(
   return { ...parsed, snapshot: { ...parsed.snapshot, historyState } };
 }
 
-export const CHAT_SNAPSHOT_PROJECTION_VERSION = 8;
+export const CHAT_SNAPSHOT_PROJECTION_VERSION = 9;
 const CHAT_SNAPSHOT_MESSAGE_LIMIT = 80;
 
 export function createSnapshotRecord(
