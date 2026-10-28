@@ -271,13 +271,14 @@ export async function handleChatAbortRequestWithLifecycle(
   });
   const abortSession = await prepareAbortSession();
   const abortSessionEntry = abortSession.ok ? abortSession.value.entry : undefined;
-  if (
-    requestedSessionId &&
-    abortSession.ok &&
-    abortSessionEntry?.sessionId !== requestedSessionId
-  ) {
-    respondError(respond, ErrorCodes.INVALID_REQUEST, "session incarnation changed");
-    return;
+  if (requestedSessionId) {
+    if (!abortSession.ok) {
+      throw abortSession.error;
+    }
+    if (abortSessionEntry?.sessionId !== requestedSessionId) {
+      respondError(respond, ErrorCodes.INVALID_REQUEST, "session incarnation changed");
+      return;
+    }
   }
   const capturedStores = new Set(
     [...capturedSources.map(([, entry]) => entry.input), reservedCandidate].flatMap((input) =>
