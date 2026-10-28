@@ -93,7 +93,14 @@ function withDatabase<T>(pathname: string, readOnly: boolean, run: (db: Database
 
 function captureBytes(files: string[]) {
   const before = files.map((file) => fs.readFileSync(file));
-  return () => expect(files.map((file) => fs.readFileSync(file))).toEqual(before);
+  return () => {
+    const after = files.map((file) => fs.readFileSync(file));
+    expect(after).toHaveLength(before.length);
+    // Keep large file buffers out of the matcher's iterable-entry expansion.
+    for (const [index, bytes] of before.entries()) {
+      expect(after[index]?.equals(bytes)).toBe(true);
+    }
+  };
 }
 
 function repairOptions(f: AgentFixture, assertCurrent = () => {}) {
