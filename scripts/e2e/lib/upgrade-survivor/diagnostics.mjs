@@ -1891,7 +1891,7 @@ function publishedSuccessSummary(artifactRoot, sanitize) {
     throw new Error();
   }
   const snapshot = JSON.parse(raw);
-  if (snapshot.status !== "passed") {
+  if (snapshot.status !== "passed" || !Array.isArray(snapshot.phases)) {
     throw new Error();
   }
   const pluginPolicy = publishedPluginPolicy(snapshot, { sanitize, boundedList });
@@ -2022,7 +2022,9 @@ function publishedSuccessSummary(artifactRoot, sanitize) {
     ...(nativeAssignments ? { nativeAssignments } : {}),
     ...(packageActivationRecovery ? { packageActivationRecovery } : {}),
     timings,
-    phases: boundedList(snapshot.phases).map((event) => {
+    // Preserve the full start/completion journal within the summary's input/output
+    // byte limits; generic collection counts reject valid long-running proofs.
+    phases: snapshot.phases.map((event) => {
       if (
         !["started", "passed", "failed"].includes(event?.status) ||
         typeof event.phase !== "string" ||
