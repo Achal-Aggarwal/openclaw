@@ -40,6 +40,7 @@ import {
   prepareDoctorDatabasePreflight,
   type DoctorDatabasePreflight,
 } from "./doctor-database-preflight.js";
+import { resolveDoctorUpdateAdmission } from "./doctor-maintenance-admission.js";
 import { createDoctorRehearsalDatabaseCoverage } from "./doctor-rehearsal-databases.js";
 import {
   recordUpdateDoctorRefusal,
@@ -421,19 +422,6 @@ export async function preflightUpdateDoctorCli(options: {
   json?: boolean;
   fullIntegrityCheck?: boolean;
 }) {
-  const serviceSchemas = getGatewayServiceInstallation()
-    ? await prepareDoctorDatabasePreflight()
-    : undefined;
-  const pending = serviceSchemas?.pendingMigrations?.find(
-    (database) => database.foundVersion > 0 && database.foundVersion < database.supportedVersion,
-  );
-  if (pending) {
-    assertGatewayServiceSchemaMigrationAllowed(
-      resolveOpenClawStateSqlitePath(),
-      pending.foundVersion,
-      pending.supportedVersion,
-    );
-  }
   // Pin the invoking parent before schema admission can yield or reparent us.
   const parent = readUpdateRunDriver(process.ppid);
   if (resolveUpdateRehearsalRoot(process.env)) {
@@ -447,6 +435,9 @@ export async function preflightUpdateDoctorCli(options: {
     // State-only facts must never replace the later complete fleet inspection.
     return undefined;
   }
+  const serviceSchemas = getGatewayServiceInstallation()
+    ? await prepareDoctorDatabasePreflight()
+    : undefined;
   const schemas = await guardUpdateDoctorSchemaUpgrade({
     ...options,
     schemas: serviceSchemas,
@@ -461,6 +452,24 @@ export async function preflightUpdateDoctorCli(options: {
     );
     // The existing one-shot owner joins cleanup and drains the warning before exit.
     exitCliAfterOutput(defaultRuntime, 0);
+  }
+  const pending = serviceSchemas?.pendingMigrations?.find(
+    (database) => database.foundVersion > 0 && database.foundVersion < database.supportedVersion,
+  );
+  if (pending) {
+    // A candidate must repair before the updater rebinds the service. An inherited
+    // phase marker alone is insufficient; use the recorded live driver admission.
+    const managedUpdate =
+      process.env.OPENCLAW_UPDATE_IN_PROGRESS === "1" &&
+      Boolean(process.env.OPENCLAW_UPDATE_RUN_ID?.trim()) &&
+      resolveDoctorUpdateAdmission(process.env).readContinuation() !== undefined;
+    if (!managedUpdate) {
+      assertGatewayServiceSchemaMigrationAllowed(
+        resolveOpenClawStateSqlitePath(),
+        pending.foundVersion,
+        pending.supportedVersion,
+      );
+    }
   }
   return schemas ?? serviceSchemas;
 }
