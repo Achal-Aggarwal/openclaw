@@ -614,7 +614,8 @@ it.each([
       previousCleaned,
       visibleDelta: delta ?? frame.text,
       appendDelta: delta ?? null,
-      parsedStreamDirectives: "held" in frame ? null : { text: "", replyToTag: false },
+      parsedStreamDirectives:
+        "held" in frame ? null : { text: "", replyToTag: false, isSilent: false },
       previousAudioDirectiveCount: 0,
       rawDirectiveSource: frame.text,
       rawDirectiveDelta: delta,

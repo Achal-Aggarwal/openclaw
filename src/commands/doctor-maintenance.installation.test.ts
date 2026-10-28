@@ -232,7 +232,11 @@ async function runInstallationCase(params: {
       ? path.join(home, ".nvm", "versions", "node", "v26.8.1", "bin", "node")
       : path.join(home, "runtime", params.bun ? "bun" : "node");
   const oldRoot = path.join(home, "prefix-a/lib/node_modules/openclaw");
-  mocks.activeRoot = path.join(home, "prefix-b/lib/node_modules/openclaw");
+  // Policy-only restoration must not silently become a cross-install repair.
+  mocks.activeRoot =
+    params.nativePolicy && params.nativePolicy !== "disabled-before-install"
+      ? oldRoot
+      : path.join(home, "prefix-b/lib/node_modules/openclaw");
   for (const [root, version] of [
     [oldRoot, "2026.9.4"],
     [mocks.activeRoot, "2026.9.17"],

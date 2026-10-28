@@ -268,6 +268,10 @@ export async function restoreDoctorGatewayService(params: {
           ),
         );
         assertInstallationCurrent();
+        // The repair helper reports ordinary native failures instead of throwing.
+        // Recheck policy even when it refused publication, before treating the
+        // unchanged installation as an ordinary restoration outcome.
+        await assertAutoStartCurrent();
         const repairedState = before.stopped ? await readCurrent() : await readInspection();
         assertInstallationCurrent();
         if (!repairedState) {

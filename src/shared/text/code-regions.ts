@@ -134,5 +134,5 @@ export function canReuseMarkdownOwnership(
     return false;
   }
   const boundary = previousText.slice(-4) + nextText.slice(previousText.length);
-  return !/[\x60~\t|\r\[\]():-]| {4}/u.test(boundary);
+  return !/[\x60~\t|\r[\]():-]| {4}/u.test(boundary);
 }
