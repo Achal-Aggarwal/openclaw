@@ -179,8 +179,14 @@ export function parseMarkdownDocumentFileLinkTarget(href: string) {
   } catch {
     return null;
   }
-  if (/^(?:[/\\]|~[/\\]|[a-z]:)/i.test(decoded)) {
+  const target = splitMarkdownFileLineSuffix(decoded);
+  if (
+    !target.path ||
+    /^(?:[/\\]|~[/\\]|[a-z][a-z0-9+.-]*:)/i.test(target.path) ||
+    /\p{Cc}/u.test(decoded)
+  ) {
     return null;
   }
-  return parseMarkdownFileLinkTarget(decoded, { authored: true });
+  // Authored document hrefs already delimit their paths, including extensionless files.
+  return target;
 }

@@ -156,9 +156,25 @@ export function openSessionWorkspaceFile(
 ) {
   const document = target.relativeTo;
   const source = document?.sessionFileSource;
-  // Leave .. segments for the native file reader's containment and authority checks.
-  const path = document?.absolutePath?.replaceAll("\\", "/");
-  const requestPath = path ? path.slice(0, path.lastIndexOf("/") + 1) + target.path : target.path;
+  const path = (document?.absolutePath ?? document?.path)?.replaceAll("\\", "/");
+  let requestPath = path ? path.slice(0, path.lastIndexOf("/") + 1) + target.path : target.path;
+  if (document && !document.root) {
+    // Repository readers accept root-relative paths, not host paths or in-root dot segments.
+    // Keep leading .. segments intact so the native reader still rejects an escape.
+    const parts: string[] = [];
+    for (const part of requestPath.replaceAll("\\", "/").split("/")) {
+      if (!part || part === ".") {
+        continue;
+      }
+      if (part === ".." && parts.length && parts.at(-1) !== "..") {
+        parts.pop();
+      } else {
+        parts.push(part);
+      }
+    }
+    // An explicit relative path must not fall back to a workspace-wide basename search.
+    requestPath = `./${parts.join("/") || "."}`;
+  }
   return openFile(state, getSessionWorkspace(state), target.path, {
     requestPath,
     line: target.line,

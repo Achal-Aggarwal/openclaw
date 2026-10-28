@@ -108,6 +108,7 @@ it("scopes authored relative file links to document readers without changing mes
     "[Plain](evidence/log.md)",
     "[Encoded](evidence/hash%23name.md#details)",
     "[Parent](../summary.md)",
+    "[Extensionless](./evidence/README)",
     "[Heading](#details)",
     "[Query](evidence/log.md?raw=1)",
     "[External](https://example.com/log.md#details)",
@@ -125,6 +126,7 @@ it("scopes authored relative file links to document readers without changing mes
     "evidence/log.md",
     "evidence/hash#name.md",
     "../summary.md",
+    "./evidence/README",
   ]);
   expect(relative.every((link) => !link.hasAttribute("href"))).toBe(true);
   expect(

@@ -37,60 +37,91 @@ function fileInfo<T extends object>(name: string, fields: T) {
 }
 
 suite.define(() => {
-  it("follows evidence links relative to the open Markdown document", async () => {
+  it.each([
+    { kind: "managed", name: "log.md", root: "/workspace" },
+    { kind: "extensionless", name: "README", root: "/workspace" },
+    { kind: "repository", name: "log.md", root: undefined },
+  ])("follows document-relative evidence links in $kind Files", async ({ name, root }) => {
     await withPage(async (page) => {
       const report = "reports/reviewer-report.md";
-      const evidence = "reports/evidence/log.md";
-      const source = "# Review report\n\n[Browser evidence](evidence/log.md#browser-components)\n";
+      const evidence = `reports/evidence/${name}`;
+      const requestPath = (path: string) => (root ? `${root}/${path}` : path);
+      const targetPath = (path: string) => (root ? `${root}/${path}` : `./${path}`);
+      const summaryRequest = root ? `${root}/reports/../summary.md` : "./summary.md";
+      const source = `# Review report\n\n[Browser evidence](evidence/${name}#browser-components)\n\n[Summary](../summary.md)\n`;
       const gateway = await installMockGateway(page, {
         workspace: "/workspace/nested-cwd",
-        historyMessages: [chatMessage("assistant", `[Report](/workspace/${report})`)],
+        historyMessages: [chatMessage("assistant", `[Report](${requestPath(report)})`)],
         methodResponses: {
           "sessions.files.get": {
             cases: [
-              { path: report, name: "reviewer-report.md", content: source },
+              {
+                path: report,
+                request: requestPath(report),
+                name: "reviewer-report.md",
+                content: source,
+              },
               {
                 path: evidence,
-                name: "log.md",
+                request: targetPath(evidence),
+                name,
                 content: "# Evidence\n\n## browser-components\n\nThe intended result is 42.\n",
               },
-            ].map(({ path, name, content }) => ({
-              match: { path: `/workspace/${path}` },
+              {
+                path: "summary.md",
+                request: summaryRequest,
+                name: "summary.md",
+                content: "# Workspace summary\n\nThe parent-directory link works.\n",
+              },
+            ].map(({ path, request, name: fileName, content }) => ({
+              match: { path: request },
               response: {
-                ...previewResponse(name, {
+                ...previewResponse(fileName, {
                   path,
                   workspacePath: path,
                   content,
                   contentEncoding: "utf8",
                   previewKind: "text",
-                  mimeType: "text/markdown",
+                  mimeType: fileName === "README" ? "text/plain" : "text/markdown",
                 }),
-                source: {
-                  workspaceId: "report-workspace",
-                  root: "/workspace",
-                  fileRoot: "/workspace/nested-cwd",
-                },
+                root,
+                ...(root
+                  ? {
+                      source: {
+                        workspaceId: "report-workspace",
+                        root,
+                        fileRoot: "/workspace/nested-cwd",
+                      },
+                    }
+                  : {}),
               },
             })),
           },
         },
       });
       await page.goto(`${suite.server.baseUrl}chat`);
-      await page.locator(`.chat-thread a[data-file-path="/workspace/${report}"]`).click();
-      const reader = page.locator(".sidebar-file-view__markdown:visible");
+      await page.locator(`.chat-thread a[data-file-path="${requestPath(report)}"]`).click();
+      const fileView = page.locator(".sidebar-file-view:visible");
+      const reader = fileView.locator(".sidebar-file-view__markdown");
+      const reportTab = page
+        .locator(".side-panel__header .tabstrip-tab")
+        .filter({ hasText: "reviewer-report.md" });
       await polledText(reader).toContain("Review report");
       const chatUrl = page.url();
       await reader.getByText("Browser evidence", { exact: true }).click();
-      await polledText(reader).toContain("The intended result is 42.");
+      await polledText(fileView).toContain("The intended result is 42.");
+      expect(page.url()).toBe(chatUrl);
+      await reportTab.click();
+      await polledText(reader).toContain("Review report");
+      await reader.getByText("Summary", { exact: true }).click();
+      await polledText(reader).toContain("The parent-directory link works.");
       expect(page.url()).toBe(chatUrl);
       expect((await gateway.getRequests("sessions.files.get")).map((r) => r.params)).toEqual([
-        fileRequest(`/workspace/${report}`),
-        fileRequest(`/workspace/${evidence}`),
+        fileRequest(requestPath(report)),
+        fileRequest(targetPath(evidence)),
+        fileRequest(summaryRequest),
       ]);
-      await page
-        .locator(".side-panel__header .tabstrip-tab")
-        .filter({ hasText: "reviewer-report.md" })
-        .click();
+      await reportTab.click();
       await polledText(reader).toContain("Review report");
     });
   });

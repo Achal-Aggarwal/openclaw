@@ -461,9 +461,7 @@ export function renderFilePanelPresentation(context: {
                 remoteImages: false,
                 codeBlockInteraction: "interactive",
                 fileLinks: true,
-                documentFileLinks: Boolean(
-                  content.sessionFileSource && content.absolutePath && content.root,
-                ),
+                documentFileLinks: Boolean(content.sessionFileSource && content.path),
                 sessionLinks: true,
                 interactiveImages: context.props.onOpenImage !== null,
               },

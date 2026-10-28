@@ -1,6 +1,7 @@
 import { createEffect } from "solid-js";
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { createDeferred } from "../../../../../test/helpers/promise.js";
+import { GatewayRequestError } from "../../../api/gateway-connect-errors.ts";
 import type { SessionWorkspaceGetResult } from "../../../api/types.ts";
 import { registerMcpAppUnmountTarget } from "../../../components/mcp-app-unmount.ts";
 import {
@@ -451,6 +452,37 @@ describe("workspace file tabs", () => {
       await waitForSolid(() => expect(toast.textContent).toContain(workspace.error));
       expect(retained.content).toBe(original);
       expect(readFileDraft(original)?.content).toBe("Unsaved evidence");
+    },
+  );
+
+  it.each([
+    { path: "reports/report.md", link: "../../../outside.md", request: "./../../outside.md" },
+    { path: "report.md", link: "missing.md", request: "./missing.md" },
+  ])(
+    "keeps rootless document target $link explicit and native-authorized",
+    async ({ path, link, request }) => {
+      const toast = document.body.appendChild(document.createElement("openclaw-toast-host"));
+      await toast.updateComplete;
+      const { state, response, getFile, workspace } = fileFixture(path, "# Report", true);
+      response.root = undefined;
+      const preview = await openSessionWorkspaceFile(state, { path });
+      if (!preview || preview.content.kind !== "file") {
+        throw new Error("Report did not open");
+      }
+      state.sessions.listFiles = vi.fn();
+      getFile.mockRejectedValueOnce(
+        new GatewayRequestError({
+          code: "INVALID_REQUEST",
+          message: "session file not found",
+          details: { type: "session_file_not_found" },
+        }),
+      );
+      await openSessionWorkspaceFile(state, { path: link, relativeTo: preview.content }, "preview");
+      expect(getFile).toHaveBeenLastCalledWith(state.sessionKey, request, { agentId: "main" });
+      expect(state.sessions.listFiles).not.toHaveBeenCalled();
+      expect(workspace.activePreviewId).toBe(preview.id);
+      expect(workspace.previews).toEqual([preview]);
+      await waitForSolid(() => expect(toast.textContent).toContain("session file not found"));
     },
   );
 

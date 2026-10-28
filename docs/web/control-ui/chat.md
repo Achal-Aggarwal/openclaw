@@ -396,8 +396,9 @@ conservative to avoid turning prose into links.
 In a workspace Markdown file's **Preview**, authored relative file links resolve
 from the document's folder. For example, a report in `reports/review.md` can open
 `[Evidence](evidence/log.md#details)` as `reports/evidence/log.md` in Files.
-The heading fragment does not change which file opens; the reader does not promise
-scrolling to arbitrary Markdown headings. Fragment-only links, external URLs, and
+This also works for extensionless files such as `../LICENSE` and in
+repository-backed workspaces that do not expose a Gateway filesystem path.
+The link opens the file without selecting a Markdown heading. Fragment-only links, external URLs, and
 conversation links retain their existing behavior. File access still uses the
 source session's current permissions. If the document's workspace has changed,
 reopen the document before following its links; retained unsaved drafts stay intact.
