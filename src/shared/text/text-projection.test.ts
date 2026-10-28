@@ -20,19 +20,15 @@ const checkpointFilter = (
     retainedOutputStart: boundary,
   }),
 });
-function replay(filter: text.TextFilter, chunks: string[], expected: string, strict = false) {
+function replay(filter: text.TextFilter, chunks: string[], expected: string) {
   const projection = project(filter);
   let delivered = "";
   for (const chunk of chunks) {
     const result = projection.append(chunk);
-    if (strict) {
-      expect(result.delta).not.toBeNull();
-    }
     delivered = result.delta === null ? result.text : delivered + result.delta;
     expect(delivered).toBe(result.text);
   }
   expect(projection.text).toBe(expected);
-  return projection;
 }
 
 it("activates split markers, reprojects completed syntax, and replaces the source", () => {
@@ -125,14 +121,14 @@ it("distinguishes preserved indentation and equal-length rewrites from trimmed s
 });
 
 it("removes only leading empty lines", () => {
-  const projection = replay(
-    text.leadingEmptyLinesTextFilter,
-    [" \r", "\n\t\n", "  C", "\n D"],
-    "  C\n D",
-    true,
-  );
+  const projection = project(text.leadingEmptyLinesTextFilter);
+  expectUpdate(projection.append(" \r"), "");
+  expectUpdate(projection.append("\n\t\n"), "");
+  expectUpdate(projection.append("  C"), "  C");
+  expectUpdate(projection.append("\n D"), "  C\n D", "\n D");
   expectUpdate(projection.replace("\n  Reset"), "  Reset", null);
 });
+
 it.each([
   ["Intro `a b\nx`\n---:\n\nIntro `a  b\nx`\n---:", "Intro `a b\nx`\n---:"],
   [

@@ -2,7 +2,6 @@ import { expectDefined } from "@openclaw/normalization-core";
 import { expect, it, vi } from "vitest";
 import type * as CodeRegions from "../../../packages/markdown-core/src/markdown-code-regions.js";
 import type * as MarkdownParser from "../../../packages/markdown-core/src/reasoning-tag-parser.js";
-import * as toolCallRepair from "../../../packages/tool-call-repair/src/payload.js";
 import { userFacingTextFilters } from "../../agents/embedded-agent-helpers/sanitize-user-facing-text.js";
 import {
   createAssistantVisibleStreamText,
@@ -13,26 +12,17 @@ import { canReuseMarkdownOwnership, findCodeOwnership } from "./code-regions.js"
 import { expectPrefixParity, regexWork, streamChunks } from "./streaming.test-support.js";
 import { createTextProjection } from "./text-projection.js";
 
-vi.mock("../../../packages/tool-call-repair/src/payload.js", async (importOriginal) => {
-  const actual =
-    await importOriginal<typeof import("../../../packages/tool-call-repair/src/payload.js")>();
-  return {
-    ...actual,
-    projectPlainTextToolCallBlocks: vi.fn(actual.projectPlainTextToolCallBlocks),
-  };
-});
-
 it.each([
   ["pretty-printed JSON", `{\n${'  {"id":0,"label":"ordinary value"},\n'.repeat(128)}}`],
   ["brace-heavy prose", 'Configure {"mode":"fast"} and continue. '.repeat(128)],
-])("does not checkpoint ordinary %s", (_shape, input) => {
+])("bounds ordinary %s streaming work", (_shape, input) => {
   const source = input.slice(0, 4096);
-  const project = vi.mocked(toolCallRepair.projectPlainTextToolCallBlocks);
-  project.mockClear();
   const stream = createAssistantVisibleStreamText("final_answer");
-  streamChunks(source, 4, stream);
+  const before = markdownOwnershipWork.scannedCharacters;
+  const scanned = regexWork(() => streamChunks(source, 4, stream));
   expect(stream.text).toBe(source.trimEnd());
-  expect(project.mock.calls.length).toBe(0);
+  expect(scanned).toBeLessThan(source.length * 128);
+  expect(markdownOwnershipWork.scannedCharacters - before).toBeLessThan(source.length * 16);
 });
 
 it("keeps a split tool header across an unbounded whitespace gap", () => {
