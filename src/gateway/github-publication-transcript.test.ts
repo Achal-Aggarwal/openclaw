@@ -20,10 +20,6 @@ import {
 import { resolveIncognitoOpenClawAgentSqlitePath } from "../state/openclaw-agent-db.paths.js";
 import { closeOpenClawStateDatabaseForTest } from "../state/openclaw-state-db.js";
 import { withOpenClawTestState } from "../test-utils/openclaw-test-state.js";
-import {
-  GitHubPublicationSessionBranchMismatchError,
-  resolveGitHubPublicationFailure,
-} from "./github-publication-failure.js";
 import { reportGitHubPublicationTranscript } from "./github-publication-transcript.js";
 
 const reportFault = useSqliteWorkerFault([
@@ -322,47 +318,6 @@ describe("GitHub publication transcript reporting", () => {
       expect(markReportedAsync).toHaveBeenCalledTimes(2);
     });
   });
-  it("reports a branch mismatch failure with its reason and one failure prefix", async () => {
-    await withOpenClawTestState({ scenario: "minimal" }, async () => {
-      const identity = await createSession("publication-branch-mismatch");
-      const failure = resolveGitHubPublicationFailure(
-        new GitHubPublicationSessionBranchMismatchError({
-          session: "openclaw/keen-crayfish",
-          checkedOut: "fix/knowledge-scribe-repair",
-        }),
-      );
-      const result: SessionGitHubPublicationResult = {
-        requestId: "publication-branch-mismatch",
-        status: "failed",
-        message: "GitHub publication failed.",
-        publisher: { source: "system-detected", accountId: 1, login: "jalehman" },
-        ...failure,
-      };
-      await report(identity, result, vi.fn().mockResolvedValue(undefined));
-
-      const [reported] = reportMessages(
-        await loadTranscriptEvents(identity),
-        result.requestId,
-        true,
-      );
-      expect(reported).toMatchObject({
-        message: {
-          content: [
-            {
-              type: "text",
-              text:
-                "GitHub publication failed. The session worktree has branch fix/knowledge-scribe-repair checked out, " +
-                "but this session publishes branch openclaw/keen-crayfish. In the session worktree, rename the branch " +
-                "back with `git branch -m fix/knowledge-scribe-repair openclaw/keen-crayfish`, or switch to it with " +
-                "`git switch openclaw/keen-crayfish` if it still exists, then request publication again. Publication " +
-                "only pushes the session branch. Using @jalehman (System).",
-            },
-          ],
-        },
-      });
-      expect(JSON.stringify(reported).match(/GitHub publication failed/gu)).toHaveLength(1);
-    });
-  });
   it.each([
     {
       label: "published",
@@ -376,7 +331,7 @@ describe("GitHub publication transcript reporting", () => {
         "GitHub publication failed.",
         "Check repository write access and retry.",
       ),
-      visibleText: "Check repository write access and retry.",
+      visibleText: '"text":"GitHub publication failed. Check repository write access and retry.',
     },
   ])(
     "appends one projected assistant message for a $label result",

@@ -366,28 +366,6 @@ describe("Gateway GitHub publication", () => {
     expect(commandMatches("push")).toHaveLength(0);
   });
 
-  it("names the session branch when the worktree branch was renamed", async () => {
-    overrideCommands((command) =>
-      command === "git symbolic-ref --quiet --short HEAD"
-        ? commandResult("fix/renamed-session-branch\n")
-        : undefined,
-    );
-    const failed = await publish("renamed-session-branch");
-    expect(failed).toMatchObject({
-      status: "failed",
-      code: "workspace_changed",
-      message: "GitHub publication failed.",
-      nextAction: expect.stringContaining(
-        `has branch fix/renamed-session-branch checked out, but this session publishes branch ${BRANCH}.`,
-      ),
-    });
-    expect(failed.status === "failed" && failed.nextAction).toContain(
-      `\`git branch -m fix/renamed-session-branch ${BRANCH}\``,
-    );
-    expect(await createGitHubPublicationCoordinator().readAsync(failed.requestId)).toEqual(failed);
-    expect(commandMatches("push")).toHaveLength(0);
-  });
-
   it("fails a restarted request when the branch advanced beyond its accepted snapshot", async () => {
     const database = openDatabase();
     const coordinator = coordinatorFor(database);

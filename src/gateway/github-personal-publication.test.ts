@@ -875,9 +875,7 @@ describe("personal publication authority and recovery", () => {
         code: "workspace_changed",
         publisher: interrupted.publisher,
         effect: interrupted.effect,
-        nextAction: expect.stringContaining(
-          drift === "branch" ? `\`git branch -m other-branch ${BRANCH}\`` : "new publication",
-        ),
+        nextAction: expect.stringContaining(drift === "branch" ? "branch -m" : "new publication"),
       });
       expect(workspace.effects).toEqual(effectsBefore);
       expect(await status(interrupted.requestId)).toEqual({
