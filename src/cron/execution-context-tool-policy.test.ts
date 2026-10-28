@@ -275,9 +275,16 @@ describe("scheduled automations scope", () => {
       expect(automations, "automations tool offered").toBeDefined();
       const actions = readActionEnum(automations!);
       expect(actions).toEqual(expect.arrayContaining(["status", "list", "get", "remove", "runs"]));
-      // No creation, edits, forced runs or wake: the parent wake action is not offered yet.
+      // In-session continuations retain the conversation catalog, not permission
+      // to create, edit, force runs, wake, or bind jobs. Other placements omit them.
       for (const action of ["add", "update", "run", "wake", "bind"]) {
-        expect(actions).not.toContain(action);
+        expect(actions.includes(action), `${action} catalog visibility`).toBe(
+          entry.placement === "in-session",
+        );
+        expect(
+          await callError(automations!, { action, jobId: "job-1" }),
+          `${action} stays forbidden even for the current job`,
+        ).toContain(SCOPE_ERROR);
       }
       for (const action of ["get", "remove", "runs"]) {
         expect(await callError(automations!, { action, jobId: "sibling-job" })).toContain(
