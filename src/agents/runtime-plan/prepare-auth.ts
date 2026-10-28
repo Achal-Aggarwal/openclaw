@@ -48,9 +48,9 @@ import {
   resolveProviderModelRouteAuthRequirement,
 } from "../provider-model-route-auth.js";
 import { buildAgentRuntimeAuthPlan } from "./auth.js";
+import type { PrepareAgentRuntimeAuthPlanParams } from "./prepare-auth.types.js";
 import type {
   AgentRuntimeAuthPlan,
-  PrepareAgentRuntimeAuthPlanParams,
   PreparedAgentRuntimeAuth,
   PreparedAgentRuntimeAuthAttempt,
 } from "./types.js";

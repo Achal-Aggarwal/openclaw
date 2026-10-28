@@ -11,10 +11,8 @@ import { hasAuthoredProviderRequestParams } from "./model-extra-params.js";
 import { resolveModelRuntimePolicy } from "./model-runtime-policy.js";
 import { canonicalizeProviderModelId } from "./provider-model-route.js";
 import { buildAgentRuntimeAuthPlan } from "./runtime-plan/auth.js";
-import type {
-  PrepareAgentRuntimeAuthPlanParams,
-  PreparedAgentRuntimeAuth,
-} from "./runtime-plan/types.js";
+import type { PrepareAgentRuntimeAuthPlanParams } from "./runtime-plan/prepare-auth.types.js";
+import type { PreparedAgentRuntimeAuth } from "./runtime-plan/types.js";
 
 type NativeCommandAuthRoute =
   | { supported: false; reason: string }
