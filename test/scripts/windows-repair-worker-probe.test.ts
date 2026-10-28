@@ -125,7 +125,7 @@ function packageFixture(root: string, tarball: string) {
 
 it("verifies a package member without system tar and rejects changed installed bytes", async () => {
   const source = "export const fixture = true;\n";
-  vi.stubEnv("PATH", "");
+  vi.stubEnv("PATH", directories.make("windows-repair-no-system-tools-"));
   try {
     const pkg = await fixture({ "member.mjs": source });
     await expect(pkg.verify("member.mjs")).resolves.toEqual({
