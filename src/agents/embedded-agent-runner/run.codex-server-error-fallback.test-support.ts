@@ -59,6 +59,7 @@ describe("runEmbeddedAgent Codex server_error fallback handoff", () => {
     mockedRunEmbeddedAttempt.mockResolvedValue(
       makeAttemptResult({
         assistantTexts: [],
+        providerRetryMaxRetries: 8,
         lastAssistant: currentAttemptAssistant,
         currentAttemptAssistant,
       }),
@@ -78,7 +79,7 @@ describe("runEmbeddedAgent Codex server_error fallback handoff", () => {
     await expect(promise).rejects.toThrow(
       "⚠️ The AI service is having trouble. Please try again in a moment.",
     );
-    // Initial attempt plus the full same-model transient retry budget.
+    // An explicit provider retry limit retains all eight same-model retries.
     expect(mockedRunEmbeddedAttempt).toHaveBeenCalledTimes(9);
   });
 });
