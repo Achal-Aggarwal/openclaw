@@ -17,6 +17,7 @@ import * as diskSpace from "./disk-space.js";
 import { hasErrnoCode } from "./errno.js";
 import { openNodeSqliteDatabase } from "./node-sqlite.js";
 import { runtimeProcessEntrypoints } from "./runtime-process-entrypoints.js";
+import { createSqliteLifecycleAggregateError } from "./sqlite-lifecycle-errors.js";
 import { removeTempDirectory } from "./sqlite-readonly-location-cleanup.js";
 import { isSqliteSnapshotStagingName } from "./sqlite-snapshot-retirement.js";
 import { SQLITE_STAGING_TOKEN_FILES } from "./sqlite-staging-token.js";
@@ -495,10 +496,10 @@ require("node:module").syncBuiltinESMExports();
       await cleanup();
     } catch (cleanupError) {
       if (bodyFailure) {
-        throw new AggregateError(
+        throw createSqliteLifecycleAggregateError(
           [bodyFailure.error, cleanupError],
           "Retained backup fixture failed and cleanup was not verified",
-          { cause: bodyFailure.error },
+          bodyFailure.error,
         );
       }
       throw cleanupError;
