@@ -11,7 +11,6 @@ import {
   readNonBlankString,
   normalizeLowercaseStringOrEmpty,
   normalizeStringifiedOptionalString,
-  readNonBlankString,
 } from "@openclaw/normalization-core/string-coerce";
 import { normalizeCsvOrLooseStringList } from "@openclaw/normalization-core/string-normalization";
 import { Command } from "commander";
