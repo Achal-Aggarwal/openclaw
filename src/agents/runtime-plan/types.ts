@@ -1,10 +1,15 @@
 import type { ModelThinkingLevel } from "@openclaw/llm-core/types";
 import type { TSchema } from "typebox";
+import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import type {
   ModelApi,
+  ProviderModelRouteSource,
+  ProviderResolveModelRoutesContext,
   ProviderModelRouteRuntimePolicy,
   ProviderRouteOverridePresence,
 } from "../../plugin-sdk/provider-model-types.js";
+import type { PluginMetadataSnapshot } from "../../plugins/plugin-metadata-snapshot.types.js";
+import type { ProviderResolveAuthProfileIdContext } from "../../plugins/provider-runtime.types.js";
 import type { ReplyPayload as AgentRuntimeReplyPayload } from "../../shared/reply-payload.types.js";
 import type { AuthProfileStore } from "../auth-profiles/types.js";
 import type { ModelFallbackResultClassification } from "../model-fallback-attempt.js";
@@ -119,6 +124,68 @@ export type AgentRuntimeAuthPlan = {
   };
   /** Redacted source selected for this concrete physical attempt. */
   credentialSource?: AgentRuntimeCredentialSource;
+};
+
+export type PrepareAgentRuntimeAuthPlanParams = {
+  provider: string;
+  modelId: string;
+  modelApi?: string | null;
+  modelBaseUrl?: unknown;
+  /** Physical catalog rows for the logical model; replaces the single api/baseUrl observation. */
+  observedRoutes?: readonly ProviderModelRouteSource[];
+  requestTransportOverrides?: ProviderRouteOverridePresence;
+  config?: OpenClawConfig;
+  agentId?: string;
+  routeIntent?: ProviderResolveModelRoutesContext["routeIntent"];
+  env?: NodeJS.ProcessEnv;
+  agentDir?: string;
+  workspaceDir?: string;
+  metadataSnapshot?: PluginMetadataSnapshot;
+  authProfileStore?: AuthProfileStore;
+  sessionAuthProfileId?: string;
+  /** Required by a durable caller, without turning automatic selection into a user pin. */
+  requiredAuthProfileId?: string;
+  sessionAuthProfileSource?: "auto" | "user" | "user-link";
+  allowAuthProfileFallback?: boolean;
+  harnessId?: string;
+  harnessRuntime?: string;
+  harnessAuthBootstrap?: "harness";
+  allowHarnessAuthProfileForwarding?: boolean;
+  allowTransientCooldownProbe?: boolean;
+  resolveProviderPreferredProfileId?(
+    context: ProviderResolveAuthProfileIdContext,
+  ): string | undefined;
+};
+
+export type PreparedAgentRuntimeAuthAttempt =
+  | {
+      kind: "profile";
+      plan: AgentRuntimeAuthPlan;
+      profileId: string;
+      allowAuthProfileFallback?: never;
+      requiresPriorProfileAttempt?: never;
+    }
+  | {
+      kind: "direct";
+      plan: AgentRuntimeAuthPlan;
+      profileId?: never;
+      /** Direct lookup cannot re-enter automatic profile discovery. */
+      allowAuthProfileFallback: false;
+      /** Fail closed when every prepared profile became cooldown-blocked before dispatch. */
+      requiresPriorProfileAttempt: boolean;
+    }
+  | {
+      kind: "implicit";
+      plan: AgentRuntimeAuthPlan;
+      profileId?: never;
+      allowAuthProfileFallback?: never;
+      requiresPriorProfileAttempt?: never;
+    };
+
+export type PreparedAgentRuntimeAuth = {
+  plan: AgentRuntimeAuthPlan;
+  /** Ordered physical attempts; every route/profile tuple was selected by this planner. */
+  attempts: readonly PreparedAgentRuntimeAuthAttempt[];
 };
 
 /** Prepared plugin metadata snapshot kept opaque to runtime-plan consumers. */

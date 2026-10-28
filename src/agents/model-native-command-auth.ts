@@ -12,9 +12,9 @@ import { resolveModelRuntimePolicy } from "./model-runtime-policy.js";
 import { canonicalizeProviderModelId } from "./provider-model-route.js";
 import { buildAgentRuntimeAuthPlan } from "./runtime-plan/auth.js";
 import type {
-  prepareAgentRuntimeAuth,
+  PrepareAgentRuntimeAuthPlanParams,
   PreparedAgentRuntimeAuth,
-} from "./runtime-plan/prepare-auth.js";
+} from "./runtime-plan/types.js";
 
 type NativeCommandAuthRoute =
   | { supported: false; reason: string }
@@ -86,7 +86,7 @@ export function resolveNativeCommandAuthRoute(params: {
 
 /** Native auth never enters host profile ordering or direct credential discovery. */
 export function prepareNativeCommandAuth(
-  input: Parameters<typeof prepareAgentRuntimeAuth>[0],
+  input: PrepareAgentRuntimeAuthPlanParams,
 ): PreparedAgentRuntimeAuth | undefined {
   const native = resolveNativeCommandAuthRoute({
     ...input,

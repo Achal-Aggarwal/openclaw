@@ -21,8 +21,10 @@ import {
 } from "../model-runtime-policy.js";
 import { resolveDefaultModelForAgent } from "../model-selection-config.js";
 import { canonicalizeProviderModelId } from "../provider-model-route.js";
-import type { PreparedAgentRuntimeAuthAttempt } from "../runtime-plan/prepare-auth.js";
-import type { AgentRuntimeAuthPlan } from "../runtime-plan/types.js";
+import type {
+  PreparedAgentRuntimeAuthAttempt,
+  AgentRuntimeAuthPlan,
+} from "../runtime-plan/types.js";
 import { resolveAgentHarnessAutoSelectionHint } from "./auto-selection.js";
 import { AgentHarnessPreflightError } from "./errors.js";
 import { listRegisteredAgentHarnesses } from "./registry.js";

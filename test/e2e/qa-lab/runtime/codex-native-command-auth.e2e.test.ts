@@ -236,106 +236,134 @@ it(
             instance.env.CODEX_ACCESS_TOKEN = "synthetic-token-decoy";
           }
           await instance.startGateway();
+          console.log("P5_GATEWAY_PROCESS " + JSON.stringify({ phase, pid: instance.child?.pid }));
           const client = await connectGatewayStatusClient(instance);
-          try {
-            const listed = await client.request<{ models: Array<Record<string, unknown>> }>(
-              "models.list",
-              { agentId: "main", view: "all", refresh: true },
-              { timeoutMs: 60000 },
-            );
-            const selected = listed.models.find(
-              (model) => model.provider === PROVIDER && model.id === MODEL,
-            );
-            console.log("P5_GATEWAY_CATALOG " + JSON.stringify({ phase, selected }));
-            expect(selected, instance.logs()).toMatchObject({
-              available: true,
-              agentRuntime: { id: "codex" },
-            });
-            if (!withDecoys) {
-              await client.request("sessions.create", {
-                key: sessionKey,
-                agentId: "main",
-                model: MODEL_REF,
-                label: "P5 command auth",
+          await runQaGatewayFixture(
+            async () => {
+              const listed = await client.request<{ models: Array<Record<string, unknown>> }>(
+                "models.list",
+                { agentId: "main", view: "all", refresh: true },
+                { timeoutMs: 60000 },
+              );
+              const selected = listed.models.find(
+                (model) => model.provider === PROVIDER && model.id === MODEL,
+              );
+              console.log("P5_GATEWAY_CATALOG " + JSON.stringify({ phase, selected }));
+              expect(selected, instance.logs()).toMatchObject({
+                available: true,
+                agentRuntime: { id: "codex" },
               });
-            }
-            const result = await client.request<{
-              status: string;
-              runId: string;
-              result?: {
-                payloads?: Array<{ text?: string }>;
-                meta?: { agentMeta?: Record<string, unknown> };
-              };
-            }>(
-              "agent",
-              {
-                sessionKey,
-                message: "Reply with the harmless fixture response.",
-                deliver: false,
-                idempotencyKey: randomUUID(),
-              },
-              { expectFinal: true, timeoutMs: 90000 },
-            );
-            console.log(
-              "P5_GATEWAY_TURN " +
-                JSON.stringify({
-                  phase,
-                  status: result.status,
-                  runId: result.runId,
-                  agentMeta: result.result?.meta?.agentMeta,
-                  payloads: result.result?.payloads,
-                }),
-            );
-            expect(result, instance.logs()).toMatchObject({
-              status: "ok",
-              result: {
-                meta: {
-                  agentMeta: {
-                    provider: PROVIDER,
-                    model: MODEL,
-                    agentHarnessId: "codex",
-                    credentialSource: { kind: "none" },
+              if (!withDecoys) {
+                await client.request("sessions.create", {
+                  key: sessionKey,
+                  agentId: "main",
+                  model: MODEL_REF,
+                  label: "P5 command auth",
+                });
+              }
+              const result = await client.request<{
+                status: string;
+                runId: string;
+                result?: {
+                  payloads?: Array<{ text?: string }>;
+                  meta?: { agentMeta?: Record<string, unknown> };
+                };
+              }>(
+                "agent",
+                {
+                  sessionKey,
+                  message: "Reply with the harmless fixture response.",
+                  deliver: false,
+                  idempotencyKey: randomUUID(),
+                },
+                { expectFinal: true, timeoutMs: 90000 },
+              );
+              console.log(
+                "P5_GATEWAY_TURN " +
+                  JSON.stringify({
+                    phase,
+                    status: result.status,
+                    runId: result.runId,
+                    agentMeta: result.result?.meta?.agentMeta,
+                    payloads: result.result?.payloads,
+                  }),
+              );
+              expect(result, instance.logs()).toMatchObject({
+                status: "ok",
+                result: {
+                  meta: {
+                    agentMeta: {
+                      provider: PROVIDER,
+                      model: MODEL,
+                      agentHarnessId: "codex",
+                      credentialSource: { kind: "none" },
+                    },
                   },
                 },
-              },
-            });
-            expect(result.result?.payloads?.some((payload) => payload.text?.includes(ANSWER))).toBe(
-              true,
-            );
-            const terminal = await client.request(
-              "agent.wait",
-              { runId: result.runId, timeoutMs: 60000 },
-              { timeoutMs: 65000 },
-            );
-            expect(terminal, instance.logs()).toMatchObject({
-              runId: result.runId,
-              status: "ok",
-              terminalReply: { disposition: "visible", text: ANSWER },
-            });
-            const history = await client.request<{
-              messages?: Array<{ role?: string; content?: unknown }>;
-            }>("chat.history", { sessionKey, limit: 20 });
-            expect(
-              history.messages?.some(
-                (message) =>
-                  message.role === "assistant" && JSON.stringify(message.content).includes(ANSWER),
-              ),
-            ).toBe(true);
-            expect(requests.filter((request) => request.phase === phase)).toEqual([
-              { phase, model: MODEL, commandBearer: true },
-            ]);
-            expect(failures).toEqual([]);
-            expect(
-              await fs.stat(path.join(codexHome, "auth.json")).catch(() => undefined),
-            ).toBeUndefined();
-            console.log(
-              "P5_GATEWAY_PHASE_COMPLETE " +
-                JSON.stringify({ phase, terminal, commandBearer: true, historyReply: true }),
-            );
-          } finally {
-            await client.stopAndWait();
-            await instance.stopGateway();
-          }
+              });
+              expect(
+                result.result?.payloads?.some((payload) => payload.text?.includes(ANSWER)),
+              ).toBe(true);
+              const terminal = await client.request(
+                "agent.wait",
+                { runId: result.runId, timeoutMs: 60000 },
+                { timeoutMs: 65000 },
+              );
+              expect(terminal, instance.logs()).toMatchObject({
+                runId: result.runId,
+                status: "ok",
+                terminalReply: { disposition: "visible", text: ANSWER },
+              });
+              const history = await client.request<{
+                messages?: Array<{ role?: string; content?: unknown }>;
+              }>("chat.history", { sessionKey, limit: 20 });
+              expect(
+                history.messages?.some(
+                  (message) =>
+                    message.role === "assistant" &&
+                    JSON.stringify(message.content).includes(ANSWER),
+                ),
+              ).toBe(true);
+              expect(requests.filter((request) => request.phase === phase)).toEqual([
+                { phase, model: MODEL, commandBearer: true },
+              ]);
+              expect(failures).toEqual([]);
+              expect(
+                await fs.stat(path.join(codexHome, "auth.json")).catch(() => undefined),
+              ).toBeUndefined();
+              console.log(
+                "P5_GATEWAY_PHASE_COMPLETE " +
+                  JSON.stringify({ phase, terminal, commandBearer: true, historyReply: true }),
+              );
+            },
+            async () => {
+              console.log(
+                "P5_CLIENT_STOP_BEGIN " + JSON.stringify({ phase, pid: instance.child?.pid }),
+              );
+              await client.stopAndWait();
+            },
+            async () => {
+              console.log(
+                "P5_GATEWAY_STOP_BEGIN " + JSON.stringify({ phase, pid: instance.child?.pid }),
+              );
+              try {
+                await instance.stopGateway();
+                console.log("P5_GATEWAY_STOP_COMPLETE " + phase);
+              } catch (error) {
+                console.error(
+                  "P5_GATEWAY_STOP_FAILED " +
+                    JSON.stringify({
+                      phase,
+                      pid: instance.child?.pid,
+                      exitCode: instance.child?.exitCode,
+                      signalCode: instance.child?.signalCode,
+                    }),
+                );
+                console.error(instance.logs());
+                throw error;
+              }
+            },
+          );
         }
         console.log(
           "P5_GATEWAY_PROOF " +
