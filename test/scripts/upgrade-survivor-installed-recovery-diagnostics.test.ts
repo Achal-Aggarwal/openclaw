@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -86,13 +87,17 @@ function capture(f: ReturnType<typeof fixture>) {
   return publish(f).report;
 }
 
-function publishJoined(f: ReturnType<typeof fixture>, exitStatus = 128) {
+function publishJoined(
+  f: ReturnType<typeof fixture>,
+  exitStatus = 128,
+  packageSha256 = "a".repeat(64),
+) {
   const destination = path.join(f.root, "joined-public");
   publishInstalledRecoveryDiagnostics(f.artifacts, destination, redactSensitiveText, {
     cut: "partial-previous",
     exitStatus,
     timedOut: exitStatus === 128,
-    packageSha256: "a".repeat(64),
+    packageSha256,
   });
   const text = fs.readFileSync(
     path.join(destination, exitStatus === 0 ? "summary.json" : "failure.json"),
@@ -193,48 +198,93 @@ it.each([false, true])(
   },
 );
 
-it.skipIf(process.platform !== "linux")(
-  "keeps unexpected command output private until diagnostic publication",
-  () => {
-    const f = fixture();
-    fs.rmdirSync(f.directory);
-    const prefix = path.join(f.root, "prefix");
-    const installed = path.join(prefix, "lib/node_modules/openclaw");
-    const packed = path.join(f.root, "package");
-    fs.mkdirSync(installed, { recursive: true });
-    fs.mkdirSync(path.join(prefix, "bin"), { recursive: true });
-    fs.mkdirSync(path.join(packed, "dist"), { recursive: true });
-    const manifest = { version: "2026.10.6", openclaw: { schemaVersions: {} } };
-    writeJson(path.join(installed, "package.json"), manifest);
-    writeJson(path.join(packed, "package.json"), manifest);
-    writeJson(path.join(packed, "dist/build-info.json"), { version: manifest.version });
-    writeJson(path.join(packed, "dist/postinstall-inventory.json"), []);
-    fs.writeFileSync(path.join(packed, "dist/package-update-activation-recovery.mjs"), "");
-    fs.writeFileSync(
-      path.join(prefix, "bin/openclaw"),
-      `process.stderr.write(${JSON.stringify(`token=${secret}\n`)});`,
+it.skipIf(process.platform !== "linux").each([
+  {
+    name: "keeps unexpected command output private until diagnostic publication",
+    failure: "command",
+  },
+  { name: "keeps early JSON parse snippets in private driver evidence", failure: "json" },
+  { name: "keeps early assertion values in private driver evidence", failure: "assertion" },
+  { name: "keeps encoded assertion values in private driver evidence", failure: "encoded" },
+  { name: "fails safely when private driver evidence cannot be opened", failure: "capture" },
+])("$name", ({ failure }) => {
+  const f = fixture();
+  fs.rmdirSync(f.directory);
+  const prefix = path.join(f.root, "prefix");
+  const installed = path.join(prefix, "lib/node_modules/openclaw");
+  const packed = path.join(f.root, "package");
+  fs.mkdirSync(installed, { recursive: true });
+  fs.mkdirSync(path.join(prefix, "bin"), { recursive: true });
+  fs.mkdirSync(path.join(packed, "dist"), { recursive: true });
+  const manifest = { version: "2026.10.6", openclaw: { schemaVersions: {} } };
+  writeJson(path.join(installed, "package.json"), manifest);
+  writeJson(path.join(packed, "package.json"), manifest);
+  const parseInput = "token=abc";
+  if (failure === "json") {
+    fs.writeFileSync(path.join(packed, "package.json"), parseInput);
+  } else if (failure === "assertion" || failure === "encoded") {
+    writeJson(path.join(installed, "package.json"), {
+      ...manifest,
+      version: failure === "assertion" ? secret : { encoded: [...Buffer.from(secret)] },
+    });
+  }
+  const driverError = path.join(f.run.directory, "driver.err");
+  if (failure !== "command") {
+    writeJson(f.run.summary, { ...readJson(f.run.summary), current: null });
+  }
+  if (failure === "capture") {
+    const outside = path.join(f.root, "outside-driver.err");
+    fs.writeFileSync(outside, privateData);
+    fs.symlinkSync(outside, driverError);
+  }
+  writeJson(path.join(packed, "dist/build-info.json"), { version: manifest.version });
+  writeJson(path.join(packed, "dist/postinstall-inventory.json"), []);
+  fs.writeFileSync(path.join(packed, "dist/package-update-activation-recovery.mjs"), "");
+  fs.writeFileSync(
+    path.join(prefix, "bin/openclaw"),
+    `process.stderr.write(${JSON.stringify(`token=${secret}\n`)});`,
+  );
+  writeJson(f.env.OPENCLAW_CONFIG_PATH, {});
+  const tarball = path.join(f.root, "candidate.tgz");
+  const archive = runProcess("tar", ["-czf", tarball, "-C", f.root, "package"], f.env, 10_000);
+  expect(archive.status, archive.stderr).toBe(0);
+  const packageSha256 = createHash("sha256").update(fs.readFileSync(tarball)).digest("hex");
+  const result = runProcess(
+    node,
+    [
+      path.join(owner, "installed-recovery.mjs"),
+      f.run.directory,
+      prefix,
+      tarball,
+      f.env.OPENCLAW_CONFIG_PATH,
+      f.run.summary,
+      "partial-previous",
+    ],
+    { ...f.env, OPENCLAW_E2E_COMMAND_TIMEOUT: "2s" },
+    10_000,
+  );
+  expect(result.status, result.stderr).toBe(1);
+  expect(result.stderr).toBe(
+    `${failure === "capture" ? "[installed-recovery] private driver diagnostic unavailable" : "[installed-recovery] inspect driver.err in the private run evidence"}\n` +
+      "[installed-recovery] FAILED (exit 1)\n",
+  );
+  expect(result.stdout + result.stderr).not.toContain(secret);
+  const rawError = fs.readFileSync(driverError, "utf8");
+  if (failure === "capture") {
+    expect(rawError).toBe(privateData);
+  } else {
+    expect(fs.statSync(driverError).mode & 0o777).toBe(0o600);
+    expect(rawError).toContain(
+      failure === "command"
+        ? "displacement: exit 0"
+        : failure === "json"
+          ? parseInput
+          : failure === "encoded"
+            ? "encoded:"
+            : secret,
     );
-    writeJson(f.env.OPENCLAW_CONFIG_PATH, {});
-    const tarball = path.join(f.root, "candidate.tgz");
-    const archive = runProcess("tar", ["-czf", tarball, "-C", f.root, "package"], f.env, 10_000);
-    expect(archive.status, archive.stderr).toBe(0);
-    const result = runProcess(
-      node,
-      [
-        path.join(owner, "installed-recovery.mjs"),
-        f.run.directory,
-        prefix,
-        tarball,
-        f.env.OPENCLAW_CONFIG_PATH,
-        f.run.summary,
-        "partial-previous",
-      ],
-      { ...f.env, OPENCLAW_E2E_COMMAND_TIMEOUT: "2s" },
-      10_000,
-    );
-    expect(result.status, result.stderr).toBe(1);
-    expect(result.stderr).toContain("displacement: exit 0");
-    expect(result.stdout + result.stderr).not.toContain(secret);
+  }
+  if (failure === "command") {
     expect(fs.readFileSync(path.join(f.directory, "displacement.err"), "utf8")).toContain(secret);
     expect(readJson(f.run.summary).current).toMatchObject({
       name: "displacement",
@@ -242,11 +292,28 @@ it.skipIf(process.platform !== "linux")(
       status: 0,
       treeJoined: true,
     });
-    const report = capture(f);
-    expect(report.installedRecovery.logs.stderr).toContain("token=");
-    expect(report.installedRecovery.logs.stderr).not.toContain(secret);
-  },
-);
+  } else {
+    expect(readJson(f.run.summary).current).toBeNull();
+  }
+  for (const report of [capture(f), publishJoined(f, 1, packageSha256)]) {
+    expect(report.installedRecovery.driverError).toEqual({
+      availability: failure === "capture" ? "unavailable" : "captured",
+    });
+    const published = JSON.stringify(report);
+    expect(published).not.toContain(parseInput);
+    expect(published).not.toContain("encoded");
+    expect(published).not.toContain("AssertionError");
+    if (failure === "command") {
+      expect(report.installedRecovery.logs.stderr).toContain("token=");
+      expect(report.installedRecovery.logs.stderr).not.toContain(secret);
+      expect(report.installedRecovery.current).toMatchObject({
+        state: "completed",
+        status: 0,
+        treeJoined: true,
+      });
+    }
+  }
+});
 
 it.skipIf(process.platform === "win32")(
   "publishes the real rejected command's output without inventing an exit or join receipt",

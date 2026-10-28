@@ -178,6 +178,7 @@ const installedRecoveryLabels = [
   "installed recovery install",
   "installed recovery stdout",
   "installed recovery stderr",
+  "installed recovery driver error",
   "installed recovery checkpoint",
 ];
 
@@ -291,6 +292,9 @@ function installedRecoveryProjection(value, sanitize = (text) => text) {
     status: value.status,
     current,
     checkpoint,
+    driverError: {
+      availability: value.driverError?.availability === "captured" ? "captured" : "unavailable",
+    },
     logs: Object.fromEntries(
       ["install", "stdout", "stderr"].map((name) => [
         name,
@@ -321,6 +325,13 @@ function captureInstalledRecovery(artifactRoot, observationRoot) {
       status: summary.status,
       current,
       checkpoint: { availability: "unavailable" },
+      // Error snippets and encoded assertion values are not text-redactor input.
+      // Validate the owned private file, but publish only its availability.
+      driverError: {
+        availability: readOwned(observationRoot, "driver.err", "installed recovery driver error")
+          ? "captured"
+          : "unavailable",
+      },
       logs: {
         install: readOwned(observationRoot, "install.log", "installed recovery install"),
       },

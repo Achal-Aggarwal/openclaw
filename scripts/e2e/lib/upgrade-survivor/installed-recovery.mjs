@@ -3,6 +3,7 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { inspect } from "node:util";
 import { packFirstHopUpdateFixture } from "../update-first-hop-package-fixtures.mjs";
 import { selectInstalledRecoveryCuts } from "./installed-recovery-cases.mjs";
 import { runInstalledRecoveryCommand } from "./installed-recovery-command.mjs";
@@ -14,6 +15,7 @@ import {
   fileDigest,
   fileIdentity,
   installedRecoveryEvidenceMode,
+  openInstalledRecoveryEvidence,
   parseRecoveryCommand,
   readActivation,
   sha256,
@@ -119,8 +121,6 @@ async function main([artifacts, prefix, tarball, configPath, summary, selectedCu
     });
     const { status } = result;
     commands.push({ ...evidence.current, preload: faultCut ?? null });
-    // Command output stays private until the host publisher redacts it.
-    // Assertion errors reach the public lane log through the top-level catch.
     assert.equal(status === 0, !faultCut, `${name}: exit ${status}`);
     return result;
   };
@@ -355,10 +355,41 @@ async function main([artifacts, prefix, tarball, configPath, summary, selectedCu
   );
 }
 
+let driverError;
+let failed = false;
+let diagnosticUnavailable = false;
 try {
+  const artifacts = process.argv[2];
+  assert(artifacts && path.isAbsolute(artifacts));
+  // Parse errors and assertion values can contain config bytes in formats the
+  // text redactor cannot recognize. Keep the entire exception private, even
+  // when failure precedes the first managed command or summary update.
+  driverError = openInstalledRecoveryEvidence(path.join(artifacts, "driver.err"));
   await main(process.argv.slice(2));
 } catch (error) {
-  console.error(error);
-  console.error("[installed-recovery] FAILED (exit 1)");
-  process.exitCode = 1;
+  failed = true;
+  try {
+    assert(driverError !== undefined);
+    fs.writeFileSync(driverError, `${inspect(error, { customInspect: false })}\n`);
+  } catch {
+    diagnosticUnavailable = true;
+  }
+} finally {
+  if (driverError !== undefined) {
+    try {
+      fs.closeSync(driverError);
+    } catch {
+      failed = true;
+      diagnosticUnavailable = true;
+    }
+  }
+  if (failed) {
+    console.error(
+      diagnosticUnavailable
+        ? "[installed-recovery] private driver diagnostic unavailable"
+        : "[installed-recovery] inspect driver.err in the private run evidence",
+    );
+    console.error("[installed-recovery] FAILED (exit 1)");
+    process.exitCode = 1;
+  }
 }
