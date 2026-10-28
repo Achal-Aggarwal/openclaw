@@ -478,26 +478,23 @@ async function acceptMessage(session: ClaudeCliSession, message: Record<string, 
   }
   if (message.type === "system" && message.subtype === "background_tasks_changed") {
     const tasks = Array.isArray(message.tasks) ? message.tasks.filter(isRecord) : [];
-    // Root holds precede descendants even when the process-wide list puts children first.
-    for (let pass = 0; pass < 2; pass++) {
+    // Resolve to a fixed point: snapshots can list arbitrarily deep descendants before roots.
+    // Each productive pass acquires a new hold, so cycles without a held ancestor terminate.
+    let acquiredHold: boolean;
+    do {
+      acquiredHold = false;
       for (const task of tasks) {
         const id = task.task_id;
         if (
           typeof id !== "string" ||
           session.taskOwners.get(id) !== turn.inputUuid ||
-          session.notifiedTasks.has(id)
+          session.notifiedTasks.has(id) ||
+          turn.pendingBackgroundTaskIds.has(id)
         ) {
           continue;
         }
         const parent = session.runningDescendants.get(id);
-        if ((pass === 0) !== (parent === undefined)) {
-          continue;
-        }
-        if (
-          parent !== undefined &&
-          !turn.pendingBackgroundTaskIds.has(parent) &&
-          !turn.pendingBackgroundTaskIds.has(id)
-        ) {
+        if (parent !== undefined && !turn.pendingBackgroundTaskIds.has(parent)) {
           continue;
         }
         if (
@@ -506,9 +503,10 @@ async function acceptMessage(session: ClaudeCliSession, message: Record<string, 
           (task.task_type === "local_bash" && turn.foregroundTaskIds.has(id))
         ) {
           turn.pendingBackgroundTaskIds.add(id);
+          acquiredHold = true;
         }
       }
-    }
+    } while (acquiredHold);
   }
   // A replay receipt acknowledges consumption within the current query. Keep its
   // queue slot until that query's result so it cannot acknowledge the next task twice.

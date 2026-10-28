@@ -29,6 +29,7 @@ const notification = (task_id) => system("task_notification", { task_id, status:
 const replay = (task_id) => send({ type: "user", isReplay: true, parent_tool_use_id: null,
   message: { content: "<task-notification><task-id>" + task_id + "</task-id></task-notification>" } });
 const mode = process.env.NESTED_MODE;
+const ancestry = process.env.ANCESTRY_SCENARIO ? JSON.parse(process.env.ANCESTRY_SCENARIO) : undefined;
 const child = { task_id: "child", task_type: process.env.CHILD_TYPE, parent_task_id: "parent" };
 const parent = { task_id: "parent", task_type: "local_agent" };
 let input = 0;
@@ -38,6 +39,7 @@ for await (const line of createInterface({ input: process.stdin })) {
     send({ type: "control_response", response: { subtype: "success", request_id: message.request_id, response: {} } });
     system("init", { capabilities: ["msg_lifecycle_v1"] });
     if (mode === "before-input") system("background_tasks_changed", { tasks: [parent, child] });
+    if (ancestry?.beforeInput) system("background_tasks_changed", { tasks: ancestry.beforeInput });
   } else if (message.type === "user") {
     input++;
     send({ type: "command_lifecycle", state: "started", command_uuid: message.uuid });
@@ -47,6 +49,18 @@ for await (const line of createInterface({ input: process.stdin })) {
         notification("parent"); notification("child");
       }
       result("warm reply"); continue;
+    }
+    if (ancestry) {
+      for (const id of ancestry.notified ?? []) system("task_notification", { task_id: id, status: "stopped" });
+      system("task_started", { ...ancestry.tasks.find(task => task.task_id === ancestry.chain[0]), is_backgrounded: true });
+      system("background_tasks_changed", { tasks: ancestry.tasks });
+      result("waiting");
+      if (ancestry.stopAfterWaiting) continue;
+      for (const id of ancestry.chain) {
+        notification(id);
+        result(id + " reply", { origin: { kind: "task-notification" } });
+      }
+      continue;
     }
     if (mode === "before-input") {
       system("background_tasks_changed", { tasks: [parent, child] }); result("unrelated reply"); continue;
@@ -80,7 +94,21 @@ for await (const line of createInterface({ input: process.stdin })) {
 }
 `;
 
-async function context(mode: string, childType = "local_agent") {
+type AncestryTask = {
+  task_id: string;
+  task_type: "local_agent" | "local_workflow";
+  parent_task_id?: string;
+  owned_by_subagent?: boolean;
+};
+type AncestryScenario = {
+  chain: string[];
+  tasks: AncestryTask[];
+  beforeInput?: AncestryTask[];
+  notified?: string[];
+  stopAfterWaiting?: boolean;
+};
+
+async function context(mode: string, childType = "local_agent", ancestry?: AncestryScenario) {
   const root = await mkdtemp(path.join(os.tmpdir(), "claude-nested-"));
   roots.push(root);
   const script = path.join(root, "fixture.mjs");
@@ -114,6 +142,7 @@ async function context(mode: string, childType = "local_agent") {
       CLAUDE_CONFIG_DIR: root,
       NESTED_MODE: mode,
       CHILD_TYPE: childType,
+      ...(ancestry ? { ANCESTRY_SCENARIO: JSON.stringify(ancestry) } : {}),
     },
     prompt: "first",
     systemPrompt: "fixture",
@@ -204,3 +233,100 @@ it.each(["local_agent", "local_workflow"])(
     expect(ctx.liveSession.current()?.isIdle()).toBe(true);
   },
 );
+
+function ancestryScenario(order: number[], taskType: AncestryTask["task_type"]): AncestryScenario {
+  const chain = order.map((_, index) => "level-" + index);
+  return {
+    chain,
+    tasks: order.map((index) => ({
+      task_id: chain[index]!,
+      task_type: taskType,
+      ...(index > 0 ? { parent_task_id: chain[index - 1]! } : {}),
+    })),
+  };
+}
+
+const ancestryOrders = [
+  [0, 1, 2],
+  [0, 2, 1],
+  [1, 0, 2],
+  [1, 2, 0],
+  [2, 0, 1],
+  [2, 1, 0],
+  [4, 3, 2, 1, 0],
+  [2, 4, 0, 3, 1],
+];
+it.each(
+  (["local_agent", "local_workflow"] as const).flatMap((taskType) =>
+    ancestryOrders.map((order) => ({ taskType, order })),
+  ),
+)("preserves deep ancestry answers for $taskType order $order", async ({ taskType, order }) => {
+  const scenario = ancestryScenario(order, taskType);
+  const ctx = await context("ancestry", taskType, scenario);
+  const results = await collect(ctx);
+  expect(results.map((record) => record.result)).toEqual([
+    "waiting",
+    ...scenario.chain.map((id) => id + " reply"),
+  ]);
+  expect(results.slice(0, -1).every((record) => record.openclaw_interim_result === true)).toBe(
+    true,
+  );
+  expect(results.at(-1)).not.toHaveProperty("openclaw_interim_result");
+  expect(ctx.liveSession.current()?.isIdle()).toBe(true);
+  expect((await collect({ ...ctx, useResume: true, prompt: "next" }))[0]?.result).toBe(
+    "warm reply",
+  );
+});
+
+it.each(["owned", "old-input", "notified", "cycle", "orphan"] as const)(
+  "does not acquire excluded descendant holds through %s ancestry",
+  async (exclusion) => {
+    const scenario = ancestryScenario([2, 1, 0], "local_agent");
+    const excluded: AncestryTask = {
+      task_id: "excluded",
+      task_type: "local_workflow",
+      parent_task_id: scenario.chain[0],
+    };
+    const descendant: AncestryTask = {
+      task_id: "excluded-child",
+      task_type: "local_agent",
+      parent_task_id: "excluded",
+    };
+    if (exclusion === "owned") {
+      excluded.owned_by_subagent = true;
+    } else if (exclusion === "old-input") {
+      scenario.beforeInput = [excluded];
+    } else if (exclusion === "notified") {
+      scenario.notified = [excluded.task_id];
+    } else if (exclusion === "cycle") {
+      excluded.parent_task_id = descendant.task_id;
+    } else {
+      excluded.parent_task_id = "unknown-parent";
+    }
+    scenario.tasks.unshift(descendant, excluded);
+    const ctx = await context("ancestry", "local_agent", scenario);
+    const results = await collect(ctx);
+    expect(results.map((record) => record.result)).toEqual([
+      "waiting",
+      ...scenario.chain.map((id) => id + " reply"),
+    ]);
+    expect(results.at(-1)).not.toHaveProperty("openclaw_interim_result");
+    expect(ctx.liveSession.current()?.isIdle()).toBe(true);
+  },
+);
+
+it("retires deep ancestry holds when the consumer cancels the stream", async () => {
+  const scenario = ancestryScenario([4, 3, 2, 1, 0], "local_agent");
+  scenario.stopAfterWaiting = true;
+  const ctx = await context("ancestry", "local_agent", scenario);
+  let sawWaiting = false;
+  for await (const record of executeClaudeCli(ctx)) {
+    if (record.type === "result") {
+      expect(record).toMatchObject({ result: "waiting", openclaw_interim_result: true });
+      sawWaiting = true;
+      break;
+    }
+  }
+  expect(sawWaiting).toBe(true);
+  expect(ctx.liveSession.current()).toBeUndefined();
+});
