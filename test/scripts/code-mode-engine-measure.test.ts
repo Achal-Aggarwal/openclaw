@@ -14,12 +14,15 @@ import {
 } from "../helpers/promise.js";
 
 const runtime = vi.hoisted(() => ({ execute: vi.fn(), close: vi.fn(), stop: vi.fn() }));
+// mock-isolation: inject deterministic failures without starting real executor workers.
 vi.mock("../../src/agents/code-mode-node.js", () => ({
   nodeCodeModeExecutor: { id: "node", execute: runtime.execute },
 }));
+// mock-isolation: the fake executor does not consume or acquire a real tool catalog.
 vi.mock("../../src/agents/code-mode-node-input.js", () => ({
   prepareCodeModeNodeCatalog: () => ({}),
 }));
+// mock-isolation: inject host-close failures without acquiring real plugin resources.
 vi.mock("../../src/plugins/legacy-sdk-resource-host.js", () => ({
   LegacyPluginSdkResourceHost: class {
     bindScheduler() {}
@@ -31,6 +34,7 @@ vi.mock("../../src/plugins/legacy-sdk-resource-host.js", () => ({
     }
   },
 }));
+// mock-isolation: observe scheduler stop ordering independently of its implementation.
 vi.mock("../../src/infra/gateway-scheduler.js", () => ({
   GatewayScheduler: class {
     stop() {
