@@ -18,7 +18,10 @@ import {
 import { setFatalErrorHook } from "../infra/fatal-error-hooks.js";
 import { resolveRuntimeServiceBuildId, resolveRuntimeServiceCommit, VERSION } from "../version.js";
 import { readMemoryUsage } from "./diagnostic-memory-bundle.js";
-import { readProcessBuildIdentity } from "./diagnostic-stability-build-identity.js";
+import {
+  readProcessBuildIdentity,
+  type DiagnosticProcessBuildIdentity,
+} from "./diagnostic-stability-build-identity.js";
 import {
   assignOptionalFields,
   readObject,
@@ -102,15 +105,12 @@ export type DiagnosticStabilityBundle = {
   version: typeof DIAGNOSTIC_STABILITY_BUNDLE_VERSION;
   generatedAt: string;
   reason: string;
-  process: {
+  process: DiagnosticProcessBuildIdentity & {
     pid: number;
     platform: NodeJS.Platform;
     arch: string;
     node: string;
     uptimeMs: number;
-    openclawVersion?: string;
-    buildId?: string;
-    commit?: string;
   };
   host: {
     hostname: string;

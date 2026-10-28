@@ -32,7 +32,7 @@ vi.mock("./attempt-stream-settle.js", () => ({
   settleEmbeddedAttemptStream: mocks.settleStream,
 }));
 
-import { withTestTimeout } from "../../../../test/helpers/promise.js";
+import { withinTest } from "../../../../test/helpers/promise.js";
 import { makeUserMessage } from "../../../../test/helpers/user-message.js";
 import { createSubscribedSessionHarness } from "../../embedded-agent-subscribe.e2e-harness.js";
 import { SessionManager } from "../../sessions/index.js";
@@ -406,7 +406,9 @@ describe("runEmbeddedAttemptSettledPhase stream finalization", () => {
     },
   );
 
-  it("skips the bounded drain when a provider failure is already attached before settlement", async () => {
+  it("skips the bounded drain when a provider failure is already attached before settlement", async ({
+    signal,
+  }) => {
     // A failed terminal must bypass even a wedged serialized handler.
     const chainGate = new Promise<void>(() => {});
     const waitForPendingEvents = vi.fn(async () => {
@@ -423,11 +425,7 @@ describe("runEmbeddedAttemptSettledPhase stream finalization", () => {
     );
 
     await expect(
-      withTestTimeout(
-        runEmbeddedAttemptSettledPhase(fixture.input),
-        5_000,
-        "settlement stalled on the bounded drain",
-      ),
+      withinTest(runEmbeddedAttemptSettledPhase(fixture.input), signal),
     ).resolves.toEqual(completedAttempt);
 
     expect(waitForPendingEvents).not.toHaveBeenCalled();

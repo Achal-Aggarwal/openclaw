@@ -712,4 +712,3 @@ export function resetDiagnosticStabilityRecorderForTest(): void {
   };
   globalStore["__openclawDiagnosticStabilityState"] = createState(state.capacity);
 }
-/* oxlint-disable max-lines -- TODO: split this grandfathered oversized file. */

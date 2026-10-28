@@ -1,10 +1,11 @@
-import type { DiagnosticStabilityBundle } from "./diagnostic-stability-bundle.js";
+export type DiagnosticProcessBuildIdentity = {
+  openclawVersion?: string;
+  buildId?: string;
+  commit?: string;
+};
 
 export function readProcessBuildIdentity(source: Record<string, unknown>) {
-  const identity: Pick<
-    DiagnosticStabilityBundle["process"],
-    "openclawVersion" | "buildId" | "commit"
-  > = {};
+  const identity: DiagnosticProcessBuildIdentity = {};
   // Preserve SemVer metadata and generated build IDs without importing paths,
   // terminal controls, or unbounded strings from externally supplied bundles.
   for (const [field, pattern] of [
