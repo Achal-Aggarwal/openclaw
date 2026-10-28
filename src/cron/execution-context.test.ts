@@ -275,6 +275,21 @@ describe("buildScheduledExecutionContext principals", () => {
     expect(context.toolPolicy.automations).toEqual({ scope: "self", jobId: "job-1" });
   });
 
+  it("records a hook's owner-tool grant only on ingress turns", () => {
+    const granted = ready(
+      job(),
+      facts({
+        trigger: "event",
+        ingress: "webhook",
+        ingressOwnerTools: ["gateway"],
+        parentRow: undefined,
+      }),
+    );
+    expect(granted.toolPolicy.ownerTools).toEqual(["gateway"]);
+    const scheduled = ready(job(), facts({ ingressOwnerTools: ["gateway"] }));
+    expect(scheduled.toolPolicy).not.toHaveProperty("ownerTools");
+  });
+
   it("requires event-triggered runs to name their ingress", () => {
     expect(buildScheduledExecutionContext(job(), facts({ trigger: "event" }))).toEqual({
       status: "fail",

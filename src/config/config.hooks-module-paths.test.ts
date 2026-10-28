@@ -48,3 +48,30 @@ it("rejects persistent mappings without a stable session key source", () => {
     ]),
   });
 });
+
+it("accepts owner-only tools a hook may grant", () => {
+  expect(validateMapping({ allowedOwnerTools: ["nodes", "sessions"] }).ok).toBe(true);
+});
+
+it.each(["intent", "automations", "exec", "nodez"])(
+  "rejects %s as a hook owner-tool grant",
+  (tool) => {
+    for (const result of [
+      validateMapping({ allowedOwnerTools: [tool] }),
+      validateConfigObjectWithPlugins({
+        agents: { entries: { openclaw: {} } },
+        hooks: { allowedOwnerTools: [tool] },
+      }),
+    ]) {
+      expect(result).toMatchObject({
+        ok: false,
+        issues: expect.arrayContaining([
+          expect.objectContaining({
+            path: expect.stringMatching(/allowedOwnerTools\.0$/),
+            message: expect.stringContaining("owner-only tools a hook may grant"),
+          }),
+        ]),
+      });
+    }
+  },
+);

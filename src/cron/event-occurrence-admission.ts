@@ -11,6 +11,8 @@ export async function admitEventOccurrence(params: {
   job: CronStoredJob;
   agentId: string;
   ingressBoundary?: string;
+  /** Owner-only tools the admitting hook's config grants this turn. */
+  ingressOwnerTools?: readonly string[];
 }): Promise<ScheduledOccurrence> {
   const { admitScheduledOccurrence } = await import("./execution-context-admission.js");
   return await admitScheduledOccurrence({ ...params, trigger: "event" });

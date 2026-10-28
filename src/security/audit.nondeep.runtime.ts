@@ -9,7 +9,6 @@ export {
   collectExposureMatrixFindings,
   collectGatewayHttpNoAuthFindings,
   collectGatewayHttpSessionKeyOverrideFindings,
-  collectHooksHardeningFindings,
   collectLikelyMultiUserSetupFindings,
   collectMinimalProfileOverrideFindings,
   collectNodeDangerousAllowCommandFindings,
@@ -18,6 +17,7 @@ export {
   collectSandboxDockerNoopFindings,
   collectSyncedFolderFindings,
 } from "./audit-extra.sync.js";
+export { collectHooksHardeningFindings } from "./audit-hooks.js";
 
 export {
   collectSandboxBrowserHashLabelFindings,

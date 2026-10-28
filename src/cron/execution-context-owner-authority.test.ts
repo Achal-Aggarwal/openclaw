@@ -348,10 +348,14 @@ describe("scheduled owner authority", () => {
     run.settle();
   });
 
-  it("leaves in-session and ingress runs to their existing sender check", () => {
+  it("leaves in-session runs to their existing sender check", () => {
     // Only these fields decide the sender bit.
-    const ready = (facts: Pick<ScheduledExecutionFacts, "authority" | "placement" | "principal">) =>
-      ({ status: "ready", facts }) as ScheduledExecutionContextResult;
+    const ready = (
+      facts: Pick<ScheduledExecutionFacts, "authority" | "placement" | "principal"> & {
+        toolPolicy?: Pick<ScheduledExecutionFacts["toolPolicy"], "ownerTools">;
+      },
+    ) =>
+      ({ status: "ready", facts: { toolPolicy: {}, ...facts } }) as ScheduledExecutionContextResult;
     const authority = { owner: true, basis: "profile-role" } as const;
     const parent = {
       kind: "parent",
@@ -362,16 +366,24 @@ describe("scheduled owner authority", () => {
       resolveScheduledSenderBit(ready({ authority, placement: "in-session", principal: parent })),
     ).toBeUndefined();
     expect(
-      resolveScheduledSenderBit(
-        ready({
-          authority: { owner: false, basis: "none" },
-          placement: "detached",
-          principal: { kind: "ingress", ingress: "webhook" },
-        }),
-      ),
-    ).toBeUndefined();
-    expect(
       resolveScheduledSenderBit(ready({ authority, placement: "child", principal: parent })),
     ).toEqual({});
+  });
+
+  it("makes ingress turns non-owners unless their hook grants owner-only tools", () => {
+    const ingress = (placement: "detached" | "in-session", ownerTools?: readonly string[]) =>
+      ({
+        status: "ready",
+        facts: {
+          authority: { owner: false, basis: "none" },
+          placement,
+          principal: { kind: "ingress", ingress: "webhook" },
+          toolPolicy: ownerTools ? { ownerTools } : {},
+        },
+      }) as ScheduledExecutionContextResult;
+    // Persistent hook sessions run in-session and are still not owners.
+    expect(resolveScheduledSenderBit(ingress("detached"))).toEqual({ senderIsOwner: false });
+    expect(resolveScheduledSenderBit(ingress("in-session"))).toEqual({ senderIsOwner: false });
+    expect(resolveScheduledSenderBit(ingress("detached", ["gateway"]))).toEqual({});
   });
 });

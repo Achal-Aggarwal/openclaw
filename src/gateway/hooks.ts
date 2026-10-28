@@ -51,6 +51,8 @@ export type HooksConfigResolved = {
   /** Producer-derived per-path body bounds (mapping-owned), keyed by normalized match path. */
   maxBodyBytesByPath: ReadonlyMap<string, number>;
   mappings: HookMappingResolved[];
+  /** Owner-only tools direct `/agent` turns may use; mapped turns use their mapping's grant. */
+  allowedOwnerTools?: readonly string[];
   agentPolicy: HookAgentPolicyResolved;
   sessionPolicy: HookSessionPolicyResolved;
 };
@@ -147,6 +149,7 @@ export function resolveHooksConfig(cfg: OpenClawConfig): HooksConfigResolved | n
     );
   }
   const tokenEnvKey = getResolvedConfigEnvSecretRef(cfg, "hooks.token")?.id;
+  const allowedOwnerTools = cfg.hooks?.allowedOwnerTools;
   return {
     basePath: trimmed,
     token,
@@ -154,6 +157,7 @@ export function resolveHooksConfig(cfg: OpenClawConfig): HooksConfigResolved | n
     maxBodyBytes: DEFAULT_HOOKS_MAX_BODY_BYTES,
     maxBodyBytesByPath: resolveHookBodyLimitsByPath(mappings),
     mappings,
+    ...(allowedOwnerTools?.length ? { allowedOwnerTools } : {}),
     agentPolicy: {
       defaultAgentId,
       globalSessionStoreOwner,
@@ -332,6 +336,8 @@ export type HookAgentDispatchPayload = Omit<HookAgentPayload, "sessionKey"> & {
   sessionKey: string;
   sourcePath: string;
   allowUnsafeExternalContent?: boolean;
+  /** Owner-only tools the hook's config grants this turn; never set from the request. */
+  allowedOwnerTools?: readonly string[];
   externalContentSource?: HookExternalContentSource;
   /** Configured ingress source attribution; never an authenticated principal. */
   mappingId?: string;

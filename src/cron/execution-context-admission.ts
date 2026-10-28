@@ -47,6 +47,8 @@ type OccurrenceAdmissionParams = {
   trigger: "cron" | "event";
   /** Event-triggered runs name their ingress boundary. */
   ingressBoundary?: string;
+  /** Owner-only tools the admitting hook's config grants this ingress turn. */
+  ingressOwnerTools?: readonly string[];
 };
 
 function ingressFor(boundary: string | undefined): ScheduledAdmissionFacts["ingress"] {
@@ -200,6 +202,7 @@ export function assembleScheduledAdmissionFacts(
     job: CronStoredJob;
     trigger: "cron" | "event";
     ingressBoundary?: string;
+    ingressOwnerTools?: readonly string[];
     runId: string;
     agentId: string;
     runSessionKey: string;
@@ -213,6 +216,9 @@ export function assembleScheduledAdmissionFacts(
   return {
     trigger: params.trigger,
     ...(params.trigger === "event" ? { ingress: ingressFor(params.ingressBoundary) } : {}),
+    ...(params.trigger === "event" && params.ingressOwnerTools?.length
+      ? { ingressOwnerTools: params.ingressOwnerTools }
+      : {}),
     occurrence: {
       runId: params.runId,
       executionRevision: params.job.operatorSource?.executionRevision ?? "",
@@ -341,6 +347,7 @@ export async function admitScheduledOccurrence(
             job,
             trigger: params.trigger,
             ingressBoundary: params.ingressBoundary,
+            ingressOwnerTools: params.ingressOwnerTools,
             runId: run.runId,
             agentId: run.agentId,
             runSessionKey: run.runSessionKey,

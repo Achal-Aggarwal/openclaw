@@ -75,6 +75,37 @@ export const GATEWAY_OWNER_ONLY_CORE_TOOLS = [
   "intent",
 ] as const;
 
+/**
+ * Owner-only core tools a hook may grant its ingress turns with
+ * `allowedOwnerTools`. Standing intents always need an explicit owner identity,
+ * and the automations tool takes its scope from the run's execution context.
+ */
+export const INGRESS_GRANTABLE_OWNER_TOOLS = [
+  "gateway",
+  "plugins",
+  "sessions",
+  "screen",
+  "terminal",
+  "portal",
+  "conversations_list",
+  "conversations_send",
+  "conversations_turn",
+  "nodes",
+  "computer",
+  "mobile_ui",
+  "openclaw",
+] as const;
+
+export type IngressGrantableOwnerTool = (typeof INGRESS_GRANTABLE_OWNER_TOOLS)[number];
+
+/**
+ * Owner-only tools an ingress turn with a hook's owner-tool grant must still be
+ * refused: every grantable tool the grant does not name.
+ */
+export function resolveIngressOwnerToolDenylist(granted: readonly string[]): string[] {
+  return INGRESS_GRANTABLE_OWNER_TOOLS.filter((name) => !granted.includes(name));
+}
+
 export function resolveGatewayOwnerOnlyToolDenylist(senderIsOwner?: boolean): string[] {
   // Standing intents always require explicit owner identity, including on internal turns.
   return GATEWAY_OWNER_ONLY_CORE_TOOLS.filter(

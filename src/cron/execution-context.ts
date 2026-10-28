@@ -74,6 +74,12 @@ type ScheduledToolPolicy = Readonly<{
   callerOrigin: CronScheduledToolCallerOrigin;
   execTarget?: CronToolsAllowExecTarget;
   automations: ScheduledAutomationsScope;
+  /**
+   * Owner-only tools a hook grants its ingress turn. When set, the turn keeps
+   * the internal sender surface limited to these tools; otherwise an ingress
+   * turn is not an owner.
+   */
+  ownerTools?: readonly string[];
 }>;
 
 type ScheduledResourceScopes = Readonly<{
@@ -138,6 +144,8 @@ export type ScheduledAdmissionFacts = Readonly<{
   trigger: "cron" | "event";
   /** Required when trigger is "event". */
   ingress?: ScheduledIngress;
+  /** Owner-only tools the admitting hook's config grants an ingress turn. */
+  ingressOwnerTools?: readonly string[];
   occurrence: Readonly<{ runId: string; executionRevision: string }>;
   agentId: string;
   runSessionKey: string;
@@ -445,6 +453,9 @@ export function buildScheduledExecutionContext(
         ),
         ...(job.toolsAllowExecTarget ? { execTarget: job.toolsAllowExecTarget } : {}),
         automations: resolveAutomationsScope(job, principal, authority, allow),
+        ...(principal.kind === "ingress" && facts.ingressOwnerTools?.length
+          ? { ownerTools: facts.ingressOwnerTools }
+          : {}),
       },
       resources: {
         memory:

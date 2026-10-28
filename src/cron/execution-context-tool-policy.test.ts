@@ -138,13 +138,25 @@ afterEach(() => {
   }
 });
 
-// Admits an occurrence and its run the way the cron executor does.
-async function admitRun(stored: CronStoredJob, runKey: string, toolsAllow: string[]) {
+// Admits an occurrence and its run the way the cron executor does, or the way the
+// hook dispatcher does when `ingress` is set.
+async function admitRun(
+  stored: CronStoredJob,
+  runKey: string,
+  toolsAllow: string[],
+  ingress?: { ownerTools?: string[] },
+) {
   const occurrence = await admitScheduledOccurrence({
     cfg: CFG,
     job: stored,
     agentId: "main",
-    trigger: "cron",
+    ...(ingress
+      ? {
+          trigger: "event" as const,
+          ingressBoundary: "gateway.hooks.agent",
+          ...(ingress.ownerTools ? { ingressOwnerTools: ingress.ownerTools } : {}),
+        }
+      : { trigger: "cron" as const }),
   });
   const scheduledExecution = occurrence.mint({
     cfg: CFG,
@@ -182,14 +194,14 @@ async function admitRun(stored: CronStoredJob, runKey: string, toolsAllow: strin
 
 type Run = Awaited<ReturnType<typeof admitRun>>;
 
-async function embeddedTools(run: Run, onYield = () => {}) {
+async function embeddedTools(run: Run, onYield = () => {}, trigger = "cron") {
   return await createOpenClawCodingToolsInternalAsync({
     config: CFG,
     agentId: "main",
     sessionKey: run.runKey,
     sessionId: "run-session",
     runId: "run-1",
-    trigger: "cron",
+    trigger,
     jobId: "job-1",
     operationalRunInstance: run.admitted.operationalRunInstance,
     ...(run.senderIsOwner !== undefined ? { senderIsOwner: run.senderIsOwner } : {}),
@@ -265,6 +277,51 @@ async function callError(tool: AnyAgentTool, params: Record<string, unknown>) {
     return String(error);
   }
 }
+
+// Whether a call to the named tool reaches it: a tool the run may not call is
+// either withheld or answers with a gated refusal before reading its arguments.
+async function reachesTool(tools: AnyAgentTool[], name: string) {
+  const tool = tools.find((entry) => entry.name === name);
+  if (!tool) {
+    return false;
+  }
+  try {
+    const result = await tool.execute("probe", { action: "probe-unknown-action" });
+    return (result.details as { gated?: boolean } | undefined)?.gated !== true;
+  } catch {
+    return true;
+  }
+}
+
+describe("ingress owner-only surface", () => {
+  const hookJob = job({
+    payload: { kind: "agentTurn", message: "hook", externalContentSource: "webhook" },
+  } as Partial<CronStoredJob>);
+
+  it.each(["embedded", "cli"] as const)(
+    "%s hook turn is refused owner-only tools",
+    async (runtime) => {
+      const run = await admitRun(hookJob, RUN_KEY, ["*"], {});
+      expect(run.senderIsOwner).toBe(false);
+      const tools =
+        runtime === "embedded" ? await embeddedTools(run, () => {}, "event") : await cliTools(run);
+      expect(await reachesTool(tools, "gateway")).toBe(false);
+      expect(await reachesTool(tools, "nodes")).toBe(false);
+    },
+  );
+
+  it.each(["embedded", "cli"] as const)(
+    "%s hook turn with a grant reaches only the granted tool",
+    async (runtime) => {
+      const run = await admitRun(hookJob, RUN_KEY, ["*"], { ownerTools: ["gateway"] });
+      expect(run.senderIsOwner).toBeUndefined();
+      const tools =
+        runtime === "embedded" ? await embeddedTools(run, () => {}, "event") : await cliTools(run);
+      expect(await reachesTool(tools, "gateway")).toBe(true);
+      expect(await reachesTool(tools, "nodes")).toBe(false);
+    },
+  );
+});
 
 describe("scheduled automations scope", () => {
   describe.each(RUNS)("$name", (entry) => {

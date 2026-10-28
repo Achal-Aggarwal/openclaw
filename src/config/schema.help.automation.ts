@@ -153,7 +153,7 @@ export const AUTOMATION_FIELD_HELP: Record<string, string> = {
   "hooks.path":
     "HTTP path used by the hooks endpoint (for example `/hooks`) on the gateway control server. Use a non-guessable path and combine it with token validation for defense in depth.",
   "hooks.token":
-    "Shared bearer token checked by hooks ingress for request authentication before mappings run. Treat holders as full-trust callers for the hook ingress surface, not as a separate non-owner role. Use environment substitution and rotate regularly when webhook endpoints are internet-accessible.",
+    "Shared bearer token checked by hooks ingress for request authentication before mappings run. It grants ingress access, not an owner identity: hook agent turns run without owner-only tools unless hooks.allowedOwnerTools or a mapping's allowedOwnerTools grants them. Use environment substitution and rotate regularly when webhook endpoints are internet-accessible.",
   "hooks.defaultSessionKey":
     "Fallback session key used for hook deliveries when a request does not provide one through allowed channels. Use a stable but scoped key to avoid mixing unrelated automation conversations.",
   "hooks.allowRequestSessionKey":
@@ -162,6 +162,8 @@ export const AUTOMATION_FIELD_HELP: Record<string, string> = {
     "Allowlist of accepted session-key prefixes for inbound hook requests when caller-provided keys are enabled. Use narrow prefixes to prevent arbitrary session-key injection.",
   "hooks.allowedAgentIds":
     "Allowlist of effective agent IDs that hook requests and mappings are allowed to target, including default-agent routing when agentId is omitted. Use this to constrain automation events to dedicated service agents and limit the damage if a hook token is exposed.",
+  "hooks.allowedOwnerTools":
+    "Owner-only tools (for example gateway or nodes) that direct /hooks/agent turns may use. Hook turns are not owners, so they get no owner-only tools by default. Grant only the tools the hook needs; anyone with the hook token can drive them. Mapped requests use their mapping's allowedOwnerTools instead.",
   "hooks.presets":
     "Named hook preset bundles applied at load time to seed standard mappings and behavior defaults. Keep preset usage explicit so operators can audit which automations are active.",
   "hooks.transformsDir":
@@ -198,6 +200,8 @@ export const AUTOMATION_FIELD_HELP: Record<string, string> = {
     "Controls whether mapping execution results are delivered back to a channel destination versus being processed silently. Disable delivery for background automations that should not post user-facing output.",
   "hooks.mappings[].allowUnsafeExternalContent":
     "When true, mapping content may include less-sanitized external payload data in generated messages. Keep false by default and enable only for trusted sources with reviewed transform logic.",
+  "hooks.mappings[].allowedOwnerTools":
+    "Owner-only tools (for example gateway or nodes) that this mapping's agent turns may use. Hook turns are not owners, so they get no owner-only tools by default. Grant only what the mapping needs; anyone who can reach it can drive those tools with untrusted payload content.",
   "hooks.mappings[].channel":
     'Delivery channel override for mapping outputs (for example "last", "telegram", "discord", "slack", "signal", "imessage", or "msteams"). Keep channel overrides explicit to avoid accidental cross-channel sends.',
   "hooks.mappings[].to":

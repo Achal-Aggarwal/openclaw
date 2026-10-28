@@ -1,3 +1,4 @@
+import { readScheduledIngressOwnerToolDenylist } from "../../cron/execution-context-registry.js";
 import { getSessionRowProjection } from "../../gateway/session-row-projection-access.js";
 import { captureSessionPortalTarget } from "../../gateway/worker-environments/session-portal-target.js";
 import { resolveGatewayOwnerOnlyToolDenylist } from "../../security/dangerous-tools.js";
@@ -5,6 +6,7 @@ import {
   bindActiveCronCreatorAuthorityResolver,
   bindCronManagementGrant,
 } from "../cron-creator-authority-context.js";
+import type { OperationalRunInstanceRef } from "../operational-run-instance.js";
 import { AUTOMATIONS_TOOL_NAME } from "./automations-tool-name.js";
 import { getInProcessGatewayToolContext } from "./in-process-gateway.js";
 
@@ -24,6 +26,8 @@ export function prepareSessionPortalToolAccess(input: {
   runId?: string;
   cronSelfRemoveOnlyJobId?: string;
   automationReadOnly?: boolean;
+  /** The run whose admitted context may name a hook's owner-tool grant. */
+  operationalRunInstance?: OperationalRunInstanceRef;
 }) {
   const cronCreatorAuthorityResolver = bindActiveCronCreatorAuthorityResolver(input.runId);
   // A scheduled run gets its self-scoped tool, not sender/administrator authority.
@@ -43,12 +47,15 @@ export function prepareSessionPortalToolAccess(input: {
     input.automationReadOnly === true && Boolean(input.agentId?.trim() && input.sessionKey?.trim());
   // Sessions owns its assignment/control action gates; portal and automation
   // remain scoped exceptions. Other control-plane tools require owner authority.
-  const ownerOnlyCoreToolDenylist = resolveGatewayOwnerOnlyToolDenylist(input.senderIsOwner).filter(
-    (name) =>
-      (name !== "portal" || !sessionPortalTarget) &&
-      name !== "sessions" &&
-      (name !== AUTOMATIONS_TOOL_NAME || (!hasAutomationGrant && !scopedAutomationRead)),
-  );
+  const ownerOnlyCoreToolDenylist = resolveGatewayOwnerOnlyToolDenylist(input.senderIsOwner)
+    .filter(
+      (name) =>
+        (name !== "portal" || !sessionPortalTarget) &&
+        name !== "sessions" &&
+        (name !== AUTOMATIONS_TOOL_NAME || (!hasAutomationGrant && !scopedAutomationRead)),
+    )
+    // A hook's owner-tool grant still refuses every owner-only tool it does not name.
+    .concat(readScheduledIngressOwnerToolDenylist(input));
   return {
     sessionPortalTarget,
     ownerOnlyCoreToolDenylist,

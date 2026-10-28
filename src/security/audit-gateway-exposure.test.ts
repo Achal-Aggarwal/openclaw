@@ -8,9 +8,9 @@ import { collectSmallModelRiskFindings } from "./audit-extra.summary.js";
 import {
   collectExposureMatrixFindings,
   collectLikelyMultiUserSetupFindings,
-  collectHooksHardeningFindings,
 } from "./audit-extra.sync.js";
 import { collectGatewayConfigFindings } from "./audit-gateway-config.js";
+import { collectHooksHardeningFindings } from "./audit-hooks.js";
 import { collectAuditModelRefs } from "./audit-model-refs.js";
 import { runSecurityAuditCore } from "./audit.js";
 
@@ -497,6 +497,26 @@ describe("security audit hooks ingress findings", () => {
       "request_session_key_enabled",
       "critical",
     );
+    const granted = checkHooks(
+      {
+        hooks: {
+          ...baseHooks,
+          allowedOwnerTools: ["gateway"],
+          mappings: [{ id: "deploy", allowedOwnerTools: ["nodes", "terminal"] }],
+        },
+      },
+      "owner_tools_granted",
+    );
+    expect(granted.find((finding) => finding.checkId === "hooks.owner_tools_granted")?.detail).toBe(
+      "Hook payloads are untrusted, yet these hooks grant owner-only tools to their agent turns: hooks.allowedOwnerTools (gateway); hooks.mappings[deploy].allowedOwnerTools (nodes, terminal).",
+    );
+    expect(
+      hasHookFinding(
+        collectHooksHardeningFindings({ hooks: baseHooks }),
+        "hooks.owner_tools_granted",
+        "warn",
+      ),
+    ).toBe(false);
   });
 
   it("flags explicit audit password reuse when config mode is token", () => {

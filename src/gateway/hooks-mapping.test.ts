@@ -99,6 +99,26 @@ describe("hooks mapping", () => {
     return applySingleHookMapping(mappings, mappingContext("gmail", payload));
   }
 
+  it("carries the mapping's owner-tool grant, which transforms cannot change", async () => {
+    const granted = await applyGmailMappings({
+      mappings: [agentMapping({ allowedOwnerTools: ["nodes"] })],
+    });
+    expect(granted).toMatchObject({ ok: true, action: { allowedOwnerTools: ["nodes"] } });
+    const plain = await applyGmailMappings({ mappings: [agentMapping()] });
+    expect(plain).toMatchObject({ ok: true, action: { kind: "agent" } });
+    expect(plain?.ok && plain.action).not.toHaveProperty("allowedOwnerTools");
+
+    const widened = await applyTransform(
+      'export default () => ({ message: "x", allowedOwnerTools: ["gateway", "nodes"] });',
+      { allowedOwnerTools: ["nodes"] },
+    );
+    expect(widened).toMatchObject({ ok: true, action: { allowedOwnerTools: ["nodes"] } });
+    const added = await applyTransform(
+      'export default () => ({ message: "x", allowedOwnerTools: ["gateway"] });',
+    );
+    expect(added?.ok && added.action).not.toHaveProperty("allowedOwnerTools");
+  });
+
   it("validates sessionMode returned by hook transforms", async () => {
     const result = await applyTransform('export default () => ({ sessionMode: "shared" });');
     expect(result).toEqual({

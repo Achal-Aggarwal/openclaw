@@ -332,6 +332,7 @@ function* assembleOpenClawCodingTools(
     runId: options?.runId,
     cronSelfRemoveOnlyJobId,
     automationReadOnly: options?.forceRestartSafeTools === true,
+    operationalRunInstance: options?.operationalRunInstance,
   });
   const { sessionPortalTarget, cronCreatorAuthorityResolver } = sessionToolAccess;
   // An ingress turn without a self scope gets no automations tool.

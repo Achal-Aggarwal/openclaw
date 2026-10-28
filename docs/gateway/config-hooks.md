@@ -39,6 +39,7 @@ data and restrict the target agent's tools and workspace separately.
 | `token`                     | unset                           | Shared hook secret string. Use a dedicated long random value; SecretRef objects are not supported here.                                                                                                           |
 | `path`                      | `/hooks`                        | Dedicated base path; a leading slash is added and trailing slashes removed. `/` is rejected.                                                                                                                      |
 | `allowedAgentIds`           | unrestricted                    | Effective agent allowlist, including the default-agent path. Omitted or containing `"*"` allows all; `[]` denies all.                                                                                             |
+| `allowedOwnerTools`         | none                            | Owner-only tools direct `/agent` turns may use. Mapped requests use their mapping's field. See [Owner-only tools](/gateway/config-hooks#owner-only-tools).                                                        |
 | `defaultSessionKey`         | unset                           | Logical agent-run key when no request/mapping key is supplied; otherwise a fresh `hook:<uuid>` is generated. Does not itself enable persistent sessions.                                                          |
 | `allowRequestSessionKey`    | `false`                         | Allow keys from `/agent`, `/wake`, and payload-derived mapping/transform values.                                                                                                                                  |
 | `allowedSessionKeyPrefixes` | unrestricted                    | Case-insensitive prefixes for explicit request/mapping keys and the default/generated key. An empty list or all-blank list imposes no restriction; blank entries are otherwise ignored. See session policy below. |
@@ -146,6 +147,49 @@ Supplying only part of a destination fails with `400` while delivery is enabled.
 `deliver: false` disables announcement, not the agent's ability to use messaging
 tools; constrain those tools in the agent policy when needed.
 
+### Owner-only tools
+
+A hook agent turn is not an owner. Like a non-owner channel sender, it gets no
+owner-only tools: `gateway`, `plugins`, `nodes`, `computer`, `screen`,
+`mobile_ui`, `terminal`, `portal`, `openclaw`, `conversations_list`,
+`conversations_send` and `conversations_turn`. Its `sessions` tool is limited
+to control actions, and `intent` is never available. This applies to HTTP
+hooks, mapped hooks, plugin triggers such as the IMAP trigger, and channel join
+introductions, on every agent runtime. The `automations` tool keeps its own
+rule: a hook turn may act only on its own automation.
+
+Before this change, embedded hook turns had every owner-only tool except
+`intent`. To give a hook back a tool it needs, name it in `allowedOwnerTools`
+on the mapping, or in `hooks.allowedOwnerTools` for direct `/hooks/agent`
+requests:
+
+```json5
+{
+  hooks: {
+    mappings: [
+      {
+        id: "deploy-alerts",
+        match: { path: "deploy" },
+        agentId: "ops",
+        messageTemplate: "Deploy event: {{payload.summary}}",
+        allowedOwnerTools: ["nodes"],
+      },
+    ],
+  },
+}
+```
+
+With a grant, the turn has owner tool access limited to the listed tools; every
+other owner-only tool stays refused, including full `sessions` control unless
+`sessions` is listed. Accepted names are the owner-only tools above plus
+`sessions`; `intent`, `automations` and any other name are config errors.
+Plugin triggers and channel join introductions have no grant. Anyone with the
+hook token can drive granted tools with untrusted payload content, so grant only
+what the hook needs and keep the target agent's tool policy narrow.
+`openclaw security audit` warns about every grant
+(`hooks.owner_tools_granted`), and `openclaw doctor` notes enabled hooks
+without one.
+
 ### Hook session and agent policy
 
 Direct request agent ids must exist. Mapping agent ids resolve to a configured
@@ -204,6 +248,7 @@ hook path.
 | `thinking`                   | agent/model defaults        | Templated thinking override.                                                                                                                      |
 | `timeoutSeconds`             | agent timeout               | Positive integer turn timeout.                                                                                                                    |
 | `allowUnsafeExternalContent` | `false`                     | Dangerous: disables agent external-content wrapping for this mapping. Gmail's global unsafe flag can also disable wrapping.                       |
+| `allowedOwnerTools`          | none                        | Owner-only tools this mapping's agent turns may use; transforms cannot change it. See [Owner-only tools](/gateway/config-hooks#owner-only-tools). |
 | `transform.module`           | unset                       | Safe relative JS/TS module under `transformsDir`; absolute, traversal, URL/drive forms, and symlink escapes are rejected.                         |
 | `transform.export`           | `default`, then `transform` | Named function export; an explicitly named export must exist.                                                                                     |
 

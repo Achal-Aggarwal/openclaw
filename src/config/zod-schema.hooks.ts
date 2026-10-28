@@ -1,5 +1,6 @@
 import path from "node:path";
 import { z } from "zod";
+import { INGRESS_GRANTABLE_OWNER_TOOLS } from "../security/dangerous-tools.js";
 import { sensitive } from "./zod-schema.sensitive.js";
 
 function isSafeRelativeModulePath(raw: string): boolean {
@@ -16,6 +17,15 @@ function isSafeRelativeModulePath(raw: string): boolean {
 const SafeRelativeModulePathSchema = z
   .string()
   .refine(isSafeRelativeModulePath, "module must be a safe relative path (no absolute paths)");
+
+/** Owner-only tools a hook grants its agent turns; anything else is a config error. */
+export const HookAllowedOwnerToolsSchema = z
+  .array(
+    z.enum(INGRESS_GRANTABLE_OWNER_TOOLS, {
+      error: `allowedOwnerTools only accepts owner-only tools a hook may grant: ${INGRESS_GRANTABLE_OWNER_TOOLS.join(", ")}`,
+    }),
+  )
+  .optional();
 
 export const HookMappingSchema = z
   .strictObject({
@@ -40,6 +50,7 @@ export const HookMappingSchema = z
       .optional(),
     deliver: z.boolean().optional(),
     allowUnsafeExternalContent: z.boolean().optional(),
+    allowedOwnerTools: HookAllowedOwnerToolsSchema,
     // Keep this open-ended so runtime channel plugins (for example feishu) can be
     // referenced without hard-coding every channel id in the config schema.
     // Runtime still validates the resolved value against currently registered channels.

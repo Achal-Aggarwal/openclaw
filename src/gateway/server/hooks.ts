@@ -541,7 +541,13 @@ export function createGatewayHookDispatcher(params: {
             const ingressBoundary = pluginId ? "gateway.hooks.plugin" : "gateway.hooks.agent";
             const runHookIsolatedTurn = async () =>
               await runCronIsolatedAgentTurn({
-                occurrence: await admitEventOccurrence({ cfg, job, agentId, ingressBoundary }),
+                occurrence: await admitEventOccurrence({
+                  cfg,
+                  job,
+                  agentId,
+                  ingressBoundary,
+                  ingressOwnerTools: acceptedValue.allowedOwnerTools,
+                }),
                 cfg,
                 deps,
                 job,

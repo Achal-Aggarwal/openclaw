@@ -5,6 +5,7 @@
  */
 import type { OperationalRunInstanceRef } from "../agents/operational-run-instance.js";
 import type { ScheduledMemoryParent } from "../plugins/memory-audience.js";
+import { resolveIngressOwnerToolDenylist } from "../security/dangerous-tools.js";
 import type {
   ScheduledExecutionContextResult,
   ScheduledExecutionFacts,
@@ -60,8 +61,8 @@ export function readScheduledToolTargets(
   if (!context) {
     return undefined;
   }
-  // Admission sets the recheck only for a requester-held owner bit; in-session and
-  // ingress runs keep their existing owner checks.
+  // Admission sets the recheck only for a requester-held owner bit; in-session
+  // runs keep their existing owner check, and ingress turns hold no requester.
   const ownerRecheck = senderBitOf(context) ? context.assertOwnerCurrent : undefined;
   const { execTarget } = context.toolPolicy;
   return {
@@ -127,6 +128,20 @@ export function readScheduledIngressAutomationsScope(
   return context?.principal.kind === "ingress" ? context.toolPolicy.automations : undefined;
 }
 
+/**
+ * Owner-only tools an ingress turn admitted with a hook's owner-tool grant is
+ * still refused, or empty when the run has no such grant. A turn without a grant
+ * is not an owner, so the sender bit already refuses every owner-only tool.
+ */
+export function readScheduledIngressOwnerToolDenylist(
+  owner: Readonly<{ operationalRunInstance?: OperationalRunInstanceRef }> | undefined,
+): string[] {
+  const run = owner?.operationalRunInstance;
+  const context = run ? contextsByRun.get(run) : undefined;
+  const granted = context?.principal.kind === "ingress" ? context.toolPolicy.ownerTools : undefined;
+  return granted ? resolveIngressOwnerToolDenylist(granted) : [];
+}
+
 /** The parent whose memory audience a child run inherits, or undefined to resolve from the run row. */
 export function readScheduledMemoryParent(
   run: OperationalRunInstanceRef | undefined,
@@ -144,12 +159,16 @@ export function readScheduledMemoryParent(
   };
 }
 
-// In-session runs keep their session turn's own command-owner check, and ingress
-// turns keep their existing surface; neither takes the bit from the context.
+// In-session runs keep their session turn's own command-owner check. An ingress
+// turn is not an owner unless its hook grants owner-only tools; the grant keeps
+// the internal sender surface, and the ingress denylist removes ungranted tools.
 function senderBitOf(
-  facts: Pick<ScheduledExecutionFacts, "authority" | "placement" | "principal">,
+  facts: Pick<ScheduledExecutionFacts, "authority" | "placement" | "principal" | "toolPolicy">,
 ): Readonly<{ senderIsOwner?: false }> | undefined {
-  if (facts.placement === "in-session" || facts.principal.kind === "ingress") {
+  if (facts.principal.kind === "ingress") {
+    return facts.toolPolicy.ownerTools ? {} : { senderIsOwner: false };
+  }
+  if (facts.placement === "in-session") {
     return undefined;
   }
   return facts.authority.owner ? {} : { senderIsOwner: false };
@@ -162,6 +181,8 @@ function senderBitOf(
  * A scheduled run is an internal turn. An owner run carries no sender bit, which
  * keeps every owner-only tool except standing intents (they need an explicit
  * sender identity); a run whose requester is not an owner carries `false`.
+ * Ingress turns (hooks and channel join introductions) carry `false` unless
+ * their hook grants owner-only tools.
  */
 export function resolveScheduledSenderBit(
   result: ScheduledExecutionContextResult,

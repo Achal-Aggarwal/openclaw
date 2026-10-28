@@ -494,6 +494,9 @@ export function createHooksRequestHandler(
           sessionKey: dispatchSessionKey,
           sourcePath: `${basePath}/agent`,
           agentId: target.selectedAgentId,
+          ...(hooksConfig.allowedOwnerTools
+            ? { allowedOwnerTools: hooksConfig.allowedOwnerTools }
+            : {}),
           externalContentSource: "webhook",
           replayKey,
         });
@@ -636,6 +639,9 @@ export function createHooksRequestHandler(
                   timeoutSeconds: action.timeoutSeconds,
                   mappingId: action.mappingId,
                   allowUnsafeExternalContent: action.allowUnsafeExternalContent,
+                  ...(action.allowedOwnerTools
+                    ? { allowedOwnerTools: action.allowedOwnerTools }
+                    : {}),
                   ...(mapped.fanout ? { admissionMode: "background" as const } : {}),
                   replayKey,
                   externalContentSource:

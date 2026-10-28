@@ -231,6 +231,17 @@ export function resolveFinalDoctorHealthContributions(params: {
         note(warnings.join("\n"), "Hooks");
       },
     }),
+    createDoctorHealthContribution("doctor:hooks-owner-tools", "Hook owner tools", {
+      updateWork: { kind: "inspection", scope: "run" },
+      healthChecks: {
+        description: "Hook agent turns that need owner-only tools grant them explicitly.",
+        async detect(ctx) {
+          const { detectHooksOwnerToolsFindings } =
+            await import("./doctor-hooks-owner-tools-check.js");
+          return detectHooksOwnerToolsFindings(ctx.cfg);
+        },
+      },
+    }),
     ...(
       [
         ["model-references", "Model references", "agent"],

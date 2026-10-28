@@ -27,6 +27,7 @@ export type HookMappingResolved = {
   textTemplate?: string;
   deliver?: boolean;
   allowUnsafeExternalContent?: boolean;
+  allowedOwnerTools?: readonly string[];
   channel?: HookMessageChannel;
   to?: string;
   model?: string;
@@ -72,6 +73,8 @@ type HookAction =
       sessionMode: HookSessionMode;
       deliver?: boolean;
       allowUnsafeExternalContent?: boolean;
+      /** From the mapping's config only; transforms cannot change it. */
+      allowedOwnerTools?: readonly string[];
       channel?: HookMessageChannel;
       to?: string;
       model?: string;
@@ -336,6 +339,7 @@ function normalizeHookMapping(
     textTemplate: mapping.textTemplate,
     deliver: mapping.deliver,
     allowUnsafeExternalContent: mapping.allowUnsafeExternalContent,
+    ...(mapping.allowedOwnerTools?.length ? { allowedOwnerTools: mapping.allowedOwnerTools } : {}),
     channel: mapping.channel,
     to: mapping.to,
     model: mapping.model,
@@ -391,6 +395,7 @@ function buildActionFromMapping(mapping: HookMappingResolved, ctx: HookMappingCo
     sessionMode: mapping.sessionMode ?? "isolated",
     deliver: mapping.deliver,
     allowUnsafeExternalContent: mapping.allowUnsafeExternalContent,
+    ...(mapping.allowedOwnerTools ? { allowedOwnerTools: mapping.allowedOwnerTools } : {}),
     channel: mapping.channel,
     to: renderOptional(mapping.to, ctx),
     model: renderOptional(mapping.model, ctx),
@@ -443,6 +448,7 @@ function mergeAction(base: HookAction, override: HookTransformResult): HookMappi
       typeof override.allowUnsafeExternalContent === "boolean"
         ? override.allowUnsafeExternalContent
         : baseAgent?.allowUnsafeExternalContent,
+    ...(baseAgent?.allowedOwnerTools ? { allowedOwnerTools: baseAgent.allowedOwnerTools } : {}),
     channel: override.channel ?? baseAgent?.channel,
     to: override.to ?? baseAgent?.to,
     model: override.model ?? baseAgent?.model,

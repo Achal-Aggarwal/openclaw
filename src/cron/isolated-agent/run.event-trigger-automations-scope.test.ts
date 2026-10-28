@@ -86,11 +86,25 @@ function hookShapedJob(toolsAllow?: string[]): CronJob {
   };
 }
 
-// The owner-only surface the last run's tools got: its sender bit and which
-// owner-only tools it may call.
+// The owner-only surface the last run's tools got: its sender bit and, for each
+// owner-only tool, whether a call reaches the tool or is refused for authority.
 const ownerSurface: {
   last?: { senderIsOwner: boolean | undefined; callable: Record<string, boolean> };
 } = {};
+
+// Calls a tool with no arguments: a refused tool returns its gated result before
+// reading them, and any other tool rejects the missing action before an effect.
+async function reachesTool(tool: { execute: (...args: never[]) => unknown }): Promise<boolean> {
+  try {
+    const result = await (tool.execute as (id: string, args: unknown) => Promise<unknown>)(
+      "owner-surface",
+      {},
+    );
+    return (result as { details?: { gated?: unknown } }).details?.gated !== true;
+  } catch {
+    return true;
+  }
+}
 
 type AutomationsOutcome =
   | { offered: false }
@@ -106,7 +120,9 @@ async function runAndTouchSibling(params: {
   trigger: "cron" | "event";
   toolsAllow?: string[];
   /** Event turns admit through `admitEventOccurrence` unless set to "unadmitted". */
-  ingressBoundary?: "gateway.hooks.agent" | "unadmitted";
+  ingressBoundary?: "gateway.hooks.agent" | "gateway.hooks.plugin" | "unadmitted";
+  /** Owner-only tools the hook's config grants the turn. */
+  ingressOwnerTools?: string[];
   /** The automations call to make; defaults to removing a sibling job. */
   call?: Record<string, unknown>;
 }): Promise<AutomationsOutcome> {
@@ -120,14 +136,14 @@ async function runAndTouchSibling(params: {
       runParams,
       async (constructed) => {
         const ownerOnly: readonly string[] = GATEWAY_OWNER_ONLY_CORE_TOOLS;
-        ownerSurface.last = {
-          senderIsOwner: runParams.senderIsOwner,
-          callable: Object.fromEntries(
-            constructed
-              .filter((tool) => ownerOnly.includes(tool.name))
-              .map((tool) => [tool.name, isAgentToolExecutionAvailable(tool)]),
-          ),
-        };
+        const callable: Record<string, boolean> = {};
+        for (const tool of constructed.filter((entry) => ownerOnly.includes(entry.name))) {
+          callable[tool.name] =
+            tool.name === AUTOMATIONS_TOOL_NAME
+              ? isAgentToolExecutionAvailable(tool)
+              : await reachesTool(tool);
+        }
+        ownerSurface.last = { senderIsOwner: runParams.senderIsOwner, callable };
         const tools = applyEmbeddedAttemptToolsAllow(constructed, runParams.toolsAllow, {
           toolMeta: getPluginToolMeta,
         });
@@ -150,9 +166,14 @@ async function runAndTouchSibling(params: {
         }
         return { payloads: [{ text: "done" }], meta: { agentMeta: {} } };
       },
-      // The embedded attempt forwards trigger and jobId into tool construction
-      // (embedded-agent-runner/run/attempt-tool-run-context.ts).
-      { includeOpenClawTools: true, trigger: runParams.trigger, jobId: runParams.jobId },
+      // The embedded attempt forwards trigger, jobId and the sender bit into tool
+      // construction (embedded-agent-runner/run/attempt-tool-run-context.ts).
+      {
+        includeOpenClawTools: true,
+        trigger: runParams.trigger,
+        jobId: runParams.jobId,
+        senderIsOwner: runParams.senderIsOwner,
+      },
     ),
   );
   const job = hookShapedJob(params.toolsAllow);
@@ -163,6 +184,7 @@ async function runAndTouchSibling(params: {
           job,
           agentId: "main",
           ...(params.ingressBoundary ? { ingressBoundary: params.ingressBoundary } : {}),
+          ...(params.ingressOwnerTools ? { ingressOwnerTools: params.ingressOwnerTools } : {}),
         })
       : TEST_SCHEDULED_OCCURRENCE;
   await runCronIsolatedAgentTurn({
@@ -219,20 +241,48 @@ it("event-triggered turns without an admitted context cannot use automations", a
 it("channel join introductions are offered no automations tool", async () => {
   const outcome = await runAndTouchSibling({ trigger: "event", toolsAllow: [] });
   expect(outcome).toEqual({ offered: false });
+  // Join introductions are ingress turns too, so they are not owners.
+  expect(ownerSurface.last?.senderIsOwner).toBe(false);
 });
 
-// Owner status for ingress turns is a separate decision: hook turns keep the
-// embedded owner surface (no sender bit, every owner-only tool except intent).
-it("hook turns keep their existing owner-only surface", async () => {
-  await runAndTouchSibling({ trigger: "event", ingressBoundary: "gateway.hooks.agent" });
+// Ingress turns are not owners: every owner-only tool is refused except the
+// self-scoped automations tool and the sessions tool's control-only surface.
+it.each(["gateway.hooks.agent", "gateway.hooks.plugin"] as const)(
+  "%s turns get no owner-only tools",
+  async (ingressBoundary) => {
+    await runAndTouchSibling({ trigger: "event", ingressBoundary });
+    const surface = ownerSurface.last;
+    expect(surface).toBeDefined();
+    expect(surface?.senderIsOwner).toBe(false);
+    const callable = surface?.callable ?? {};
+    expect(callable[AUTOMATIONS_TOOL_NAME]).toBe(true);
+    expect(callable.gateway).toBe(false);
+    for (const [name, available] of Object.entries(callable)) {
+      expect({ name, available }).toEqual({
+        name,
+        available: name === AUTOMATIONS_TOOL_NAME || name === "sessions",
+      });
+    }
+  },
+);
+
+// A hook's grant keeps the internal sender surface for the tools it names only.
+it("a hook's owner-tool grant allows only the named owner-only tools", async () => {
+  await runAndTouchSibling({
+    trigger: "event",
+    ingressBoundary: "gateway.hooks.agent",
+    ingressOwnerTools: ["gateway"],
+  });
   const surface = ownerSurface.last;
-  expect(surface).toBeDefined();
   expect(surface?.senderIsOwner).toBeUndefined();
   const callable = surface?.callable ?? {};
-  expect(callable[AUTOMATIONS_TOOL_NAME]).toBe(true);
-  expect(Object.keys(callable).length).toBeGreaterThan(1);
+  expect(callable.gateway).toBe(true);
+  expect(Object.keys(callable).length).toBeGreaterThan(2);
   for (const [name, available] of Object.entries(callable)) {
-    expect({ name, available }).toEqual({ name, available: name !== "intent" });
+    expect({ name, available }).toEqual({
+      name,
+      available: name === AUTOMATIONS_TOOL_NAME || name === "gateway",
+    });
   }
 });
 

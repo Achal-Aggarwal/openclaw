@@ -14,6 +14,7 @@ import type { OpenClawConfig } from "../config/types.openclaw.js";
 import {
   readScheduledAutomationsSelfJobId,
   readScheduledOccurrenceAutomationsScope,
+  readScheduledIngressOwnerToolDenylist,
   readScheduledSenderBit,
   readScheduledToolOptions,
 } from "../cron/execution-context-registry.js";
@@ -173,6 +174,8 @@ function resolveGatewayScheduledToolAccess(
       : undefined;
   const selfJobId = readScheduledAutomationsSelfJobId(scope);
   const automationsDenied = scope !== undefined && !selfJobId;
+  const ingressOwnerToolDeny =
+    surface === "loopback" ? readScheduledIngressOwnerToolDenylist(params.admittedRunContext) : [];
   return {
     toolOptions: {
       ...readScheduledToolOptions(params.admittedRunContext, params.toolsAllow),
@@ -190,6 +193,8 @@ function resolveGatewayScheduledToolAccess(
           (name !== AUTOMATIONS_TOOL_NAME || !selfJobId),
       ),
       ...(automationsDenied ? [AUTOMATIONS_TOOL_NAME] : []),
+      // A hook's owner-tool grant still refuses the owner-only tools it does not name.
+      ...ingressOwnerToolDeny,
     ],
   };
 }
