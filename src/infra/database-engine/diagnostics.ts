@@ -1,6 +1,8 @@
 import fs from "node:fs";
 import type { DatabaseSync } from "node:sqlite";
 import { asOptionalRecord } from "@openclaw/normalization-core/record-coerce";
+import { assertOpenClawStateDatabaseForMaintenance } from "../../state/openclaw-state-db-maintenance.js";
+import { readStateSchemaContentVersion } from "../../state/openclaw-state-db-schema-version.js";
 import { hasErrnoCode } from "../errno.js";
 import { parseGatewayLockPayload } from "../gateway-lock-payload.js";
 import {
@@ -75,8 +77,17 @@ function inspectSqlite(
   const facts = getAdmittedSqliteSchemaFacts(db)!;
   result.connectivity = "local";
   result.extensions = [];
-  if (descriptor?.inspectSqliteSource) {
-    try {
+  let version = facts.userVersion;
+  try {
+    if (result.family === "state") {
+      // Unfenced updaters retain an older header after content migration. Health
+      // admission uses the state owner; porting still requires a published header.
+      version = readStateSchemaContentVersion(db);
+      assertOpenClawStateDatabaseForMaintenance(db, {
+        pathname: "shared-state diagnostic snapshot",
+      });
+      observeVersion(result, version);
+    } else if (descriptor?.inspectSqliteSource) {
       const source = descriptor.inspectSqliteSource(db);
       observeVersion(result, source.version);
       if (source.migrationRequired) {
@@ -84,16 +95,16 @@ function inspectSqlite(
         result.issues.push("A store schema migration is pending.");
         result.nextSteps.push("Run openclaw doctor --fix before porting this store.");
       }
-    } catch {
-      // Core state and agent stores keep their authoritative version in user_version.
-      if (result.family === "state" || result.family === "agent") {
-        observeVersion(result, facts.userVersion);
-      }
-      result.issues.push("The SQLite schema could not be admitted by its store owner.");
-      result.nextSteps.push("Run openclaw doctor --fix with the matching OpenClaw version.");
+    } else if (result.schema.versioning === "versioned") {
+      observeVersion(result, version);
     }
-  } else if (result.schema.versioning === "versioned") {
-    observeVersion(result, facts.userVersion);
+  } catch {
+    // Preserve decoded state content, or the physical header if decoding failed.
+    if (result.family === "state" || result.family === "agent") {
+      observeVersion(result, version);
+    }
+    result.issues.push("The SQLite schema could not be admitted by its store owner.");
+    result.nextSteps.push("Run openclaw doctor --fix with the matching OpenClaw version.");
   }
   if (result.family === "state") {
     try {
