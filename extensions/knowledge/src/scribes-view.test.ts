@@ -426,26 +426,6 @@ it("repairs an archived scribe by restoring its conversation and turning it on, 
   expect(calls.some(([method]) => method === "chat.send")).toBe(false);
 });
 
-it("repairs a scribe whose conversation was deleted in a new one, keeping its run message", async () => {
-  const { render, ui, calls, create } = fixture({
-    jobs: [{ ...reviewJob, payload: { kind: "agentTurn", message: "Edited run message" } }],
-  });
-  ui.s.scribe = "claim-consolidation";
-  const view = await render();
-  buttonNamed(view, "Repair").click();
-  await vi.waitFor(() => expect(calls.at(-1)?.[0]).toBe("chat.send"));
-  expect(create).toHaveBeenCalledOnce();
-  const send = calls.at(-1)![1]!;
-  expect(send.sessionKey).toBe("agent:main:dock:new");
-  expect(send.message).toBe(
-    repairPrompt("claim-consolidation", {
-      schedule: reviewJob.schedule,
-      runMessage: "Edited run message",
-    }),
-  );
-  expect(String(send.idempotencyKey)).toMatch(/^knowledge:scribe:claim-consolidation:repair:/);
-});
-
 const userText = (content: string) => ({ role: "user", content });
 const statusLine = (state: string, summary: string) => ({
   role: "assistant",

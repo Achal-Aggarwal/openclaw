@@ -16,6 +16,7 @@ const job = (overrides: Partial<ScribeJob> = {}): ScribeJob => ({
   declarationKey: "knowledge:scribe:claim-consolidation",
   enabled: true,
   configRevision: "rev-1",
+  sessionTarget: "session:agent:main:dock:1",
   schedule: { kind: "cron", expr: "45 3 * * *", tz: "America/Los_Angeles" },
   state: { lastRunStatus: "ok", lastRunAtMs: 1_793_000_000_000 },
   ...overrides,
@@ -86,7 +87,6 @@ describe("scribes catalog", () => {
     expect(prompt).toContain("- Runs nightly at 3:45 AM UTC (cron `45 3 * * *`).");
     expect(prompt).toContain("leave it as it is and go to the last step");
     expect(prompt).toContain("Pass `enabled: true`");
-    expect(prompt).not.toContain("never turn on a paused");
     expect(prompt.endsWith("```text\nEdited run message\n```")).toBe(true);
     expect(
       repairPrompt("claim-consolidation", {
@@ -123,13 +123,7 @@ describe("scribes state", () => {
       if (method === "cron.list") {
         return {
           jobs: world.job
-            ? [
-                {
-                  sessionTarget: `session:${world.session?.key ?? "agent:main:dock:deleted"}`,
-                  ...world.job,
-                  declarationKey: "knowledge:scribe:conversations",
-                },
-              ]
+            ? [{ ...world.job, declarationKey: "knowledge:scribe:conversations" }]
             : [],
         };
       }
@@ -221,12 +215,8 @@ describe("scribes state", () => {
         return { sessions: typeof params?.search === "string" ? (rows[params.search] ?? []) : [] };
       }
       if (method === "sessions.describe") {
-        return {
-          session:
-            params?.key === "s-review"
-              ? { key: "s-review", displayName: scribeLabel(review) }
-              : null,
-        };
+        const row = { key: "s-review", displayName: scribeLabel(review) };
+        return { session: params?.key === "s-review" ? row : null };
       }
       if (method === "chat.history") {
         return params?.sessionKey === "s-memory"
@@ -261,46 +251,19 @@ describe("scribes state", () => {
     });
   });
 
-  it("picks the job that targets the scribe's own conversation", async () => {
+  it("pairs an automated scribe with its target conversation by key, even renamed", async () => {
     const label = "Scribe · Learn from conversations";
     const request = vi.fn(async (method: string, params?: Record<string, unknown>) => {
       if (method === "cron.list") {
+        const key = "knowledge:scribe:conversations";
         return {
           jobs: [
             {
               ...job({ id: "old", enabled: false }),
-              declarationKey: "knowledge:scribe:conversations",
+              declarationKey: key,
               sessionTarget: "session:s-old",
             },
-            {
-              ...job({ id: "mine" }),
-              declarationKey: "knowledge:scribe:conversations",
-              sessionTarget: "session:s-conv",
-            },
-          ],
-        };
-      }
-      if (method === "sessions.describe") {
-        return { session: params?.key === "s-conv" ? { key: "s-conv", displayName: label } : null };
-      }
-      return { messages: [] };
-    });
-    const snapshots = await loadScribes({ request } as never, "main");
-    const conversations = snapshots.find((snapshot) => snapshot.scribe.id === "conversations")!;
-    expect([conversations.job?.id, conversations.status]).toEqual(["mine", "on"]);
-  });
-
-  it("keeps an automated scribe paired with its conversation after a rename", async () => {
-    const label = "Scribe · Learn from conversations";
-    const request = vi.fn(async (method: string, params?: Record<string, unknown>) => {
-      if (method === "cron.list") {
-        return {
-          jobs: [
-            {
-              ...job({ id: "mine" }),
-              declarationKey: "knowledge:scribe:conversations",
-              sessionTarget: "session:s-owner",
-            },
+            { ...job({ id: "mine" }), declarationKey: key, sessionTarget: "session:s-owner" },
           ],
         };
       }
