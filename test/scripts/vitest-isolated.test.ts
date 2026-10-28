@@ -1,6 +1,8 @@
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { resolveTestRuntime } from "../../scripts/lib/test-runtime.mts";
 import {
   copyIsolatedVitestSource as copySource,
   prepareIsolatedVitestDependencies as prepareDependencies,
@@ -80,13 +82,48 @@ function containerInspection(status = "exited", exit = 0, owner = name) {
 }
 
 describe("isolated Vitest admission", () => {
+  it("executes the selected test runtime and its real child", () => {
+    const runtime = process.versions.bun ? "bun" : "node";
+    expect(runtime).toBe(resolveTestRuntime(process.env));
+    const child = spawnSync(
+      process.execPath,
+      ["-e", "console.log(JSON.stringify({bun:process.versions.bun??null,exe:process.execPath}))"],
+      {
+        encoding: "utf8",
+        env: { PATH: process.env.PATH },
+      },
+    );
+    expect(child.status).toBe(0);
+    expect(JSON.parse(child.stdout)).toEqual({
+      bun: process.versions.bun ?? null,
+      exe: process.execPath,
+    });
+    if (process.env.container === "podman") {
+      expect(process.execPath).toBe("/opt/openclaw-vitest/" + runtime);
+      // sysfs also contains control files such as bonding_masters, not interfaces.
+      const interfaces = fs
+        .readdirSync("/sys/class/net", { withFileTypes: true })
+        .filter((entry) => entry.isSymbolicLink())
+        .map((entry) => entry.name);
+      expect(interfaces).toEqual(["lo"]);
+      console.log(
+        JSON.stringify({
+          runtime,
+          executable: process.execPath,
+          bun: process.versions.bun,
+          interfaces,
+          childExit: child.status,
+        }),
+      );
+    }
+  });
   it("dispatches the real wrapper before file checks, prerequisites or project delegation", async () => {
     const run = vi.spyOn(isolatedVitest, "runIsolatedVitest").mockResolvedValue(7);
     const previousExit = process.exitCode;
     const env = { PATH: "/prepared/tools" };
     try {
       await runVitest(vi.fn(), ["--isolated-image", image, "run", file], env);
-      expect(run).toHaveBeenCalledWith(expect.any(String), image, ["run", file], env);
+      expect(run).toHaveBeenCalledWith(expect.any(String), image, ["run", file], env, "node");
       expect(process.exitCode).toBe(7);
     } finally {
       process.exitCode = previousExit;
@@ -98,11 +135,25 @@ describe("isolated Vitest admission", () => {
   type ParseCase = [string[], ReturnType<typeof parseArgs> | string];
   const repoImage = `repo@sha256:${image}`;
   it.each([
-    [[selector, image, ...originalArgs], { image, args: originalArgs }],
-    [["run", `${selector}=${repoImage}`, file], { image: repoImage, args: ["run", file] }],
+    [[selector, image, ...originalArgs], { image, args: originalArgs, runtime: "node" }],
+    [
+      [selector, image, "--isolated-runtime", "bun", ...originalArgs],
+      { image, args: originalArgs, runtime: "bun" },
+    ],
+    [
+      [selector, image, "--isolated-runtime=node", ...originalArgs],
+      { image, args: originalArgs, runtime: "node" },
+    ],
+    [["--isolated-runtime", "bun", ...originalArgs], "requires --isolated-image"],
+    [[selector, image, "--isolated-runtime", "deno", ...originalArgs], "node or bun"],
+    [[selector, image, "--isolated-runtime=bun", "--isolated-runtime=node"], "once"],
+    [
+      ["run", `${selector}=${repoImage}`, file],
+      { image: repoImage, args: ["run", file], runtime: "node" },
+    ],
     [originalArgs, null],
     [["run", "--", selector, image], null],
-    [["run", "-t", `${selector}=${image}`], { image, args: ["run", "-t"] }],
+    [["run", "-t", `${selector}=${image}`], { image, args: ["run", "-t"], runtime: "node" }],
     ...["repo:tag", ""].map((value): ParseCase => [
       [selector, value, "run", file],
       "full local sha256",
@@ -172,6 +223,27 @@ describe("isolated Vitest admission", () => {
     expect(() => createArgs({ ...createOptions(), snapshot: "/owned,escape" })).toThrow(
       "bind path",
     );
+  });
+  it("admits only the fixed Bun binding and exact runtime environment", () => {
+    const args = createArgs({ ...createOptions(), bun: "/owned/bun" });
+    expect(args).toContain("--entrypoint=/opt/openclaw-vitest/node");
+    expect(args).toContain("type=bind,src=/owned/bun,dst=/opt/openclaw-vitest/bun,ro");
+    expect(args).toContain("OPENCLAW_VITEST_RUNTIME=bun");
+    expect(args).toContain("OPENCLAW_BUN_PATH=/opt/openclaw-vitest/bun");
+    const value = containerInspection();
+    value.Config.Env.push(
+      "OPENCLAW_VITEST_RUNTIME=bun",
+      "OPENCLAW_BUN_PATH=/opt/openclaw-vitest/bun",
+    );
+    value.Mounts.push({ ...bindMount("/owned/bun", "/opt/openclaw-vitest/bun"), RW: false });
+    const mounts = ["/owned/source:/workspace:rw", "/owned/bun:/opt/openclaw-vitest/bun:ro"];
+    expect(() => verifyContainer(value, name, mounts, "bun")).not.toThrow();
+    expect(() => verifyContainer(value, name, mounts)).toThrow("environment");
+    value.Mounts[1]!.RW = true;
+    expect(() => verifyContainer(value, name, mounts, "bun")).toThrow("mounts");
+    value.Mounts[1]!.RW = false;
+    value.Config.Env.push("OPENCLAW_BUN_PATH=/host/other-bun");
+    expect(() => verifyContainer(value, name, mounts, "bun")).toThrow("environment");
   });
   it.each([
     ["test/vitest/vitest.unit-fast.config.ts", "src/plugins/source-checkout-runtime.test.ts"],

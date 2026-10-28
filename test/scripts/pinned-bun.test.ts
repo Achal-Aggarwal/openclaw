@@ -26,7 +26,11 @@ function fixture() {
   const directory = tempDirs.make("pinned-bun-");
   const repoRoot = path.join(directory, "repo");
   fs.mkdirSync(path.join(repoRoot, "scripts/lib"), { recursive: true });
-  const manifest = { tag: "test-pin", artifacts: { "linux-x64": { executableSha256: digest } } };
+  const manifest = {
+    tag: "test-pin",
+    revision: "test-revision",
+    artifacts: { "linux-x64": { executableSha256: digest } },
+  };
   fs.writeFileSync(path.join(repoRoot, "scripts/lib/openclaw-bun.json"), JSON.stringify(manifest));
   const fsImpl = { ...fs };
   const stage = vi.fn((destination: string) => {
@@ -40,7 +44,7 @@ function fixture() {
   const resolve = (extraEnv: NodeJS.ProcessEnv = {}, extraDeps: Partial<typeof deps> = {}) =>
     resolvePinnedBun({ ...env, ...extraEnv }, { ...deps, ...extraDeps });
   const readStamp = () => JSON.parse(fs.readFileSync(stamp, "utf8"));
-  return { deps, resolve, command, stamp, directory, readStamp, stage, stderr };
+  return { deps, env, resolve, command, stamp, directory, readStamp, stage, stderr };
 }
 
 it("uses an explicit executable in CI without staging", () => {
@@ -185,3 +189,57 @@ it("identifies an unavailable explicit override and preserves local override beh
   expect(resolveVitestTestCommand(["scripts/prepare.mts"], ciEnv).command).toBe(process.execPath);
   expect(execute).not.toHaveBeenCalled();
 });
+
+it.each(["valid", "missing", "corrupt", "symlink", "revision"] as const)(
+  "offline admission verifies %s bytes without staging or cache writes",
+  (kind) => {
+    const f = fixture();
+    f.resolve();
+    f.stage.mockClear();
+    const execute = vi
+      .spyOn(childProcess, "execFileSync")
+      .mockReturnValue(kind === "revision" ? "wrong-revision\n" : "test-revision\n");
+    if (kind === "missing") {
+      fs.unlinkSync(f.command);
+    }
+    if (kind === "corrupt") {
+      fs.writeFileSync(f.command, "x".repeat(Buffer.byteLength(bytes)));
+      // A matching cache stamp must not bypass exact-byte offline admission.
+      fs.writeFileSync(
+        f.stamp,
+        JSON.stringify({ ...f.readStamp(), mtimeMs: fs.statSync(f.command).mtimeMs }),
+      );
+    }
+    if (kind === "symlink") {
+      fs.renameSync(f.command, f.command + "-real");
+      fs.symlinkSync(f.command + "-real", f.command);
+    }
+    const stamp = fs.readFileSync(f.stamp, "utf8");
+    const admit = () => requirePinnedBun(f.env, { ...f.deps, preparedOnly: true });
+    if (kind === "valid") {
+      expect(admit()).toBe(f.command);
+    } else {
+      expect(admit).toThrow(
+        kind === "revision" ? "expected test-revision" : /missing or corrupt|physical executable/,
+      );
+    }
+    expect(f.stage).not.toHaveBeenCalled();
+    expect(fs.readFileSync(f.stamp, "utf8")).toBe(stamp);
+    if (["missing", "corrupt", "symlink"].includes(kind)) {
+      expect(execute).not.toHaveBeenCalled();
+    }
+    // The container's explicit, readonly binding receives the same verification.
+    if (kind !== "missing") {
+      const bound = () =>
+        requirePinnedBun(
+          { ...f.env, CI: "1", OPENCLAW_BUN_PATH: f.command },
+          { ...f.deps, preparedOnly: true },
+        );
+      if (kind === "valid") {
+        expect(bound()).toBe(f.command);
+      } else {
+        expect(bound).toThrow(/pinned SHA-256|expected test-revision/);
+      }
+    }
+  },
+);
