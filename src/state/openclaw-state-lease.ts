@@ -1,6 +1,7 @@
 // Host-owned SQLite leases serialize trusted work across processes.
 import { AsyncLocalStorage } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
+import { expectDefined } from "@openclaw/normalization-core/expect";
 import { materializeErrorStack } from "../infra/error-graph-internal.js";
 import { isPostgresSqlConnection, type EngineConnection } from "../infra/sql-connection.js";
 import { isSqliteLockError } from "../infra/sqlite-error-diagnostics.js";
@@ -141,6 +142,7 @@ async function runStateLeaseOwnerInScope<T>(
   let workerOperations: ReturnType<typeof createOpenClawStateLeaseWorkerOwner> | undefined;
   let assertAcquisitionCurrent: (() => void) | undefined;
   let confirmedExpiresAt: number | undefined;
+  let acquisitionCommitted = false;
   let nativeLeaseSource:
     | { context: OpenClawStateWorkerContext; identity: DatabasePathIdentity }
     | undefined;
@@ -255,7 +257,6 @@ async function runStateLeaseOwnerInScope<T>(
     );
     await execution?.settle();
   };
-  workerStorage?.assertCurrent();
   const cleanup = createOpenClawStateLeaseCleanup({
     maintenanceScope: maintenance,
     context: invocation.kind === "worker" ? invocation.context : undefined,
@@ -289,10 +290,7 @@ async function runStateLeaseOwnerInScope<T>(
       }
       workerHeartbeat = undefined;
       heartbeatStopped = true;
-      if (
-        confirmedExpiresAt !== undefined &&
-        (!workerOperations || workerOperations.canRelease())
-      ) {
+      if (acquisitionCommitted && (!workerOperations || workerOperations.canRelease())) {
         await releaseOwned();
       }
       await workerOperations?.settle();
@@ -300,6 +298,32 @@ async function runStateLeaseOwnerInScope<T>(
       workerOperations?.close();
     },
   });
+  const createNativeWorkerOperations = () =>
+    createOpenClawStateLeaseWorkerOwner({
+      identity: { scope: identity.scope, key: identity.key, owner: identity.owner },
+      databasePath: resolveLeaseDatabasePath(validated.database),
+      sourceContext: nativeLeaseSource?.context,
+      sourceIdentity: nativeLeaseSource?.identity,
+      assertCurrent(purpose) {
+        if (purpose === "release") {
+          if (disposed || phase !== "draining" || !heartbeatStopped) {
+            throw new Error("State lease cleanup has not joined its heartbeat");
+          }
+          return;
+        }
+        assertWorkerCurrent();
+        if (validated.database.schemaPolicy === "existing") {
+          throw new Error("This lease mode does not support worker writes");
+        }
+        if (validated.heartbeat === "worker") {
+          if (!workerHeartbeat) {
+            abortLost();
+            throw leaseLost.signal.reason;
+          }
+          workerHeartbeat.assertRunning();
+        }
+      },
+    });
   const run = async (): Promise<T> => {
     try {
       await acquireOpenClawStateLease({
@@ -314,15 +338,16 @@ async function runStateLeaseOwnerInScope<T>(
           validated.database.schemaPolicy !== "existing"
             ? () => prepareLeaseDatabase(validated.database)
             : undefined,
-        acquire(assertCurrent, signal) {
+        async acquire(assertCurrent, signal) {
           assertAcquisitionCurrent = assertCurrent;
-          return workerStorage && workerOperations
+          const result = await (workerStorage && workerOperations
             ? workerStorage.acquire(
                 workerOperations,
                 validated.leaseMs,
                 validated.operationLabel,
                 signal,
                 expiryObservation !== undefined,
+                validated.waitMs > 0,
               )
             : acquireLease(
                 validated.database,
@@ -331,13 +356,19 @@ async function runStateLeaseOwnerInScope<T>(
                   operationLabel: validated.operationLabel,
                   leaseMs: validated.leaseMs,
                   processBound: validated.processBound,
+                  wait: validated.waitMs > 0,
                 },
                 assertCurrent,
                 signal,
                 (context, sourceIdentity) => {
+                  acquisitionCommitted = true;
                   nativeLeaseSource = { context, identity: sourceIdentity };
+                  // A queued acquisition owns cleanup before it owns a grant.
+                  workerOperations ??= createNativeWorkerOperations();
                 },
-              );
+              ));
+          acquisitionCommitted = true;
+          return result;
         },
         acquired(expiresAt) {
           confirmedExpiresAt = expiresAt;
@@ -355,33 +386,7 @@ async function runStateLeaseOwnerInScope<T>(
     }
     const acquiredAt = confirmedExpiresAt - validated.leaseMs;
     phase = "owned";
-    // Startup refusal still owns release of the acquired row. Bind callback authority only after startup.
-    workerOperations ??= createOpenClawStateLeaseWorkerOwner({
-      identity: { scope: identity.scope, key: identity.key, owner: identity.owner },
-      databasePath: resolveLeaseDatabasePath(validated.database),
-      sourceContext: nativeLeaseSource?.context,
-      sourceIdentity: nativeLeaseSource?.identity,
-      assertCurrent: (purpose) => {
-        if (purpose === "release") {
-          if (disposed || phase !== "draining" || !heartbeatStopped) {
-            throw new Error("State lease cleanup has not joined its heartbeat");
-          }
-          return;
-        }
-        assertWorkerCurrent();
-        if (validated.database.schemaPolicy === "existing") {
-          throw new Error("This lease mode does not support worker writes");
-        }
-        if (validated.heartbeat === "worker") {
-          if (!workerHeartbeat) {
-            abortLost();
-            throw leaseLost.signal.reason;
-          }
-          // The worker transaction rechecks durable expiry; host grants only check liveness.
-          workerHeartbeat.assertRunning();
-        }
-      },
-    });
+    workerOperations ??= createNativeWorkerOperations();
     // Legacy native callers release synchronously on process.exit(). Async callers
     // must unwind their scope before exiting so native worker teardown can join.
     unregisterProcessExitCleanup = registerProcessExitLeaseCleanup(() => {
@@ -623,11 +628,7 @@ async function runStateLeaseOwnerInScope<T>(
             ? {
                 assertOwnedAsync: async () => {
                   assertActive();
-                  const nativeHeartbeat = workerHeartbeat;
-                  if (!nativeHeartbeat) {
-                    abortLost();
-                    throw leaseLost.signal.reason;
-                  }
+                  const nativeHeartbeat = expectDefined(workerHeartbeat, "state lease heartbeat");
                   const expiresAt = await nativeHeartbeat.verify();
                   assertActive();
                   nativeHeartbeat.assertRunning();
