@@ -13,54 +13,6 @@ export type PersonalSessionGroupDialogOptions = {
   submit: (value: Pick<PersonalSessionGroup, "label" | "sessionKeys">) => string | null;
 };
 
-/** Decorative preview: a session row repeated in your own section. */
-function SectionIllustration() {
-  const bar = "fill:color-mix(in srgb, var(--text) 15%, transparent)";
-  return (
-    <svg viewBox="0 0 66 54" width="66" height="54" aria-hidden="true" style="flex:none">
-      <g transform="rotate(-7 23 19)" opacity="0.7">
-        <rect
-          x="1.5"
-          y="2.5"
-          width="44"
-          height="34"
-          rx="9"
-          style="fill:var(--card);stroke:var(--border)"
-        />
-        <rect x="9" y="11" width="29" height="4" rx="2" style={bar} />
-        <rect x="9" y="19" width="21" height="4" rx="2" style={bar} />
-        <rect x="9" y="27" width="25" height="4" rx="2" style={bar} />
-      </g>
-      <rect
-        x="20.5"
-        y="16.5"
-        width="44"
-        height="36"
-        rx="9"
-        style="fill:var(--card);stroke:var(--border-strong, var(--border))"
-      />
-      <g
-        transform="translate(28 23) scale(0.42)"
-        style="fill:none;stroke:var(--muted)"
-        stroke-width="2.4"
-      >
-        <path d="m12 3 10 5-10 5L2 8Z" />
-        <path d="m2 12 10 5 10-5M2 16l10 5 10-5" />
-      </g>
-      <rect x="40" y="27" width="18" height="4" rx="2" style={bar} />
-      <rect
-        x="28"
-        y="36"
-        width="27"
-        height="4"
-        rx="2"
-        style="fill:color-mix(in srgb, var(--accent) 45%, transparent)"
-      />
-      <rect x="28" y="44" width="31" height="4" rx="2" style={bar} />
-    </svg>
-  );
-}
-
 export function PersonalSessionGroupDialogView(props: {
   options: PersonalSessionGroupDialogOptions;
   finish(): void;
@@ -120,16 +72,17 @@ export function PersonalSessionGroupDialogView(props: {
           }
         }}
       >
-        <header class="personal-section-dialog__hero">
-          <SectionIllustration />
-          <div class="exec-approval-title">{title()}</div>
-          <span
-            class="chip personal-section-dialog__chip"
-            title={t("sessionsView.personalGroupHint")}
-          >
-            <Icon name="eye" />
-            {t("sessionsView.personalGroupChip")}
-          </span>
+        <header class="personal-section-dialog__header">
+          <div class="personal-section-dialog__title-row">
+            <div class="exec-approval-title">{title()}</div>
+            <span class="chip personal-section-dialog__chip">
+              {t("sessionsView.personalGroupChip")}
+            </span>
+          </div>
+          {/* Sections reference sessions; they are not shared groups and never move a session. */}
+          <p class="muted personal-section-dialog__description">
+            {t("sessionsView.personalGroupHint")}
+          </p>
         </header>
         <div class="personal-section-dialog__body">
           <label class="field">

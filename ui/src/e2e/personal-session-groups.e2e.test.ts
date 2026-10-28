@@ -120,7 +120,15 @@ suite.define(() => {
       if (!before) {
         expect((await dialog.boundingBox())?.height).toBeLessThanOrEqual(600);
         expect(await dialog.getByRole("searchbox").count()).toBe(0);
-        expect(await dialog.getByText("Just your sidebar", { exact: true }).isVisible()).toBe(true);
+        expect(await dialog.getByText("Personal", { exact: true }).isVisible()).toBe(true);
+        // The dialog says plainly that a section is not a shared group.
+        expect(
+          await dialog
+            .getByText("Your own shortcut list. Adding a session won't move it out of its group.", {
+              exact: true,
+            })
+            .isVisible(),
+        ).toBe(true);
         const list = dialog.getByRole("group", { name: "Sessions", exact: true });
         const listHeight = (await list.boundingBox())?.height;
         await dialog.getByRole("button", { name: "Search sessions", exact: true }).click();

@@ -5,30 +5,24 @@
   overflow: hidden;
 }
 
-.personal-section-dialog__hero {
+.personal-section-dialog__header {
+  padding: 20px 20px 0;
+}
+
+.personal-section-dialog__title-row {
   display: flex;
   align-items: center;
-  gap: 16px;
-  padding: 16px 20px;
-  border-bottom: 1px solid var(--border);
-  background: radial-gradient(
-    120% 160% at 0 0,
-    color-mix(in srgb, var(--accent) 5%, transparent),
-    transparent 62%
-  );
+  gap: 12px;
 }
 
 .personal-section-dialog__chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
   margin-inline-start: auto;
   padding: 2px 9px;
 }
 
-.personal-section-dialog__chip svg {
-  width: 12px;
-  height: 12px;
+.personal-section-dialog__description {
+  margin: 4px 0 0;
+  font-size: 13px;
 }
 
 .personal-section-dialog__body {
@@ -68,4 +62,6 @@
   gap: 10px;
   padding: 10px 12px;
   overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
 }
