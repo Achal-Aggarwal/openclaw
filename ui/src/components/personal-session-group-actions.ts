@@ -1,13 +1,20 @@
 import type { GatewaySessionRow } from "../api/types.ts";
 import type { ApplicationContext } from "../app/context.ts";
+import { gatewayPresentationScope } from "../app/gateway-presentation-scope.ts";
 import { prefValuesEqual } from "../app/server-prefs-state.ts";
 import { t } from "../i18n/index.ts";
+import { projectsForGateway } from "../lib/projects.ts";
 import { resolveSessionDisplayName } from "../lib/session-display.ts";
+import type { SessionOwnerOption } from "../lib/session-owner.ts";
 import {
   normalizePersonalSessionGroups,
   type PersonalSessionGroup,
 } from "../lib/sessions/personal-groups.ts";
 import { isPinnableUiSessionRow, parseAgentSessionKey } from "../lib/sessions/session-key.ts";
+import {
+  buildSessionListParams,
+  requestSessionListParams,
+} from "../lib/sessions/session-requests.ts";
 import { showToast } from "../lib/toast.ts";
 import { showPersonalSessionGroupDialog } from "./personal-session-group-dialog.tsx";
 
@@ -16,16 +23,49 @@ export type PersonalSessionGroupCandidate = {
   label: string;
   pinnable: boolean;
   archived?: boolean;
+  /** Present only when someone other than the viewer owns the session. */
+  ownedBy?: Pick<SessionOwnerOption, "id" | "label" | "avatarUrl" | "identity">;
 };
+
+/** Where the section editor draws its session choices from. */
+export type PersonalSessionGroupScope =
+  | { kind: "mine" | "involving" | "all" }
+  | { kind: "project"; projectId: string };
+
+export type PersonalSessionGroupScopeChoices = {
+  /** Owner-relative scopes need a signed-in profile. */
+  personal: boolean;
+  projects: readonly { id: string; label: string }[];
+};
+
+export type PersonalSessionGroupPage = {
+  sessions: readonly PersonalSessionGroupCandidate[];
+  hasMore: boolean;
+};
+
+const SECTION_CANDIDATE_LIMIT = 100;
 
 export function personalSessionGroupCandidate(
   row: GatewaySessionRow,
+  viewerId?: string,
 ): PersonalSessionGroupCandidate {
+  const actor = row.owner?.actor;
+  const ownerId = actor?.identity?.id ?? actor?.id;
   return {
     key: row.key,
     label: resolveSessionDisplayName(row.key, row),
     pinnable: isPinnableUiSessionRow(row),
     archived: row.archived,
+    ...(actor && ownerId && ownerId !== viewerId
+      ? {
+          ownedBy: {
+            id: ownerId,
+            label: actor.label,
+            avatarUrl: actor.avatarUrl,
+            identity: actor.identity,
+          },
+        }
+      : {}),
   };
 }
 
@@ -33,7 +73,9 @@ export function personalSessionGroupCandidates(
   context: ApplicationContext,
 ): PersonalSessionGroupCandidate[] {
   return context.sessions.canonicalListReady
-    ? (context.sessions.state.result?.sessions ?? []).map(personalSessionGroupCandidate)
+    ? (context.sessions.state.result?.sessions ?? []).map((row) =>
+        personalSessionGroupCandidate(row),
+      )
     : [];
 }
 
@@ -47,6 +89,7 @@ export function createPersonalSessionGroupActions(
   lifetimeSignal?: AbortSignal,
 ) {
   const groups = () => context.navigation.snapshot.personalSessionGroups ?? [];
+  const viewerId = () => gatewayPresentationScope(context.gateway).displayUser?.id;
   const write = (next: readonly PersonalSessionGroup[]): string | null => {
     // The profile preference has a byte limit. Never silently truncate an authored layout.
     if (!prefValuesEqual(normalizePersonalSessionGroups(next), next)) {
@@ -139,16 +182,64 @@ export function createPersonalSessionGroupActions(
       if (id && !group) {
         return;
       }
-      // Existing members outside the loaded list stay visible so they can be removed.
-      const listed = new Set(available.map((row) => row.key));
-      const members = (group?.sessionKeys ?? []).flatMap((key) => {
-        const row = listed.has(key) ? undefined : resolve(key);
-        return row?.pinnable && !row.archived ? [row] : [];
-      });
+      // Rows returned by the scoped query join the loaded list as eligible members.
+      const fetched = new Map<string, PersonalSessionGroupCandidate>();
+      const known = new Map(available.map((row) => [row.key, row]));
+      for (const key of group?.sessionKeys ?? []) {
+        const row = known.has(key) ? undefined : resolve(key);
+        if (row?.pinnable && !row.archived) {
+          known.set(key, row);
+        }
+      }
+      const client = context.gateway.snapshot.client;
+      const viewer = viewerId();
+      const projects = projectsForGateway(context.gateway);
+      await projects.refresh();
+      const load = async (
+        scope: PersonalSessionGroupScope,
+        search: string,
+      ): Promise<PersonalSessionGroupPage | null> => {
+        if (!client || !current()) {
+          return null;
+        }
+        // The Gateway applies the viewer's access to every scope; the editor only narrows it.
+        const result = await requestSessionListParams(
+          client,
+          {
+            ...buildSessionListParams({
+              limit: SECTION_CANDIDATE_LIMIT,
+              rowMode: "sidebar",
+              search,
+              ...(scope.kind === "mine" && viewer ? { ownerId: viewer } : {}),
+              ...(scope.kind === "involving" ? { involvingMe: true } : {}),
+            }),
+            ...(scope.kind === "project" ? { projectId: scope.projectId } : {}),
+          },
+          current,
+        );
+        if (!result) {
+          return null;
+        }
+        const sessions = result.sessions
+          .map((row) => personalSessionGroupCandidate(row, viewer))
+          .filter((row) => row.pinnable && !row.archived);
+        for (const row of sessions) {
+          fetched.set(row.key, row);
+        }
+        return { sessions, hasMore: result.hasMore === true };
+      };
       await showPersonalSessionGroupDialog({
         group,
-        candidates: [...members, ...available],
+        known: [...known.values()],
         selectedKey,
+        scopes: {
+          personal: Boolean(viewer),
+          projects: (projects.snapshot.result?.projects ?? []).map((project) => ({
+            id: project.id,
+            label: project.displayName,
+          })),
+        },
+        load,
         signal,
         submit: (value) => {
           const saved = id ? groups().find((item) => item.id === id) : undefined;
@@ -163,7 +254,9 @@ export function createPersonalSessionGroupActions(
           const next = {
             ...value,
             id: id ?? crypto.randomUUID(),
-            sessionKeys: value.sessionKeys.filter((key) => previousKeys.has(key) || eligible(key)),
+            sessionKeys: value.sessionKeys.filter(
+              (key) => previousKeys.has(key) || fetched.has(key) || eligible(key),
+            ),
           };
           return write(
             id ? groups().map((item) => (item.id === id ? next : item)) : [...groups(), next],

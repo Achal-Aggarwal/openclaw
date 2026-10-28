@@ -202,6 +202,7 @@ suite.define(() => {
                 .click();
               const dialog = page.getByRole("dialog", { name: "New section", exact: true });
               await dialog.getByLabel("Section name", { exact: true }).fill(label);
+              await dialog.getByRole("button", { name: "Choose sessions", exact: true }).click();
               if (member) {
                 await dialog.getByRole("checkbox", { name: member, exact: true }).check();
               }
@@ -259,7 +260,10 @@ suite.define(() => {
             await expect.poll(order).toEqual(["Later", "Focus"]);
             await menu("Focus", "Edit section");
             const dialog = page.getByRole("dialog", { name: "Edit section", exact: true });
+            // Edits open on session choice; Change returns to the name.
+            await dialog.getByRole("button", { name: "Change", exact: true }).click();
             await dialog.getByLabel("Section name", { exact: true }).fill("This week");
+            await dialog.getByRole("button", { name: "Choose sessions", exact: true }).click();
             await dialog.getByRole("button", { name: "Save", exact: true }).click();
             await dialog.waitFor({ state: "hidden" });
             await page.reload();

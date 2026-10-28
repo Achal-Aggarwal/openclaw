@@ -356,9 +356,13 @@ icon; deliberately empty sections remain visible. Choose **New section** in
 **Add to section** menu to add it to an existing section or create one with that
 session selected. Only your sidebar changes. Sessions stay in their groups.
 
-**Edit section** renames a section and chooses its sessions; use the search button
-to filter the list. Sessions inside a section follow the sidebar's **Sort by**
-selection. Drag an existing session into a section to add it. Drag section headers
+Creating a section takes two steps. First name it and choose where its sessions
+come from: **My sessions**, **Involving me**, **All sessions** (including
+teammates'), or one project. Then pick sessions from that list; the search button
+searches every session you can access, not only those loaded in the sidebar, and
+teammates' sessions show their owner. **Edit section** opens on the session list;
+**Change** returns to the name and source. Sessions inside a section follow the
+sidebar's **Sort by** selection. Drag an existing session into a section to add it. Drag section headers
 to reorder them, or use **Move up** and **Move down** in the section menu.
 **Remove section** removes only that personal section; it never deletes sessions.
 Pins and shared groups are independent, and **Move to group** still changes shared
