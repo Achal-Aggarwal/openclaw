@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
+import { DatabaseSync, type SQLOutputValue } from "node:sqlite";
 import { afterEach, expect, it } from "vitest";
 import { useAutoCleanupTempDirTracker } from "../../test/helpers/temp-dir.js";
 import { readWorkerPreparation } from "../gateway/worker-environments/preparation-identity.schema.js";
@@ -10,6 +10,7 @@ import {
   stateV22Schema,
 } from "./openclaw-historical-imports.test-support.js";
 import { OPENCLAW_STATE_SCHEMA_VERSION } from "./openclaw-state-db-contract.js";
+import { ensureSecretStoreSchema } from "./openclaw-state-db-schema-additive.js";
 import {
   closeOpenClawStateDatabaseAsync,
   openOpenClawStateDatabase,
@@ -104,3 +105,42 @@ it("Doctor repairs an image snapshot even when a prior import advanced the versi
   expect(profile.historicalProfileSnapshotJson).toBe(original);
   expect(readWorkerPreparation(profile)).toEqual({ ...preparation, source: "empty" });
 });
+
+it.each(["automatic", "doctor-preparation"] as const)(
+  "%s retains historical image evidence alongside a present lazy-column gap",
+  async (mode) => {
+    const env = { OPENCLAW_STATE_DIR: dirs.make("historical-image-lazy-gap-") };
+    const pathname = path.join(env.OPENCLAW_STATE_DIR, "state", "openclaw.sqlite");
+    fs.mkdirSync(path.dirname(pathname), { recursive: true });
+    let before: Record<string, SQLOutputValue>;
+    {
+      using db = new DatabaseSync(pathname);
+      db.exec(stateV22Schema());
+      db.exec(
+        "PRAGMA user_version=22; INSERT INTO schema_meta(meta_key,role,schema_version,created_at,updated_at) VALUES ('primary','global',22,1,1);",
+      );
+      ensureSecretStoreSchema(db);
+      db.exec("ALTER TABLE secret_store_entries DROP COLUMN allowed_hosts");
+      seed(db, "retained");
+      before = db.prepare("SELECT * FROM worker_environments").get()!;
+    }
+    await withStateMigrationBackupForTest({ env }, async () => {
+      if (mode === "automatic") {
+        openOpenClawStateDatabase({ env });
+      } else {
+        expect((await prepareOpenClawStateDatabaseSchema({ env }, mode)).warnings).toEqual([]);
+      }
+      await closeOpenClawStateDatabaseAsync();
+      using db = new DatabaseSync(pathname, { readOnly: true });
+      const after = db.prepare("SELECT * FROM worker_environments").get()!;
+      const profile = JSON.parse(String(after.profile_snapshot_json));
+      expect(db.prepare("PRAGMA user_version").get()?.user_version).toBe(
+        OPENCLAW_STATE_SCHEMA_VERSION,
+      );
+      expect(after).toEqual({ ...before, profile_snapshot_json: expect.any(String) });
+      expect(profile.historicalProfileSnapshotJson).toBe(original);
+      expect(readWorkerPreparation(profile)).toEqual({ ...preparation, source: "empty" });
+      expect(db.prepare("PRAGMA foreign_key_check").all()).toEqual([]);
+    });
+  },
+);
