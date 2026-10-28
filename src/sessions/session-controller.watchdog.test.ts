@@ -691,14 +691,14 @@ function assessedRun(recoverStalledModelCall?: () => boolean) {
 
 describe("bounded pre-stop assessment", () => {
   it.each([
-    ["closed", "closed", "transport_closed"],
-    ["unknown", "unknown", "process_present"],
-    ["unsupported", "unknown", "status_unsupported"],
-    ["throw", "unknown", "failed"],
-    ["timeout", "unknown", "timeout"],
+    ["closed", { state: "closed", basis: "transport_closed" }],
+    ["unknown", { state: "unknown", basis: "process_present" }],
+    ["unsupported", { state: "unknown", basis: "status_unsupported" }],
+    ["throw", { state: "unknown", basis: "failed" }],
+    ["timeout", { state: "unknown", basis: "timeout" }],
   ] as const)(
     "rechecks silence once after %s without claiming unknown is dead",
-    async (outcome, state, basis) => {
+    async (outcome, result) => {
       const { operation, response, assess, capture, cancel, signal } = assessedRun();
       expect(await tickAt(operation.watchdog, abortMs)).toMatchObject({
         action: "observe",
@@ -715,7 +715,7 @@ describe("bounded pre-stop assessment", () => {
       } else if (outcome === "throw") {
         response.reject(new Error("synthetic private error"));
       } else {
-        response.resolve({ state, basis });
+        response.resolve(result);
       }
       await operation.ownerSettlement;
       expectStalled(operation, cancel);
@@ -725,8 +725,7 @@ describe("bounded pre-stop assessment", () => {
             ? "Reply backend closed before completing"
             : "Reply operation stalled",
         assessment: {
-          state,
-          basis,
+          ...result,
           durationMs: outcome === "timeout" ? 10_000 : 0,
         },
       });
