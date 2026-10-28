@@ -40,6 +40,7 @@ import {
   shouldPreferExplicitConfigApiKeyAuth,
 } from "../model-auth-provider-config.js";
 import { resolveModelProviderAuthConfig } from "../model-auth-provider-route.js";
+import { prepareNativeCommandAuth } from "../model-native-command-auth.js";
 import { resolveDefaultModelForAgent } from "../model-selection-config.js";
 import { resolveOpenAIModelRoutes, selectOpenAIModelRouteAuth } from "../openai-model-routes.js";
 import {
@@ -296,6 +297,10 @@ function resolvePreparedProviderEntryApiKeyProfileReference(
 export function prepareAgentRuntimeAuth(
   input: PrepareAgentRuntimeAuthPlanParams,
 ): PreparedAgentRuntimeAuth {
+  const native = prepareNativeCommandAuth(input);
+  if (native) {
+    return native;
+  }
   if (
     resolveProviderAuthScope({
       provider: input.provider,

@@ -13,6 +13,7 @@ import type {
 } from "../../plugin-sdk/provider-model-types.js";
 import { resolveProviderModelRoutes } from "../../plugins/provider-model-routes.js";
 import { hasAuthoredProviderRequestParams } from "../model-extra-params.js";
+import { resolveNativeCommandAuthRoute } from "../model-native-command-auth.js";
 import {
   resolveAgentRuntimePolicyAgentId,
   resolveModelRouteIntent,
@@ -47,13 +48,15 @@ export function resolveAgentHarnessPreparedAuthSupport(params: {
   }
   const source =
     params.source ??
-    (plan.forwardedAuthProfileId
-      ? "profile"
-      : plan.selectedAuthMode
-        ? "direct"
-        : plan.harnessAuthProvider
-          ? "harness"
-          : "none");
+    (plan.selectedAuthMode === "native-command"
+      ? "harness"
+      : plan.forwardedAuthProfileId
+        ? "profile"
+        : plan.selectedAuthMode
+          ? "direct"
+          : plan.harnessAuthProvider
+            ? "harness"
+            : "none");
   return {
     source,
     ...(plan.selectedAuthMode ? { mode: plan.selectedAuthMode } : {}),
@@ -205,7 +208,14 @@ export function buildAgentHarnessSupportContext(
           }),
           requestTransportOverrides: modelProviderFacts.requestTransportOverrides,
         });
+  const native = resolveNativeCommandAuthRoute({
+    ...params,
+    agentId,
+    api: modelProviderFacts.api,
+    baseUrl: modelProviderFacts.baseUrl,
+  });
   const modelProvider = {
+    ...(native?.supported ? { nativeCommandAuth: { runtimeId: native.runtimeId } } : {}),
     ...modelProviderFacts,
     runtimePolicy,
   };
