@@ -39,7 +39,7 @@ struct ChatSubagentWait: Equatable {
 
     /// Match ui/src/pages/chat/chat-subagent-wait.ts isPausedChild: a newer run reads as running.
     private static func isPaused(_ row: OpenClawChatSessionEntry) -> Bool {
-        row.subagentRunState == "paused" && row.status != "queued" && !Self.isRunning(row) &&
+        row.subagentRunState == "paused" && row.status != "queued" && !self.isRunning(row) &&
             row.hasActiveSubagentRun != true
     }
 
