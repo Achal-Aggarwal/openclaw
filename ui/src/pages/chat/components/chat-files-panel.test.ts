@@ -376,7 +376,7 @@ describe("workspace file tabs", () => {
     await vi.waitFor(() => expect(getFile).toHaveBeenCalledTimes(3));
   });
 
-  it.each(["managed", "unmanaged", "denied"] as const)(
+  it.each(["managed", "unmanaged", "repository", "denied"] as const)(
     "validates a document link before reusing a dirty target (%s)",
     async (scope) => {
       const toast = document.body.appendChild(document.createElement("openclaw-toast-host"));
@@ -386,15 +386,24 @@ describe("workspace file tabs", () => {
         "Disk evidence",
         true,
       );
+      const repository = scope === "repository";
+      if (repository) {
+        response.root = undefined;
+        response.sessionKey = "agent:main:repository-source";
+      }
+      const requestPath = (path: string) => (repository ? path : `/workspace/${path}`);
       response.source =
         scope === "unmanaged"
           ? undefined
           : {
               workspaceId: "report-workspace",
-              root: "/workspace",
-              fileRoot: "/workspace/nested-cwd",
+              root: response.root ?? null,
+              fileRoot: repository ? null : "/workspace/nested-cwd",
             };
-      await openSessionWorkspaceFile(state, { path: "/workspace/reports/evidence.md" });
+      await openSessionWorkspaceFile(state, {
+        path: requestPath("reports/evidence.md"),
+        sessionKey: response.sessionKey,
+      });
       const { preview: retained, content: original } = filePreview(state);
       setFileDraft(original, { content: "Unsaved evidence", expectedHash: "original" });
       onTestFinished(() => setFileDraft(original, null));
@@ -409,7 +418,8 @@ describe("workspace file tabs", () => {
         },
       });
       const sourcePreview = await openSessionWorkspaceFile(state, {
-        path: "/workspace/reports/report.md",
+        path: requestPath("reports/report.md"),
+        sessionKey: response.sessionKey,
       });
       if (!sourcePreview || sourcePreview.content.kind !== "file") {
         throw new Error("Report did not open");
@@ -424,8 +434,8 @@ describe("workspace file tabs", () => {
       );
       await vi.waitFor(() =>
         expect(getFile).toHaveBeenLastCalledWith(
-          state.sessionKey,
-          "/workspace/reports/evidence.md",
+          response.sessionKey,
+          repository ? "./reports/evidence.md" : "/workspace/reports/evidence.md",
           { agentId: "main" },
         ),
       );
@@ -441,9 +451,12 @@ describe("workspace file tabs", () => {
         getFile.mockRejectedValueOnce(new Error("Access denied"));
       } else {
         getFile.mockResolvedValueOnce(
-          scope === "managed"
-            ? { ...response, source: { ...response.source!, workspaceId: "replacement-workspace" } }
-            : { ...response, root: "/replacement" },
+          scope === "unmanaged"
+            ? { ...response, root: "/replacement" }
+            : {
+                ...response,
+                source: { ...response.source!, workspaceId: "replacement-workspace" },
+              },
         );
       }
       await openSessionWorkspaceFile(state, { path: "evidence.md", relativeTo: source }, "preview");

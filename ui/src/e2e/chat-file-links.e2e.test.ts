@@ -91,15 +91,11 @@ suite.define(() => {
                   mimeType: fileName === "README" ? "text/plain" : "text/markdown",
                 }),
                 root,
-                ...(root
-                  ? {
-                      source: {
-                        workspaceId: "report-workspace",
-                        root,
-                        fileRoot: "/workspace/nested-cwd",
-                      },
-                    }
-                  : {}),
+                source: {
+                  workspaceId: "report-workspace",
+                  root: root ?? null,
+                  fileRoot: root ? "/workspace/nested-cwd" : null,
+                },
               },
             })),
           },

@@ -80,16 +80,19 @@ import {
 
 async function loadSessionFileRoot(loaded: GatewaySessionEntryRead, messageEntryId?: string) {
   if (!loaded.entry?.sessionId || loaded.entry.repositoryWorkspaceId) {
-    const unavailable = {
-      source: undefined,
+    // Repository identity comes from the session owner; its files have no Gateway root.
+    const rootless = {
+      source: loaded.entry?.repositoryWorkspaceId
+        ? { workspaceId: loaded.entry.repositoryWorkspaceId, root: null, fileRoot: null }
+        : undefined,
       root: undefined,
       fileRoot: undefined,
       diffCwd: undefined,
       fileWorkspace: undefined,
     };
     return loaded.entry?.sessionId
-      ? { ...loaded, ...unavailable }
-      : { ...loaded, ...unavailable, agentId: undefined };
+      ? { ...loaded, ...rootless }
+      : { ...loaded, ...rootless, agentId: undefined };
   }
   const fileWorkspace = await prepareSessionFileWorkspace(
     loaded.cfg,
