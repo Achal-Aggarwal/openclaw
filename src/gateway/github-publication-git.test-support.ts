@@ -31,6 +31,24 @@ export function publicationPullRequestResponse(pr: PublicationPullRequestFixture
   };
 }
 
+export async function readPublicationCommit(
+  git: (...args: string[]) => Promise<string>,
+  commit: string,
+) {
+  const [sha, tree, parents, ...message] = (
+    await git("show", "-s", "--no-show-signature", "--format=%H%n%T%n%P%n%B", commit)
+  ).split("\n");
+  return {
+    sha,
+    tree: { sha: tree },
+    parents: parents!
+      .split(" ")
+      .filter(Boolean)
+      .map((parent) => ({ sha: parent })),
+    message: message.join("\n"),
+  };
+}
+
 /** Synthetic Git/GitHub transport for coordinator tests; real-Git fixtures wrap it below. */
 export function createSyntheticPublicationTransport(params: {
   root: string;
@@ -296,20 +314,7 @@ export async function createRealPublicationWorkspace(params: {
         if (!remoteCommits.has(commit)) {
           return commandResult("", 1);
         }
-        const [tree, parents, message] = await Promise.all([
-          git("rev-parse", commit + "^{tree}"),
-          git("show", "-s", "--format=%P", commit),
-          git("show", "-s", "--format=%B", commit),
-        ]);
-        return json({
-          sha: commit,
-          tree: { sha: tree },
-          parents: parents
-            .split(" ")
-            .filter(Boolean)
-            .map((sha) => ({ sha })),
-          message,
-        });
+        return json(await readPublicationCommit(git, commit));
       }
       if (argv.some((arg) => arg.startsWith("repos/openclaw/openclaw/git/ref/heads/"))) {
         return json({ ref: "refs/heads/main", sha: baseHead });

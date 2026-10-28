@@ -66,16 +66,18 @@ export async function preparePublishedPullRequestTarget(
     receipt.branch !== target.branch
   ) {
     throw new GitHubPublicationWorkspaceChangedError(
-      "The original publication's repository or publisher changed; saved work was preserved.",
+      "The original publication's repository or head branch changed; saved work was preserved.",
     );
   }
   const publisher = projectGitHubPublicationResult(receipt).publisher;
   const url = URL.parse(receipt.pull_request_url ?? "");
   const number = Number(url?.pathname.split("/").at(-1));
   if (
+    !url ||
     !Number.isSafeInteger(number) ||
     number < 1 ||
-    url?.href !== `https://${target.githubHost}/${receipt.repository}/pull/${number}`
+    url.href.toLowerCase() !==
+      `https://${target.githubHost}/${receipt.repository}/pull/${number}`.toLowerCase()
   ) {
     throw new GitHubPublicationWorkspaceChangedError("The original publication's PR is invalid.");
   }

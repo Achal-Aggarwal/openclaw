@@ -2,7 +2,10 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
 import { openOpenClawStateDatabase } from "../state/openclaw-state-db.js";
-import { publicationPullRequestResponse } from "./github-publication-git.test-support.js";
+import {
+  publicationPullRequestResponse,
+  readPublicationCommit,
+} from "./github-publication-git.test-support.js";
 import {
   BRANCH,
   SESSION_KEY,
@@ -27,6 +30,7 @@ async function historyFixture() {
   const { git, cwd } = workspace;
   const gitResult = async (...args: string[]) => commandResult(await git(...args));
   const remote = path.join(root, "remote.git");
+  const remoteGit = git.bind(undefined, "-C", remote);
   await git("init", "--bare", remote);
   const fallback = mocks.runCommand.getMockImplementation()!;
   const calls: string[][] = [];
@@ -75,27 +79,8 @@ async function historyFixture() {
       const commit = argv.find((arg) => arg.startsWith("repos/openclaw/openclaw/git/commits/"));
       if (commit) {
         try {
-          const [sha, tree, parents, ...message] = (
-            await git(
-              "-C",
-              remote,
-              "show",
-              "-s",
-              "--no-show-signature",
-              "--format=%H%n%T%n%P%n%B",
-              commit.split("/").at(-1)!,
-            )
-          ).split("\n");
           return commandResult(
-            JSON.stringify({
-              sha,
-              tree: { sha: tree },
-              parents: parents!
-                .split(" ")
-                .filter(Boolean)
-                .map((parent) => ({ sha: parent })),
-              message: message.join("\n"),
-            }),
+            JSON.stringify(await readPublicationCommit(remoteGit, commit.split("/").at(-1)!)),
           );
         } catch {
           return commandResult("", 1);
@@ -354,6 +339,26 @@ describe("GitHub publication branch history", () => {
     });
     expect(await f.remoteHead()).toBe("");
     expect(f.calls.some((args) => args.includes("POST"))).toBe(false);
+  });
+
+  it("continues the canonical PR when the configured repository uses different casing", async () => {
+    const repository = await mocks.resolveRepository(f.cwd);
+    mocks.resolveRepository.mockResolvedValue({
+      ...repository,
+      originUrl: "git@github.com:OpenClaw/OpenClaw.git",
+    });
+    const transport = mocks.runCommand.getMockImplementation()!;
+    mocks.runCommand.mockImplementation((argv: string[], options: unknown) =>
+      transport(
+        argv.map((arg) =>
+          arg.replace(/^repos\/OpenClaw\/OpenClaw(?=\/|$)/u, "repos/openclaw/openclaw"),
+        ),
+        options,
+      ),
+    );
+    await f.published("case-alias-first");
+    await f.write("saved update through the same repository alias\n");
+    await f.published("case-alias-update");
   });
 
   it.each(["branch", "published-pr"])(
