@@ -4,10 +4,18 @@ import {
   mergeChannelProgressDraftLine,
 } from "../../channels/streaming.js";
 import { onAgentEvent } from "../../infra/agent-events.js";
+import { createDiagnosticEmbeddedRunOwner } from "../../logging/diagnostic-run-activity.js";
+import { createSessionControllerWatchdog } from "../../sessions/session-controller.watchdog.js";
 import type { CliToolUseStartDelta } from "../cli-output-contracts.js";
+import {
+  claudeMessageStart,
+  claudeStreamEvent,
+  createClaudeParser,
+  joinJsonlFrames,
+} from "../cli-output.test-helpers.js";
 import { createCliEventHandlers } from "./execute-events.js";
 import { buildContext } from "./execute-events.tool-result-args.test-support.js";
-import type { CliToolTracking } from "./execute-tool-tracking.js";
+import { createCliToolTracking, type CliToolTracking } from "./execute-tool-tracking.js";
 
 it("keeps native Bash detail without asserting ambiguous MCP execution", () => {
   const runId = "cli-bash-progress";
@@ -97,3 +105,62 @@ it("keeps native Bash detail without asserting ambiguous MCP execution", () => {
     dispose();
   }
 });
+
+it.each(["text", "tokens after message reset"])(
+  "keeps fresh %s alive through the real JSONL/handler/watchdog path",
+  async (kind) => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    const stop = vi.fn(() => "settled" as const);
+    const watchdog = createSessionControllerWatchdog({
+      startedAtMs: 0,
+      isCurrent: () => true,
+      readPhase: () => "active",
+      requestStop: stop,
+      expireCleanup: stop,
+    });
+    const attempt = watchdog.attachAttempt({ assertCurrent() {} });
+    attempt.setExecutionDeadline(600_000);
+    const context = buildContext("thinking-progress");
+    context.params.diagnosticOwner = createDiagnosticEmbeddedRunOwner({
+      ...context.params,
+      watchdogAttempt: attempt,
+    });
+    const handlers = createCliEventHandlers({
+      context,
+      toolTracking: createCliToolTracking(context),
+      getRunState: () => ({ failed: false, error: undefined }),
+    });
+    const parser = createClaudeParser({
+      onAssistantDelta: handlers.emitCliAssistantDelta,
+      onThinkingDelta: handlers.emitCliThinkingDelta,
+      onThinkingProgress: handlers.emitCliThinkingProgress,
+    });
+    const push = (...frames: unknown[]) => parser.push(joinJsonlFrames(...frames, ""));
+    const thinking = (text: string, tokens?: number) =>
+      claudeStreamEvent({
+        type: "content_block_delta",
+        index: 0,
+        delta: { type: "thinking_delta", thinking: text, estimated_tokens: tokens },
+      });
+    try {
+      push(claudeMessageStart("message-a"), thinking("", 100));
+      vi.setSystemTime(359_000);
+      push(
+        ...(kind === "text"
+          ? [thinking("New analysis")]
+          : [claudeMessageStart("message-b"), thinking("", 1)]),
+      );
+      vi.setSystemTime(360_000);
+      expect(await watchdog.tick()).toMatchObject({ action: "observe", reason: "progress" });
+      expect(stop).not.toHaveBeenCalled();
+      expect(watchdog.snapshot().semanticDeadlineAtMs).toBe(719_000);
+      vi.setSystemTime(600_000);
+      expect(await watchdog.tick()).toMatchObject({ action: "stop", reason: "execution_deadline" });
+      expect(stop).toHaveBeenCalledOnce();
+    } finally {
+      watchdog.close();
+      vi.useRealTimers();
+    }
+  },
+);
