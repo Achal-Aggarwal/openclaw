@@ -37,6 +37,64 @@ function fileInfo<T extends object>(name: string, fields: T) {
 }
 
 suite.define(() => {
+  it("follows evidence links relative to the open Markdown document", async () => {
+    await withPage(async (page) => {
+      const report = "reports/reviewer-report.md";
+      const evidence = "reports/evidence/log.md";
+      const source = "# Review report\n\n[Browser evidence](evidence/log.md#browser-components)\n";
+      const gateway = await installMockGateway(page, {
+        workspace: "/workspace/nested-cwd",
+        historyMessages: [chatMessage("assistant", `[Report](/workspace/${report})`)],
+        methodResponses: {
+          "sessions.files.get": {
+            cases: [
+              { path: report, name: "reviewer-report.md", content: source },
+              {
+                path: evidence,
+                name: "log.md",
+                content: "# Evidence\n\n## browser-components\n\nThe intended result is 42.\n",
+              },
+            ].map(({ path, name, content }) => ({
+              match: { path: `/workspace/${path}` },
+              response: {
+                ...previewResponse(name, {
+                  path,
+                  workspacePath: path,
+                  content,
+                  contentEncoding: "utf8",
+                  previewKind: "text",
+                  mimeType: "text/markdown",
+                }),
+                source: {
+                  workspaceId: "report-workspace",
+                  root: "/workspace",
+                  fileRoot: "/workspace/nested-cwd",
+                },
+              },
+            })),
+          },
+        },
+      });
+      await page.goto(`${suite.server.baseUrl}chat`);
+      await page.locator(`.chat-thread a[data-file-path="/workspace/${report}"]`).click();
+      const reader = page.locator(".sidebar-file-view__markdown:visible");
+      await polledText(reader).toContain("Review report");
+      const chatUrl = page.url();
+      await reader.getByText("Browser evidence", { exact: true }).click();
+      await polledText(reader).toContain("The intended result is 42.");
+      expect(page.url()).toBe(chatUrl);
+      expect((await gateway.getRequests("sessions.files.get")).map((r) => r.params)).toEqual([
+        fileRequest(`/workspace/${report}`),
+        fileRequest(`/workspace/${evidence}`),
+      ]);
+      await page
+        .locator(".side-panel__header .tabstrip-tab")
+        .filter({ hasText: "reviewer-report.md" })
+        .click();
+      await polledText(reader).toContain("Review report");
+    });
+  });
+
   it.each(["close", "list"] as const)(
     "shows a file tab before completion and honors the %s intent",
     async (intent) => {

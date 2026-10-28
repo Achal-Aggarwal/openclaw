@@ -39,7 +39,11 @@ import type {
   SessionWorkspaceHost,
   SessionWorkspaceState,
 } from "./chat-session-workspace-types.ts";
-import type { FilePreviewSource, SidebarContent } from "./chat-sidebar-content-types.ts";
+import type {
+  FilePreviewSource,
+  FileSidebarContent,
+  SidebarContent,
+} from "./chat-sidebar-content-types.ts";
 
 export { downloadSessionFile };
 
@@ -52,6 +56,7 @@ type WorkspaceFileOptions = {
   draftScope?: string;
   draftContext?: SessionWorkspaceHost["sessionWorkspaceDraftContext"];
   gatewayUrl: string;
+  relativeTo?: FileSidebarContent;
 };
 
 export async function loadSessionWorkspaceFileContent(
@@ -67,6 +72,19 @@ export async function loadSessionWorkspaceFileContent(
     options.requestPath,
     options.messageEntryId,
   );
+  const document = options.relativeTo;
+  if (
+    document &&
+    reference &&
+    (reference.result.root !== (document.root ?? undefined) ||
+      reference.result.source?.workspaceId !== document.workspaceSource?.workspaceId ||
+      reference.result.source?.root !== document.workspaceSource?.root ||
+      reference.result.source?.fileRoot !== document.workspaceSource?.fileRoot)
+  ) {
+    throw new Error(
+      "The document's workspace changed. Reopen the document before following its links.",
+    );
+  }
   return (
     reference && {
       result: reference.result,
@@ -259,6 +277,7 @@ function createSessionWorkspaceFileContent(
     name,
     content: text,
     download,
+    ...(result.source ? { workspaceSource: result.source } : {}),
     sessionFileSource: {
       sessionKey: result.sessionKey,
       agentId,

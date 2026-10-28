@@ -9,6 +9,7 @@ import {
 } from "../../../components/panel-hosted-tabs.ts";
 import { installResizeObserverStub } from "../../../test-helpers/resize-observer.ts";
 import { flush, waitForSolid } from "../../../test-helpers/solid-settle.ts";
+import "../../../lib/toast-host.tsx";
 import { createGatewayBrowserClientFixture } from "../chat-application-context.test-support.ts";
 import { readFileDraft, setFileDraft } from "./chat-file-drafts.ts";
 import { createSessionWorkspaceHost } from "./chat-session-workspace-host.test-support.ts";
@@ -373,6 +374,85 @@ describe("workspace file tabs", () => {
     expect(retained.content).toMatchObject({ navigation: { line: 9 } });
     await vi.waitFor(() => expect(getFile).toHaveBeenCalledTimes(3));
   });
+
+  it.each(["managed", "unmanaged", "denied"] as const)(
+    "validates a document link before reusing a dirty target (%s)",
+    async (scope) => {
+      const toast = document.body.appendChild(document.createElement("openclaw-toast-host"));
+      await toast.updateComplete;
+      const { state, response, getFile, workspace } = fileFixture(
+        "reports/evidence.md",
+        "Disk evidence",
+        true,
+      );
+      response.source =
+        scope === "unmanaged"
+          ? undefined
+          : {
+              workspaceId: "report-workspace",
+              root: "/workspace",
+              fileRoot: "/workspace/nested-cwd",
+            };
+      await openSessionWorkspaceFile(state, { path: "/workspace/reports/evidence.md" });
+      const { preview: retained, content: original } = filePreview(state);
+      setFileDraft(original, { content: "Unsaved evidence", expectedHash: "original" });
+      onTestFinished(() => setFileDraft(original, null));
+      getFile.mockResolvedValue({
+        ...response,
+        file: {
+          ...response.file,
+          name: "report.md",
+          path: "reports/report.md",
+          workspacePath: "reports/report.md",
+          content: "# Report",
+        },
+      });
+      const sourcePreview = await openSessionWorkspaceFile(state, {
+        path: "/workspace/reports/report.md",
+      });
+      if (!sourcePreview || sourcePreview.content.kind !== "file") {
+        throw new Error("Report did not open");
+      }
+      const source = sourcePreview.content;
+      const held = createDeferred<SessionWorkspaceGetResult>();
+      getFile.mockImplementationOnce(() => held.promise);
+      const opening = openSessionWorkspaceFile(
+        state,
+        { path: "evidence.md", relativeTo: source },
+        "preview",
+      );
+      await vi.waitFor(() =>
+        expect(getFile).toHaveBeenLastCalledWith(
+          state.sessionKey,
+          "/workspace/reports/evidence.md",
+          { agentId: "main" },
+        ),
+      );
+      expect(workspace.activePreviewId).toBe(sourcePreview.id);
+      held.resolve(response);
+      await opening;
+      expect(workspace.activePreviewId).toBe(retained.id);
+      expect(retained.content).toBe(original);
+      expect(readFileDraft(original)?.content).toBe("Unsaved evidence");
+
+      selectSessionWorkspacePreview(state, sourcePreview.id);
+      if (scope === "denied") {
+        getFile.mockRejectedValueOnce(new Error("Access denied"));
+      } else {
+        getFile.mockResolvedValueOnce(
+          scope === "managed"
+            ? { ...response, source: { ...response.source!, workspaceId: "replacement-workspace" } }
+            : { ...response, root: "/replacement" },
+        );
+      }
+      await openSessionWorkspaceFile(state, { path: "evidence.md", relativeTo: source }, "preview");
+      expect(workspace.activePreviewId).toBe(sourcePreview.id);
+      expect(workspace.error).toContain(scope === "denied" ? "Access denied" : "workspace changed");
+      await waitForSolid(() => expect(toast.textContent).toContain(workspace.error));
+      expect(retained.content).toBe(original);
+      expect(readFileDraft(original)?.content).toBe("Unsaved evidence");
+    },
+  );
 
   it("reconciles canonical aliases for non-text previews", async () => {
     const { state, response, getFile, workspace } = fileFixture("asset.png", "iVBORw0KGgo=", true);

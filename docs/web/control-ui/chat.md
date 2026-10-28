@@ -393,6 +393,15 @@ filenames in authored links, such as `[Read inventory](inventory.csv)`, and code
 spans also open the file preview. Plain-text and inline-code file detection stays
 conservative to avoid turning prose into links.
 
+In a workspace Markdown file's **Preview**, authored relative file links resolve
+from the document's folder. For example, a report in `reports/review.md` can open
+`[Evidence](evidence/log.md#details)` as `reports/evidence/log.md` in Files.
+The heading fragment does not change which file opens; the reader does not promise
+scrolling to arbitrary Markdown headings. Fragment-only links, external URLs, and
+conversation links retain their existing behavior. File access still uses the
+source session's current permissions. If the document's workspace has changed,
+reopen the document before following its links; retained unsaved drafts stay intact.
+
 File links in forwarded messages open against the sending session's workspace,
 including links inside collapsed update groups and message details. Their
 filename tabs stay in the current chat pane. Files outside the session root

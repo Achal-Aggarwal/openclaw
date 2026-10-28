@@ -1,5 +1,4 @@
 import { GatewayRequestError } from "../../../api/gateway-connect-errors.ts";
-import type { MarkdownFileLinkTarget } from "../../../components/markdown-file-links.ts";
 import { t } from "../../../i18n/index.ts";
 import { registerChatSessionEnglish } from "../../../i18n/locales/en-chat-session.ts";
 import { registerFilePreviewEnglish } from "../../../i18n/locales/en-file-preview.ts";
@@ -31,6 +30,7 @@ import type {
   SessionWorkspaceMobileNavigation,
   SidebarContent,
   TranscriptAttachments,
+  WorkspaceFileLinkTarget,
 } from "./chat-sidebar-content-types.ts";
 
 registerChatSessionEnglish();
@@ -76,16 +76,18 @@ function openFile(
     line?: number | null;
     requestPath?: string;
     sessionKey?: string;
+    agentId?: string;
     disposition?: "pinned" | "preview";
     intent?: "navigate";
     messageEntryId?: string;
+    relativeTo?: WorkspaceFileLinkTarget["relativeTo"];
   } = {},
 ) {
   const requestPath = opts.requestPath ?? path;
   const sessionKey = opts.sessionKey ?? workspace.sessionKey;
-  const agentId = opts.sessionKey
-    ? parseAgentSessionKey(opts.sessionKey)?.agentId
-    : workspace.agentId;
+  const agentId =
+    opts.agentId ??
+    (opts.sessionKey ? parseAgentSessionKey(opts.sessionKey)?.agentId : workspace.agentId);
   const viewingSession = sessionKey === workspace.sessionKey;
   const draftScope = state.sessionWorkspaceDraftScope;
   const draftContext = state.sessionWorkspaceDraftContext;
@@ -110,6 +112,7 @@ function openFile(
             draftScope,
             draftContext,
             gatewayUrl,
+            relativeTo: opts.relativeTo,
           },
           () => refreshSessionWorkspace(state, true),
         ),
@@ -122,6 +125,7 @@ function openFile(
       intent: opts.intent,
       label: pathDisplayName(path),
       revalidate: true,
+      revalidateBeforeSelect: Boolean(opts.relativeTo),
       resolveLabel: ({ result }) => result.file?.name,
       resolveKey: ({ result }) => {
         const canonicalPath = result.file?.workspacePath || result.file?.path;
@@ -147,14 +151,22 @@ function openFile(
 
 export function openSessionWorkspaceFile(
   state: SessionWorkspaceHost,
-  target: MarkdownFileLinkTarget,
+  target: WorkspaceFileLinkTarget,
   disposition?: "pinned" | "preview",
 ) {
+  const document = target.relativeTo;
+  const source = document?.sessionFileSource;
+  // Leave .. segments for the native file reader's containment and authority checks.
+  const path = document?.absolutePath?.replaceAll("\\", "/");
+  const requestPath = path ? path.slice(0, path.lastIndexOf("/") + 1) + target.path : target.path;
   return openFile(state, getSessionWorkspace(state), target.path, {
+    requestPath,
     line: target.line,
-    sessionKey: target.sessionKey,
+    sessionKey: source?.sessionKey ?? target.sessionKey,
+    agentId: source?.agentId,
     disposition,
-    messageEntryId: target.messageEntryId,
+    messageEntryId: source?.messageEntryId ?? target.messageEntryId,
+    relativeTo: document,
   });
 }
 
