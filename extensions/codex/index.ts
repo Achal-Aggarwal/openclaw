@@ -281,6 +281,7 @@ export default definePluginEntry({
       );
     }
     const agentHarnessOptions = {
+      pluginConfig: registrationConfig,
       bindingStore,
       sessionCatalogControlFactory,
       resolveConfig: resolveCurrentConfig,

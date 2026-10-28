@@ -1,4 +1,5 @@
 import type { OpenClawConfig } from "openclaw/plugin-sdk/config-contracts";
+import type { OpenClawPluginApi } from "openclaw/plugin-sdk/core";
 import { createTestPluginApi } from "openclaw/plugin-sdk/plugin-test-api";
 import { createPluginRuntimeMock } from "openclaw/plugin-sdk/plugin-test-runtime";
 import { describe, expect, it, vi } from "vitest";
@@ -6,6 +7,7 @@ import plugin from "./index.js";
 
 function registerServices(pluginConfig: Record<string, unknown>) {
   const registerService = vi.fn();
+  const registerAgentHarness = vi.fn<OpenClawPluginApi["registerAgentHarness"]>();
   const config: OpenClawConfig = {
     agents: { entries: { main: {} } },
     plugins: { entries: { codex: { enabled: true, config: pluginConfig } } },
@@ -23,9 +25,13 @@ function registerServices(pluginConfig: Record<string, unknown>) {
         },
       }),
       registerService,
+      registerAgentHarness,
     }),
   );
-  return registerService.mock.calls.map(([service]) => service);
+  return {
+    services: registerService.mock.calls.map(([service]) => service),
+    harness: registerAgentHarness.mock.calls[0]?.[0],
+  };
 }
 
 function registeredService(id: string, stoppable = true) {
@@ -37,8 +43,20 @@ function registeredService(id: string, stoppable = true) {
 }
 
 describe("Codex plugin services", () => {
+  it("registers the worker placement contract before runtime config is prepared", () => {
+    vi.stubEnv("OPENCLAW_WORKER_CODEX_CONFIG_VERSION", "a".repeat(64));
+    try {
+      const { harness } = registerServices({ appServer: { workerHostedCloud: true } });
+      expect(harness?.cloudPlacement?.devicePlacement?.requiredNodeCommands).toEqual([
+        `codex.app-server.stdio.v1.${"a".repeat(64)}`,
+      ]);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it("proactively monitors an explicitly configured remote websocket app-server", () => {
-    const services = registerServices({
+    const { services } = registerServices({
       appServer: { transport: "websocket", url: "ws://127.0.0.1:39175" },
     });
 
@@ -53,7 +71,7 @@ describe("Codex plugin services", () => {
 
   it("does not start remote connection monitoring for local Codex transports", () => {
     for (const appServer of [undefined, { transport: "stdio" }, { transport: "unix" }]) {
-      const services = registerServices(appServer ? { appServer } : {});
+      const { services } = registerServices(appServer ? { appServer } : {});
 
       expect(services.map((service) => service.id)).not.toContain(
         "codex-app-server-connection-health",

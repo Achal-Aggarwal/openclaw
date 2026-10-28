@@ -184,8 +184,7 @@ export function createCodexAppServerAgentHarness(
       mode: "remote-exec",
       devicePlacement: {
         requiredNodeCommands: [
-          readWorkerPluginConfig(resolveAttemptPluginConfig(undefined)).appServer
-            ?.workerHostedCloud === true
+          readWorkerPluginConfig(options.pluginConfig).appServer?.workerHostedCloud === true
             ? resolveCodexWorkerAppServerCommand(process.env, true)
             : "codex.exec-server.stdio.v1",
         ],

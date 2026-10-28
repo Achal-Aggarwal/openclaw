@@ -96,7 +96,7 @@ it("uses the versioned placement duplex and joins caller-owned probe shutdown", 
   });
   expect(await fixture.client.request("thread/read", { threadId: "thread" })).toEqual({ ok: true });
   let settled = false;
-  const cleanup = releaseCodexProbeClient(fixture.client, fixture.factory).then(() => {
+  const cleanup = releaseCodexProbeClient(fixture.client, fixture.factory, true).then(() => {
     settled = true;
   });
   await fixture.closing.promise;

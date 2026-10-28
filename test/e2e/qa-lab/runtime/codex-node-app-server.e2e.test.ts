@@ -256,9 +256,12 @@ describe.skipIf(process.platform !== "linux")("Codex worker-hosted app-server co
           const catalog = await client.request<{
             models: Array<{ provider: string; id: string; available?: boolean }>;
           }>("models.list", { agentId: "qa", refresh: true }, { timeoutMs: TIMEOUT_MS });
+          const model = catalog.models.find(
+            (entry) => entry.provider === "openai" && entry.id === MODEL_ID,
+          );
           expect(
-            catalog.models.find((entry) => entry.provider === "openai" && entry.id === MODEL_ID),
-            "The ordinary first-party catalog must admit the configured model without a forced harness.",
+            model,
+            `The ordinary first-party catalog must admit the configured model without a forced harness: ${JSON.stringify(model)}`,
           ).toMatchObject({ available: true });
           await gateway.call("sessions.create", {
             key: SESSION_KEY,
@@ -476,9 +479,10 @@ describe.skipIf(process.platform !== "linux")("Codex worker-hosted app-server co
         () => provider?.close(),
         () => receipts?.close(),
       ).catch((cause: unknown) => {
-        throw new Error(`P8 worker fixture failed:\n${node?.logs() ?? "Node was not started"}`, {
-          cause,
-        });
+        throw new Error(
+          `P8 worker fixture failed:\n${node?.logs() ?? "Node was not started"}\n${gateway?.readLogsSince(0) ?? ""}`,
+          { cause },
+        );
       });
     },
   );

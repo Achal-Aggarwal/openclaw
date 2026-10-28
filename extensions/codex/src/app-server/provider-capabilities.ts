@@ -53,6 +53,7 @@ export async function resolveCodexProviderWebSearchSupportForClient(params: {
 
 export async function resolveCodexProviderWebSearchSupport(params: {
   clientFactory: CodexAppServerClientFactory;
+  callerOwnedClient?: boolean;
   appServer: CodexAppServerRuntimeOptions;
   authProfileId: string | null | undefined;
   preparedAuth?: CodexAppServerClientOptions["preparedAuth"];
@@ -90,7 +91,7 @@ export async function resolveCodexProviderWebSearchSupport(params: {
     return "unknown";
   } finally {
     if (client) {
-      await releaseCodexProbeClient(client, params.clientFactory);
+      await releaseCodexProbeClient(client, params.clientFactory, params.callerOwnedClient);
     }
   }
 }

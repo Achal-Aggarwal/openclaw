@@ -356,6 +356,7 @@ export async function prepareCodexAttemptRuntime(connection: CodexAttemptConnect
     } else {
       nativeProviderWebSearchSupport = await resolveCodexProviderWebSearchSupport({
         clientFactory: attemptClientFactory,
+        callerOwnedClient: connection.callerOwnedAttemptClient,
         appServer,
         authProfileId: startupClientAuthProfileId,
         preparedAuth: startupPreparedAuth,

@@ -205,7 +205,11 @@ function proofShellCommand(params: {
           "runtimeInjectionPresent:Boolean(process.env.NODE_OPTIONS),",
           "ordinary:process.env.NODE_ENV||null,",
           `privateHome:process.env.HOME!==${JSON.stringify(params.nodeHome)},`,
-          'privateCodexHome:Boolean(process.env.CODEX_HOME&&process.env.CODEX_HOME.startsWith(process.env.HOME+"/")),',
+          // Retained workspace HOME and ephemeral credential-free CODEX_HOME have separate owners.
+          "privateCodexHome:Boolean(process.env.CODEX_HOME",
+          '&&process.env.CODEX_HOME!==process.env.HOME+"/.codex"',
+          `&&process.env.CODEX_HOME!==${JSON.stringify(`${params.nodeHome}/.codex`)}`,
+          "&&(fs.statSync(process.env.CODEX_HOME).mode&0o077)===0),",
           "http:await response.text(),pid:process.pid};",
           `fs.writeFileSync(${JSON.stringify(evidenceFile)},JSON.stringify(evidence));`,
           `console.log(${JSON.stringify(params.scenario === "recovery" ? "CODEX_NODE_FRESH_ATTEMPT_OK" : "CODEX_NODE_PROCESS_OK")});`,
@@ -459,7 +463,8 @@ async function waitForProofState(
 }
 
 async function expectSuccessfulTurn(reviewer: GatewayClient, runId: string): Promise<void> {
-  expect(await waitForTurn(reviewer, runId)).toMatchObject({ status: "ok" });
+  const outcome = await waitForTurn(reviewer, runId);
+  expect(outcome, JSON.stringify(outcome)).toMatchObject({ status: "ok" });
 }
 
 describe("Codex paired-device exec-server carrier", () => {
@@ -500,6 +505,7 @@ describe("Codex paired-device exec-server carrier", () => {
             argsPrefix: ["dist/index.js"],
             cwd: process.cwd(),
             usePackagedPlugins: true,
+            tempParentDir: root,
           },
           transportBaseUrl: "http://127.0.0.1",
           providerMode: "mock-openai",
@@ -794,7 +800,15 @@ describe("Codex paired-device exec-server carrier", () => {
         () => stopQaGatewayFixture(gatewayOwner),
         () => (published ? closeWireServer(published.server) : undefined),
         () => provider?.stop(),
-      );
+      ).catch((cause: unknown) => {
+        throw new Error(
+          `Codex node execution failed:
+${gateway?.readLogsSince(0) ?? ""}`,
+          {
+            cause,
+          },
+        );
+      });
     },
   );
 });

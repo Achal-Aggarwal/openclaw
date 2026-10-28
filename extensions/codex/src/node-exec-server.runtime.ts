@@ -327,22 +327,51 @@ export async function runCodexNodeExecServer(params: {
     params.assertExecAuthorized();
     // Framed readiness starts Codex's initialize budget. Native startup
     // belongs to this cancellable launch, before that handshake begins.
-    unsubscribe = frames.onMessage(async (message) => {
+    const writeInput = (encoded: Buffer) => {
+      const write = () => {
+        io.signal.throwIfAborted();
+        params.assertExecAuthorized();
+        workspace.processEnvironment?.assertCurrent();
+        return writeNodeExecServerMessage(child, encoded, io.signal);
+      };
+      const operation = writes ? writes.then(write) : write();
+      if (!operation) {
+        return undefined;
+      }
+      const observed = operation.catch(() => {});
+      writes = observed;
+      void observed.then(() => {
+        if (writes === observed) {
+          writes = undefined;
+        }
+      });
+      return operation;
+    };
+    // Synchronous writes must stay synchronous: an async wrapper turns a ready
+    // burst into outstanding deliveries and exhausts the duplex message bound.
+    unsubscribe = frames.onMessage((message) => {
       const encoded = validateNodeExecServerMessage(message);
+      if (!workspace.repositoryReadiness) {
+        return writeInput(encoded);
+      }
+      const readiness = workspace.repositoryReadiness;
       const request: unknown = JSON.parse(encoded.toString("utf8"));
       const needsResources =
         isRecord(request) &&
         typeof request.method === "string" &&
         (request.method === "process/start" || request.method.startsWith("fs/"));
-      if (needsResources && workspace.repositoryReadiness) {
+      if (!needsResources) {
+        return writeInput(encoded);
+      }
+      return (async () => {
         try {
           // Native instruction discovery must receive pending metadata promptly;
           // waiting here blocks thread/start before conversational inference.
           if (request.method === "fs/getMetadata" || request.method === "fs/canonicalize") {
-            workspace.repositoryReadiness.assertCurrent();
+            readiness.assertCurrent();
           }
-          await workspace.repositoryReadiness.wait(io.signal);
-          workspace.repositoryReadiness.assertCurrent();
+          await readiness.wait(io.signal);
+          readiness.assertCurrent();
         } catch {
           io.signal.throwIfAborted();
           params.assertExecAuthorized();
@@ -362,28 +391,8 @@ export async function runCodexNodeExecServer(params: {
           );
           return;
         }
-      }
-      io.signal.throwIfAborted();
-      params.assertExecAuthorized();
-      workspace.processEnvironment?.assertCurrent();
-      const write = () => {
-        io.signal.throwIfAborted();
-        params.assertExecAuthorized();
-        workspace.processEnvironment?.assertCurrent();
-        return writeNodeExecServerMessage(child, encoded, io.signal);
-      };
-      const operation = writes ? writes.then(write) : write();
-      if (!operation) {
-        return undefined;
-      }
-      const observed = operation.catch(() => {});
-      writes = observed;
-      void observed.then(() => {
-        if (writes === observed) {
-          writes = undefined;
-        }
-      });
-      return operation;
+        return writeInput(encoded);
+      })();
     });
     return await Promise.race([stopped, disconnected]);
   } finally {

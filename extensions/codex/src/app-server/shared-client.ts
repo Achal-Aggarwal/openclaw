@@ -374,13 +374,13 @@ export function releaseLeasedSharedCodexAppServerClient(client: CodexAppServerCl
   return true;
 }
 
-/** Temporary probes own isolated processes but only borrow shared-client leases. */
+/** Probe-call ownership decides cleanup; an isolated process can still be borrowed. */
 export async function releaseCodexProbeClient(
   client: CodexAppServerClient,
   factory: CodexAppServerClientFactory,
   callerOwned = factory === createIsolatedCodexAppServerClient,
 ): Promise<void> {
-  if (callerOwned || getSharedCodexAppServerClientState().isolatedClients.has(client)) {
+  if (callerOwned) {
     await client.closeAndWait();
   } else {
     releaseLeasedSharedCodexAppServerClient(client);
