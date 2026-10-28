@@ -21,6 +21,7 @@ import { withinTest } from "../../../helpers/promise.js";
 import { runQaGatewayFixture, stopQaGatewayFixture } from "../../../helpers/qa-gateway-cleanup.js";
 import { useAutoCleanupTempDirTracker } from "../../../helpers/temp-dir.js";
 import {
+  GATEWAY_BEARER,
   MARKERS,
   MODEL_ID,
   MODEL_REF,
@@ -128,6 +129,11 @@ describe.skipIf(process.platform !== "linux")("Codex worker-hosted app-server co
           }
           expect((await fs.stat(staged.workerHome)).mode & 0o777).toBe(0o700);
           published = await createPublishedWireWorkspace(path.join(root, "workspace"));
+          const catalogPreload = new URL(
+            "./codex-node-app-server-catalog-preload.mjs",
+            import.meta.url,
+          );
+          catalogPreload.searchParams.set("fixture", provider.baseUrl);
           gateway = await gatewayOwner.start({
             repoRoot: process.cwd(),
             initializeCurrentRuntimeState: true,
@@ -147,9 +153,10 @@ describe.skipIf(process.platform !== "linux")("Codex worker-hosted app-server co
             enabledPluginIds: ["codex", "openai"],
             mockAuthAgentIds: [],
             controlUiEnabled: false,
+            runtimePreloads: [catalogPreload.href],
             runtimeEnvPatch: {
               // No ambient credentials: these are newly authored synthetic sources.
-              OPENAI_API_KEY: "p8-gateway-synthetic-decoy",
+              OPENAI_API_KEY: GATEWAY_BEARER,
               CODEX_HOME: staged.sourceHome,
               OPENCLAW_WORKER_CODEX_CONFIG_PATH: staged.sourceConfig,
               OPENCLAW_WORKER_CODEX_HELPER_PATH: staged.sourceHelper,
@@ -157,9 +164,11 @@ describe.skipIf(process.platform !== "linux")("Codex worker-hosted app-server co
             },
             mutateConfig: (config) => {
               config.auth = {};
-              config.models = { mode: "merge", providers: {} };
+              // Keep unrelated remote metadata/utility services outside this provider proof.
+              config.models = { mode: "merge", providers: {}, catalogRefresh: { enabled: false } };
               const defaults = (config.agents!.defaults ??= {});
               defaults.models = { [MODEL_REF]: {} };
+              defaults.utilityModel = "";
               defaults.mediaModels = undefined;
               config.agents!.entries!.qa!.tools = { profile: "full" };
               config.tools = {
@@ -266,14 +275,47 @@ describe.skipIf(process.platform !== "linux")("Codex worker-hosted app-server co
 
           const catalog = await client.request<{
             models: Array<{ provider: string; id: string; available?: boolean }>;
+            providerOutcomes?: Array<{ provider: string; status: string; rejectionScope?: string }>;
+            refreshFailed?: boolean;
+            pendingProviders?: string[];
           }>("models.list", { agentId: "qa", refresh: true }, { timeoutMs: TIMEOUT_MS });
           const model = catalog.models.find(
             (entry) => entry.provider === "openai" && entry.id === MODEL_ID,
           );
           expect(
             model,
-            `The ordinary first-party catalog must admit the configured model without a forced harness: ${JSON.stringify(model)}`,
-          ).toMatchObject({ available: true });
+            "The ordinary first-party catalog must admit the configured model without a forced harness: " +
+              JSON.stringify({
+                model,
+                refreshFailed: catalog.refreshFailed,
+                transportRequests: provider.catalogRequests.slice(0, 8),
+                pendingProviders: catalog.pendingProviders?.slice(0, 8),
+                outcomes: catalog.providerOutcomes
+                  ?.slice(0, 8)
+                  .map(({ provider: outcomeProvider, status, rejectionScope }) => ({
+                    provider: outcomeProvider,
+                    status,
+                    rejectionScope,
+                  })),
+              }),
+          ).toMatchObject({
+            available: true,
+            agentRuntime: {
+              id: "codex",
+              source: "implicit",
+              cloudPlacementExecutionMode: "remote-exec",
+            },
+          });
+          expect(provider.catalogRequests).toContainEqual({
+            kind: "models",
+            gatewayAuth: true,
+            carrier: expect.stringMatching(/^worker:[1-9]\d*$/),
+            runtime: process.versions.bun ? "bun" : "node",
+          });
+          expect(provider.catalogRequests.every((request) => request.gatewayAuth)).toBe(true);
+          console.log(
+            "P8_CATALOG_TRANSPORT_PROOF " + JSON.stringify(provider.catalogRequests.slice(0, 8)),
+          );
           await gateway.call("sessions.create", {
             key: SESSION_KEY,
             agentId: "qa",
@@ -647,6 +689,7 @@ describe.skipIf(process.platform !== "linux")("Codex worker-hosted app-server co
           ).toBe(true);
           expect(wire.errors).toEqual([]);
           expect(provider.errors).toEqual([]);
+          expect(gateway.logs()).not.toContain("P8_UNEXPECTED_REMOTE_FETCH");
 
           await stopChild(node);
           expect(processIsAlive(nodePid!)).toBe(false);

@@ -20,6 +20,7 @@ export const MARKERS = {
   revoked: "P8_WORKER_REVOKED",
 } as const;
 export type Scenario = keyof typeof MARKERS;
+export const GATEWAY_BEARER = "p8-gateway-synthetic-decoy";
 const WORKER_BEARER = "p8-worker-synthetic-bearer";
 
 function respond(response: ServerResponse, item: Record<string, unknown>) {
@@ -76,6 +77,12 @@ function nativeCommand(scenario: Scenario, receiptEndpoint: string): string {
 }
 
 export async function startWorkerResponses(receiptEndpoint: string) {
+  const catalogRequests: Array<{
+    kind: string;
+    gatewayAuth: boolean;
+    carrier: string;
+    runtime: string;
+  }> = [];
   const requests: Array<{
     scenario?: Scenario;
     workerAuth: boolean;
@@ -86,6 +93,27 @@ export async function startWorkerResponses(receiptEndpoint: string) {
   const errors: unknown[] = [];
   const server = createServer((request, response) => {
     void (async () => {
+      if (
+        request.method === "GET" &&
+        ["/platform/models", "/platform/access-programs"].includes(request.url ?? "")
+      ) {
+        const kind = request.url === "/platform/models" ? "models" : "access-programs";
+        const gatewayAuth = request.headers.authorization === "Bearer " + GATEWAY_BEARER;
+        catalogRequests.push({
+          kind,
+          gatewayAuth,
+          carrier: String(request.headers["x-p8-catalog-carrier"] ?? ""),
+          runtime: String(request.headers["x-p8-catalog-runtime"] ?? ""),
+        });
+        const body = !gatewayAuth
+          ? { error: { message: "Synthetic catalog credential rejected" } }
+          : kind === "models"
+            ? { object: "list", data: [{ id: MODEL_ID, object: "model" }] }
+            : { models: [] };
+        response.writeHead(gatewayAuth ? 200 : 401, { "content-type": "application/json" });
+        response.end(JSON.stringify(body));
+        return;
+      }
       if (request.method !== "POST" || request.url !== "/v1/responses") {
         response.writeHead(404).end();
         return;
@@ -152,6 +180,7 @@ export async function startWorkerResponses(receiptEndpoint: string) {
   return {
     baseUrl: `http://127.0.0.1:${address.port}`,
     requests,
+    catalogRequests,
     errors,
     close: () => closeWireServer(server),
   };
