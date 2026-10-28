@@ -273,175 +273,269 @@ it.each(["local", "repository"] as const)(
 it.each([
   { backend: "local", mode: "retargeted" },
   { backend: "local", mode: "interrupted" },
+  { backend: "local", mode: "interrupted-authorized-open" },
   { backend: "local", mode: "interrupted-authorized" },
+  { backend: "local", mode: "interrupted-authorized-edits" },
+  { backend: "local", mode: "interrupted-authorized-deleted" },
+  { backend: "local", mode: "interrupted-authorized-merged" },
   { backend: "repository", mode: "paged" },
   { backend: "repository", mode: "interrupted" },
-] as const)("reconciles a $mode $backend update across recovery", async ({ backend, mode }) => {
-  const interruptedCase = mode.startsWith("interrupted");
-  const authorized = mode === "interrupted-authorized";
-  const { f, first, pullRequest, transport, observePush } =
-    await prepareExistingPullRequest(backend);
-  if (backend === "local") {
-    pullRequest.baseRef = "review/continuation";
-  }
-  const closed = Array.from({ length: 30 }, (_, index) => ({
-    ...pullRequest,
-    url: pullRequest.url.replace(/\d+$/u, String(100 + index)),
-    state: "closed",
-    body: `<!-- openclaw-publication:earlier-closed-${index} -->`,
-  }));
-  let pushed = false,
-    readbackAvailable = false,
-    recoveryLookup = false,
-    unavailableLookups = 0;
-  let acceptedWrites: string[] = [];
-  const hostScans = vi.spyOn(sqliteQueries, "iterateSqliteQuerySync");
-  let recoveryScanStart = 0;
-  mocks.runCommand.mockImplementation(async (argv: string[], options?: { input?: string }) => {
+  { backend: "repository", mode: "interrupted-authorized" },
+] as const)(
+  "reconciles a $mode $backend update when recovering its accepted publication",
+  async ({ backend, mode }) => {
+    const interruptedCase = mode.startsWith("interrupted");
+    const authorized = mode.startsWith("interrupted-authorized");
+    const { f, first, pullRequest, transport, observePush } =
+      await prepareExistingPullRequest(backend);
     if (backend === "local") {
-      const baseRef = argv.find((arg) => arg.startsWith("repos/openclaw/openclaw/git/ref/heads/"));
-      if (baseRef) {
-        return commandResult(
-          JSON.stringify({
-            ref: `refs/heads/${decodeURIComponent(baseRef.split("/heads/")[1]!)}`,
-            sha: await f.local!.git("rev-parse", "main"),
-          }),
-        );
+      pullRequest.baseRef = "review/continuation";
+    }
+    const closed = Array.from({ length: 30 }, (_, index) => ({
+      ...pullRequest,
+      url: pullRequest.url.replace(/\d+$/u, String(100 + index)),
+      state: "closed",
+      body: `<!-- openclaw-publication:earlier-closed-${index} -->`,
+    }));
+    let branchDeleted = false;
+    let acceptedMergeCommit: string | undefined;
+    let pushed = false,
+      readbackAvailable = false,
+      recoveryLookup = false,
+      unavailableLookups = 0;
+    let acceptedWrites: string[] = [];
+    const hostScans = vi.spyOn(sqliteQueries, "iterateSqliteQuerySync");
+    let recoveryScanStart = 0;
+    mocks.runCommand.mockImplementation(async (argv: string[], options?: { input?: string }) => {
+      if (branchDeleted && argv.includes("ls-remote")) {
+        return commandResult("");
       }
-      if (argv.includes("GET") && argv.some((arg) => /\/pulls\/\d+$/u.test(arg))) {
+      if (backend === "local") {
+        const baseRef = argv.find((arg) =>
+          arg.startsWith("repos/openclaw/openclaw/git/ref/heads/"),
+        );
+        if (baseRef) {
+          return commandResult(
+            JSON.stringify({
+              ref: `refs/heads/${decodeURIComponent(baseRef.split("/heads/")[1]!)}`,
+              sha:
+                readbackAvailable && acceptedMergeCommit
+                  ? acceptedMergeCommit
+                  : await f.local!.git("rev-parse", "main"),
+            }),
+          );
+        }
+        if (argv.includes("GET") && argv.some((arg) => /\/pulls\/\d+$/u.test(arg))) {
+          recoveryLookup ||= pushed;
+          if (interruptedCase && pushed && !readbackAvailable) {
+            unavailableLookups++;
+            return commandResult("", 1);
+          }
+          return commandResult(JSON.stringify(publicationPullRequestResponse(pullRequest)));
+        }
+      }
+      if (argv.includes("state=all")) {
         recoveryLookup ||= pushed;
+        if (mode === "paged") {
+          // gh emits one array per page; the matching open PR is beyond page one.
+          return commandResult(
+            [closed, ...(argv.includes("--paginate") ? [[pullRequest]] : [])]
+              .map((page) => JSON.stringify(page))
+              .join("\n"),
+          );
+        }
         if (interruptedCase && pushed && !readbackAvailable) {
           unavailableLookups++;
           return commandResult("", 1);
         }
-        return commandResult(JSON.stringify(publicationPullRequestResponse(pullRequest)));
+        return commandResult(JSON.stringify([pullRequest]));
       }
-    }
-    if (argv.includes("state=all")) {
-      recoveryLookup ||= pushed;
-      if (mode === "paged") {
-        // gh emits one array per page; the matching open PR is beyond page one.
-        return commandResult(
-          [closed, ...(argv.includes("--paginate") ? [[pullRequest]] : [])]
-            .map((page) => JSON.stringify(page))
-            .join("\n"),
-        );
+      const response = await transport(argv, options);
+      if (argv.includes("push") || argv.includes("graphql")) {
+        if (pullRequest.state === "open") {
+          await observePush();
+        }
+        if (!interruptedCase) {
+          await f.revoke();
+        }
+        pushed = true;
+        branchDeleted = false;
+        recoveryScanStart = hostScans.mock.calls.length;
+        if (!readbackAvailable) {
+          acceptedWrites = [...f.externalWrites];
+        }
       }
-      if (interruptedCase && pushed && !readbackAvailable) {
-        unavailableLookups++;
-        return commandResult("", 1);
-      }
-      return commandResult(JSON.stringify([pullRequest]));
-    }
-    const response = await transport(argv, options);
-    if (argv.includes("push") || argv.includes("graphql")) {
-      await observePush();
-      if (!interruptedCase) {
-        await f.revoke();
-      }
-      pushed = true;
-      recoveryScanStart = hostScans.mock.calls.length;
-      acceptedWrites = [...f.externalWrites];
-    }
-    return response;
-  });
-  const idempotencyKey = `${mode}-update`;
-  const publication = f.coordinator.requestForSessionV2(f.request(idempotencyKey, f.guest));
-  let requestId: string;
-  if (!interruptedCase) {
-    const result = await publication;
-    expect(result).toMatchObject(published(first.url, pullRequest.headSha));
-    expect(result.requestId).not.toBe(first.requestId);
-    requestId = result.requestId;
-    expect({ pushed, recoveryLookup }).toEqual({ pushed: true, recoveryLookup: true });
-    expect(
-      hostScans.mock.calls
-        .slice(recoveryScanStart)
-        .map(([, query]) => query.compile().sql)
-        .filter((sql) => /from "github_(?:repository_)?publication_requests"/u.test(sql)),
-    ).toEqual([]);
-    expect(f.readReceipt(requestId)).toMatchObject({
-      status: "published",
-      pull_request_url: first.url,
-      head_commit: pullRequest.headSha,
+      return isPullCreation(argv) && readbackAvailable
+        ? commandResult(JSON.stringify({ html_url: first.url.replace(/\d+$/u, "125201") }))
+        : response;
     });
+    const idempotencyKey = `${mode}-update`;
+    const publication = f.coordinator.requestForSessionV2(f.request(idempotencyKey, f.guest));
+    let requestId: string;
+    if (!interruptedCase) {
+      const result = await publication;
+      expect(result).toMatchObject(published(first.url, pullRequest.headSha));
+      expect(result.requestId).not.toBe(first.requestId);
+      requestId = result.requestId;
+      expect({ pushed, recoveryLookup }).toEqual({ pushed: true, recoveryLookup: true });
+      expect(
+        hostScans.mock.calls
+          .slice(recoveryScanStart)
+          .map(([, query]) => query.compile().sql)
+          .filter((sql) => /from "github_(?:repository_)?publication_requests"/u.test(sql)),
+      ).toEqual([]);
+      expect(f.readReceipt(requestId)).toMatchObject({
+        status: "published",
+        pull_request_url: first.url,
+        head_commit: pullRequest.headSha,
+      });
+      expect(f.externalWrites).toEqual(acceptedWrites);
+      expect(f.publishedTitles).toEqual(["first-publication"]);
+      await f.restart().resumeSessionRequests();
+    } else {
+      if (backend === "local") {
+        await expect(publication).rejects.toBeInstanceOf(GitHubPublicationRecoveryPendingError);
+        requestId = readGitHubPublicationRequest(f.database.db, {
+          sessionId: f.session.sessionId,
+          idempotencyKey,
+        })!.request_id;
+      } else {
+        const result = await publication;
+        expect(result.status).toBe("requested");
+        requestId = result.requestId;
+      }
+      expect(pushed).toBe(true);
+      expect(unavailableLookups).toBeGreaterThan(0);
+      expect(f.readReceipt(requestId)).toMatchObject({
+        pull_request_url: null,
+        head_commit: pullRequest.headSha,
+      });
+      expect(pullRequest.body).not.toContain(`<!-- openclaw-publication:${requestId} -->`);
+      expect(await f.coordinator.readAsync(first.requestId)).toEqual(first);
+      acceptedWrites = [...f.externalWrites];
+      // Closing the known PR cannot undo an accepted update.
+      if (backend === "local") {
+        pullRequest.baseRef = "review/changed-after-push";
+      }
+      if (mode !== "interrupted-authorized-open") {
+        pullRequest.state = "closed";
+      }
+      if (authorized && mode !== "interrupted-authorized-open") {
+        if (!f.local) {
+          readbackAvailable = true;
+          const restarted = f.restart();
+          await restarted.resumeSessionRequests();
+          expect(f.externalWrites).toEqual(acceptedWrites);
+          expect(await restarted.readAsync(requestId)).toMatchObject(
+            published(first.url, pullRequest.headSha),
+          );
+          expect(await restarted.readAsync(first.requestId)).toEqual(first);
+          return;
+        }
+        const { cwd, git } = f.local;
+        const acceptedHead = pullRequest.headSha;
+        branchDeleted = mode === "interrupted-authorized-deleted";
+        if (mode === "interrupted-authorized-merged") {
+          acceptedMergeCommit = await git(
+            "commit-tree",
+            await git("rev-parse", `${pullRequest.headSha}^{tree}`),
+            "-p",
+            await git("rev-parse", "main"),
+            "-p",
+            pullRequest.headSha,
+            "-m",
+            "Accepted PR merge",
+          );
+        }
+        const laterEdits = mode === "interrupted-authorized-edits";
+        if (laterEdits) {
+          await fs.writeFile(path.join(cwd, "artifact.txt"), "committed later work\n");
+          await git("add", "artifact.txt");
+          await git("commit", "-m", "Later saved work");
+          await fs.writeFile(path.join(cwd, "artifact.txt"), "staged later work\n");
+          await git("add", "artifact.txt");
+          await fs.writeFile(path.join(cwd, "artifact.txt"), "saved later work\n");
+        }
+        await fs.writeFile(path.join(cwd, "untracked.txt"), "saved untracked work\n");
+        const snapshot = () =>
+          Promise.all([
+            git("rev-parse", "HEAD"),
+            fs.readFile(path.join(cwd, ".git", "index")),
+            fs.readFile(path.join(cwd, "artifact.txt")),
+            fs.readFile(path.join(cwd, "untracked.txt")),
+          ]);
+        const saved = await snapshot();
+        readbackAvailable = true;
+        const restarted = f.restart();
+        await restarted.resumeSessionRequests();
+        expect(f.externalWrites).toEqual(acceptedWrites);
+        expect(await restarted.readAsync(requestId)).toMatchObject(
+          published(first.url, pullRequest.headSha),
+        );
+        expect(await snapshot()).toEqual(saved);
+        expect(await restarted.readAsync(first.requestId)).toEqual(first);
+        const next = await restarted.requestForSessionV2(f.request("explicit-new-pr", f.guest));
+        expect(next).toMatchObject(
+          published(first.url.replace(/\d+$/u, "125201"), await git("rev-parse", "HEAD")),
+        );
+        expect(next.requestId).not.toBe(requestId);
+        expect(f.publishedTitles).toEqual(["first-publication", "explicit-new-pr"]);
+        expect(await git("show", "HEAD:artifact.txt")).toBe(
+          laterEdits ? "saved later work" : "accepted second publication",
+        );
+        expect(await git("merge-base", saved[0], "HEAD")).toBe(saved[0]);
+        expect(pullRequest).toMatchObject({ state: "closed", headSha: acceptedHead });
+        return;
+      }
+      if (!authorized) {
+        await f.revoke();
+        expect(f.guest.assertCurrent).toThrow();
+      } else {
+        f.guest.assertCurrent();
+      }
+      readbackAvailable = true;
+      const restarted = f.restart();
+      if (!authorized) {
+        const read = stateReads.executeExistingOpenClawStateRead;
+        const unavailableRead = vi
+          .spyOn(stateReads, "executeExistingOpenClawStateRead")
+          .mockImplementation((options, command, readOptions) =>
+            command.type === "githubPublications.sharedObservation" ||
+            command.type === "githubPublication.knownPullRequestUrls" ||
+            command.type === "githubRepository.knownPullRequestUrls"
+              ? Promise.reject(new Error("receipt worker unavailable"))
+              : read(options, command, readOptions),
+          );
+        const pendingReceipt = f.readReceipt(requestId)!;
+        try {
+          await expect(restarted.resumeSessionRequests()).rejects.toThrow("unconfirmed");
+          expect(f.readReceipt(requestId)).toMatchObject({
+            status: expect.stringMatching(/^(requested|publishing)$/u),
+            request_digest: pendingReceipt.request_digest,
+            head_commit: pendingReceipt.head_commit,
+            pull_request_url: null,
+          });
+          expect(f.externalWrites).toEqual(acceptedWrites);
+        } finally {
+          unavailableRead.mockRestore();
+        }
+      }
+      await restarted.resumeSessionRequests();
+      expect(await restarted.readAsync(requestId)).toMatchObject(
+        published(first.url, pullRequest.headSha),
+      );
+      if (backend === "local") {
+        expect(f.readReceipt(requestId)?.base_branch).toBe("review/continuation");
+      }
+    }
+    expect(await f.coordinator.readAsync(first.requestId)).toEqual(first);
+    if (backend === "local") {
+      expect(f.readReceipt(first.requestId)?.base_branch).toBe("main");
+    }
     expect(f.externalWrites).toEqual(acceptedWrites);
     expect(f.publishedTitles).toEqual(["first-publication"]);
-    await f.restart().resumeSessionRequests();
-  } else {
-    if (backend === "local") {
-      await expect(publication).rejects.toBeInstanceOf(GitHubPublicationRecoveryPendingError);
-      requestId = readGitHubPublicationRequest(f.database.db, {
-        sessionId: f.session.sessionId,
-        idempotencyKey,
-      })!.request_id;
-    } else {
-      const result = await publication;
-      expect(result.status).toBe("requested");
-      requestId = result.requestId;
-    }
-    expect(pushed).toBe(true);
-    expect(unavailableLookups).toBeGreaterThan(0);
-    expect(f.readReceipt(requestId)).toMatchObject({
-      pull_request_url: null,
-      head_commit: pullRequest.headSha,
-    });
-    expect(pullRequest.body).not.toContain(`<!-- openclaw-publication:${requestId} -->`);
-    expect(await f.coordinator.readAsync(first.requestId)).toEqual(first);
-    acceptedWrites = [...f.externalWrites];
-    // Closing the known PR cannot undo an accepted update.
-    if (backend === "local") {
-      pullRequest.baseRef = "review/changed-after-push";
-    }
-    if (!authorized) {
-      pullRequest.state = "closed";
-      await f.revoke();
-      expect(f.guest.assertCurrent).toThrow();
-    } else {
-      f.guest.assertCurrent();
-    }
-    readbackAvailable = true;
-    const restarted = f.restart();
-    if (!authorized) {
-      const read = stateReads.executeExistingOpenClawStateRead;
-      const unavailableRead = vi
-        .spyOn(stateReads, "executeExistingOpenClawStateRead")
-        .mockImplementation((options, command, readOptions) =>
-          command.type === "githubPublications.sharedObservation" ||
-          command.type === "githubPublication.knownPullRequestUrls" ||
-          command.type === "githubRepository.knownPullRequestUrls"
-            ? Promise.reject(new Error("receipt worker unavailable"))
-            : read(options, command, readOptions),
-        );
-      const pendingReceipt = f.readReceipt(requestId)!;
-      try {
-        await expect(restarted.resumeSessionRequests()).rejects.toThrow("unconfirmed");
-        expect(f.readReceipt(requestId)).toMatchObject({
-          status: expect.stringMatching(/^(requested|publishing)$/u),
-          request_digest: pendingReceipt.request_digest,
-          head_commit: pendingReceipt.head_commit,
-          pull_request_url: null,
-        });
-        expect(f.externalWrites).toEqual(acceptedWrites);
-      } finally {
-        unavailableRead.mockRestore();
-      }
-    }
-    await restarted.resumeSessionRequests();
-    expect(await restarted.readAsync(requestId)).toMatchObject(
-      published(first.url, pullRequest.headSha),
-    );
-    if (backend === "local") {
-      expect(f.readReceipt(requestId)?.base_branch).toBe("review/continuation");
-    }
-  }
-  expect(await f.coordinator.readAsync(first.requestId)).toEqual(first);
-  if (backend === "local") {
-    expect(f.readReceipt(first.requestId)?.base_branch).toBe("main");
-  }
-  expect(f.externalWrites).toEqual(acceptedWrites);
-  expect(f.publishedTitles).toEqual(["first-publication"]);
-});
+  },
+);
 
 it.each([false, true])(
   "recovers a new PR after closure without selecting the old PR (publisher changed: %s)",

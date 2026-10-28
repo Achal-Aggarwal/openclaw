@@ -119,13 +119,18 @@ export function createGitHubPublicationRecoveryBackoff() {
   };
 }
 
+/** Defer network observation until the request-owned local Git transaction is recovered. */
+export type GitHubPublicationRecoveryResult =
+  | SessionGitHubPublicationResult
+  | (() => Promise<SessionGitHubPublicationResult | undefined>);
+
 /** Workspace cleanup precedes every recovered settlement, even without publish authority. */
 export async function prepareGitHubPublicationWorkspaceRecovery<
   Row extends GitHubPublicationExecutionRow,
 >(params: {
   initial: Row;
   validateCustody: () => boolean;
-  recoveryResult?: SessionGitHubPublicationResult;
+  recoveryResult?: GitHubPublicationRecoveryResult;
   complete: (row: Row, result: SessionGitHubPublicationResult) => Row | Promise<Row>;
 }) {
   const owner = await readLocalGitHubPublicationWorktreeOwner(params.initial);
@@ -148,11 +153,16 @@ export async function prepareGitHubPublicationWorkspaceRecovery<
       commands.require,
       assertCustody,
     );
+    assertCustody();
+    const observed =
+      typeof params.recoveryResult === "function"
+        ? await params.recoveryResult()
+        : params.recoveryResult;
     let recoveryResult: SessionGitHubPublicationResult | undefined;
-    if (params.recoveryResult) {
+    if (observed) {
       assertCustody();
       recoveryResult = projectGitHubPublicationResult(
-        await params.complete(params.initial, params.recoveryResult),
+        await params.complete(params.initial, observed),
       );
     }
     return { ...owner, recoveryResult };
@@ -227,16 +237,18 @@ export async function readGitHubPublicationRequestInWorker(
   return result.row;
 }
 
-/** Lost requester authority permits receipt reconciliation, never a publication retry. */
-export async function reconcileGitHubPublication<
-  Row extends GitHubPublicationExecutionRow,
->(params: {
+type GitHubPublicationObservation<Row extends GitHubPublicationExecutionRow> = {
   initial: Row;
   identity?: GitHubPublicationIdentityOwner;
   validateCustody: () => boolean;
   pushOnly?: "observed" | "dispatched";
-  complete: (row: Row, result: SessionGitHubPublicationResult) => Row | Promise<Row>;
-}): Promise<SessionGitHubPublicationResult | undefined> {
+  beforeRetry?: boolean;
+};
+
+/** Observe a recorded update independently of fresh branch, base and workspace eligibility. */
+export async function observeGitHubPublication<Row extends GitHubPublicationExecutionRow>(
+  params: GitHubPublicationObservation<Row>,
+): Promise<SessionGitHubPublicationResult | undefined> {
   const row = params.initial;
   if (row.status === "published" || row.status === "failed") {
     return projectGitHubPublicationResult(row);
@@ -249,6 +261,9 @@ export async function reconcileGitHubPublication<
     !row.source_head_commit ||
     !row.workspace_tree
   ) {
+    return undefined;
+  }
+  if (params.beforeRetry && row.head_commit === row.source_head_commit) {
     return undefined;
   }
   let worktreeOwner: Awaited<ReturnType<typeof readLocalGitHubPublicationWorktreeOwner>>;
@@ -268,6 +283,9 @@ export async function reconcileGitHubPublication<
     const { worktree } = worktreeOwner;
     assertCurrent();
     const pullRequest = worktreeOwner.loaded.entry.worktree?.githubPullRequest;
+    if (params.beforeRetry && pullRequest) {
+      return undefined;
+    }
     const sharedOriginal = row.identity_source !== "personal" && !pullRequest;
     const target = await prepareGitHubPublicationTarget({
       worktree,
@@ -318,7 +336,8 @@ export async function reconcileGitHubPublication<
         : undefined,
       refreshIdentity,
       assertCurrent,
-      pushOnly: params.pushOnly,
+      pushOnly: params.beforeRetry ? "observed" : params.pushOnly,
+      beforeRetry: params.beforeRetry,
     });
   } catch (error) {
     throw new GitHubPublicationRecoveryPendingError(
@@ -331,14 +350,27 @@ export async function reconcileGitHubPublication<
   if (!url) {
     return undefined;
   }
-  return projectGitHubPublicationResult(
-    await params.complete(row, {
-      requestId: row.request_id,
-      status: "published",
-      url,
-      repository: row.repository,
-      branch: row.branch,
-      headCommit: row.head_commit,
-    }),
-  );
+  return {
+    requestId: row.request_id,
+    status: "published",
+    url,
+    repository: row.repository,
+    branch: row.branch,
+    headCommit: row.head_commit,
+  };
+}
+
+/** Lost requester authority permits receipt reconciliation, never a publication retry. */
+export async function reconcileGitHubPublication<Row extends GitHubPublicationExecutionRow>(
+  params: GitHubPublicationObservation<Row> & {
+    complete: (row: Row, result: SessionGitHubPublicationResult) => Row | Promise<Row>;
+  },
+): Promise<SessionGitHubPublicationResult | undefined> {
+  if (params.initial.status === "published" || params.initial.status === "failed") {
+    return projectGitHubPublicationResult(params.initial);
+  }
+  const observed = await observeGitHubPublication(params);
+  return observed
+    ? projectGitHubPublicationResult(await params.complete(params.initial, observed))
+    : undefined;
 }
