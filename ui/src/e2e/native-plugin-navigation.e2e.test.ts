@@ -97,7 +97,50 @@ async function checkNavigation({ page }: { page: Page }, admin: boolean) {
   expect(pageErrors).toEqual([]);
 }
 
+// A page that counts its mounts and shows the params each mount or update delivered.
+const paramsPageModule = `export default {
+  id: "ui-fixture",
+  activate(host) {
+    let mounts = 0;
+    host.ui.registerPage({ id: "proof", label: "UI fixture", mount(container, context) {
+      mounts += 1;
+      const view = document.createElement("output");
+      view.setAttribute("aria-label", "Page state");
+      const show = (props) => { view.textContent = "mounts " + mounts + " view " + (props.view ?? "none"); };
+      const next = document.createElement("button");
+      next.textContent = "Open second view";
+      next.onclick = () => context.host.navigation.openPage({ id: "proof", params: { view: "second" } });
+      container.append(view, next);
+      show(context.props);
+      return { update(nextContext) { show(nextContext.props); }, dispose() { view.remove(); next.remove(); } };
+    }});
+  },
+};`;
+
+async function checkParamNavigation({ page }: { page: Page }) {
+  await installMockGateway(page, {
+    featureMethods: [...defaultControlUiFeatureMethods, "plugins.controlUi.list"],
+    methodResponses: { "plugins.controlUi.list": catalog("one") },
+  });
+  await page.route("**/__openclaw__/plugins/control-ui/ui-fixture/*/index.js", (route) =>
+    route.fulfill({ status: 200, contentType: "text/javascript", body: paramsPageModule }),
+  );
+  const state = page.getByRole("status", { name: "Page state" });
+  await page.goto(`${suite.server.baseUrl}plugin?plugin=ui-fixture&id=proof&p.view=first`);
+  await expect.poll(() => state.textContent()).toBe("mounts 1 view first");
+  await page.getByRole("button", { name: "Open second view", exact: true }).click();
+  await expect.poll(() => new URL(page.url()).searchParams.get("p.view")).toBe("second");
+  await expect.poll(() => state.textContent()).toBe("mounts 1 view second");
+  await page.goBack();
+  await expect.poll(() => state.textContent()).toBe("mounts 1 view first");
+}
+
 suite.define(() => {
+  it("keeps a native page mounted while its own params change", () =>
+    suite.withPage(
+      { viewport: { width: 1280, height: 900 }, serviceWorkers: "block" },
+      checkParamNavigation,
+    ));
   it.each([true, false])(
     "updates native page selection and keeps reload in Plugins Advanced (admin: %s)",
     (admin) =>
