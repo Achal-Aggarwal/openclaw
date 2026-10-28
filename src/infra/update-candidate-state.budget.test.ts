@@ -255,7 +255,7 @@ it.skipIf(process.platform === "win32").for(["complete", "cancel"] as const)(
         nodeRunner: process.execPath,
         sourceEnv,
         stagingRoot,
-        signal: controller.signal,
+        signal: AbortSignal.any([signal, controller.signal]),
         databases: await Promise.all(
           sources.map(async (file) => ({
             path: file,
@@ -302,10 +302,9 @@ fs.writeSync = function(...args) {
       fs.writeFileSync(${JSON.stringify(marker + ".tmp")}, JSON.stringify({ pid: process.pid }));
       fs.renameSync(${JSON.stringify(marker + ".tmp")}, ${JSON.stringify(marker)});
       const result = Reflect.apply(originalWrite, this, args);
-      const deadline = Date.now() + 10_000;
+      // The test signal and registered cleanup own the held worker's lifetime.
       const wait = new Int32Array(new SharedArrayBuffer(4));
       while (!fs.existsSync(${JSON.stringify(release)})) {
-        if (Date.now() >= deadline) throw new Error("Retained backup fixture gate expired");
         Atomics.wait(wait, 0, 0, 10);
       }
       return result;
@@ -373,7 +372,9 @@ require("node:module").syncBuiltinESMExports();
         expect(payloadCount).toBe(1);
         expect(removeTempDirectory(location, () => {})).toBe(false);
       }
-      expect(await Promise.all(payloadPaths.map((file) => fs.readFile(file)))).toEqual(payloads);
+      for (const [index, file] of payloadPaths.entries()) {
+        expect((await fs.readFile(file)).equals(payloads[index]!)).toBe(true);
+      }
       const hashes = (values: Buffer[]) =>
         values.map((bytes) => createHash("sha256").update(bytes).digest("hex")).toSorted();
       expect(hashes(payloads)).toEqual(hashes(original));
@@ -398,6 +399,7 @@ require("node:module").syncBuiltinESMExports();
 
       if (outcome === "cancel") {
         const cancellation = new Error("cancel automatic backup with retained inventory");
+        expect(isProcessAlive(pid)).toBe(true);
         controller.abort(cancellation);
         expect(await operation).toEqual({ error: cancellation });
         expect(isProcessAlive(pid)).toBe(false);
@@ -418,14 +420,14 @@ require("node:module").syncBuiltinESMExports();
         for (const [index, file] of sources.entries()) {
           const entry = backup.databases.find((value) => value.path === file);
           expect(entry).toBeDefined();
-          expect(await fs.readFile(entry!.snapshotPath)).toEqual(original[index]);
+          expect((await fs.readFile(entry!.snapshotPath)).equals(original[index]!)).toBe(true);
           expect(backup.sourceGenerations[file]).toEqual(expect.any(String));
         }
       }
       expect(await fs.readdir(stagingRoot)).toEqual([]);
       expect(await fs.readFile(sentinel, "utf8")).toBe("preserved");
       for (const [index, file] of sources.entries()) {
-        expect(await fs.readFile(file)).toEqual(original[index]);
+        expect((await fs.readFile(file)).equals(original[index]!)).toBe(true);
         for (const suffix of ["-wal", "-shm", "-journal"]) {
           await expect(fs.stat(file + suffix)).rejects.toMatchObject({ code: "ENOENT" });
         }
