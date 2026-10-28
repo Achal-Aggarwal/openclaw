@@ -3,6 +3,11 @@ import {
   buildChannelProgressDraftLine,
   mergeChannelProgressDraftLine,
 } from "../../channels/streaming.js";
+import {
+  markMcpLoopbackRequestStarted,
+  markMcpLoopbackRequestFinished,
+  resolveMcpLoopbackYieldContext,
+} from "../../gateway/mcp-http.loopback-runtime.js";
 import { onAgentEvent } from "../../infra/agent-events.js";
 import { createDiagnosticEmbeddedRunOwner } from "../../logging/diagnostic-run-activity.js";
 import { createSessionControllerWatchdog } from "../../sessions/session-controller.watchdog.js";
@@ -10,6 +15,7 @@ import type { CliToolUseStartDelta } from "../cli-output-contracts.js";
 import {
   claudeMessageStart,
   claudeStreamEvent,
+  claudeTextDelta,
   createClaudeParser,
   joinJsonlFrames,
 } from "../cli-output.test-helpers.js";
@@ -106,9 +112,34 @@ it("keeps native Bash detail without asserting ambiguous MCP execution", () => {
   }
 });
 
-it.each(["text", "tokens after message reset"])(
-  "keeps fresh %s alive through the real JSONL/handler/watchdog path",
-  async (kind) => {
+const thinking = (text: string, tokens?: number) =>
+  claudeStreamEvent({
+    type: "content_block_delta",
+    index: 0,
+    delta: { type: "thinking_delta", thinking: text, estimated_tokens: tokens },
+  });
+const snapshot = (text: string) => ({
+  type: "assistant",
+  message: { id: "message-a", content: [{ type: "thinking", thinking: text }] },
+});
+it.each([
+  ["text", [thinking("New analysis")], true],
+  ["tokens after message reset", [claudeMessageStart("message-b"), thinking("", 1)], true],
+  ["assistant control", [claudeTextDelta("Visible answer")], true],
+  ["non-prefix revision", [snapshot("Revised analysis")], true],
+  ["repeated snapshot", [snapshot("Known analysis")], false],
+  ["prefix snapshot", [snapshot("Known")], false],
+  ["replay after prefix", [snapshot("Known"), snapshot("Known analysis")], false],
+  ["heartbeat", [{ type: "keep_alive" }], false],
+  ["zero tokens", [thinking("", 0)], false],
+  ["subagent", [{ ...thinking("Child analysis"), parent_tool_use_id: "child" }], false],
+  ["stale attempt", [thinking("Old attempt")], false],
+  ["active tool", [thinking("While tool runs")], false],
+  ["yielded text", [thinking("After yield")], false],
+  ["yielded tokens", [thinking("", 1)], false],
+] as const)(
+  "classifies %s through the real JSONL/handler/watchdog path",
+  async (kind, frames, advances) => {
     vi.useFakeTimers();
     vi.setSystemTime(0);
     const stop = vi.fn(() => "settled" as const);
@@ -126,9 +157,10 @@ it.each(["text", "tokens after message reset"])(
       ...context.params,
       watchdogAttempt: attempt,
     });
+    const tracking = createCliToolTracking(context);
     const handlers = createCliEventHandlers({
       context,
-      toolTracking: createCliToolTracking(context),
+      toolTracking: tracking,
       getRunState: () => ({ failed: false, error: undefined }),
     });
     const parser = createClaudeParser({
@@ -136,29 +168,48 @@ it.each(["text", "tokens after message reset"])(
       onThinkingDelta: handlers.emitCliThinkingDelta,
       onThinkingProgress: handlers.emitCliThinkingProgress,
     });
-    const push = (...frames: unknown[]) => parser.push(joinJsonlFrames(...frames, ""));
-    const thinking = (text: string, tokens?: number) =>
-      claudeStreamEvent({
-        type: "content_block_delta",
-        index: 0,
-        delta: { type: "thinking_delta", thinking: text, estimated_tokens: tokens },
-      });
+    const push = (...records: unknown[]) => parser.push(joinJsonlFrames(...records, ""));
     try {
-      push(claudeMessageStart("message-a"), thinking("", 100));
+      push(claudeMessageStart("message-a"), thinking("Known analysis"), thinking("", 100));
       vi.setSystemTime(359_000);
-      push(
-        ...(kind === "text"
-          ? [thinking("New analysis")]
-          : [claudeMessageStart("message-b"), thinking("", 1)]),
-      );
+      if (kind === "stale attempt") {
+        watchdog.attachAttempt({ assertCurrent() {} });
+      }
+      const endTool =
+        kind === "active tool"
+          ? attempt.beginTool({ toolCallId: "tool", toolName: "exec" })
+          : undefined;
+      if (kind.startsWith("yielded")) {
+        tracking.registerTurnInterrupt({ interrupt: async () => {} });
+        tracking.beginGatewayCapture("thinking-yield", () => {});
+        const request = markMcpLoopbackRequestStarted("thinking-yield");
+        await resolveMcpLoopbackYieldContext(request)!.onYield("yield");
+        markMcpLoopbackRequestFinished(request);
+        expect(tracking.shouldSuppressAssistantOutput()).toBe(true);
+      }
+      push(...frames);
       vi.setSystemTime(360_000);
-      expect(await watchdog.tick()).toMatchObject({ action: "observe", reason: "progress" });
-      expect(stop).not.toHaveBeenCalled();
-      expect(watchdog.snapshot().semanticDeadlineAtMs).toBe(719_000);
-      vi.setSystemTime(600_000);
-      expect(await watchdog.tick()).toMatchObject({ action: "stop", reason: "execution_deadline" });
+      expect(watchdog.snapshot().semanticDeadlineAtMs).toBe(advances ? 719_000 : 360_000);
+      if (endTool) {
+        expect((await watchdog.tick()).action).toBe("warn");
+        expect(stop).not.toHaveBeenCalled();
+        endTool();
+      }
+      expect(await watchdog.tick()).toMatchObject({
+        action: advances ? "observe" : "stop",
+        reason: advances ? "progress" : "semantic_stall",
+      });
+      if (advances) {
+        expect(stop).not.toHaveBeenCalled();
+        vi.setSystemTime(600_000);
+        expect(await watchdog.tick()).toMatchObject({
+          action: "stop",
+          reason: "execution_deadline",
+        });
+      }
       expect(stop).toHaveBeenCalledOnce();
     } finally {
+      tracking.finalizeCapture(() => {});
       watchdog.close();
       vi.useRealTimers();
     }

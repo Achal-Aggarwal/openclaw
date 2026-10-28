@@ -29,7 +29,12 @@ function claudeAssistantSnapshot(id: string, content: unknown[]) {
   return { type: "assistant", message: { id, content } };
 }
 
-const reasoning = (text: string, delta = text) => ({ text, delta, isReasoningSnapshot: true });
+const reasoning = (text: string, delta = text) => ({
+  text,
+  delta,
+  isReasoningSnapshot: true,
+  modelProgress: true,
+});
 const thought = (thinking: string, signature?: string) => ({
   type: "thinking",
   thinking,
@@ -376,9 +381,9 @@ describe("createCliJsonlStreamingParser reasoning", () => {
 
     expect(thinking).toEqual([]);
     expect(progress).toEqual([
-      { progressTokens: 50 },
-      { progressTokens: 200 },
-      { progressTokens: 300 },
+      { progressTokens: 50, modelProgress: true },
+      { progressTokens: 200, modelProgress: true },
+      { progressTokens: 300, modelProgress: true },
     ]);
   });
 });

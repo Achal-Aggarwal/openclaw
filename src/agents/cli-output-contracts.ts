@@ -94,10 +94,13 @@ export type CliStreamingDelta = Pick<CliOutput, "text" | "sessionId" | "usage"> 
 /** Incremental thinking text emitted while parsing a streaming CLI response. */
 export type CliThinkingDelta = Pick<CliStreamingDelta, "text" | "delta"> & {
   isReasoningSnapshot?: boolean;
+  /** New content for the parser-owned message/block, not a replayed snapshot. */
+  modelProgress?: true;
 };
 
 export type CliThinkingProgress = {
   progressTokens: number;
+  modelProgress?: true;
 };
 
 export type CliCompactionDelta = { phase: "start" } | { phase: "end"; completed: boolean };
