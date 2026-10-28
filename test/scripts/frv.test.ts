@@ -2045,7 +2045,6 @@ describe("FRV manual retry admission", () => {
 
 describe("FRV child rerun", () => {
   const producer = "install_smoke_release_checks / installer_smoke_candidate_payload";
-  const consumer = "install_smoke_release_checks / installer_smoke_nonroot";
 
   it("sends one failed-jobs rerun, verifies the new attempt, and records an audit line", async () => {
     const scenario = rerunScenario({});
