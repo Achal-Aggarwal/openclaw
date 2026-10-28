@@ -47,6 +47,10 @@ backup.
 
 Candidate Doctor imports historical image-project snapshots as non-repository
 runtime preparation while retaining the original serialized snapshot as evidence.
+Historical shared-schema-21 placements retain their existing preparation evidence
+and cleanup custody under current constraints; unsettled worker claims refuse
+the atomic cutover without advancing either marker. Missing predicate columns
+are derived from their original JSON before publication.
 Historical agent-schema-24 recovery envelopes remain archival columns; queued
 inputs become interrupted before the schema markers advance, never restart replay
 authority. Both repairs use the existing maintenance transaction and verified

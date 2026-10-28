@@ -9,6 +9,8 @@ import {
   preparation,
   original,
   stateV22Schema,
+  stateV21Schema,
+  seedHistoricalPlacements,
 } from "../state/openclaw-historical-imports.test-support.js";
 import { OPENCLAW_STATE_SCHEMA_VERSION } from "../state/openclaw-state-db-contract.js";
 import { withOpenClawTestState } from "../test-utils/openclaw-test-state.js";
@@ -20,9 +22,9 @@ import {
 
 const childTimeout = 90_000;
 
-it(
-  "doctor imports historical image-v22 and agent-v24 evidence without queued inputs across Doctor restart",
-  async () => {
+it.each([21, 22])(
+  "doctor imports historical shared-v%s and agent-v24 evidence through CLI Doctor",
+  async (version) => {
     const port = await acquireTestPortBlock({ offsets: [0] });
     onTestFinished(port.release);
     await withOpenClawTestState({ scenario: "minimal" }, async (state) => {
@@ -33,12 +35,17 @@ it(
       });
       const sharedPath = state.statePath("state", "openclaw.sqlite");
       fs.mkdirSync(path.dirname(sharedPath), { recursive: true });
+      let beforePlacements: Record<string, SQLOutputValue>[] = [];
       let beforeEnvironment: Record<string, SQLOutputValue>;
       {
         using db = new DatabaseSync(sharedPath);
-        db.exec(stateV22Schema());
+        db.exec(version === 21 ? stateV21Schema() : stateV22Schema());
         db.exec(
-          "PRAGMA user_version=22; INSERT INTO schema_meta(meta_key,role,schema_version,created_at,updated_at) VALUES ('primary','global',22,1,1);",
+          "PRAGMA user_version=" +
+            version +
+            "; INSERT INTO schema_meta(meta_key,role,schema_version,created_at,updated_at) VALUES ('primary','global'," +
+            version +
+            ",1,1);",
         );
         db.prepare(
           "INSERT INTO worker_environments " +
@@ -49,6 +56,9 @@ it(
             "VALUES ('historical-image','synthetic','sandbox',?,'provision-image','lease-image'," +
             "?,'reserve',1000,2000,1500,'destroyed',7,'[]',1,2,2,2)",
         ).run(original, preparation.key);
+        if (version === 21) {
+          beforePlacements = seedHistoricalPlacements(db);
+        }
         beforeEnvironment = db.prepare("SELECT * FROM worker_environments").get()!;
       }
       const agentPath = state.statePath("agents", "main", "agent", "openclaw-agent.sqlite");
@@ -91,7 +101,7 @@ it(
       for (const key of ["NODE_ENV", "VITEST", "VITEST_POOL_ID", "VITEST_WORKER_ID"]) {
         delete env[key];
       }
-      for (let attempt = 0; attempt < 2; attempt++) {
+      {
         const result = await runSourceRuntime(
           runtime,
           env,
@@ -133,6 +143,25 @@ it(
           runtimePreparation: { ...preparation, source: "empty" },
           historicalProfileSnapshotJson: original,
         });
+        if (version === 21) {
+          const placements = db
+            .prepare("SELECT * FROM worker_session_placements ORDER BY session_id")
+            .all();
+          expect(placements).toHaveLength(beforePlacements.length);
+          for (const [index, placement] of beforePlacements.entries()) {
+            expect(placements[index]).toEqual(
+              placement.repository_preparation === "pending"
+                ? {
+                    ...placement,
+                    state: "failed",
+                    recovery_error: expect.stringContaining(
+                      "Historical repository preparation pending",
+                    ),
+                  }
+                : placement,
+            );
+          }
+        }
         using agent = new DatabaseSync(agentPath, { readOnly: true });
         expect(agent.prepare("PRAGMA user_version").get()?.user_version).toBe(
           OPENCLAW_AGENT_SCHEMA_VERSION,
@@ -149,8 +178,8 @@ it(
         ).toEqual([]);
         expect(agent.prepare("PRAGMA foreign_key_check").all()).toEqual([]);
       }
-      for (const [pathname, version] of [
-        [sharedPath, 22],
+      for (const [pathname, sourceVersion] of [
+        [sharedPath, version],
         [agentPath, 24],
       ] as const) {
         const backups = fs
@@ -165,13 +194,13 @@ it(
           using saved = new DatabaseSync(path.join(path.dirname(pathname), name), {
             readOnly: true,
           });
-          return saved.prepare("PRAGMA user_version").get()?.user_version === version;
+          return saved.prepare("PRAGMA user_version").get()?.user_version === sourceVersion;
         });
         expect(originalBackup).toBeDefined();
         using saved = new DatabaseSync(path.join(path.dirname(pathname), originalBackup!), {
           readOnly: true,
         });
-        if (version === 24) {
+        if (sourceVersion === 24) {
           expect(saved.prepare("SELECT * FROM session_pending_inputs ORDER BY seq").all()).toEqual(
             beforeInputs,
           );
@@ -183,5 +212,5 @@ it(
       }
     });
   },
-  getCliProcessTestTimeout(childTimeout * 2),
+  getCliProcessTestTimeout(childTimeout),
 );

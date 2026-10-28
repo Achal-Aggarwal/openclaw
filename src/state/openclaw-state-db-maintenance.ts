@@ -40,7 +40,7 @@ import {
   LEGACY_SKILL_WORKSHOP_COLLECTION_REVIEWS_INDEX,
   withSqliteWritableSchema,
 } from "./openclaw-state-db-doctor-schema.js";
-import { migrateHistoricalImageReserveSnapshots } from "./openclaw-state-db-image-snapshot-migration.js";
+import { migrateHistoricalStateImports } from "./openclaw-state-db-historical-imports.js";
 import { stateIndexOrderingMigrations } from "./openclaw-state-db-index-ordering-migrations.js";
 import { migrateMeetingTranscriptStartTime } from "./openclaw-state-db-meeting-chronology-migration.js";
 import {
@@ -624,7 +624,7 @@ export function migrateBoundedStateSchema(
     return undefined;
   }
   // Consume the historical data shape before publishing a newer version marker.
-  const changes = previousVersion <= 22 ? migrateHistoricalImageReserveSnapshots(db) : [];
+  const changes = migrateHistoricalStateImports(db, previousVersion);
   for (const migration of pending) {
     migration.migrate(db, previousVersion, options);
     changes.push(migration.applied);
