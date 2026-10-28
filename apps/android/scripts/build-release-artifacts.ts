@@ -417,6 +417,7 @@ function main() {
   execFileSync(
     "./gradlew",
     [
+      "--profile",
       ...androidBuildMetadataGradleArgs(buildMetadata),
       `-POPENCLAW_ANDROID_VERSION_NAME=${version.canonicalVersion}`,
       `-POPENCLAW_ANDROID_VERSION_CODE=${version.versionCode}`,

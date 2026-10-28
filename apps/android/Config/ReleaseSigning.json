@@ -4,7 +4,7 @@
   "assetPath": "android/openclaw",
   "uploadKeystoreEncryptedFile": "upload-keystore.jks.enc",
   "gradlePropertiesEncryptedFile": "gradle.properties.enc",
-  "apkCertificateSha256": "80dbc62315ea216dd6e8a7060735a866ddc464a48ed50fef29ff0550468b9a63",
+  "apkCertificateSha256": "002aa5d2cdc3d583d6f47d4f2a0bd8f04772b753797c50c05965c4ca734d4897",
   "materializedRoot": "apps/android/build/release-signing",
   "gradlePropertyNames": [
     "OPENCLAW_ANDROID_STORE_FILE",
