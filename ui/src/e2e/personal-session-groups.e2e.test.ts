@@ -217,6 +217,12 @@ suite.define(() => {
       const dialog = page.getByRole("dialog", { name: "Edit section", exact: true });
       const list = dialog.getByRole("group", { name: "Sessions", exact: true });
       await list.getByText("In this section", { exact: true }).waitFor();
+      // Measure after the opening scale transition settles.
+      await dialog.evaluate((element) =>
+        Promise.all(
+          element.getAnimations({ subtree: true }).map((animation) => animation.finished),
+        ),
+      );
       expect(await list.getByRole("checkbox", { name: "Gateway memory audit" }).isChecked()).toBe(
         true,
       );

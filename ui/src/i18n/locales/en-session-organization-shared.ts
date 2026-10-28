@@ -16,7 +16,8 @@ const enSessionOrganizationShared = {
     personalGroupRemoved: "Section removed. Sessions are unchanged.",
     personalGroupUnavailable: "Connection changed. Reopen the section to edit it.",
     personalGroupChanged: "This section changed. Reopen it before saving your edits.",
-    personalGroupCapacity: "Sections are full. Remove a section or remove some sessions from sections before adding more.",
+    personalGroupCapacity:
+      "Sections are full. Remove a section or remove some sessions from sections before adding more.",
     title: "Sessions",
     subtitle: "Browse sessions and manage per-session overrides.",
     archivedOnlyTooltip: "Show only archived sessions.",
