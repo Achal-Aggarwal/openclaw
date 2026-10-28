@@ -114,7 +114,7 @@ it.each([
       return result;
     });
     const execute = executionOwner.executeMutableUpdate;
-    let execution: Awaited<ReturnType<typeof execute>>;
+    let execution: Awaited<ReturnType<typeof execute>> | undefined;
     vi.spyOn(executionOwner, "executeMutableUpdate").mockImplementation(async (params) => {
       execution = await execute(params);
       return execution;
