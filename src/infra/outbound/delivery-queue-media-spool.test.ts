@@ -99,6 +99,8 @@ afterEach(async () => {
   await fs.rm(sourceDir, { recursive: true, force: true });
 });
 
+const mediaAccessFor = (roots: string[]) => ({ localRoots: roots });
+
 describe("retention", () => {
   it("reclaims expired custody off-thread and preserves pending media across reopen", async () => {
     const retained = await seedArtifact(ARTIFACT_A, 30 * DAY_MS);
@@ -266,8 +268,6 @@ describe("ownership helpers", () => {
 });
 
 describe("staging", () => {
-  const mediaAccessFor = (roots: string[]) => ({ localRoots: roots });
-
   it("stages local media while a competing writer needs the host to release its lock", async () => {
     const source = path.join(sourceDir, "voice.ogg");
     await fs.writeFile(source, "opus-bytes");
@@ -432,7 +432,9 @@ it("replays converted PNG bytes with a matching public name and unchanged spool 
     stateDir,
   });
   expect(staged.status).toBe("staged");
-  if (staged.status !== "staged") throw new Error("Expected staged image artifact");
+  if (staged.status !== "staged") {
+    throw new Error("Expected staged image artifact");
+  }
   await enqueueDelivery(
     { channel: "telegram", to: "synthetic", payloads: staged.payloads },
     stateDir,

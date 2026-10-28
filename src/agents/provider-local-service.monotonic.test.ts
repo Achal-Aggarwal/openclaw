@@ -73,7 +73,9 @@ describe("provider readiness wait clock domain", () => {
       // A real unhealthy response occurs inside the readiness loop, after its
       // deadline was established. Keep wall time advancing after the step.
       await firstProbe;
-      await new Promise((resolve) => setTimeout(resolve, 200));
+      await new Promise((resolve) => {
+        setTimeout(resolve, 200);
+      });
       expect(settled).toBe(false);
       expect(await outcome).toEqual(
         expect.objectContaining({

@@ -98,7 +98,7 @@ function mockLocalMissesThenCloudSearch() {
 }
 
 function mockSuccessfulSearchResponse() {
-  fetchWithSsrFGuardMock.mockResolvedValue(guardedResponse({ results: [] }));
+  fetchWithSsrFGuardMock.mockImplementation(async () => guardedResponse({ results: [] }));
 }
 
 async function runOllamaWebSearch(
@@ -623,7 +623,9 @@ describe("ollama web search provider", () => {
       config: createOllamaConfig(),
       searchConfig: { maxResults: 2, timeoutSeconds: 2 },
     } as never);
-    if (!tool) throw new Error("Expected search tool");
+    if (!tool) {
+      throw new Error("Expected search tool");
+    }
     await tool.execute({ query: "openclaw" });
     await tool.execute({ query: "openclaw", count: 7 });
     expect(fetchRequest(0)).toMatchObject({

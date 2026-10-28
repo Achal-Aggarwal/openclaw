@@ -182,6 +182,8 @@ it.each([
     expect(projection.append(source.slice(split)).text).toBe(expected);
   }
   const projection = createTextProjection([duplicateParagraphTextFilter]);
-  for (const char of source) projection.append(char);
+  for (const char of source) {
+    projection.append(char);
+  }
   expect(projection.text).toBe(expected);
 });

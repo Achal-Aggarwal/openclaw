@@ -48,7 +48,9 @@ beforeEach(() => {
           const client = new GatewayBrowserClient(opts);
           vi.spyOn(client, "start").mockImplementation(() => {});
           vi.spyOn(client, "request").mockImplementation(async (method) => {
-            if (replies.has(method)) return replies.get(method)!();
+            if (replies.has(method)) {
+              return replies.get(method)!();
+            }
             if (method === "agents.list") {
               return mainRecord().agents;
             }

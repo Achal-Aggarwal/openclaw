@@ -285,10 +285,13 @@ it.each(["label", "question"])("still rejects oversized %s", async (field) => {
   const requestUserInput = vi.fn();
   const question = {
     ...input.questions[0]!,
-    options: input.questions[0]!.options.map((option) => ({ ...option })),
+    options: input.questions[0]!.options.map((option) => Object.assign({}, option)),
   };
-  if (field === "label") question.options[0]!.label = "x".repeat(257);
-  else question.question = "x".repeat(4097);
+  if (field === "label") {
+    question.options[0]!.label = "x".repeat(257);
+  } else {
+    question.question = "x".repeat(4097);
+  }
   const result = await createClaudeCliUserInputAuthorizer(
     createContext(requestUserInput),
   ).authorize({

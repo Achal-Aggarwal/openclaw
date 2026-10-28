@@ -723,5 +723,5 @@ export function startChatDispatch(params: StartChatDispatchParams): void {
         void discardPreparedInboundMedia(attachments.offloadedRefs);
       }
     }
-  })().catch(dispatchErrorLifecycle.handleSettlementError);
+  })().catch((error: unknown) => dispatchErrorLifecycle.handleSettlementError(error));
 }

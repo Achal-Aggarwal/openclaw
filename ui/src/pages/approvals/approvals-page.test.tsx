@@ -121,9 +121,12 @@ describe("ApprovalsPage", () => {
   it("loads and revokes grants independently of failed, pending history", async () => {
     const history = createDeferred<ApprovalHistoryResult>();
     const request = vi.fn((method: string) => {
-      if (method === "approval.history") return history.promise;
-      if (method === "exec.approval.grants.list")
+      if (method === "approval.history") {
+        return history.promise;
+      }
+      if (method === "exec.approval.grants.list") {
         return Promise.resolve({ grants: [standingGrant("Independent automation")] });
+      }
       return Promise.resolve({ outcome: "revoked" });
     });
     const { page } = createPage(request as GatewayBrowserClient["request"]);
