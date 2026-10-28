@@ -1146,9 +1146,20 @@
   font-size: inherit;
 }
 
+/* Code stays inset in its actual participant surface, including forwarded
+   cards, while preserving the sender hue and the shared code layout. */
+.chat-group:is(.user, .chat-group--forwarded) .chat-bubble {
+  --chat-code-background: oklch(from var(--chat-bubble-background) calc(l + 0.025) c h);
+  --chat-code-border: color-mix(in srgb, var(--text) 12%, var(--chat-code-background));
+}
+
+:where(:root[data-theme-mode="light"]) .chat-group:is(.user, .chat-group--forwarded) .chat-bubble {
+  --chat-code-background: oklch(from var(--chat-bubble-background) calc(l - 0.025) c h);
+}
+
 .chat-text :where(pre) {
-  background: var(--bg-muted);
-  border: 1px solid var(--border-strong);
+  background: var(--chat-code-background, var(--bg-muted));
+  border: 1px solid var(--chat-code-border, var(--border-strong));
   border-radius: var(--radius-md);
   margin-top: 0.75em;
   padding: 10px 12px;
