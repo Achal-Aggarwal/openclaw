@@ -1,5 +1,6 @@
 import type { DatabaseSync } from "node:sqlite";
 import { isDeepStrictEqual } from "node:util";
+import { readSqliteSchemaObjects } from "../infra/sqlite-schema-admission.js";
 import { parseSqliteTableDefinition } from "../infra/sqlite-schema-contract-assembly.js";
 import { createSqliteTableContractReader } from "../infra/sqlite-schema-contract.js";
 import { extractSqliteTableSchema, quoteSqliteIdentifier } from "../infra/sqlite-schema-sql.js";
@@ -58,7 +59,8 @@ function migrateHistoricalRepositoryPreparation(db: DatabaseSync): boolean {
       "Unrecognized historical worker placement schema; preserve the store for explicit recovery.",
     );
   }
-  const claimed = db
+  // The predecessor-only column is deliberately absent from the current DB type.
+  const claimed = /* sqlite-allow-raw: Offline predecessor claim admission. */ db
     .prepare(
       "SELECT 1 FROM worker_session_placements WHERE repository_preparation IN ('pending', 'failed') AND turn_claim_owner = 'worker' LIMIT 1",
     )
@@ -68,11 +70,12 @@ function migrateHistoricalRepositoryPreparation(db: DatabaseSync): boolean {
       "Historical repository preparation retains a worker turn claim; reconcile its owned cleanup before migrating.",
     );
   }
-  const objects = db
-    .prepare(
-      "SELECT sql FROM sqlite_schema WHERE tbl_name = ? AND type IN ('index', 'trigger') AND sql IS NOT NULL",
-    )
-    .all(table);
+  const objects = readSqliteSchemaObjects(db).filter(
+    (object) =>
+      object.tbl_name === table &&
+      (object.type === "index" || object.type === "trigger") &&
+      object.sql !== null,
+  );
   const columns = actual.columns.map((column) => column.name);
   const select = columns.map((column) => {
     if (column === "state") {
