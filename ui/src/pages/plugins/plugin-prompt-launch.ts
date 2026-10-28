@@ -123,7 +123,8 @@ export function createPluginPromptLaunch(host: {
       const intent = {
         prompt,
         rowKey,
-        isCurrent: () =>
+        isCurrent: (): boolean =>
+          pending === intent &&
           host.isActive() &&
           host.gateway().isCurrent(scope) &&
           host.pathname() === pathname &&

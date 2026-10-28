@@ -558,6 +558,59 @@ describeControlUiE2e("recommended plugin prompts (mock Gateway boundary)", () =>
     }
   });
 
+  it("permanently retires a held chat launch after leaving and returning to its plugin page", async () => {
+    const context = await newContext();
+    const page = await context.newPage();
+    const gateway = await installMockGateway(page, {
+      featureMethods: methods,
+      methodResponses: {
+        ...responses(),
+        "plugins.list": inventory([installed]),
+        "plugins.catalog.get": {
+          ...detail,
+          plugin: {
+            ...detail.plugin,
+            local: {
+              ...detail.plugin.local,
+              present: true,
+              installed: true,
+              enabled: true,
+              state: "enabled",
+              pluginId: installed.id,
+              action: "manage",
+            },
+          },
+        },
+      },
+    });
+    try {
+      const pathname = `/plugins/${calendarDiscoveryPlugin.id}`;
+      await page.goto(`${server.baseUrl}plugins/${calendarDiscoveryPlugin.id}`);
+      await gateway.deferNext("sessions.create");
+      await recommendation(page).first().click();
+      await gateway.waitForRequest("sessions.create");
+      await navigate(page, "/plugins");
+      await waitForControlUiRoute(page, { routeId: "plugins", pathname: "/plugins" });
+      await navigate(page, pathname);
+      await recommendation(page).first().waitFor();
+      const lists = (await gateway.getRequests("sessions.list")).length;
+      await gateway.resolveDeferred("sessions.create");
+      await gateway.waitForRequest("sessions.list", { after: lists });
+      await page.evaluate(
+        () =>
+          new Promise<void>((resolve) => {
+            requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+          }),
+      );
+      expect(new URL(page.url()).pathname).toBe(pathname);
+      expect(await recommendation(page).first().isEnabled()).toBe(true);
+      expect(await gateway.getRequests("sessions.create")).toHaveLength(1);
+      expect(await gateway.getRequests("chat.send")).toHaveLength(0);
+    } finally {
+      await context.close();
+    }
+  });
+
   it.each(["navigate", "reconnect"] as const)(
     "does not open chat after stale %s during installation",
     async (retirement) => {
