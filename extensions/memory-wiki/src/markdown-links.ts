@@ -100,7 +100,9 @@ export function extractWikiLinks(markdown: string, sourceRelativePath: string): 
     if (node.type === "link" || node.type === "image") {
       const rawTarget = node.url?.trim();
       if (rawTarget && !rawTarget.startsWith("#") && !/^[a-z]+:/i.test(rawTarget)) {
-        const target = decodeMarkdownLinkPath(rawTarget.split("#")[0]?.split("?")[0] ?? "").replace(/\\/g, "/").trim();
+        const target = decodeMarkdownLinkPath(rawTarget.split("#")[0]?.split("?")[0] ?? "")
+          .replace(/\\/g, "/")
+          .trim();
         if (target) {
           links.push(normalizeMarkdownLinkTarget(sourceRelativePath, target));
         }
