@@ -1,5 +1,6 @@
 import { once } from "node:events";
 import http from "node:http";
+import { connect } from "node:net";
 import type { PluginRuntime } from "openclaw/plugin-sdk/plugin-runtime";
 import {
   createPluginStateKeyedStoreForTests,
@@ -397,27 +398,33 @@ describe("Beam receiver", () => {
 
   it("closes a declared oversized upload without waiting for its body", async () => {
     const store = memoryStore();
-    const endpoint = await serve(store);
-    const request = http.request(endpoint, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "content-length": BEAM_MAX_BODY_BYTES + 1,
-        connection: "keep-alive",
-      },
-    });
-    const responseReady = once(request, "response");
-    const closed = once(request, "close");
-    request.flushHeaders();
+    const endpoint = new URL(await serve(store));
+    // Use TCP directly: Node's environment proxy can buffer an unfinished HTTP
+    // upload before forwarding it, so an HTTP client may never reach this receiver.
+    const socket = connect({ host: endpoint.hostname, port: Number(endpoint.port) });
+    const chunks: Buffer[] = [];
+    socket.on("data", (chunk: Buffer) => chunks.push(chunk));
+    const closed = once(socket, "close");
+    socket.write(
+      [
+        `POST ${endpoint.pathname} HTTP/1.1`,
+        `Host: ${endpoint.host}`,
+        "Content-Type: application/json",
+        `Content-Length: ${BEAM_MAX_BODY_BYTES + 1}`,
+        "Connection: keep-alive",
+        "",
+        "",
+      ].join("\r\n"),
+    );
     try {
-      const [response] = (await responseReady) as [http.IncomingMessage];
-      response.resume();
-      expect(response.statusCode).toBe(413);
-      expect(response.headers.connection).toBe("close");
       await closed;
+      const [headers, body] = Buffer.concat(chunks).toString().split("\r\n\r\n");
+      expect(headers).toMatch(/^HTTP\/1\.1 413 /);
+      expect(headers).toMatch(/\r\nConnection: close(?:\r\n|$)/i);
+      expect(body).toBe("Payload too large");
       expect(store.values.size).toBe(0);
     } finally {
-      request.destroy();
+      socket.destroy();
     }
   });
 });
