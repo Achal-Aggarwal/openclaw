@@ -25,9 +25,9 @@ export function detectHooksOwnerToolsFindings(cfg: OpenClawConfig): HealthFindin
       severity: "info",
       path: "hooks.mappings[].allowedOwnerTools",
       message:
-        "Hook agent turns are not owners, so they get no owner-only tools such as gateway, nodes, terminal, portal, conversations_send or full sessions control. Earlier versions gave embedded hook turns these tools.",
+        "Hook agent turns are not owners, so they get no owner-only tools such as gateway, nodes, terminal or conversations_send, and only control actions in sessions. Earlier versions gave embedded hook turns these tools.",
       fixHint:
-        "If a hook needs one, list it in that mapping's allowedOwnerTools, or in hooks.allowedOwnerTools for direct /hooks/agent requests. Grant only what the hook needs.",
+        "If a hook needs gateway, plugins, nodes, computer, screen, mobile_ui, terminal or openclaw, list it in that mapping's allowedOwnerTools, or in hooks.allowedOwnerTools for direct /hooks/agent requests. Grant only what the hook needs.",
     },
   ];
 }

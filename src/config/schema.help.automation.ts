@@ -163,7 +163,7 @@ export const AUTOMATION_FIELD_HELP: Record<string, string> = {
   "hooks.allowedAgentIds":
     "Allowlist of effective agent IDs that hook requests and mappings are allowed to target, including default-agent routing when agentId is omitted. Use this to constrain automation events to dedicated service agents and limit the damage if a hook token is exposed.",
   "hooks.allowedOwnerTools":
-    "Owner-only tools (for example gateway or nodes) that direct /hooks/agent turns may use. Hook turns are not owners, so they get no owner-only tools by default. Grant only the tools the hook needs; anyone with the hook token can drive them. Mapped requests use their mapping's allowedOwnerTools instead.",
+    "Owner-only tools (gateway, plugins, nodes, computer, screen, mobile_ui, terminal or openclaw) that direct /hooks/agent turns may use. Hook turns are not owners, so they get none by default. Grant only the tools the hook needs; anyone with the hook token can drive them. Mapped requests use their mapping's allowedOwnerTools instead.",
   "hooks.presets":
     "Named hook preset bundles applied at load time to seed standard mappings and behavior defaults. Keep preset usage explicit so operators can audit which automations are active.",
   "hooks.transformsDir":
@@ -201,7 +201,7 @@ export const AUTOMATION_FIELD_HELP: Record<string, string> = {
   "hooks.mappings[].allowUnsafeExternalContent":
     "When true, mapping content may include less-sanitized external payload data in generated messages. Keep false by default and enable only for trusted sources with reviewed transform logic.",
   "hooks.mappings[].allowedOwnerTools":
-    "Owner-only tools (for example gateway or nodes) that this mapping's agent turns may use. Hook turns are not owners, so they get no owner-only tools by default. Grant only what the mapping needs; anyone who can reach it can drive those tools with untrusted payload content.",
+    "Owner-only tools (gateway, plugins, nodes, computer, screen, mobile_ui, terminal or openclaw) that this mapping's agent turns may use. Hook turns are not owners, so they get none by default. Grant only what the mapping needs; anyone who can reach it can drive those tools with untrusted payload content.",
   "hooks.mappings[].channel":
     'Delivery channel override for mapping outputs (for example "last", "telegram", "discord", "slack", "signal", "imessage", or "msteams"). Keep channel overrides explicit to avoid accidental cross-channel sends.',
   "hooks.mappings[].to":

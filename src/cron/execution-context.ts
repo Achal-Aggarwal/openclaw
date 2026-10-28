@@ -74,11 +74,7 @@ type ScheduledToolPolicy = Readonly<{
   callerOrigin: CronScheduledToolCallerOrigin;
   execTarget?: CronToolsAllowExecTarget;
   automations: ScheduledAutomationsScope;
-  /**
-   * Owner-only tools a hook grants its ingress turn. When set, the turn keeps
-   * the internal sender surface limited to these tools; otherwise an ingress
-   * turn is not an owner.
-   */
+  /** Owner-only tools a hook grants its non-owner ingress turn. */
   ownerTools?: readonly string[];
 }>;
 

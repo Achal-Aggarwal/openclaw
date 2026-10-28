@@ -266,7 +266,7 @@ it.each(["gateway.hooks.agent", "gateway.hooks.plugin"] as const)(
   },
 );
 
-// A hook's grant keeps the internal sender surface for the tools it names only.
+// A hook's grant exempts the tools it names; the turn is still not an owner.
 it("a hook's owner-tool grant allows only the named owner-only tools", async () => {
   await runAndTouchSibling({
     trigger: "event",
@@ -274,14 +274,14 @@ it("a hook's owner-tool grant allows only the named owner-only tools", async () 
     ingressOwnerTools: ["gateway"],
   });
   const surface = ownerSurface.last;
-  expect(surface?.senderIsOwner).toBeUndefined();
+  expect(surface?.senderIsOwner).toBe(false);
   const callable = surface?.callable ?? {};
   expect(callable.gateway).toBe(true);
-  expect(Object.keys(callable).length).toBeGreaterThan(2);
+  expect(Object.keys(callable).length).toBeGreaterThan(3);
   for (const [name, available] of Object.entries(callable)) {
     expect({ name, available }).toEqual({
       name,
-      available: name === AUTOMATIONS_TOOL_NAME || name === "gateway",
+      available: name === AUTOMATIONS_TOOL_NAME || name === "sessions" || name === "gateway",
     });
   }
 });

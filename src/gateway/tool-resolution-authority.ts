@@ -14,7 +14,7 @@ import type { OpenClawConfig } from "../config/types.openclaw.js";
 import {
   readScheduledAutomationsSelfJobId,
   readScheduledOccurrenceAutomationsScope,
-  readScheduledIngressOwnerToolDenylist,
+  readScheduledIngressOwnerToolGrant,
   readScheduledSenderBit,
   readScheduledToolOptions,
 } from "../cron/execution-context-registry.js";
@@ -162,7 +162,8 @@ type GatewayScheduledToolAccess = Readonly<{
  * A scheduled occurrence on the CLI loopback takes its automations scope from
  * its context, as the embedded run does: a tool restricted to the run's own
  * job, exempt from the owner-only denial, or no tool when the scope is `none`.
- * Ingress turns and runs without a context keep the owner-only rule.
+ * Ingress turns and runs without a context keep the owner-only rule, except for
+ * tools a hook grants its ingress turns.
  */
 function resolveGatewayScheduledToolAccess(
   params: { admittedRunContext?: AdmittedRunContext; toolsAllow?: readonly string[] },
@@ -174,8 +175,8 @@ function resolveGatewayScheduledToolAccess(
       : undefined;
   const selfJobId = readScheduledAutomationsSelfJobId(scope);
   const automationsDenied = scope !== undefined && !selfJobId;
-  const ingressOwnerToolDeny =
-    surface === "loopback" ? readScheduledIngressOwnerToolDenylist(params.admittedRunContext) : [];
+  const ingressGrant =
+    surface === "loopback" ? readScheduledIngressOwnerToolGrant(params.admittedRunContext) : [];
   return {
     toolOptions: {
       ...readScheduledToolOptions(params.admittedRunContext, params.toolsAllow),
@@ -190,11 +191,11 @@ function resolveGatewayScheduledToolAccess(
         (name) =>
           name !== "sessions" &&
           (name !== "portal" || !sessionPortal) &&
-          (name !== AUTOMATIONS_TOOL_NAME || !selfJobId),
+          (name !== AUTOMATIONS_TOOL_NAME || !selfJobId) &&
+          // A hook's owner-tool grant exempts the tools it names.
+          !ingressGrant.includes(name),
       ),
       ...(automationsDenied ? [AUTOMATIONS_TOOL_NAME] : []),
-      // A hook's owner-tool grant still refuses the owner-only tools it does not name.
-      ...ingressOwnerToolDeny,
     ],
   };
 }

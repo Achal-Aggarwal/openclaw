@@ -50,10 +50,10 @@ it("rejects persistent mappings without a stable session key source", () => {
 });
 
 it("accepts owner-only tools a hook may grant", () => {
-  expect(validateMapping({ allowedOwnerTools: ["nodes", "sessions"] }).ok).toBe(true);
+  expect(validateMapping({ allowedOwnerTools: ["nodes", "gateway"] }).ok).toBe(true);
 });
 
-it.each(["intent", "automations", "exec", "nodez"])(
+it.each(["intent", "automations", "sessions", "conversations_send", "exec", "nodez"])(
   "rejects %s as a hook owner-tool grant",
   (tool) => {
     for (const result of [

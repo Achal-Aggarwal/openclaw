@@ -151,14 +151,14 @@ tools; constrain those tools in the agent policy when needed.
 
 A hook agent turn is not an owner. Like a non-owner channel sender, it gets no
 owner-only tools: `gateway`, `plugins`, `nodes`, `computer`, `screen`,
-`mobile_ui`, `terminal`, `portal`, `openclaw`, `conversations_list`,
-`conversations_send` and `conversations_turn`. Its `sessions` tool is limited
-to control actions, and `intent` is never available. This applies to HTTP
+`mobile_ui`, `terminal`, `openclaw`, `conversations_list`, `conversations_send`
+and `conversations_turn`. `sessions` and `portal` keep their non-owner modes,
+and `intent` is never available. This applies to HTTP
 hooks, mapped hooks, plugin triggers such as the IMAP trigger, and channel join
 introductions, on every agent runtime. The `automations` tool keeps its own
 rule: a hook turn may act only on its own automation.
 
-Before this change, embedded hook turns had every owner-only tool except
+Earlier versions gave embedded hook turns every owner-only tool except
 `intent`. To give a hook back a tool it needs, name it in `allowedOwnerTools`
 on the mapping, or in `hooks.allowedOwnerTools` for direct `/hooks/agent`
 requests:
@@ -179,16 +179,17 @@ requests:
 }
 ```
 
-With a grant, the turn has owner tool access limited to the listed tools; every
-other owner-only tool stays refused, including full `sessions` control unless
-`sessions` is listed. Accepted names are the owner-only tools above plus
-`sessions`; `intent`, `automations` and any other name are config errors.
-Plugin triggers and channel join introductions have no grant. Anyone with the
-hook token can drive granted tools with untrusted payload content, so grant only
-what the hook needs and keep the target agent's tool policy narrow.
-`openclaw security audit` warns about every grant
-(`hooks.owner_tools_granted`), and `openclaw doctor` notes enabled hooks
-without one.
+The turn stays a non-owner: the grant only lifts the owner-only refusal for
+the tools it names, and everything else that depends on owner identity is
+unchanged. Accepted names are `gateway`, `plugins`, `nodes`, `computer`,
+`screen`, `mobile_ui`, `terminal` and `openclaw`. The conversation tools,
+`sessions`, `portal`, `intent` and `automations` check the sender themselves
+and cannot be granted; any other name is a config error. Plugin triggers and
+channel join introductions have no grant. Anyone with the hook token can drive
+granted tools with untrusted payload content, so grant only what the hook needs
+and keep the target agent's tool policy narrow. `openclaw security audit`
+warns about every grant (`hooks.owner_tools_granted`), and `openclaw doctor`
+notes enabled hooks without one.
 
 ### Hook session and agent policy
 

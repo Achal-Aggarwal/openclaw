@@ -546,7 +546,8 @@ export function createGatewayHookDispatcher(params: {
                   job,
                   agentId,
                   ingressBoundary,
-                  ingressOwnerTools: acceptedValue.allowedOwnerTools,
+                  // Only hook config grants owner-only tools; plugin triggers never do.
+                  ingressOwnerTools: pluginId ? undefined : acceptedValue.allowedOwnerTools,
                 }),
                 cfg,
                 deps,

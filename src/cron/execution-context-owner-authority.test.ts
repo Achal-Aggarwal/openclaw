@@ -370,7 +370,7 @@ describe("scheduled owner authority", () => {
     ).toEqual({});
   });
 
-  it("makes ingress turns non-owners unless their hook grants owner-only tools", () => {
+  it("makes ingress turns non-owners, even when their hook grants owner-only tools", () => {
     const ingress = (placement: "detached" | "in-session", ownerTools?: readonly string[]) =>
       ({
         status: "ready",
@@ -384,6 +384,8 @@ describe("scheduled owner authority", () => {
     // Persistent hook sessions run in-session and are still not owners.
     expect(resolveScheduledSenderBit(ingress("detached"))).toEqual({ senderIsOwner: false });
     expect(resolveScheduledSenderBit(ingress("in-session"))).toEqual({ senderIsOwner: false });
-    expect(resolveScheduledSenderBit(ingress("detached", ["gateway"]))).toEqual({});
+    expect(resolveScheduledSenderBit(ingress("detached", ["gateway"]))).toEqual({
+      senderIsOwner: false,
+    });
   });
 });

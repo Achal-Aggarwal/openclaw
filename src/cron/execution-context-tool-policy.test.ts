@@ -314,7 +314,7 @@ describe("ingress owner-only surface", () => {
     "%s hook turn with a grant reaches only the granted tool",
     async (runtime) => {
       const run = await admitRun(hookJob, RUN_KEY, ["*"], { ownerTools: ["gateway"] });
-      expect(run.senderIsOwner).toBeUndefined();
+      expect(run.senderIsOwner).toBe(false);
       const tools =
         runtime === "embedded" ? await embeddedTools(run, () => {}, "event") : await cliTools(run);
       expect(await reachesTool(tools, "gateway")).toBe(true);
