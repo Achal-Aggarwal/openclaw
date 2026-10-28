@@ -17,6 +17,7 @@ import type { GatewayUiCommandTarget } from "../gateway/ui-command-target.types.
 import type { ImageContent } from "../llm/types.js";
 import type { MediaFact } from "../media/media-facts.js";
 import type { PromptImageOrderEntry } from "../media/prompt-image-order.js";
+import type { CliBackendTurnAssessment } from "../plugins/cli-backend.types.js";
 import type { RuntimePluginToolGrant } from "../plugins/runtime/tool-grant.js";
 import type { InputProvenance } from "./input-provenance.js";
 import type { UserTurnTranscriptRecorder } from "./user-turn-transcript.types.js";
@@ -249,6 +250,19 @@ export type ReplyBackendMessageInjectionV2 = {
   ): Promise<boolean>;
 };
 
+export type ReplyBackendTurnAssessment =
+  | CliBackendTurnAssessment
+  | { state: "unknown"; basis: "timeout" | "failed" | "invalid" };
+
+export type ReplyBackendTurnStatus = {
+  capture():
+    | {
+        isCurrent(): boolean;
+        assess(params: { signal: AbortSignal }): Promise<ReplyBackendTurnAssessment>;
+      }
+    | undefined;
+};
+
 export type ReplyBackendHandle = {
   readonly kind: "embedded" | "cli";
   readonly runId?: string;
@@ -282,6 +296,8 @@ export type ReplyBackendHandle = {
   isAbortable?: () => boolean;
   /** Recover a stalled model request while retaining this native turn for fallback. */
   recoverStalledModelCall?: () => boolean;
+  /** Stable registration identity; absent until this backend offers an assessment. */
+  readonly turnStatus?: ReplyBackendTurnStatus;
   /** @deprecated Compatibility for shipped embedded handles. Use messageInjection. */
   queueMessage?: ReplyBackendMessageInjection["queueMessage"];
   /**

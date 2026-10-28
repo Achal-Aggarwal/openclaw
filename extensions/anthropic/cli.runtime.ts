@@ -13,11 +13,8 @@ import { isRecord } from "openclaw/plugin-sdk/string-coerce-runtime";
 import { hasClaudeRawToolInvocation } from "./cli-output.js";
 import type { ClaudeCliSecretInput } from "./cli-process.js";
 import { prepareClaudeCliTransportArgs } from "./cli-runtime-args.js";
-import {
-  readReplayedTaskId,
-  recordRunningDescendants,
-  recordTaskOwnership,
-} from "./cli-runtime-tasks.js";
+import { createClaudeTurnStatus } from "./cli-runtime-status.js";
+import * as tasks from "./cli-runtime-tasks.js";
 import { createClaudeCliTransport } from "./cli-transport.js";
 import { createClaudeCliUserInputAuthorizer } from "./cli-user-input.js";
 
@@ -31,7 +28,7 @@ const IDLE_TIMEOUT_MS = 10 * 60 * 1_000;
 export type ClaudeCliExecuteContext = CliBackendExecuteContext & {
   assertPrivateInputCurrent?: () => void;
 };
-type ClaudeCliTurn = {
+export type ClaudeCliTurn = {
   context: ClaudeCliExecuteContext;
   controller: AbortController;
   userInput: ReturnType<typeof createClaudeCliUserInputAuthorizer>;
@@ -65,7 +62,7 @@ type ClaudeCliTurn = {
   heldResult?: Record<string, unknown>;
   error?: Error;
 };
-type ClaudeCliSession = {
+export type ClaudeCliSession = {
   handle: CliBackendLiveSessionHandle;
   capability?: CliBackendLiveSessionCapability;
   transport?: Awaited<ReturnType<typeof createClaudeCliTransport>>;
@@ -369,7 +366,7 @@ async function acceptMessage(session: ClaudeCliSession, message: Record<string, 
   let taskId: string | undefined;
   let parentRuns = false;
   if (message.type === "system") {
-    parentRuns = recordRunningDescendants(session.runningDescendants, message);
+    parentRuns = tasks.recordRunningDescendants(session.runningDescendants, message);
     const input = turn && (!session.hasInputLifecycle || turn.inputStarted) ? turn : undefined;
     const inputUuid = input?.inputUuid ?? "";
     if (message.subtype === "background_tasks_changed") {
@@ -378,7 +375,7 @@ async function acceptMessage(session: ClaudeCliSession, message: Record<string, 
           if (!isRecord(task)) {
             continue;
           }
-          const id = recordTaskOwnership(session, task, inputUuid);
+          const id = tasks.recordTaskOwnership(session, task, inputUuid);
           const parentTaskId = id ? session.runningDescendants.get(id) : undefined;
           if (
             id &&
@@ -400,7 +397,7 @@ async function acceptMessage(session: ClaudeCliSession, message: Record<string, 
         }
       }
     } else {
-      taskId = recordTaskOwnership(session, message, inputUuid);
+      taskId = tasks.recordTaskOwnership(session, message, inputUuid);
     }
   }
   if (!turn) {
@@ -481,7 +478,7 @@ async function acceptMessage(session: ClaudeCliSession, message: Record<string, 
   }
   // A replay receipt acknowledges consumption within the current query. Keep its
   // queue slot until that query's result so it cannot acknowledge the next task twice.
-  const replayedTaskId = readReplayedTaskId(message, turn.submittedInputUuids);
+  const replayedTaskId = tasks.readReplayedTaskId(message, turn.submittedInputUuids);
   if (replayedTaskId) {
     turn.pendingBackgroundTaskIds.delete(replayedTaskId);
     turn.foregroundTaskIds.delete(replayedTaskId);
@@ -713,6 +710,7 @@ export async function* executeClaudeCli(
       if (session.closed || session.currentTurn !== turn) {
         throw turn.error ?? new Error("Claude CLI closed before its prompt was accepted.");
       }
+      context.registerTurnStatus?.(createClaudeTurnStatus(context, session, turn));
       context.registerTurnInterrupt?.({
         async interrupt() {
           context.assertCurrent?.();

@@ -28,6 +28,8 @@ export type {
   CliBackendToolPermissionRequest,
   CliBackendToolPermissionResult,
   CliBackendTurnInterrupt,
+  CliBackendTurnAssessment,
+  CliBackendTurnStatus,
   CliBackendThinkingLevel,
   CliBackendUserInputOption,
   CliBackendUserInputQuestion,

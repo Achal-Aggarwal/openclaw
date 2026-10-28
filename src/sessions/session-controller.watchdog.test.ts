@@ -8,6 +8,10 @@ import {
 } from "../infra/diagnostic-events.js";
 import { createDeferredCore } from "../shared/deferred.js";
 import { withSessionTurn } from "./session-controller.admission.js";
+import type {
+  ReplyBackendTurnAssessment,
+  ReplyBackendTurnStatus,
+} from "./session-controller.backend-contracts.js";
 import { createReplyOperation } from "./session-controller.operation.js";
 import { getSessionControllerOperation } from "./session-controller.state.js";
 import { testing } from "./session-controller.test-support.js";
@@ -240,7 +244,14 @@ describe("operation-owned watchdog through controller admission", () => {
     expectStalled(operation, cancel);
   });
 
-  it.each(["backend", "attempt", "owner"] as const)(
+  it.each([
+    "backend",
+    "attempt",
+    "owner",
+    "assessed backend",
+    "assessed registration",
+    "assessed deadline",
+  ] as const)(
     "revalidates the exact %s after asynchronous placement recovery",
     async (replacement) => {
       const entered = createDeferredCore();
@@ -258,6 +269,21 @@ describe("operation-owned watchdog through controller admission", () => {
       });
       const { operation, cancel } = running();
       const attempt = operation.watchdog.attachAttempt({ assertCurrent() {} });
+      let status: ReplyBackendTurnStatus | undefined = {
+        capture: () => ({
+          isCurrent: () => true,
+          assess: async () => ({ state: "closed", basis: "transport_closed" }),
+        }),
+      };
+      if (replacement.startsWith("assessed")) {
+        operation.attachBackend({
+          kind: "cli",
+          cancel,
+          get turnStatus() {
+            return status;
+          },
+        });
+      }
       const pending = tickAt(operation.watchdog, abortMs);
       await entered.promise;
       let successor = operation;
@@ -267,15 +293,34 @@ describe("operation-owned watchdog through controller admission", () => {
       } else if (replacement === "attempt") {
         attempt.close();
       }
-      const cancelSuccessor = attach(successor);
+      const cancelSuccessor =
+        replacement === "assessed registration" || replacement === "assessed deadline"
+          ? cancel
+          : attach(successor);
+      if (replacement === "assessed deadline") {
+        attempt.setExecutionDeadline(abortMs);
+      } else {
+        status = undefined;
+      }
       resume.resolve();
       await pending;
+      await vi.advanceTimersByTimeAsync(0);
       expect(cancel).not.toHaveBeenCalled();
       expect(cancelSuccessor).not.toHaveBeenCalled();
       expect(successor.result).toBeNull();
       expect(getSessionControllerOperation(key)).toBe(successor);
       expect(successor.watchdog.snapshot().recovery).toBeUndefined();
-      expect(successor.watchdog.attachAttempt({ assertCurrent() {} }).isCurrent()).toBe(true);
+      expect(successor.watchdog.describeStop().error).not.toHaveProperty("assessment");
+      if (replacement === "assessed deadline") {
+        expect(await successor.watchdog.tick()).toMatchObject({
+          action: "stop",
+          reason: "execution_deadline",
+        });
+        expect(cancel).toHaveBeenCalledOnce();
+        expect(operation.abortSignal.reason).not.toHaveProperty("assessment");
+      } else {
+        expect(successor.watchdog.attachAttempt({ assertCurrent() {} }).isCurrent()).toBe(true);
+      }
     },
   );
 
@@ -578,5 +623,177 @@ describe("operation-owned watchdog through controller admission", () => {
     writer.resolve();
     await operation.ownerSettlement;
     expect(operation.watchdog.snapshot().phase).toBe("settled");
+  });
+});
+
+function assessedRun(recoverStalledModelCall?: () => boolean) {
+  const operation = begin();
+  let current = true;
+  const attempt = operation.watchdog.attachAttempt({
+    assertCurrent() {
+      if (!current) {
+        throw new Error("revoked");
+      }
+    },
+  });
+  attempt.setExecutionDeadline(600_000);
+  const response = createDeferredCore<ReplyBackendTurnAssessment>();
+  let signal: AbortSignal | undefined;
+  const assess = vi.fn(({ signal: next }: { signal: AbortSignal }) => {
+    signal = next;
+    return response.promise;
+  });
+  const capture = vi.fn(() => {
+    expect(operation.watchdog.decide()).toMatchObject({ action: "observe", reason: "backend" });
+    void operation.watchdog.tick();
+    return { isCurrent: () => true, assess };
+  });
+  const cancel = vi.fn(() => operation.complete());
+  operation.attachBackend({
+    kind: "cli",
+    cancel,
+    turnStatus: { capture },
+    recoverStalledModelCall,
+  });
+  return {
+    operation,
+    attempt,
+    response,
+    assess,
+    capture,
+    cancel,
+    signal: () => signal,
+    revoke: () => {
+      current = false;
+    },
+  };
+}
+
+describe("bounded pre-stop assessment", () => {
+  it.each(["closed", "unknown", "unsupported", "throw", "timeout"] as const)(
+    "rechecks silence once after %s without claiming unknown is dead",
+    async (outcome) => {
+      const { operation, response, assess, capture, cancel, signal } = assessedRun();
+      expect(await tickAt(operation.watchdog, abortMs)).toMatchObject({
+        action: "observe",
+        reason: "backend",
+        deadlineAtMs: abortMs + 10_000,
+      });
+      expect(operation.watchdog.snapshot().recovery).toBeUndefined();
+      await operation.watchdog.tick();
+      expect(capture).toHaveBeenCalledOnce();
+      expect(assess).toHaveBeenCalledOnce();
+      expect(cancel).not.toHaveBeenCalled();
+      const basis =
+        outcome === "closed"
+          ? "transport_closed"
+          : outcome === "throw"
+            ? "failed"
+            : outcome === "unsupported"
+              ? "status_unsupported"
+              : outcome === "timeout"
+                ? "timeout"
+                : "process_present";
+      if (outcome === "timeout") {
+        await tickAt(operation.watchdog, abortMs + 10_000);
+      } else if (outcome === "throw") {
+        response.reject(new Error("synthetic private error"));
+      } else {
+        response.resolve(
+          outcome === "closed"
+            ? { state: "closed", basis: "transport_closed" }
+            : {
+                state: "unknown",
+                basis: outcome === "unsupported" ? "status_unsupported" : "process_present",
+              },
+        );
+      }
+      await operation.ownerSettlement;
+      expectStalled(operation, cancel);
+      expect(operation.abortSignal.reason).toMatchObject({
+        message:
+          outcome === "closed"
+            ? "Reply backend closed before completing"
+            : "Reply operation stalled",
+        assessment: {
+          state: outcome === "closed" ? "closed" : "unknown",
+          basis,
+          durationMs: outcome === "timeout" ? 10_000 : 0,
+        },
+      });
+      expect(signal()?.aborted).toBe(true);
+      response.resolve({ state: "closed", basis: "process_exited" });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(cancel).toHaveBeenCalledOnce();
+    },
+  );
+
+  it("does not reassess the same target and silence episode after native recovery", async () => {
+    const recover = vi.fn(() => true);
+    const { operation, response, assess, cancel } = assessedRun(recover);
+    await tickAt(operation.watchdog, abortMs);
+    response.resolve({ state: "unknown", basis: "process_present" });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(recover).toHaveBeenCalledOnce();
+    await operation.watchdog.tick();
+    expect(assess).toHaveBeenCalledOnce();
+    expect(cancel).not.toHaveBeenCalled();
+    expect(operation.watchdog.snapshot().semanticProgressAtMs).toBe(0);
+    operation.complete();
+  });
+
+  it.each([
+    "progress",
+    "Stop",
+    "hard deadline",
+    "completion",
+    "attempt",
+    "backend",
+    "revocation",
+  ] as const)("%s wins over a late closed assessment", async (change) => {
+    const { operation, attempt, response, cancel, signal, revoke } = assessedRun();
+    if (change === "hard deadline") {
+      attempt.setExecutionDeadline(abortMs + 5);
+    }
+    await tickAt(operation.watchdog, abortMs);
+    expect(operation.watchdog.snapshot().waits).toEqual([
+      { kind: "backend", deadlineAtMs: abortMs + (change === "hard deadline" ? 5 : 10_000) },
+    ]);
+    const replacementCancel = vi.fn(() => operation.complete());
+    if (change === "progress") {
+      expect(attempt.progressModel("fresh thinking")).toBe(true);
+    }
+    if (change === "Stop") {
+      operation.abortByUser();
+    }
+    if (change === "hard deadline") {
+      await tickAt(operation.watchdog, abortMs + 5);
+    }
+    if (change === "completion") {
+      operation.complete();
+    }
+    if (change === "revocation") {
+      revoke();
+    }
+    if (change === "attempt") {
+      operation.watchdog.attachAttempt({ assertCurrent() {} }).progressModel();
+    }
+    if (change === "backend") {
+      operation.attachBackend({ kind: "cli", cancel: replacementCancel });
+    }
+    response.resolve({ state: "closed", basis: "transport_closed" });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(cancel).toHaveBeenCalledTimes(change === "Stop" || change === "hard deadline" ? 1 : 0);
+    expect(replacementCancel).not.toHaveBeenCalled();
+    if (change === "backend") {
+      await operation.watchdog.tick();
+      expectStalled(operation, replacementCancel);
+    } else if (change === "progress" || change === "attempt") {
+      expect(operation.watchdog.decide().action).toBe("observe");
+      expect(operation.result).toBeNull();
+    }
+    expect(operation.abortSignal.reason ?? {}).not.toHaveProperty("assessment");
+    operation.complete();
+    expect(signal()?.aborted).toBe(true);
   });
 });

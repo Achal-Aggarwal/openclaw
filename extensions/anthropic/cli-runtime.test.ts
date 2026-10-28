@@ -5,6 +5,7 @@ import type {
   CliBackendExecuteContext,
   CliBackendMessageInjection,
   CliBackendToolPermissionResult,
+  CliBackendTurnStatus,
 } from "openclaw/plugin-sdk/cli-backend";
 import { createDeferred } from "openclaw/plugin-sdk/extension-shared";
 import {
@@ -453,7 +454,11 @@ describe("Claude native stdio boundary", () => {
     "restarts fresh after pending Bash %s",
     async (termination, { signal }) => {
       const controller = new AbortController();
+      let status: CliBackendTurnStatus | undefined;
       const context = await createContext("background-bash-success", {
+        registerTurnStatus: (value) => {
+          status = value;
+        },
         abortSignal: controller.signal,
       });
       const { liveSession } = context;
@@ -470,6 +475,12 @@ describe("Claude native stdio boundary", () => {
           process.kill(firstPid, "SIGTERM");
         }
         expect(await withinTest(outcome, signal)).toBeInstanceOf(Error);
+        const assessment = status!.capture()!;
+        await expect(assessment.assess({ signal })).resolves.toEqual(
+          termination === "process exit"
+            ? { state: "closed", basis: "transport_closed" }
+            : { state: "unknown", basis: "status_unsupported" },
+        );
       } finally {
         controller.abort();
       }
@@ -680,8 +691,18 @@ describe("Claude native stdio boundary", () => {
   ])(
     "isolates steering context ($scenario, same prompt: $samePrompt)",
     async ({ scenario, results, samePrompt }) => {
+      let status: CliBackendTurnStatus | undefined;
       const { context, running, injection } = await startInjection(scenario, {
         promptContext: { prependContext: PRIVATE },
+        registerTurnStatus: (value) => {
+          status = value;
+        },
+      });
+      const captured = status!.capture()!;
+      expect(captured.isCurrent()).toBe(true);
+      await expect(captured.assess({ signal: new AbortController().signal })).resolves.toEqual({
+        state: "unknown",
+        basis: "process_present",
       });
       const notificationReplay = scenario.includes("notification-replay");
       const input = samePrompt
@@ -689,7 +710,10 @@ describe("Claude native stdio boundary", () => {
         : notificationReplay
           ? "<task-notification><task-id>background-agent</task-id></task-notification>"
           : "steering input";
-      await injection.queueMessage(input, async (submit) => submit());
+      await injection.queueMessage(input, async (submit) => {
+        submit();
+        expect(captured.isCurrent()).toBe(false);
+      });
       const records = await running;
       const tagged = records.filter((record) => record.user_message_uuid !== undefined);
       expect(tagged.map((record) => record.type)).toEqual(
@@ -699,6 +723,16 @@ describe("Claude native stdio boundary", () => {
       expectFinalResults(records, results);
       const detail = resultDetail(records);
       expect(detail).toMatchObject({ user: input, privateContext: PRIVATE });
+      if (scenario === "steer-merged") {
+        expect(detail.hostFrames).toEqual([
+          "control_request:initialize",
+          "user",
+          "control_response",
+          "user",
+          "control_response",
+        ]);
+      }
+      expect(status!.capture()!.isCurrent()).toBe(false);
       if (notificationReplay) {
         expect(detail.finalBackgroundAnswer).toBe(true);
       }

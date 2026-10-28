@@ -219,6 +219,24 @@ export type CliBackendTurnInterrupt = {
   interrupt(reason: "yield"): Promise<void>;
 };
 
+/** Content-free facts, never proof of model progress or authority to stop a turn. */
+export type CliBackendTurnAssessment =
+  | { state: "closed"; basis: "process_exited" | "transport_closed" }
+  | {
+      state: "unknown";
+      basis: "process_present" | "status_unsupported" | "busy" | "transient_error";
+    };
+
+/** Capture the exact native input/generation without submitting work or changing hooks. */
+export type CliBackendTurnStatus = {
+  capture():
+    | {
+        isCurrent(): boolean;
+        assess(params: { signal: AbortSignal }): Promise<CliBackendTurnAssessment>;
+      }
+    | undefined;
+};
+
 /** Turn-only context that must not become an operator-authored native transcript row. */
 export type CliBackendPromptContext = {
   prependContext?: string;
@@ -256,6 +274,8 @@ export type CliBackendExecuteContext = {
   registerMessageInjection?: (injection: CliBackendMessageInjection) => void;
   /** Offers graceful turn interruption; the host drops the registration when this run closes. */
   registerTurnInterrupt?: (interrupt: CliBackendTurnInterrupt) => void;
+  /** Optional read-only assessment outside the prompt queue; the host owns its time bound. */
+  registerTurnStatus?: (status: CliBackendTurnStatus) => void;
   /** Closure-bound approval capability; retained copies fail after the run closes. */
   requestToolPermission: (
     request: CliBackendToolPermissionRequest,

@@ -12,6 +12,8 @@ import {
 import type {
   CliBackendLiveSessionHandle,
   CliBackendToolPermissionResult,
+  CliBackendTurnAssessment,
+  CliBackendExecuteContext,
 } from "../../plugins/cli-backend.types.js";
 import {
   initializeGlobalHookRunner,
@@ -28,6 +30,7 @@ import {
   captureCurrentReplyMessageInjectionTarget,
 } from "../../sessions/session-controller.message-injection.js";
 import { createReplyOperation } from "../../sessions/session-controller.operation.js";
+import { getAttachedBackend } from "../../sessions/session-controller.state.js";
 import { createUserTurnTranscriptRecorder } from "../../sessions/user-turn-transcript.js";
 import { getAdmittedRunDelegatedAuthority } from "../admitted-run-context.js";
 import * as beforeToolCall from "../agent-tools.before-tool-call.js";
@@ -679,4 +682,105 @@ describe("plugin-owned CLI same-turn input", () => {
     }
     expect(captureCurrentReplyMessageInjectionTarget(operation.key)).toBeUndefined();
   });
+});
+
+describe("plugin turn assessments through the operation watchdog", () => {
+  it.each(["absent", "invalid", "throw", "closed", "busy", "transient", "unsupported"] as const)(
+    "preserves bounded recovery and finite metadata for %s",
+    async (mode) => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(0);
+      const { context } = await createExecution({ timeoutMs: 600_000 });
+      const operation = attachReplyOperation(context);
+      operation.setPhase("running");
+      operation.watchdog.attachAttempt({ assertCurrent() {} });
+      context.params.abortSignal = operation.abortSignal;
+      const ready = createDeferred();
+      const finish = createDeferred();
+      let retained: CliBackendExecuteContext | undefined;
+      const assess = vi.fn(async () => {
+        if (mode === "throw") {
+          throw new Error("private provider detail");
+        }
+        // Deliberately malformed plugin output exercises the real runtime validator.
+        return (
+          mode === "invalid"
+            ? { state: "closed", basis: "invented", raw: "private" }
+            : mode === "closed"
+              ? { state: "closed", basis: "transport_closed", raw: "private" }
+              : {
+                  state: "unknown",
+                  basis:
+                    mode === "busy"
+                      ? "busy"
+                      : mode === "transient"
+                        ? "transient_error"
+                        : "status_unsupported",
+                  raw: "private",
+                }
+        ) as CliBackendTurnAssessment;
+      });
+      const run = runPlugin(
+        context,
+        async function* (execution) {
+          retained = execution;
+          if (mode !== "absent") {
+            execution.registerTurnStatus?.({ capture: () => ({ isCurrent: () => true, assess }) });
+          }
+          ready.resolve();
+          await finish.promise;
+          yield SUCCESS_RESULT;
+        },
+        { noOutputTimeoutMs: 600_000 },
+      );
+      const outcome = run.catch((error: unknown) => error);
+      try {
+        await awaitGateBeforeSettlement(ready.promise, run, "plugin never became ready");
+        const backend = getAttachedBackend(operation)!;
+        expect(backend.turnStatus === undefined).toBe(mode === "absent");
+        const aborted = new Promise<void>((resolve) => {
+          operation.abortSignal.addEventListener("abort", () => resolve(), { once: true });
+        });
+        vi.setSystemTime(360_000);
+        const pending = operation.watchdog.tick();
+        expect(operation.watchdog.snapshot().waits).toHaveLength(mode === "absent" ? 0 : 1);
+        expect(operation.watchdog.snapshot().recovery?.status).toBe(
+          mode === "absent" ? "pending" : undefined,
+        );
+        await pending;
+        await aborted;
+        expect(operation.result).toMatchObject({ kind: "failed", code: "run_stalled" });
+        expect(assess).toHaveBeenCalledTimes(mode === "absent" ? 0 : 1);
+        const reason: unknown = operation.abortSignal.reason;
+        if (mode === "absent") {
+          expect(reason).not.toHaveProperty("assessment");
+        } else {
+          expect(reason).toHaveProperty("assessment", {
+            state: mode === "closed" ? "closed" : "unknown",
+            basis:
+              mode === "invalid"
+                ? "invalid"
+                : mode === "throw"
+                  ? "failed"
+                  : mode === "closed"
+                    ? "transport_closed"
+                    : mode === "busy"
+                      ? "busy"
+                      : mode === "transient"
+                        ? "transient_error"
+                        : "status_unsupported",
+            durationMs: 0,
+          });
+        }
+        finish.resolve();
+        await outcome;
+        expect(backend.turnStatus).toBeUndefined();
+        expect(() => retained!.registerTurnStatus!({ capture: () => undefined })).toThrow();
+      } finally {
+        finish.resolve();
+        await outcome;
+        operation.complete();
+      }
+    },
+  );
 });
