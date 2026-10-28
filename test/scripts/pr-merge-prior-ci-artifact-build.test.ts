@@ -5,10 +5,114 @@ import { expectExit, expectPriorCiRefusal } from "./pr-merge-assertions.test-sup
 import { createMergeOutcomeFixtureHarness } from "./pr-merge-outcome.test-support.js";
 import { createPriorCiCandidateFactory } from "./pr-merge-prior-ci.test-support.js";
 
-const { fixture, describePosix } = createMergeOutcomeFixtureHarness();
+const { fixture, describePosix, outcomeRef } = createMergeOutcomeFixtureHarness();
 const { artifactBuildCandidate } = createPriorCiCandidateFactory(fixture);
 
 describePosix("artifact-build failure with successful primary CI", () => {
+  it.each(["qualified", "revoked membership", "revoked bypass"])(
+    "revalidates the %s delegated writer at the merge I/O boundary",
+    (authority) => {
+      const f = artifactBuildCandidate();
+      const state = f.state();
+      state.repoAuthority.permissions = { admin: false, maintain: true, push: true };
+      state.priorCi.membership = "member";
+      state.priorCi.rulesetBypass = "always";
+      // merge_verify reads authority twice; final merge_run qualification must start
+      // authorized and lose membership/bypass only at its last writer read.
+      state.priorCi.revokeMembershipAfterReads = authority === "revoked membership" ? 3 : 0;
+      state.priorCi.revokeRulesetAfterRead = authority === "revoked bypass";
+      state.priorCi.revokeRulesetAfterReads = 3;
+      f.save(state);
+
+      // Run the real shell owner and verifier; only GitHub's boundary is synthetic.
+      const result = f.adminPriorCi(f.path);
+      const final = f.state();
+      const dispatches = final.calls.filter(
+        (call) => call.includes("repos/fixture/repo/pulls/123/merge") && call.includes("PUT"),
+      );
+      const dispatch = final.calls.indexOf(dispatches[0]!);
+      const reads = dispatch < 0 ? final.calls : final.calls.slice(0, dispatch);
+      const finalSecurity = reads.findLastIndex((call) =>
+        call.some((arg) => arg.startsWith(`repos/fixture/repo/commits/${f.head}/statuses?`)),
+      );
+      const finalPolicy = reads.findLastIndex((call) =>
+        call.some((arg) => arg.startsWith("repos/fixture/repo/rules/branches/main?")),
+      );
+      const membership = reads.flatMap((call, index) =>
+        call.includes("orgs/fixture/memberships/fixture-operator") ? [index] : [],
+      );
+      expect(membership).toHaveLength(4);
+      expect(finalSecurity).toBeGreaterThan(membership[2]!);
+      expect(finalPolicy).toBeGreaterThan(finalSecurity);
+      expect(membership[3]).toBeGreaterThan(finalPolicy);
+      expect(final.priorCi.membershipReads).toBe(4);
+      expect(final.priorCi.rulesetReads).toBe(authority === "revoked membership" ? 3 : 4);
+      if (authority !== "revoked membership") {
+        expect(
+          reads.findLastIndex((call) => call.includes("repos/fixture/repo/rulesets/41")),
+        ).toBeGreaterThan(membership[3]!);
+      }
+
+      if (authority === "qualified") {
+        expectExit(result, 0);
+        expect(dispatches).toHaveLength(1);
+        expect(final).toMatchObject({
+          mutations: 1,
+          posts: 1,
+          restMergePayload: { sha: f.head, merge_method: "squash" },
+        });
+        expect(final.comments).toHaveLength(1);
+        expect(f.record()).toMatchObject({
+          phase: "complete",
+          head: f.head,
+          priorCiAdmin: {
+            primaryCi: { runId: 502, runAttempt: 2 },
+            delegation: { kind: "ci-ruleset-bypass", rulesets: [{ id: 41, mode: "always" }] },
+          },
+        });
+      } else {
+        expectExit(result, 1);
+        expect(result.output).toContain(
+          authority === "revoked membership" ? "404" : "live CI-only ruleset bypass",
+        );
+        expect(dispatches).toEqual([]);
+        expect(final).toMatchObject({
+          mutations: 0,
+          posts: 0,
+          comments: [],
+          restMergePayload: null,
+          graphqlMergePayloads: [],
+        });
+        expect(f.git(["for-each-ref", "--format=%(refname)", outcomeRef])).toBe("");
+        expect(f.captures()).toEqual([]);
+      }
+      console.info(
+        "[artifact-authority-proof]",
+        JSON.stringify({
+          authority,
+          exit: result.status,
+          membershipReads: final.priorCi.membershipReads,
+          rulesetReads: final.priorCi.rulesetReads,
+          membershipHttp404: result.output.includes("HTTP 404"),
+          order: {
+            initialWriter: membership[2],
+            finalSecurity,
+            finalPolicy,
+            finalWriter: membership[3],
+            dispatch,
+          },
+          puts: dispatches.length,
+          headPinned: final.restMergePayload?.sha === f.head,
+          method: final.restMergePayload?.merge_method ?? null,
+          mutations: final.mutations,
+          posts: final.posts,
+          outcome: authority === "qualified" ? f.record().phase : "absent",
+          deniedCaptures: authority === "qualified" ? null : f.captures().length,
+        }),
+      );
+    },
+  );
+
   it("admits the optional failed attempt without changing the failed review or pending preparation", () => {
     const f = artifactBuildCandidate();
     const review = readFileSync(join(f.worktree, ".local/review.json"), "utf8");
