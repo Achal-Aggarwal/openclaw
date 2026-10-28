@@ -47,7 +47,6 @@ the supervisor needs none. A failed history write leaves a retry warning in the
 `update finish` result. Releases swapped without the native protocol are not
 recorded.
 
-
 **Updates always work** (`openclaw update` finishes best effort everywhere). Changes to update, Doctor, service lifecycle, migrations, plugin loading: state their update behavior. Installed updater runs first, can't be patched; candidate fixes key on markers shipped drivers set; existing operator state = input. Recoverable hiccups → recorded warnings; back up before mutating, let rollback restore it; refuse only for named data risk with previous Gateway kept running. Timeouts and budgets: generous, derived from measured state, sized for slow hardware. Proof: published-driver × candidate cell.
 
 This retention covers Node and Bun late imports, including CommonJS dependencies
@@ -67,7 +66,6 @@ retains its running runtime. Late module imports and background workers keep
 using that generation through finalization, rollback, and CLI cleanup, even when
 the new build has different chunk filenames. The new Gateway starts from the
 activated build.
-
 
 During update finalization, disposable plugin source copies and private SQLite
 inspection snapshots use the candidate helper's absolute `TMPDIR` (including

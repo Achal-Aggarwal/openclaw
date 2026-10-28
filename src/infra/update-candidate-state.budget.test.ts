@@ -1,5 +1,3 @@
-import { z } from "zod";
-import { parseUpdateStateInspectionWorker, runUpdateStateInspectionWorker } from "./update-candidate-state.inspection.js";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { setTimeout as realSetTimeout } from "node:timers";
@@ -25,9 +23,17 @@ import { sqliteWorkerPreloadEnv } from "./sqlite-worker-preload.test-support.js"
 import { measureUpdateStateFiles } from "./update-candidate-io.js";
 import { observeUpdateCandidateIoProgress } from "./update-candidate-io.test-support.js";
 import { prepareUpdateCandidateStateSnapshot } from "./update-candidate-snapshot.js";
-import { readUpdateStateSchemaVersions } from "./update-candidate-state.js";
+import {
+  parseUpdateStateInspectionWorker,
+  runUpdateStateInspectionWorker,
+} from "./update-candidate-state.inspection.js";
+import {
+  readUpdateStateSchemaVersions,
+  UpdateStateSchemaInspectionPlanSchema,
+} from "./update-candidate-state.js";
 import { readUpdateStateDatabaseSizes } from "./update-candidate-state.sizes.js";
 import { materializeUpdateCandidateStateWorker } from "./update-candidate-state.test-support.js";
+import { UpdateDatabaseBackupSchema } from "./update-database-backup.js";
 
 let cleanupFixture: (() => Promise<void>) | undefined;
 const tempDirs = useAutoCleanupTempDirTracker((cleanupDirs) =>
@@ -100,7 +106,7 @@ it("keeps one-shot state worker stdout parseable with SQLite debug logging enabl
       ...worker,
       input: { mode: "discover", stateDir, config: {}, stagingRoot: root },
     }),
-    z.object({ databases: z.array(z.unknown()) }).passthrough(),
+    UpdateStateSchemaInspectionPlanSchema,
   );
   const backupRoot = path.join(root, "backup");
   await fs.mkdir(`${backupRoot}.databases`);
@@ -116,7 +122,7 @@ it("keeps one-shot state worker stdout parseable with SQLite debug logging enabl
     },
   });
 
-  expect(parseUpdateStateInspectionWorker(result, z.object({ databases: z.array(z.object({ path: z.string(), userVersion: z.number() }).passthrough()), warnings: z.array(z.unknown()) }).passthrough())).toMatchObject({
+  expect(parseUpdateStateInspectionWorker(result, UpdateDatabaseBackupSchema)).toMatchObject({
     databases: [expect.objectContaining({ path: database, userVersion: 7 })],
     warnings: [],
   });
@@ -124,7 +130,6 @@ it("keeps one-shot state worker stdout parseable with SQLite debug logging enabl
     /\[state\/sqlite\] SQLite read-only snapshot for .*budget \d+ seconds/,
   );
 });
-
 
 it.for([undefined, 600_000])(
   "honors the %s ms allowance during metadata inventory",

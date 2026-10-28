@@ -50,10 +50,12 @@ it.each(["admission", "worker"] as const)(
           };
         },
       );
-      const result = await preserveDoctorOriginalState({ ...captureDefaults(), env: state.env });
-      expect(result.warnings.join("\n")).toContain("timed out after 600 s");
-      expect(result.warnings.join("\n")).toContain("verified backup");
-      expect(result.warnings.join("\n")).toContain("openclaw doctor --fix");
+      const defaults = captureDefaults();
+      await preserveDoctorOriginalState({ ...defaults, env: state.env });
+      const messages = defaults.runtime.log.mock.calls.flat().join("\n");
+      expect(messages).toContain("timed out after 600 s");
+      expect(messages).toContain("verified backup");
+      expect(messages).toContain("openclaw doctor --fix");
     });
   },
 );

@@ -63,9 +63,7 @@ import {
   assertManagedUpdateLeaseDatabaseIdentity,
   prepareManagedHandoffLeaseDatabaseIdentity,
 } from "./update-managed-service-handoff-database.js";
-import {
-  describeManagedHandoffBlocker,
-} from "./update-managed-service-handoff-diagnostics.js";
+import { describeManagedHandoffBlocker } from "./update-managed-service-handoff-diagnostics.js";
 import { MANAGED_HANDOFF_LEASE_SOURCE } from "./update-managed-service-handoff-lease-source.js";
 import {
   prepareManagedHandoffLeaseStore,

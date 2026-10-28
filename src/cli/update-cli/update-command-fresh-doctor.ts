@@ -5,8 +5,6 @@ import { collectNestedErrorCandidates } from "@openclaw/normalization-core/error
 import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import {
   isUpdateDoctorInspectionReportMode,
-  UPDATE_DEFER_CONFIGURED_PLUGIN_INSTALL_REPAIR_ENV,
-  UPDATE_PARENT_SUPPORTS_DOCTOR_CONFIG_WRITE_ENV,
   UPDATE_POST_CORE_CONVERGENCE_ENV,
 } from "../../commands/doctor/shared/update-phase.js";
 import { readConfigFileSnapshot } from "../../config/config.js";
@@ -87,17 +85,7 @@ import {
 } from "./update-command-service-env.js";
 import { captureUpdateFinalizationDoctorOutput } from "./update-finalization-output.js";
 
-export async function withPrePluginUpdateDoctorEnv<T>(run: () => Promise<T>): Promise<T> {
-  return await withUpdateEnv(
-    {
-      OPENCLAW_UPDATE_IN_PROGRESS: "1",
-      [UPDATE_DEFER_CONFIGURED_PLUGIN_INSTALL_REPAIR_ENV]: "1",
-      [UPDATE_PARENT_SUPPORTS_DOCTOR_CONFIG_WRITE_ENV]: "1",
-      [UPDATE_POST_CORE_CONVERGENCE_ENV]: undefined,
-    },
-    run,
-  );
-}
+export { withPrePluginUpdateDoctorEnv } from "./update-command-fresh-doctor-env.js";
 
 export async function runUpdateFinalizationDoctorInFreshProcess(params: {
   phase: "pre-plugin" | "post-plugin";

@@ -216,7 +216,7 @@ it.each(["failed", "completed"] as const)(
     );
     await entered.promise;
     expect(listUpdateRuns()[0]?.status).toBe("running");
-    vi.setSystemTime(Date.now() + 1_001);
+    vi.advanceTimersByTime(1_001);
     work.resolve(outcome);
     const result = await running;
     if (outcome === "completed") {
@@ -241,7 +241,9 @@ it.each(["failed", "completed"] as const)(
 );
 
 beforeEach(() => {
-  vi.useFakeTimers();
+  vi.useFakeTimers({
+    toFake: ["Date", "setTimeout", "clearTimeout", "setInterval", "clearInterval", "performance"],
+  });
   vi.stubEnv("OPENCLAW_STATE_DIR", dirs.make("openclaw-finalize-heartbeat-"));
   vi.stubEnv(UPDATE_RUN_ID_ENV, undefined);
   vi.spyOn(defaultRuntime, "error").mockImplementation(() => {});

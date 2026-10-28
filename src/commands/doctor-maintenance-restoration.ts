@@ -5,10 +5,10 @@ import { isManagedGatewayServiceOffline } from "../cli/update-cli/update-command
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import {
   ServiceInspectionError,
-  type GatewayServiceAuthorityError,
   findServiceOwnershipRefusal,
 } from "../daemon/service-inspection-error.js";
 import type { GatewayServiceState } from "../daemon/service-types.js";
+import type { GatewayServiceAuthorityError } from "../daemon/service-update-authority.js";
 import { formatErrorMessage } from "../infra/errors.js";
 import { UpdateDoctorError } from "../infra/update-doctor-result.js";
 import { createUpdateFailureFact, type UpdateFailureFact } from "../infra/update-failure-facts.js";

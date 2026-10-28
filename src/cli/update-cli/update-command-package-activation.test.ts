@@ -8,11 +8,11 @@ import { waitForDead } from "../../../test/helpers/process-wait.js";
 import { withinTest } from "../../../test/helpers/promise.js";
 import * as gatewayService from "../../daemon/service.js";
 import { createMockGatewayService } from "../../daemon/service.test-helpers.js";
+import { acquireGatewayStateOwner } from "../../infra/gateway-state-owner.js";
 import {
   resolvePackageActivationHelper,
   resolvePackageActivationJournalPath,
 } from "../../infra/package-update-activation-journal.js";
-import { acquireGatewayStateOwner } from "../../infra/gateway-state-owner.js";
 import { createPackageActivationLifetimeFixture } from "../../infra/package-update-activation-lifetime.test-support.js";
 import {
   readPackageActivationReceipt,

@@ -129,7 +129,9 @@ it.each(["restored", "failed", "finished", "retried", "absent", "symlink", "unch
             status: "succeeded",
           }),
         ]);
-        await expect(updateRestoreCommand(backupRoot)).rejects.toThrow("rollback backup has been retired");
+        await expect(updateRestoreCommand(backupRoot)).rejects.toThrow(
+          "rollback backup has been retired",
+        );
         return;
       }
       if (outcome === "retried") {

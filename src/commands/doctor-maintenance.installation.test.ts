@@ -812,7 +812,6 @@ it.each([
     runInstallationCase({
       platform: "darwin",
       mode: "maintenance",
-      definitionRepair: nativePolicy === "disabled-before-install" ? "repaired" : "not-needed",
       nativePolicy,
     }),
 );

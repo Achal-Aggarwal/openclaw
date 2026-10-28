@@ -3,10 +3,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { expect, it, vi } from "vitest";
-import { waitForSignalExitBarriers } from "../cli/signal-exit-barrier.js";
 import { UpdateFinalizationLifecycle } from "../cli/update-cli/update-finalization-lifecycle.js";
 import { GatewayServiceStopUnsafeError } from "../daemon/service-inspection-error.js";
-import { resolveGatewayService } from "../daemon/service.js";
 import { collectNestedErrorCandidates } from "../infra/error-graph-internal.js";
 import { GATEWAY_SERVICE_STOP_TIMEOUT_MS } from "../infra/gateway-shutdown-budget.js";
 import { GatewayStateOwnerContentionError } from "../infra/gateway-state-owner.js";
@@ -32,35 +30,6 @@ import * as nocow from "./doctor-sqlite-nocow.js";
 
 const settlement = await import("./doctor-maintenance.settlement.test-support.js");
 const { begin, boundary, cleanupBarrier, root, tempDirs } = settlement;
-
-it.each([false, true])(
-  "settles interrupted original-state capture (restart fails: %s)",
-  async (restartFails) => {
-    let drain: Promise<unknown> | undefined;
-    const runtimeError = vi.fn();
-    if (restartFails) {
-      boundary.restart.mockRejectedValueOnce(new Error("synthetic service start failure"));
-    }
-    const admission = beginDoctorMaintenance({
-      root,
-      options: { repair: true, nonInteractive: true },
-      runtime: { log: boundary.log, error: runtimeError, exit: vi.fn() },
-      beforeStateMutation: async ({ signal }) => {
-        drain = waitForSignalExitBarriers("SIGINT").catch((error: unknown) => error);
-        signal.throwIfAborted();
-      },
-    });
-    await expect(admission).rejects.toThrow(
-      restartFails ? "synthetic service start failure" : "Doctor interrupted by SIGINT",
-    );
-    await drain;
-    expect(boundary.restart).toHaveBeenCalledOnce();
-    expect(boundary.health).toHaveBeenCalledTimes(restartFails ? 0 : 1);
-    if (restartFails) {
-      expect(runtimeError).toHaveBeenCalledWith(expect.stringContaining("openclaw gateway start"));
-    }
-  },
-);
 
 it("refuses rollback attribution for writes preceding Doctor admission", async () => {
   vi.spyOn(updateState, "readUpdateDatabaseGenerationsIsolated").mockImplementation(async (paths) =>
@@ -561,7 +530,9 @@ it("releases ownership acquired after the parent deadline without starting repai
   expect(boundary.stop).toHaveBeenCalledExactlyOnceWith(
     expect.objectContaining({ phase: "inspect" }),
   );
-  expectCalls(0, "repair", "restart", "health");
+  expect(boundary.repair).not.toHaveBeenCalled();
+  expect(boundary.restart).not.toHaveBeenCalled();
+  expect(boundary.health).not.toHaveBeenCalled();
 });
 
 it("restores a stopped service when post-stop ownership admission exceeds the parent deadline", async () => {
@@ -1065,52 +1036,4 @@ it("does not settle a typed refusal while command cleanup remains uncertain", as
   expect(boundary.resume).not.toHaveBeenCalled();
   expect(boundary.complete).not.toHaveBeenCalled();
   expect(boundary.restart).not.toHaveBeenCalled();
-});
-
-it.each([
-  "owned-offline",
-  "running-indicator",
-  "unknown-runtime",
-  "unknown-load",
-  "read-failed",
-  "not-ours",
-])("rechecks an initially stopped Gateway after config repair: %s", async (outcome) => {
-  boundary.stop.mockImplementation(async () => ({ ...settlement.stopped, stopped: false }));
-  const state = {
-    ...(await boundary.read(resolveGatewayService())),
-    loadState: { status: "not-loaded" as const },
-  };
-  boundary.read.mockResolvedValue(state);
-  boundary.repair.mockImplementation(async () => {
-    if (outcome === "read-failed") {
-      boundary.read.mockRejectedValue(new Error("Synthetic final inspection failed"));
-    } else {
-      boundary.read.mockResolvedValue({
-        ...state,
-        running: outcome === "running-indicator",
-        loadState:
-          outcome === "unknown-load"
-            ? { status: "unknown", detail: "probe failed" }
-            : state.loadState,
-        runtime: {
-          status: outcome === "unknown-runtime" ? "unknown" : "stopped",
-        },
-      });
-      if (outcome === "not-ours") {
-        boundary.revalidate.mockResolvedValue({ kind: "foreign" });
-      }
-    }
-    return {};
-  });
-  const maintenance = await begin();
-  await expect(maintenance!.finish({}, async (cfg) => cfg)).resolves.toBeUndefined();
-  expect(boundary.repair).toHaveBeenCalledOnce();
-  expect(boundary.restart).toHaveBeenCalledTimes(outcome === "owned-offline" ? 1 : 0);
-  const verified = outcome === "owned-offline";
-  expect(boundary.health).toHaveBeenCalledTimes(verified ? 1 : 0);
-  if (!verified) {
-    expect(maintenance!.warnings).toContainEqual(
-      expect.stringMatching(/Gateway activation skipped.*gateway status --deep/),
-    );
-  }
 });

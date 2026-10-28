@@ -4,8 +4,6 @@ import { afterEach, beforeEach, expect, it, vi, type MockInstance } from "vitest
 import { useAutoCleanupTempDirTracker } from "../../../test/helpers/temp-dir.js";
 import * as doctorMaintenance from "../../commands/doctor-maintenance.js";
 import { GatewayServiceStopUnsafeError } from "../../daemon/service-inspection-error.js";
-import { SystemdInspectionTimeout } from "../../daemon/service-inspection-error.js";
-import { mockSystemAccountHome } from "../../daemon/service.test-helpers.js";
 import {
   readDeferredPluginMigrations,
   recordDeferredPluginMigrations,
@@ -448,7 +446,7 @@ it.each([false, true])(
   "parks the managed Gateway before repairing source artifacts (stop refusal=%s)",
   async (failStop) => {
     native.contend = false;
-    native.blockCode = failStop ? "self-service-stop" : undefined;
+    native.failStop = failStop;
     const maintenance = vi.spyOn(doctorMaintenance, "beginDoctorMaintenance");
     let runtimeStartedAt = 0;
     let runtimeTimeoutMs = 0;
@@ -473,9 +471,7 @@ it.each([false, true])(
     await expect(
       updateRepairCommand({ json: true, yes: true, deferCompletionCache: true, timeout: "3600" }),
     ).rejects.toThrow(
-      failStop
-        ? "Synthetic managed-service refusal before stopping the Gateway."
-        : afterPublication.message,
+      failStop ? "An admitted migration write is incomplete." : afterPublication.message,
     );
     expect(native.events).toEqual(
       failStop

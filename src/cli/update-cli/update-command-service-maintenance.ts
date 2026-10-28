@@ -10,6 +10,7 @@ import {
 } from "../../daemon/service-inspection-error.js";
 import { resolveManagedServiceNodeRunner } from "../../daemon/service-layout.js";
 import { withGatewayServiceOperationLock } from "../../daemon/service-operation-lock.js";
+import { ServiceInspectionDeadlineError } from "../../daemon/service-state.js";
 import {
   resolveManagedGatewayServiceCommand,
   type GatewayServiceState,
@@ -378,6 +379,7 @@ async function stopManagedServiceBeforeMutableUpdate(
         err instanceof ServiceInspectionError && err.reason === "windows-task-inspection-failed"
           ? `${err.message} ${GATEWAY_SERVICE_INSPECTION_WARNING}`
           : err instanceof ServiceInspectionError ||
+              err instanceof ServiceInspectionDeadlineError ||
               err instanceof GatewayServiceUpdateOwnershipError
             ? `${GATEWAY_SERVICE_INSPECTION_WARNING} ${err.message}`
             : GATEWAY_SERVICE_INSPECTION_WARNING,

@@ -210,7 +210,7 @@ export async function preserveDoctorOriginalState(params: {
       );
     }
     params.runtime.log(
-      `Original state capture was unavailable: ${formatErrorMessage(error)}. Doctor will continue; inspect retained evidence manually before restoring state.`,
+      `Original state capture was unavailable: ${formatErrorMessage(error)}. Doctor will continue; take a verified backup and run openclaw doctor --fix after resolving the capture failure. Inspect retained evidence manually before restoring state.`,
     );
   }
 }

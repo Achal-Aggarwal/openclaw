@@ -2,14 +2,14 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { afterAll, expect, it } from "vitest";
-import { requirePinnedBun } from "../../scripts/lib/pinned-bun.mjs";
+const bunAvailable = spawnSync("bun", ["--version"]).status === 0;
 import { useAutoCleanupTempDirTracker } from "../../test/helpers/temp-dir.js";
 import { spawnNodeEvalSync } from "../test-utils/node-process.js";
 
 const directories = useAutoCleanupTempDirTracker(afterAll);
 
 for (const runtime of ["node", "bun"] as const) {
-  it.skipIf(runtime === "bun" && process.platform === "win32")(
+  it.skipIf(runtime === "bun" && (process.platform === "win32" || !bunAvailable))(
     `keeps ${runtime} late imports on the old generation through replacement and CLI teardown`,
     async () => {
       const base = directories.make("openclaw-retained-imports-");
@@ -124,7 +124,7 @@ for (const runtime of ["node", "bun"] as const) {
               ...options,
               imports: [new URL("../../scripts/tsx.mjs", import.meta.url).href],
             })
-          : spawnSync(requirePinnedBun(), ["--eval", source], options);
+          : spawnSync("bun", ["--eval", source], options);
       expect(result.error, result.stderr).toBeUndefined();
       expect(result.status, result.stderr).toBe(0);
     },

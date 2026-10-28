@@ -69,7 +69,9 @@ describe("restart health", () => {
           deadline,
         });
         expect(health.healthy).toBe(false);
-        expect(health.probeError).toBe("gateway request timeout for health");
+        expect(health.probeError, JSON.stringify(health)).toBe(
+          "gateway request timeout for health",
+        );
         expect(monotonicClock.nowMs).toBe(30_000);
       } finally {
         deadline?.dispose();
@@ -219,7 +221,10 @@ describe("restart health", () => {
       statusCode: 200,
       body: JSON.stringify({ ready: true }),
     });
-    const snapshot = await waitForRunningGateway({
+    const { waitForGatewayHealthyRestart } = await import("./restart-health.js");
+    const snapshot = await waitForGatewayHealthyRestart({
+      service: makeGatewayService({ status: "running", pid: 8000 }),
+      port: 18789,
       expectedVersion: "2026.10.8",
       expectedBuildId: "candidate-build",
       requirePluginHealth: scenario.requirePluginHealth,
@@ -232,6 +237,26 @@ describe("restart health", () => {
     expect(snapshot.authenticationError).toBe(rejection.message);
     expect(callGateway).toHaveBeenCalledOnce();
     expect(sleep).not.toHaveBeenCalled();
+  });
+
+  it("rejects uncorrelated verified-user details without trusting HTTP identity", async () => {
+    const fake = Object.assign(new Error("verified user required"), {
+      code: "NOT_PAIRED",
+      details: { code: "AUTH_VERIFIED_USER_REQUIRED" },
+    });
+    callGateway.mockRejectedValue(fake);
+    const { confirmGatewayReachable } = await import("./restart-health-probe.js");
+    const result = await confirmGatewayReachable({
+      port: 18789,
+      config: { gateway: { auth: { mode: "none" } } },
+      auth: {},
+      allowHttpVerification: true,
+    });
+    expect(result.reachable).toBe(false);
+    expect(result.authenticationError).toBeUndefined();
+    expect(result.probeError).toBe("verified user required");
+    expect(requestStartupProbe).not.toHaveBeenCalled();
+    expect(requestReadinessProbe).not.toHaveBeenCalled();
   });
 
   it("keeps the readiness deadline monotonic when the wall clock rewinds", async () => {

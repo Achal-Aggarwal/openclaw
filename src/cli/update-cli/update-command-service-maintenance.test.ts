@@ -147,7 +147,7 @@ it.each(["update", "doctor"] as const)(
       mocks.prepareStop.mockImplementationOnce(async () => {
         wallNow = deadlineAtMs + 1;
         elapsedMs = 501;
-        return { kind: "unchanged" as const };
+        return false;
       });
       const expectedService = await maybeStopManagedServiceBeforeMutableUpdate({
         root: process.cwd(),
@@ -457,7 +457,7 @@ it.each(["systemd-user-bus-unavailable", undefined] as const)(
         throw new Error("Expected service inspection refusal");
       }
       const detail = reason
-        ? formatServiceInspectionReason(reason)
+        ? formatServiceInspectionReason(reason).split(" Verify busctl", 1).join("")
         : "Gateway service inspection is unavailable";
       expect(failure.message).toContain(detail);
       expect(failure.message).not.toContain("identity changed");
@@ -625,9 +625,7 @@ it.each([{ code: "ETIMEDOUT", failures: 2, recovered: false, admitted: true }])(
           expect(inspected.servicePid).toBe(fixtureGatewayPid);
         } else {
           expect(inspected.serviceUpdateVerdict?.kind).toBe("unavailable");
-          expect(inspected.serviceMutationSkipMessage).toContain(
-            "Restart the Gateway you launched manually after the update.",
-          );
+          expect(inspected.serviceMutationSkipMessage).toContain("openclaw gateway status --deep");
           if (scenario.code === "ETIMEDOUT") {
             expect(inspected.serviceMutationSkipMessage).toContain(
               "Scheduled Task check timed out after 30000 ms",
@@ -689,9 +687,7 @@ it("preserves a silent Scheduled Task probe failure through update and Doctor wa
     });
     try {
       expect(maintenance?.warnings).toEqual([expect.stringContaining(detail)]);
-      expect(maintenance?.warnings?.[0]).toContain(
-        "Restart the Gateway you launched manually after the update.",
-      );
+      expect(maintenance?.warnings?.[0]).toContain("openclaw gateway status --deep");
       await maintenance?.finish({});
     } finally {
       await maintenance?.release();

@@ -2,7 +2,11 @@ import { redactSensitiveUrlLikeString } from "@openclaw/net-policy/redact-sensit
 import { asOptionalRecord } from "@openclaw/normalization-core/record-coerce";
 import { normalizeLowercaseStringOrEmpty } from "@openclaw/normalization-core/string-coerce";
 import { truncateUtf16Safe } from "@openclaw/normalization-core/utf16-slice";
-import { classifyGatewayConnectFailure } from "../../../packages/gateway-protocol/src/connect-error-details.js";
+import {
+  classifyGatewayConnectFailure,
+  readConnectErrorDetailCode,
+  ConnectErrorDetailCodes,
+} from "../../../packages/gateway-protocol/src/connect-error-details.js";
 import { sanitizeTerminalText } from "../../../packages/terminal-core/src/safe-text.js";
 import { createConfigIO } from "../../config/io.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";

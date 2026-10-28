@@ -239,7 +239,9 @@ describe("update.run acknowledgement", () => {
         message: expect.stringContaining("cancelled update custody: owner previous-update"),
       },
     });
-    expect(getUpdateRun(response!.runId)?.origin.nextAction).toContain("cancelled update custody: owner previous-update");
+    expect(getUpdateRun(response!.runId)?.origin.nextAction).toContain(
+      "cancelled update custody: owner previous-update",
+    );
     expect(scheduleGatewayRestartMock).not.toHaveBeenCalled();
     expect(sendGatewayLifecycleNoticeMock).toHaveBeenLastCalledWith(
       expect.objectContaining({ to: "C0456DEF" }),
@@ -531,6 +533,7 @@ describe("update.run restart scheduling", () => {
       command: "openclaw update --yes --timeout 1800",
       logPath: "/tmp/openclaw-update-run-handoff/handoff.log",
       handoffId: "handoff-existing",
+      message: "Another managed update is already running.",
     });
 
     const payload = await withEnvAsync({ OPENCLAW_LAUNCHD_LABEL: "ai.openclaw.gateway" }, () =>
@@ -560,7 +563,7 @@ describe("update.run restart scheduling", () => {
     expect(payload?.handoff).toEqual({
       status: "already-running",
       command: "openclaw update --yes --timeout 1800",
-      message: "Another managed update is already running; retry after it completes.",
+      message: "Another managed update is already running.",
     });
     expect(payload?.sentinel?.persisted).toBe(false);
   });

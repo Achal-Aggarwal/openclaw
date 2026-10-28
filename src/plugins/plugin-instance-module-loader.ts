@@ -93,30 +93,6 @@ function retainedNativeEsmFor(
   return retained;
 }
 
-function isNativeEsmPackage(source: string): boolean {
-  let directory = path.dirname(source);
-  while (true) {
-    const manifest = path.join(directory, "package.json");
-    if (fs.existsSync(manifest)) {
-      try {
-        const parsed: unknown = JSON.parse(fs.readFileSync(manifest, "utf8"));
-        return (
-          typeof parsed === "object" &&
-          parsed !== null &&
-          Object.getOwnPropertyDescriptor(parsed, "type")?.value === "module"
-        );
-      } catch {
-        return false;
-      }
-    }
-    const parent = path.dirname(directory);
-    if (parent === directory) {
-      return false;
-    }
-    directory = parent;
-  }
-}
-
 function retainedNativeEsmOwner(retained: RetainedNativeEsm) {
   const requested = pluginInstanceInvocation.getStore()?.instance;
   if (requested && retained.owners.has(requested)) {

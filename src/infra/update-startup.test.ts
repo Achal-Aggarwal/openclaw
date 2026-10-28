@@ -1362,7 +1362,13 @@ describe("update-startup", () => {
                 installRoot: "/opt/openclaw",
               };
               resolve(
-                joined ? { ...handoff, status: "joined" } : { ...handoff, status: "started" },
+                joined
+                  ? {
+                      ...handoff,
+                      status: "joined",
+                      message: "Another managed update is already running.",
+                    }
+                  : { ...handoff, status: "started" },
               );
             };
           }),

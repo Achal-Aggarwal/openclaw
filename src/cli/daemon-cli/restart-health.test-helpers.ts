@@ -30,8 +30,8 @@ export function gatewayResponseError(message: string): GatewayProtocolRequestErr
   retainGatewayResponsePayload(error, undefined);
   return error;
 }
-export function gatewayVerifiedUserRequiredError(): GatewayClientRequestError {
-  const error = new GatewayClientRequestError({
+export function gatewayVerifiedUserRequiredError(): GatewayProtocolRequestError {
+  const error = new GatewayProtocolRequestError({
     code: "NOT_PAIRED",
     message:
       "operator role policies require a verified user identity for this authentication method; reconnect through the trusted proxy or Tailscale, or use the shared gateway token/password",

@@ -1,7 +1,7 @@
 import path from "node:path";
 import { isDeepStrictEqual } from "node:util";
-import { requestCliParentTermination } from "../../../cli-parent-lifetime.mjs";
 import { GATEWAY_OWNER_HEARTBEAT_MS } from "../../infra/gateway-lock-payload.js";
+import { GATEWAY_SHUTDOWN_RESERVE_MS } from "../../infra/gateway-shutdown-budget.js";
 import { readControlPlaneUpdateSentinelMeta } from "../../infra/update-control-plane-sentinel.js";
 import { resolveUpdateInstallRoot } from "../../infra/update-install-root.js";
 import type { ManagedCommandProcessAuthority } from "../../infra/update-managed-command-custody.js";
@@ -204,6 +204,17 @@ export async function withDelegatedUpdateCommandExecutor<T>(
       );
       // A stalled await cannot recheck its fence. End orphaned maintenance through
       // the normal bounded shutdown; peers still wait for this process to exit.
+      let parentTerminationRequested = false;
+      const requestCliParentTermination = () => {
+        if (parentTerminationRequested) {
+          return;
+        }
+        parentTerminationRequested = true;
+        setTimeout(() => process.kill(process.pid, "SIGKILL"), GATEWAY_SHUTDOWN_RESERVE_MS).unref();
+        if (!process.emit("SIGTERM")) {
+          process.kill(process.pid, "SIGTERM");
+        }
+      };
       const parentWatch = setInterval(() => {
         for (const identity of processes.values()) {
           const state = store.inspectProcessIdentity(identity);
