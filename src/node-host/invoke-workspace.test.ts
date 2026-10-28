@@ -134,7 +134,10 @@ describe("node workspace invocation ownership", () => {
       sessionId: "session-1",
       generation: 1,
     };
-    const created = await workspace.exec({ ...owner, argv: ["node", "-e", ""] });
+    const created = await workspace.exec({
+      ...owner,
+      argv: ["node", "-e", "process.stdout.write(process.env.HOME ?? '')"],
+    });
     const lease = await workspace.acquireManagedWorkspaceAsync({
       workspaceDir: created.workspaceDir,
       environmentId: owner.environmentId,
@@ -143,6 +146,9 @@ describe("node workspace invocation ownership", () => {
       sessionKey: "agent:main:device",
     });
     try {
+      // Plugin consumers must receive the same retained HOME as workspace commands.
+      expect(lease.homeDir).toBe(created.stdout);
+      expect(lease.homeDir).toBe(path.dirname(created.workspaceDir));
       const projected = lease.processEnvironment!.prepare({
         IDENTITY_ENDPOINT: "http://caller.invalid",
         IDENTITY_HEADER: "caller-override",

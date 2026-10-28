@@ -144,9 +144,11 @@ export async function runCodexNodeAppServer(params: {
     if (!workspace.homeDir) {
       throw new Error("Worker app-server requires an owned workspace home");
     }
+    // Existing workspace retention collects runtime metadata after its last generation retires.
     const home = path.join(
       workspace.homeDir,
-      ".codex",
+      ".openclaw-worker",
+      "codex",
       createHash("sha256").update(params.sessionId).digest("hex"),
     );
     await fs.mkdir(home, { recursive: true, mode: 0o700 });

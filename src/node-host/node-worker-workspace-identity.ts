@@ -160,7 +160,7 @@ export function parseNodeWorkerWorkspaceTransferGeneration(name: string): number
 export function resolveNodeManagedWorkspaceIdentity(
   root: string,
   request: NodeWorkerManagedWorkspaceRequest,
-): { workspaceDir: string; gatewayNamespace: string; generationKey: string } {
+): { workspaceDir: string; homeDir: string; gatewayNamespace: string; generationKey: string } {
   const fail = () => {
     throw new Error("INVALID_REQUEST: node placement does not own the requested workspace");
   };
@@ -214,6 +214,8 @@ export function resolveNodeManagedWorkspaceIdentity(
   }
   return {
     workspaceDir,
+    // Workspace commands already use the session root as their retained HOME.
+    homeDir: path.dirname(workspaceDir),
     gatewayNamespace,
     generationKey: nodeWorkerWorkspaceGenerationKey({
       gatewayNamespace,

@@ -124,6 +124,8 @@ describe.skipIf(process.platform !== "linux")("Codex worker-hosted app-server co
               executablePath: process.execPath,
               argsPrefix: ["dist/index.js"],
               cwd: process.cwd(),
+              // Managed workspace admission needs disk-backed scratch, not the runner’s /tmp tmpfs.
+              tempParentDir: root,
               usePackagedPlugins: false,
             },
             transportBaseUrl: "http://127.0.0.1",
@@ -303,7 +305,9 @@ describe.skipIf(process.platform !== "linux")("Codex worker-hosted app-server co
                 expect(entry).toMatchObject({ nodePid, parentAppServer: true });
                 expect(entry.home.startsWith(`${nodeState}${path.sep}`)).toBe(true);
                 expect(
-                  entry.codexHome.startsWith(`${entry.home}${path.sep}.codex${path.sep}`),
+                  entry.codexHome.startsWith(
+                    path.join(entry.home, ".openclaw-worker", "codex") + path.sep,
+                  ),
                 ).toBe(true);
                 expect(entry.nativePids).toContain(entry.appServerPid);
                 for (const pid of entry.nativePids) {
@@ -471,7 +475,11 @@ describe.skipIf(process.platform !== "linux")("Codex worker-hosted app-server co
         () => (published ? closeWireServer(published.server) : undefined),
         () => provider?.close(),
         () => receipts?.close(),
-      );
+      ).catch((cause: unknown) => {
+        throw new Error(`P8 worker fixture failed:\n${node?.logs() ?? "Node was not started"}`, {
+          cause,
+        });
+      });
     },
   );
 });

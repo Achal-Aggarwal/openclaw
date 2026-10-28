@@ -221,11 +221,12 @@ describe("Codex worker model process", () => {
             }
           };
           const threadId = await runConnection(async (request, notify, waitNotification) => {
-            await expect(
-              request(1, "initialize", buildCodexAppServerInitializeParams()),
-            ).resolves.toMatchObject({
-              result: { userAgent: expect.any(String) },
-            });
+            const initialized = await request(
+              1,
+              "initialize",
+              buildCodexAppServerInitializeParams(),
+            );
+            expect(initialized).toMatchObject({ result: { userAgent: expect.any(String) } });
             await notify("initialized");
             const pendingRead = request(20, "fs/readFile", {
               path: path.join(workspaceDir, "readiness-proof.txt"),
@@ -250,6 +251,11 @@ describe("Codex worker model process", () => {
                 loading: "searchable",
               }),
             })) as { result: { thread: { id: string } } };
+            expect(initialized).toMatchObject({
+              result: {
+                codexHome: expect.stringContaining(path.join(root, ".openclaw-worker", "codex")),
+              },
+            });
             const startedThreadId = started.result.thread.id;
             const completed = waitNotification("turn/completed");
             await expect(

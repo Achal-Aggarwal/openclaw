@@ -29,7 +29,10 @@ export type OpenClawPluginNodeWorkspace = {
 
 export type OpenClawPluginNodeWorkspaceLease = {
   workspaceDir: string;
-  /** Stable HOME owned and validated by this exact prepared workspace binding. */
+  /**
+   * Stable HOME owned by this workspace binding. Runtime-private metadata belongs
+   * under .openclaw-worker so the existing retention owner collects it on retirement.
+   */
   homeDir?: string;
   release: () => void;
   /** Host-local provider custody, bound to this lease and invocation; never a wire environment override. */

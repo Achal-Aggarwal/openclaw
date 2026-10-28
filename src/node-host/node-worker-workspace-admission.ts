@@ -175,7 +175,7 @@ export function createNodeWorkerWorkspaceAcquirer(params: {
     }
     return createNodeWorkerManagedWorkspaceLease({
       workspaceDir: identity.workspaceDir,
-      ...(prepared ? { homeDir: prepared.home_dir } : {}),
+      homeDir: identity.homeDir,
       env: params.env,
       platformTrust: params.platformTrust,
       release: params.retain(identity.gatewayNamespace, identity.generationKey),
