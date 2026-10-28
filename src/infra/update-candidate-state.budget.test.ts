@@ -5,6 +5,7 @@ import path from "node:path";
 import { setTimeout as realSetTimeout } from "node:timers";
 import { afterEach, expect, it, vi } from "vitest";
 import { z } from "zod";
+import { findVitestResourceOwner } from "../../scripts/lib/vitest-resource-ownership.mts";
 import { fixtureReceiptClientSource } from "../../test/helpers/fixture-receipts.js";
 import { isProcessAlive } from "../../test/helpers/process-wait.js";
 import { createDeferred, withinTest } from "../../test/helpers/promise.js";
@@ -166,6 +167,8 @@ it.skipIf(process.platform === "win32").for(["complete", "cancel"] as const)(
   "settles automatic backup with two retained images after %s",
   { timeout: 30_000 },
   async (outcome, { signal, onTestFinished }) => {
+    // Retention must survive the enclosing Vitest process owner's namespace cleanup.
+    const releaseFixture = findVitestResourceOwner()?.claim();
     // openclaw-temp-dir: allow native cleanup uncertainty must retain worker inputs.
     const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "backup-retained-")));
     const controller = new AbortController();
@@ -228,12 +231,24 @@ it.skipIf(process.platform === "win32").for(["complete", "cancel"] as const)(
         });
       for (const entry of remaining) {
         if (!entry.isDirectory() || !isSqliteSnapshotStagingName(entry.name)) {
-          throw new Error("Unexpected staging entry; fixture retained");
+          const entryDetails = JSON.stringify({
+            name: entry.name.slice(0, 128),
+            type: entry.isDirectory()
+              ? "directory"
+              : entry.isFile()
+                ? "file"
+                : entry.isSymbolicLink()
+                  ? "symlink"
+                  : "other",
+          });
+          throw new Error(`Unexpected staging entry ${entryDetails}; fixture retained`);
         }
         retireSnapshot(path.join(stagingRoot, entry.name));
       }
       await fs.rm(root, { recursive: true });
+      releaseFixture?.();
     }, onTestFinished);
+    let bodyFailure: { error: unknown } | undefined;
     try {
       for (const location of [path.dirname(shared), stagingRoot, directory]) {
         await fs.mkdir(location, { recursive: true });
@@ -432,8 +447,23 @@ require("node:module").syncBuiltinESMExports();
           await expect(fs.stat(file + suffix)).rejects.toMatchObject({ code: "ENOENT" });
         }
       }
-    } finally {
+    } catch (error) {
+      bodyFailure = { error };
+    }
+    try {
       await cleanup();
+    } catch (cleanupError) {
+      if (bodyFailure) {
+        throw new AggregateError(
+          [bodyFailure.error, cleanupError],
+          "Retained backup fixture failed and cleanup was not verified",
+          { cause: bodyFailure.error },
+        );
+      }
+      throw cleanupError;
+    }
+    if (bodyFailure) {
+      throw bodyFailure.error;
     }
   },
 );
