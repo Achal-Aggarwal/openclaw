@@ -1,12 +1,9 @@
-name: Android build comparison sample
+name: Android build comparison pair
 
 on:
   workflow_call:
     inputs:
-      artifact:
-        required: true
-        type: string
-      sample:
+      pair:
         required: true
         type: number
 
@@ -19,9 +16,9 @@ env:
 
 jobs:
   build:
-    name: Sample ${{ inputs.sample }} (${{ inputs.artifact }})
+    name: Pair ${{ inputs.pair }} (all then store)
     runs-on: ubuntu-24.04
-    timeout-minutes: 35
+    timeout-minutes: 60
     steps:
       - name: Checkout exact diagnostic source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -51,20 +48,29 @@ jobs:
           cache-mode: off
           install-screenshot-emulators: "false"
 
-      - name: Build and verify synthetic signed artifacts
+      - name: Baseline - build all synthetic signed artifacts
         shell: bash
         env:
-          COMPARISON_ARTIFACT: ${{ inputs.artifact }}
-          COMPARISON_SAMPLE: ${{ inputs.sample }}
-          PROOF_DIR: ${{ runner.temp }}/android-build-comparison
-          GRADLE_USER_HOME: ${{ runner.temp }}/android-build-comparison-gradle
+          COMPARISON_ARTIFACT: all
+          COMPARISON_PAIR: ${{ inputs.pair }}
+          PROOF_DIR: ${{ runner.temp }}/android-build-comparison/all
+          GRADLE_USER_HOME: ${{ runner.temp }}/android-build-comparison-gradle/all
+        run: python3 scripts/android-store-bundles-comparison.py
+
+      - name: Candidate - build store synthetic signed artifacts
+        shell: bash
+        env:
+          COMPARISON_ARTIFACT: store
+          COMPARISON_PAIR: ${{ inputs.pair }}
+          PROOF_DIR: ${{ runner.temp }}/android-build-comparison/store
+          GRADLE_USER_HOME: ${{ runner.temp }}/android-build-comparison-gradle/store
         run: python3 scripts/android-store-bundles-comparison.py
 
       - name: Retain build-only comparison evidence
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: android-build-comparison-${{ inputs.sample }}-${{ inputs.artifact }}
+          name: android-build-comparison-pair-${{ inputs.pair }}
           path: ${{ runner.temp }}/android-build-comparison
           if-no-files-found: error
           retention-days: 14

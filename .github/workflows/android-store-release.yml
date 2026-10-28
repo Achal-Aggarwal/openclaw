@@ -1,6 +1,6 @@
 name: Android Store build comparison
 
-run-name: Android Store A/B build comparison (10 serial fresh-runner samples)
+run-name: Android Store A/B build comparison (5 serial same-host pairs)
 
 on:
   workflow_dispatch:
@@ -9,71 +9,31 @@ permissions:
   contents: read
 
 jobs:
-  sample-1:
+  pair-1:
     uses: ./.github/workflows/android-build-comparison-sample.yml
     with:
-      sample: 1
-      artifact: all
+      pair: 1
 
-  sample-2:
-    needs: sample-1
+  pair-2:
+    needs: pair-1
     uses: ./.github/workflows/android-build-comparison-sample.yml
     with:
-      sample: 2
-      artifact: store
+      pair: 2
 
-  sample-3:
-    needs: sample-2
+  pair-3:
+    needs: pair-2
     uses: ./.github/workflows/android-build-comparison-sample.yml
     with:
-      sample: 3
-      artifact: all
+      pair: 3
 
-  sample-4:
-    needs: sample-3
+  pair-4:
+    needs: pair-3
     uses: ./.github/workflows/android-build-comparison-sample.yml
     with:
-      sample: 4
-      artifact: store
+      pair: 4
 
-  sample-5:
-    needs: sample-4
+  pair-5:
+    needs: pair-4
     uses: ./.github/workflows/android-build-comparison-sample.yml
     with:
-      sample: 5
-      artifact: all
-
-  sample-6:
-    needs: sample-5
-    uses: ./.github/workflows/android-build-comparison-sample.yml
-    with:
-      sample: 6
-      artifact: store
-
-  sample-7:
-    needs: sample-6
-    uses: ./.github/workflows/android-build-comparison-sample.yml
-    with:
-      sample: 7
-      artifact: all
-
-  sample-8:
-    needs: sample-7
-    uses: ./.github/workflows/android-build-comparison-sample.yml
-    with:
-      sample: 8
-      artifact: store
-
-  sample-9:
-    needs: sample-8
-    uses: ./.github/workflows/android-build-comparison-sample.yml
-    with:
-      sample: 9
-      artifact: all
-
-  sample-10:
-    needs: sample-9
-    uses: ./.github/workflows/android-build-comparison-sample.yml
-    with:
-      sample: 10
-      artifact: store
+      pair: 5

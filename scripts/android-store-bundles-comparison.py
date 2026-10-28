@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 import re
+import signal
 import shutil
 import subprocess
 import threading
@@ -29,6 +30,19 @@ ALLOWED_DIAGNOSTIC_PATHS = {
     "scripts/fixtures/android-store-bundles/certificate-sha256.txt",
     "scripts/fixtures/android-store-bundles/README.md",
 }
+RESET_DIRECTORIES = [
+    "apps/android/.gradle",
+    "apps/android/build",
+    "apps/android/app/build",
+    "apps/android/wear/build",
+    "apps/android/wear-shared/build",
+    "apps/android/benchmark/build",
+    "apps/shared/mermaid/assets/mermaid",
+]
+BUILD_DAEMON_CLASSES = {
+    "org.gradle.launcher.daemon.bootstrap.GradleDaemon",
+    "org.jetbrains.kotlin.daemon.KotlinCompileDaemon",
+}
 
 
 def git(*args):
@@ -48,6 +62,57 @@ def host_sample():
         "memory": memory,
         "cpuJiffies": [int(value) for value in cpu],
     }
+
+
+def reset_generated_outputs():
+    started = time.monotonic()
+    paths = []
+    for relative in RESET_DIRECTORIES:
+        if git("ls-files", "--", relative):
+            raise ValueError("Refusing to reset tracked files under " + relative)
+        directory = ROOT / relative
+        if directory.is_symlink():
+            raise ValueError("Refusing to reset a symlink at " + relative)
+        if directory.exists():
+            ignored = subprocess.run(["git", "check-ignore", "--quiet", "--", relative], cwd=ROOT)
+            if ignored.returncode != 0 or not directory.is_dir():
+                raise ValueError("Reset scope is not an ignored generated directory: " + relative)
+            shutil.rmtree(directory)
+            paths.append({"path": relative, "result": "removed"})
+        else:
+            paths.append({"path": relative, "result": "absent"})
+    return {"elapsedSeconds": time.monotonic() - started, "paths": paths}
+
+
+def build_daemons():
+    output = subprocess.check_output(["jps", "-l"], text=True, timeout=15)
+    return {
+        int(pid): name
+        for pid, name in (line.split(maxsplit=1) for line in output.splitlines() if " " in line)
+        if name in BUILD_DAEMON_CLASSES
+    }
+
+
+def stop_owned_daemons(proof, env, initial_daemons):
+    proof["daemonStop"] = measured_run("gradle-stop", ["./gradlew", "--stop"], env, ANDROID)
+    if proof["daemonStop"]["exitStatus"] != 0:
+        raise RuntimeError("Gradle daemon stop failed; inspect gradle-stop.log")
+    # Kotlin can outlive the Gradle client; keep its retained heap out of the next sample.
+    cleanup_started = time.monotonic()
+    owned = {pid: name for pid, name in build_daemons().items() if pid not in initial_daemons}
+    proof["daemonStop"]["remainingOwnedDaemons"] = owned
+    for pid in owned:
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+    deadline = time.monotonic() + 15
+    while any(Path(f"/proc/{pid}").exists() for pid in owned):
+        if time.monotonic() >= deadline:
+            raise RuntimeError("Owned build daemon did not exit before the next sample")
+        time.sleep(0.2)
+    proof["daemonStop"]["ownedDaemonsExited"] = True
+    proof["daemonStop"]["ownedDaemonCleanupSeconds"] = time.monotonic() - cleanup_started
 
 
 def measured_run(name, command, env, cwd):
@@ -115,14 +180,17 @@ def main(proof):
         raise ValueError("Diagnostic helper differs from production by more than the single --profile argument")
     if git("status", "--porcelain", "--untracked-files=all"):
         raise ValueError("Comparison requires a clean diagnostic checkout")
+    if Path(os.environ["GRADLE_USER_HOME"]).exists():
+        raise ValueError("Each comparison mode requires a never-used Gradle user home")
 
     proof.update({
         "productionSha": production,
         "diagnosticSha": head,
         "diagnosticChangedPaths": sorted(changed),
-        "sample": int(os.environ["COMPARISON_SAMPLE"]),
+        "pair": int(os.environ["COMPARISON_PAIR"]),
+        "sample": int(os.environ["COMPARISON_PAIR"]) * 2 - (1 if ARTIFACT == "all" else 0),
         "artifactSelection": ARTIFACT,
-        "condition": "fresh Ubuntu runner, no restored caches, post-signing-preflight build",
+        "condition": "same-host pair; cold Gradle user home and project/generated outputs; shared OS, Android SDK and frozen Node dependencies; signing preflight retained",
         "runner": {key: os.environ.get(key) for key in [
             "RUNNER_NAME", "RUNNER_OS", "RUNNER_ARCH", "ImageOS", "ImageVersion",
         ]},
@@ -131,6 +199,7 @@ def main(proof):
         "hostBefore": host_sample(),
         "timingLimit": "GNU time CPU/RSS covers the controller and waited-for children; the detached Gradle daemon is covered by host samples, not these process metrics.",
     })
+    proof["reset"] = reset_generated_outputs()
 
     keystore = Path(os.environ["RUNNER_TEMP"]) / "android-comparison-fixture.p12"
     keystore.write_bytes(base64.b64decode((FIXTURE / "fixture.p12.base64").read_text(), validate=False))
@@ -161,23 +230,28 @@ def main(proof):
     }
     for key in ["OPENCLAW_ANDROID_RELEASE_PLAN", "GIT_SHA", "GH_TOKEN", "GITHUB_TOKEN", "ACTIONS_RUNTIME_TOKEN", "ACTIONS_ID_TOKEN_REQUEST_TOKEN"]:
         env.pop(key, None)
-    proof["signingPreflight"] = measured_run("signing-preflight", [
-        "./gradlew", ":app:validateSigningPlayRelease", ":wear:validateSigningRelease",
-        "-PopenclawBuildCommit=" + head, "-PopenclawBuildTimestamp=" + STAMP,
-    ], env, ANDROID)
-    if proof["signingPreflight"]["exitStatus"] != 0:
-        raise RuntimeError("Signing preflight failed; inspect signing-preflight.log")
+    initial_daemons = build_daemons()
+    proof["initialBuildDaemons"] = initial_daemons
+    try:
+        proof["signingPreflight"] = measured_run("signing-preflight", [
+            "./gradlew", ":app:validateSigningPlayRelease", ":wear:validateSigningRelease",
+            "-PopenclawBuildCommit=" + head, "-PopenclawBuildTimestamp=" + STAMP,
+        ], env, ANDROID)
+        if proof["signingPreflight"]["exitStatus"] != 0:
+            raise RuntimeError("Signing preflight failed; inspect signing-preflight.log")
 
-    proof["build"] = measured_run("build", [
-        "bun", "apps/android/scripts/build-release-artifacts.ts", "--artifact", ARTIFACT,
-    ], env, ROOT)
-    if proof["build"]["exitStatus"] != 0:
-        raise RuntimeError("Artifact build failed; inspect build.log")
+        proof["build"] = measured_run("build", [
+            "bun", "apps/android/scripts/build-release-artifacts.ts", "--artifact", ARTIFACT,
+        ], env, ROOT)
+        if proof["build"]["exitStatus"] != 0:
+            raise RuntimeError("Artifact build failed; inspect build.log")
+    finally:
+        stop_owned_daemons(proof, env, initial_daemons)
 
     log = (OUT / "build.log").read_text()
     tasks = re.findall(r"^> Task (:\S+)([^\n]*)$", log, re.MULTILINE)
     executed = [task for task, state in tasks if not any(marker in state for marker in ["UP-TO-DATE", "FROM-CACHE", "NO-SOURCE", "SKIPPED"])]
-    third_party = [task for task in executed if "ThirdParty" in task]
+    third_party = [task for task in executed if "ThirdPartyRelease" in task]
     selected = re.findall(r"^Gradle task: (.+)$", log, re.MULTILINE)
     expected_tasks = [":wear:bundleRelease", ":app:bundlePlayRelease"]
     if ARTIFACT == "all":
