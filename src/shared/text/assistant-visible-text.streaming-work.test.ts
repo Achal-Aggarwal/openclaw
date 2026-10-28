@@ -1,5 +1,7 @@
 import { expectDefined } from "@openclaw/normalization-core";
 import { expect, it, vi } from "vitest";
+import type * as CodeRegions from "../../../packages/markdown-core/src/markdown-code-regions.js";
+import type * as MarkdownParser from "../../../packages/markdown-core/src/reasoning-tag-parser.js";
 import * as toolCallRepair from "../../../packages/tool-call-repair/src/payload.js";
 import { userFacingTextFilters } from "../../agents/embedded-agent-helpers/sanitize-user-facing-text.js";
 import {
@@ -42,26 +44,23 @@ it("keeps a split tool header across an unbounded whitespace gap", () => {
 
 const markdownOwnershipWork = vi.hoisted(() => ({ scannedCharacters: 0 }));
 
-vi.mock("./code-regions.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("./code-regions.js")>();
+vi.mock("../../../packages/markdown-core/src/reasoning-tag-parser.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof MarkdownParser>();
   return {
     ...actual,
-    findCodeRegions(text: string) {
-      markdownOwnershipWork.scannedCharacters += text.length;
-      return actual.findCodeRegions(text);
-    },
-    findCodeOwnership(...args: Parameters<typeof actual.findCodeOwnership>) {
+    parseMarkdownOwnership(...args: Parameters<typeof actual.parseMarkdownOwnership>) {
       markdownOwnershipWork.scannedCharacters += args[0].length;
-      return actual.findCodeOwnership(...args);
+      return actual.parseMarkdownOwnership(...args);
+    },
+    findMarkdownCodeRegions(text: string) {
+      markdownOwnershipWork.scannedCharacters += text.length;
+      return actual.findMarkdownCodeRegions(text);
     },
   };
 });
 
 vi.mock("../../../packages/markdown-core/src/markdown-code-regions.js", async (importOriginal) => {
-  const actual =
-    await importOriginal<
-      typeof import("../../../packages/markdown-core/src/markdown-code-regions.js")
-    >();
+  const actual = await importOriginal<typeof CodeRegions>();
   return {
     ...actual,
     findMarkdownCodeRegions(text: string) {
@@ -146,18 +145,36 @@ it.each(["mixed", "leading", "repeated literal", "repeated hidden"])(
   },
 );
 
-it("bounds Markdown scan work after an early duplicate paragraph", () => {
-  const paragraphs = Array.from(
-    { length: 128 },
-    (_, index) => `Paragraph ${index}: an ordinary explanatory sentence without code.`,
-  );
-  const source = ["Ready.", "Ready.", ...paragraphs].join("\n\n");
+it.each([
+  ["Ready.", 2, ""],
+  [
+    "Routing uses `channelId` and `agentId` so the reply lands in the right conversation and thread.",
+    128,
+    "",
+  ],
+  ["Read [guide](https://example.test/guide) for the exact instructions.", 128, ""],
+  ["repeat", 2, "```text\ninside\n\ninside\n```\n\n"],
+] as const)("bounds duplicate paragraph work %#: %j", (paragraph, copies, prefix) => {
+  const tail = prefix
+    ? ["tail"]
+    : Array.from(
+        { length: 128 },
+        (_, index) => `Paragraph ${index}: an ordinary explanatory sentence without code.`,
+      );
+  const source = prefix + [...Array<string>(copies).fill(paragraph), ...tail].join("\n\n");
   const stream = createAssistantVisibleStreamText("final_answer");
   markdownOwnershipWork.scannedCharacters = 0;
   const result = streamChunks(source, 4, stream);
-  expect(result.text).toBe(["Ready.", ...paragraphs].join("\n\n"));
+  expect(result.text).toBe(prefix + [paragraph, ...tail].join("\n\n"));
   expect(result.delivered).toBe(result.text);
   expect(markdownOwnershipWork.scannedCharacters).toBeLessThan(source.length * 16);
+  const parsed = markdownOwnershipWork.scannedCharacters;
+  const continuation = Array.from({ length: 256 }, (_, index) => `-${index}`);
+  for (const delta of continuation) {
+    expect(stream.append(delta).delta).toBe(delta);
+  }
+  expect(markdownOwnershipWork.scannedCharacters).toBe(parsed);
+  expect(stream.text).toBe(result.text + continuation.join(""));
 });
 
 it("restores provisional reasoning text and resets its state on replacement", () => {
