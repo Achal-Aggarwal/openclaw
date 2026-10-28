@@ -13,10 +13,14 @@ import {
   openOpenClawStateDatabase,
 } from "../state/openclaw-state-db.js";
 import { createOpenClawTestState } from "../test-utils/openclaw-test-state.js";
+import { VERSION } from "../version.js";
 import { prepareGatewayServerBootstrap } from "./server-startup-bootstrap.js";
 
 const park = vi.hoisted(() => vi.fn(async () => true));
-vi.mock("../daemon/launchd.js", () => ({ parkCurrentLaunchAgentForMaintenance: park }));
+vi.mock("../daemon/launchd.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../daemon/launchd.js")>()),
+  parkCurrentLaunchAgentForMaintenance: park,
+}));
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -39,14 +43,12 @@ it.each([
       await state.writeConfig({ plugins: { enabled: false } });
       const databasePath = openOpenClawStateDatabase({ env: state.env }).path;
       closeOpenClawStateDatabaseForTest();
-      const database = new DatabaseSync(databasePath);
-      try {
+      {
+        using database = new DatabaseSync(databasePath);
         database.exec(`PRAGMA user_version = ${OPENCLAW_STATE_SCHEMA_VERSION + 1}`);
         database
           .prepare("UPDATE schema_meta SET app_version = ? WHERE meta_key = 'primary'")
           .run("2026.9.4");
-      } finally {
-        database.close();
       }
       const errorLog = vi.fn();
       setLoggerOverride({ level: "silent", consoleLevel: "error", consoleStyle: "json" });
@@ -73,7 +75,7 @@ it.each([
         refusal = error;
       }
       expect(refusal).toBeInstanceOf(Error);
-      const facts = `uses schema ${OPENCLAW_STATE_SCHEMA_VERSION + 1}; this build supports ${OPENCLAW_STATE_SCHEMA_VERSION}; writer build 2026.9.4.`;
+      const facts = `uses schema ${OPENCLAW_STATE_SCHEMA_VERSION + 1}; this build supports ${OPENCLAW_STATE_SCHEMA_VERSION}. Database schema ${OPENCLAW_STATE_SCHEMA_VERSION + 1} was written by OpenClaw 2026.9.4; it is newer than this Gateway (${VERSION}).`;
       await expect(handleGatewayStartupMaintenance(refusal)).rejects.toBe(exited);
       const output = runtimeError.mock.calls.flat().join("\n");
       expect(output).toContain(facts);

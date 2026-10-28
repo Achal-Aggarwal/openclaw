@@ -410,7 +410,10 @@ function expectNewerSchema(message: string) {
   expect(message).toMatch(/newer/);
   expect(message).toMatch(/build.*supports/);
   expect(message).toMatch(/restore.*backup/);
-  expect(message).not.toMatch(/doctor --fix|registry query failed|integrity_check failed/);
+  expect(message).toContain(
+    "Run the newer install's openclaw doctor --fix, or update this Gateway service",
+  );
+  expect(message).not.toMatch(/registry query failed|integrity_check failed/);
 }
 
 it.each([

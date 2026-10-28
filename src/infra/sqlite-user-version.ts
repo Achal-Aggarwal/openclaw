@@ -3,6 +3,7 @@ import { OPENCLAW_DATABASE_SCHEMA_DOCS_URL } from "../state/openclaw-state-db-co
 import { resolveRuntimeServiceCommit, VERSION } from "../version.js";
 import { executeWithCachedStatement } from "./kysely-sync-cache-state.js";
 import { resolveOpenClawPackageRootSync } from "./openclaw-root.js";
+import type { EngineConnection } from "./sql-connection.js";
 import { StartupMaintenanceRequiredError } from "./startup-maintenance-required.js";
 
 const SQLITE_SCHEMA_VERSION_ERROR_NAME = "SqliteSchemaVersionError";
@@ -29,6 +30,23 @@ export function readSqliteUserVersion(db: DatabaseSync): number {
   return Number(row?.user_version ?? 0);
 }
 
+export function readSqliteWriterAppVersion(database: EngineConnection): string | undefined {
+  try {
+    // Schema inspection stays independent of Kysely's runtime graph so even native startup can refuse.
+    const row = executeWithCachedStatement(
+      database,
+      "SELECT app_version FROM schema_meta WHERE meta_key = 'primary' LIMIT 1",
+      [],
+      (statement) => statement.get(),
+    );
+    return typeof row?.app_version === "string" && row.app_version.length > 0
+      ? row.app_version
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export function writeSqliteUserVersion(db: DatabaseSync, version: number): void {
   if (!Number.isInteger(version) || version < 0 || version > 2147483647) {
     throw new RangeError("SQLite user_version must be an integer from 0 through 2147483647.");
@@ -52,11 +70,14 @@ export function createNewerSqliteSchemaVersionError(
   pathname: string,
   schemaVersion: number,
   supportedVersion: number,
+  writerAppVersion?: string,
 ): Error {
   return new SqliteSchemaVersionError(
     "This OpenClaw build cannot open your existing data.\n" +
       `${databaseLabel} ${pathname} uses newer schema version ${schemaVersion}; this build supports ${supportedVersion}.\n` +
+      `Database schema ${schemaVersion} was written by ${writerAppVersion ? `OpenClaw ${writerAppVersion}` : "an unknown OpenClaw build"}; it is newer than this Gateway (${VERSION}).\n` +
       `Refused by ${describeRunningOpenClawBuild()}.\n` +
+      "Run the newer install's openclaw doctor --fix, or update this Gateway service before restarting.\n" +
       `Use a build that supports schema ${schemaVersion} or newer with this state directory. To use an older build, restore your pre-update backup created with openclaw backup create.\n` +
       `See ${OPENCLAW_DATABASE_SCHEMA_DOCS_URL}.`,
   );

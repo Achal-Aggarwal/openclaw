@@ -339,7 +339,10 @@ function assertSqliteWorkerActorStateContext(
   actor: Actor,
   stateContext: SqliteWorkerStateContext | undefined,
 ): void {
-  if (actor.stateContext?.existingSchemaPath !== stateContext?.existingSchemaPath) {
+  if (
+    actor.stateContext?.existingSchemaPath !== stateContext?.existingSchemaPath ||
+    actor.stateContext?.gatewayServiceInstallation !== stateContext?.gatewayServiceInstallation
+  ) {
     throw new Error("Shared-state worker schema policy changed; close its actor first");
   }
 }

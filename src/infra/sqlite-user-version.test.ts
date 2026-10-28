@@ -36,28 +36,24 @@ describe("readSqliteUserVersion", () => {
   it.each([false, true])(
     "reads fresh versions and only reuses statements when enabled=%s",
     (cacheEnabled) => {
-      const db = new DatabaseSync(":memory:");
-      try {
-        if (cacheEnabled) {
-          enableNodeSqliteKyselyStatementCache(db);
-        }
-        const prepare = vi.spyOn(db, "prepare");
-        expect(readSqliteUserVersion(db)).toBe(0);
-        for (const version of [5, 3, 0]) {
-          db.exec(`PRAGMA user_version = ${version}`);
-          expect(readSqliteUserVersion(db)).toBe(version);
-        }
-        db.exec("BEGIN; PRAGMA user_version = 9");
-        expect(readSqliteUserVersion(db)).toBe(9);
-        db.exec("ROLLBACK");
-        expect(readSqliteUserVersion(db)).toBe(0);
-        if (cacheEnabled) {
-          expect(prepare.mock.calls.length).toBeLessThan(6);
-        } else {
-          expect(prepare).toHaveBeenCalledTimes(6);
-        }
-      } finally {
-        db.close();
+      using db = new DatabaseSync(":memory:");
+      if (cacheEnabled) {
+        enableNodeSqliteKyselyStatementCache(db);
+      }
+      const prepare = vi.spyOn(db, "prepare");
+      expect(readSqliteUserVersion(db)).toBe(0);
+      for (const version of [5, 3, 0]) {
+        db.exec(`PRAGMA user_version = ${version}`);
+        expect(readSqliteUserVersion(db)).toBe(version);
+      }
+      db.exec("BEGIN; PRAGMA user_version = 9");
+      expect(readSqliteUserVersion(db)).toBe(9);
+      db.exec("ROLLBACK");
+      expect(readSqliteUserVersion(db)).toBe(0);
+      if (cacheEnabled) {
+        expect(prepare.mock.calls.length).toBeLessThan(6);
+      } else {
+        expect(prepare).toHaveBeenCalledTimes(6);
       }
     },
   );

@@ -3,6 +3,7 @@ import {
   describeRunningOpenClawBuild,
   SqliteSchemaVersionError,
 } from "../infra/sqlite-user-version.js";
+import { VERSION } from "../version.js";
 import type {
   DeferredStateSchemaPublication,
   IncompatibleOpenClawDatabase,
@@ -26,7 +27,7 @@ export class OpenClawDatabaseSchemaPreflightError extends SqliteSchemaVersionErr
 
 function formatIncompatibleDatabase(database: IncompatibleOpenClawDatabase): string {
   const agent = database.agentId ? ` for agent ${database.agentId}` : "";
-  return `${database.kind} database${agent} ${database.path} uses schema ${database.foundVersion}; this build supports ${database.supportedVersion}; writer build ${database.writerAppVersion ?? "unknown"}.`;
+  return `${database.kind} database${agent} ${database.path} uses schema ${database.foundVersion}; this build supports ${database.supportedVersion}. Database schema ${database.foundVersion} was written by ${database.writerAppVersion ? `OpenClaw ${database.writerAppVersion}` : "an unknown OpenClaw build"}; it is newer than this Gateway (${VERSION}).`;
 }
 
 function formatIncompatibleDatabaseSchemas(
@@ -43,6 +44,7 @@ function formatIncompatibleDatabaseSchemas(
     `${prefix} because ${incompatibleDatabases.length} OpenClaw database schema(s) are newer than this build. ` +
     `${incompatibleDatabases.map(formatIncompatibleDatabase).join(" ")} ` +
     `Refused by ${describeRunningOpenClawBuild()}. ` +
+    "Run the newer install's openclaw doctor --fix, or update this Gateway service before restarting. " +
     "Run a build at least as new as the writer that supports these schemas, or stop the service and restore your pre-upgrade backup created with openclaw backup create. " +
     `See ${OPENCLAW_DATABASE_SCHEMA_DOCS_URL}.`
   );

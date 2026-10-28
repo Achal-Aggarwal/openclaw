@@ -11,6 +11,7 @@ import { SqliteSchemaMismatchError } from "../infra/sqlite-schema-issues.js";
 import {
   createNewerSqliteSchemaVersionError,
   readSqliteUserVersion,
+  readSqliteWriterAppVersion,
 } from "../infra/sqlite-user-version.js";
 import {
   getStateSchemaVersionAdmission,
@@ -132,6 +133,7 @@ export function admitStateSchemaFacts(database: EngineConnection, pathname: stri
         pathname,
         version,
         OPENCLAW_STATE_SCHEMA_VERSION,
+        readSqliteWriterAppVersion(database),
       );
     }
     throw normalizeOpenClawStateSchemaReadError(error, pathname);
@@ -164,6 +166,7 @@ export function assertSupportedStateSchemaVersion(
         pathname,
         contentVersion,
         OPENCLAW_STATE_SCHEMA_VERSION,
+        readSqliteWriterAppVersion(db),
       );
     }
     return userVersion;

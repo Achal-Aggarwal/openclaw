@@ -12,6 +12,7 @@ import { writeFixtureJsonSync } from "../cli/cli-fixtures.test-support.js";
 import { waitForCliSignalExit, waitForSignalExitBarriers } from "../cli/signal-exit-barrier.js";
 import { resolveStateDir } from "../config/paths.js";
 import * as backupCreate from "../infra/backup-create.js";
+import { withGatewayServiceInstallation } from "../infra/gateway-service-installation-context.js";
 import { acquireGatewayStateOwner } from "../infra/gateway-state-owner.js";
 import * as packageRoot from "../infra/openclaw-root.js";
 import * as integrity from "../infra/sqlite-integrity-worker.js";
@@ -49,7 +50,10 @@ import * as backupVerify from "./backup-verify.js";
 import { prepareDoctorDatabasePreflight } from "./doctor-database-preflight.js";
 import type { DoctorMaintenanceParams } from "./doctor-maintenance-types.js";
 import { beginDoctorMaintenance } from "./doctor-maintenance.js";
-import { guardUpdateDoctorSchemaUpgrade } from "./doctor-update-schema-guard.js";
+import {
+  guardUpdateDoctorSchemaUpgrade,
+  preflightUpdateDoctorCli,
+} from "./doctor-update-schema-guard.js";
 
 beforeEach(() => {
   // Exact 2026.9.2 package caller arguments; plugin deferral does not identify the schema phase.
@@ -83,12 +87,8 @@ function withLegacyAgent(
 }
 
 function withDatabase<T>(pathname: string, readOnly: boolean, run: (db: DatabaseSync) => T): T {
-  const db = new DatabaseSync(pathname, { readOnly });
-  try {
-    return run(db);
-  } finally {
-    db.close();
-  }
+  using db = new DatabaseSync(pathname, { readOnly });
+  return run(db);
 }
 
 function captureBytes(files: string[]) {
@@ -166,6 +166,20 @@ async function legacyAgentFixture(postCore: boolean) {
 it("rehearses shared-only schema changes before the shipped package rollback is discarded", async () => {
   await withLegacyAgent(false, async (f) => {
     const pathname = resolveOpenClawStateSqlitePath();
+    await expect(
+      withGatewayServiceInstallation(
+        {
+          installation: {
+            root: "/old",
+            version: "2026.10.3",
+            cliVersion: VERSION,
+            databasePath: pathname,
+          },
+        },
+        () => preflightUpdateDoctorCli({}),
+      ),
+    ).rejects.toThrow(/Gateway service runs 2026\.10\.3/u);
+    expect(fs.readFileSync(f.pathname)).toEqual(f.bytes);
     withDatabase(pathname, false, (database) => {
       database.exec(`PRAGMA user_version = 15;
         DELETE FROM config_machine_state WHERE state_key = 'state.schema.contentVersion';`);
@@ -371,12 +385,7 @@ it("retains a verified canonical backup before permitting the normal schema migr
               ino: identity.ino,
             }),
           ]);
-          await withAgentDatabaseMaintenanceLease({ env: state.env }, (lease) =>
-            migrateOpenClawAgentDatabaseForMaintenance(
-              { agentId: "main", pathname: f.pathname },
-              lease,
-            ),
-          );
+          await migrateAgent(f.pathname, state.env);
           // A current maintenance owner may publish a same-version rebuilt image
           // after migration; the old backup cannot fence unrelated later repairs.
           await withAgentDatabaseMaintenanceLease({ env: state.env }, async (lease) => {
@@ -399,17 +408,13 @@ it("retains a verified canonical backup before permitting the normal schema migr
     const backup = await expectDefined(create.mock.results[0], "canonical backup creation result")
       .value;
     expect(fs.existsSync(backup.archivePath)).toBe(true);
-    const db = new DatabaseSync(f.pathname, { readOnly: true });
-    try {
-      expect(db.prepare("PRAGMA user_version").get()).toEqual({
-        user_version: OPENCLAW_AGENT_SCHEMA_VERSION,
-      });
-      expect(db.prepare("SELECT value_json,updated_at FROM cache_entries").all()).toEqual([
-        { value_json: '{"keep":true}', updated_at: 7 },
-      ]);
-    } finally {
-      db.close();
-    }
+    using db = new DatabaseSync(f.pathname, { readOnly: true });
+    expect(db.prepare("PRAGMA user_version").get()).toEqual({
+      user_version: OPENCLAW_AGENT_SCHEMA_VERSION,
+    });
+    expect(db.prepare("SELECT value_json,updated_at FROM cache_entries").all()).toEqual([
+      { value_json: '{"keep":true}', updated_at: 7 },
+    ]);
   });
 });
 
@@ -512,73 +517,66 @@ it("refuses early unregistered WAL state and admits post-core repair after verif
       plugins: { enabled: false },
       agents: { ownership: "explicit", entries: { main: { agentDir } } },
     });
-    const db = new DatabaseSync(pathname);
-    try {
-      db.exec(`PRAGMA journal_mode=WAL; PRAGMA wal_autocheckpoint=0;
+    using db = new DatabaseSync(pathname);
+    db.exec(`PRAGMA journal_mode=WAL; PRAGMA wal_autocheckpoint=0;
         PRAGMA wal_checkpoint(TRUNCATE);
         INSERT INTO cache_entries(scope,key,value_json,expires_at,updated_at)
           VALUES ('upgrade-proof','wal-only','{"durable":true}',NULL,8);`);
-      expect(fs.statSync(`${pathname}-wal`).size).toBeGreaterThan(32);
-      // Online SQLite readers can update SHM read marks; DB/WAL/config are the
-      // durable input bytes, and the WAL-only row below must remain readable.
-      const expectUnchanged = captureBytes([pathname, `${pathname}-wal`, state.configPath]);
-      const schemas = await prepareDoctorDatabasePreflight();
-      await expect(guardUpdateDoctorSchemaUpgrade({ schemas })).rejects.toThrow(
-        "Missing recoverable database backup coverage",
-      );
-      expectUnchanged();
-      recordUpdateRunStep(f.runId, { step: "openclaw doctor", status: "completed" });
-      recordUpdateRunStep(f.runId, { step: "post-update verification", status: "in_progress" });
-      vi.stubEnv("OPENCLAW_UPDATE_POST_CORE", "1");
-      const create = vi.spyOn(backupCreate, "createBackupArchive");
-      await withDoctorMaintenance({}, async (maintenance) => {
-        await expect(
-          maintenance.run(() =>
-            guardUpdateDoctorSchemaUpgrade({
-              ...repairOptions(f),
-              schemas,
-            }),
-          ),
-        ).resolves.toMatchObject({
-          pendingMigrations: [
-            {
-              kind: "agent",
-              agentId: "main",
-              path: pathname,
-              foundVersion: 19,
-              supportedVersion: OPENCLAW_AGENT_SCHEMA_VERSION,
-            },
-          ],
-        });
+    expect(fs.statSync(`${pathname}-wal`).size).toBeGreaterThan(32);
+    // Online SQLite readers can update SHM read marks; DB/WAL/config are the
+    // durable input bytes, and the WAL-only row below must remain readable.
+    const expectUnchanged = captureBytes([pathname, `${pathname}-wal`, state.configPath]);
+    const schemas = await prepareDoctorDatabasePreflight();
+    await expect(guardUpdateDoctorSchemaUpgrade({ schemas })).rejects.toThrow(
+      "Missing recoverable database backup coverage",
+    );
+    expectUnchanged();
+    recordUpdateRunStep(f.runId, { step: "openclaw doctor", status: "completed" });
+    recordUpdateRunStep(f.runId, { step: "post-update verification", status: "in_progress" });
+    vi.stubEnv("OPENCLAW_UPDATE_POST_CORE", "1");
+    const create = vi.spyOn(backupCreate, "createBackupArchive");
+    await withDoctorMaintenance({}, async (maintenance) => {
+      await expect(
+        maintenance.run(() =>
+          guardUpdateDoctorSchemaUpgrade({
+            ...repairOptions(f),
+            schemas,
+          }),
+        ),
+      ).resolves.toMatchObject({
+        pendingMigrations: [
+          {
+            kind: "agent",
+            agentId: "main",
+            path: pathname,
+            foundVersion: 19,
+            supportedVersion: OPENCLAW_AGENT_SCHEMA_VERSION,
+          },
+        ],
       });
-      const archive = await expectDefined(create.mock.results[0], "canonical backup creation")
-        .value;
-      const restoredRoot = state.path("restored");
-      await backupRestoreCommand(runtime(), { archive: archive.archivePath, target: restoredRoot });
-      const restoredPath = path.join(
-        restoredRoot,
-        buildBackupArchivePath(archive.archiveRoot, pathname),
-      );
-      withDatabase(restoredPath, true, (restored) => {
-        expect(restored.prepare("PRAGMA user_version").get()).toEqual({ user_version: 19 });
-        expect(
-          restored.prepare("SELECT key,value_json FROM cache_entries ORDER BY key").all(),
-        ).toEqual([
-          { key: "retained", value_json: '{"keep":true}' },
-          { key: "wal-only", value_json: '{"durable":true}' },
-        ]);
-      });
-      expect(fs.existsSync(`${restoredPath}-wal`)).toBe(false);
-      expectUnchanged();
-      expect(db.prepare("PRAGMA user_version").get()?.user_version).toBe(19);
-      expect(db.prepare("SELECT value_json FROM cache_entries WHERE key='wal-only'").get()).toEqual(
-        {
-          value_json: '{"durable":true}',
-        },
-      );
-    } finally {
-      db.close();
-    }
+    });
+    const archive = await expectDefined(create.mock.results[0], "canonical backup creation").value;
+    const restoredRoot = state.path("restored");
+    await backupRestoreCommand(runtime(), { archive: archive.archivePath, target: restoredRoot });
+    const restoredPath = path.join(
+      restoredRoot,
+      buildBackupArchivePath(archive.archiveRoot, pathname),
+    );
+    withDatabase(restoredPath, true, (restored) => {
+      expect(restored.prepare("PRAGMA user_version").get()).toEqual({ user_version: 19 });
+      expect(
+        restored.prepare("SELECT key,value_json FROM cache_entries ORDER BY key").all(),
+      ).toEqual([
+        { key: "retained", value_json: '{"keep":true}' },
+        { key: "wal-only", value_json: '{"durable":true}' },
+      ]);
+    });
+    expect(fs.existsSync(`${restoredPath}-wal`)).toBe(false);
+    expectUnchanged();
+    expect(db.prepare("PRAGMA user_version").get()?.user_version).toBe(19);
+    expect(db.prepare("SELECT value_json FROM cache_entries WHERE key='wal-only'").get()).toEqual({
+      value_json: '{"durable":true}',
+    });
   });
 });
 
