@@ -313,6 +313,15 @@ export async function prepareCodexAttemptConnection({ params, options }: CodexRu
   let startupBinding = admittedBinding;
   preDynamicStartupStages.mark("read-binding");
   const usesSupervisionConnection = startupBinding?.connectionScope === "supervision";
+  const selectedAuthProfileId =
+    params.runtimePlan?.auth.forwardedAuthProfileId ??
+    params.authProfileId ??
+    startupBinding?.authProfileId;
+  if (workerHostedCloud && (usesSupervisionConnection || selectedAuthProfileId)) {
+    throw new Error(
+      "Worker-hosted Codex requires worker-owned authentication; detach native supervision and clear the selected Gateway auth profile before retrying.",
+    );
+  }
   if (usesSupervisionConnection && isCodexResponsesOAuthRun(params)) {
     throw new Error(
       "ChatGPT subscription sharing requires an OpenClaw-owned Codex session; detach from native supervision first.",
@@ -350,58 +359,51 @@ export async function prepareCodexAttemptConnection({ params, options }: CodexRu
   const appServerHomeScope = resolveCodexAppServerHomeScope({
     appServer: pluginConfig.appServer,
   });
-  const preparedAuthRoute =
-    usesSupervisionConnection || workerHostedCloud
-      ? undefined
-      : params.runtimePlan?.auth.modelRoute;
-  const startupAuthProfileCandidate = usesSupervisionConnection
+  // Worker custody replaces credential handoff, not the selected billing/auth route.
+  const preparedAuthRoute = usesSupervisionConnection
+    ? undefined
+    : params.runtimePlan?.auth.modelRoute;
+  const startupAuthProfileCandidate = preparedAuthRoute
+    ? params.runtimePlan?.auth.forwardedAuthProfileId
+    : selectedAuthProfileId;
+  const nativeAuthOwned = usesSupervisionConnection || workerHostedCloud;
+  const resolvedStartupAuthProfileId = nativeAuthOwned
     ? undefined
     : preparedAuthRoute
-      ? params.runtimePlan?.auth.forwardedAuthProfileId
-      : (params.runtimePlan?.auth.forwardedAuthProfileId ??
-        params.authProfileId ??
-        startupBinding?.authProfileId);
-  const resolvedStartupAuthProfileId =
-    usesSupervisionConnection || workerHostedCloud
-      ? undefined
-      : preparedAuthRoute
-        ? startupAuthProfileCandidate
-        : params.authProfileStore
-          ? resolveCodexAppServerAuthProfileId({
-              authProfileId: startupAuthProfileCandidate,
-              store: params.authProfileStore,
-              config: params.config,
-            })
-          : await resolveCodexAppServerAuthProfileIdForAgent({
-              authProfileId: startupAuthProfileCandidate,
-              agentDir,
-              config: params.config,
-            });
-  const authHandoff =
-    usesSupervisionConnection || workerHostedCloud
-      ? { authProfileId: undefined, nativeAuthProfile: true, preparedAuth: undefined }
-      : await resolveCodexAppServerPreparedAuthHandoff({
-          authRequirement: preparedAuthRoute?.authRequirement,
-          resolvedApiKey: params.resolvedApiKey,
-          authProfileId: resolvedStartupAuthProfileId,
-          authProfileStore: params.authProfileStore,
-          agentDir,
-          homeScope: appServerHomeScope,
-          requirePreparedAuth: isCodexRemoteExecPlacementSandbox(sandbox),
-          config: params.config,
-          subscriptionProfileRequiredError:
-            "Prepared Codex subscription route requires a forwarded OpenAI OAuth or token profile.",
-          subscriptionProfileUnusableError: "Prepared Codex subscription auth profile is unusable.",
-        });
+      ? startupAuthProfileCandidate
+      : params.authProfileStore
+        ? resolveCodexAppServerAuthProfileId({
+            authProfileId: startupAuthProfileCandidate,
+            store: params.authProfileStore,
+            config: params.config,
+          })
+        : await resolveCodexAppServerAuthProfileIdForAgent({
+            authProfileId: startupAuthProfileCandidate,
+            agentDir,
+            config: params.config,
+          });
+  const authHandoff = nativeAuthOwned
+    ? { authProfileId: undefined, nativeAuthProfile: true, preparedAuth: undefined }
+    : await resolveCodexAppServerPreparedAuthHandoff({
+        authRequirement: preparedAuthRoute?.authRequirement,
+        resolvedApiKey: params.resolvedApiKey,
+        authProfileId: resolvedStartupAuthProfileId,
+        authProfileStore: params.authProfileStore,
+        agentDir,
+        homeScope: appServerHomeScope,
+        requirePreparedAuth: isCodexRemoteExecPlacementSandbox(sandbox),
+        config: params.config,
+        subscriptionProfileRequiredError:
+          "Prepared Codex subscription route requires a forwarded OpenAI OAuth or token profile.",
+        subscriptionProfileUnusableError: "Prepared Codex subscription auth profile is unusable.",
+      });
   const {
     authProfileId: startupAuthProfileId,
     nativeAuthProfile,
     preparedAuth: startupPreparedAuth,
   } = authHandoff;
   const startupClientAuthProfileId =
-    usesSupervisionConnection ||
-    appServerHomeScope === "user" ||
-    startupPreparedAuth?.kind === "api-key"
+    nativeAuthOwned || appServerHomeScope === "user" || startupPreparedAuth?.kind === "api-key"
       ? null
       : startupAuthProfileId;
   const resolveReviewerPolicyContext = (binding: CodexAppServerThreadBinding | undefined) => {

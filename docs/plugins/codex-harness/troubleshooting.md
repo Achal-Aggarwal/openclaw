@@ -245,9 +245,14 @@ A changed configuration on an existing lease requires reprovisioning.
 Only dedicated ephemeral, non-container nodes retain their platform-managed
 identity transport and CA settings. Ordinary paired nodes and container workers
 do not inherit these credentials. Gateway auth profiles and local GitHub identity
-environments are not forwarded. When a managed identity requires the host-owned
-tool surface, those tools continue to own command execution; this setting does
-not grant native commands access to that identity.
+environments are not forwarded. Selected Gateway auth profiles and native
+supervision bindings cannot be reused for worker-hosted inference. Clear the
+profile selection or detach supervision before choosing worker-owned auth.
+The selected Platform or subscription route still constrains the worker account;
+a mismatched account is rejected without logging the worker into a Gateway account.
+When a managed identity requires the host-owned tool surface, those tools continue
+to own command execution; this setting does not grant native commands access to
+that identity.
 
 Native hook policies still require the existing remote hook callback deployment
 (`appServer.nativeHookRelay`). A worker connection is not a Gateway-local process.

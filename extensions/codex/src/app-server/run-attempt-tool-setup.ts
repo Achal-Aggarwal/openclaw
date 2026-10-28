@@ -274,6 +274,7 @@ export async function prepareCodexAttemptTools(runtime: CodexAttemptRuntime) {
         assertCurrent: connection.assertLegacyCurrent,
         startOptions: connection.appServer.start,
         authProfileId: connection.startupClientAuthProfileId,
+        authRequirement: connection.startupAuthRequirement,
         agentDir,
         config: params.config,
         timeoutMs: connection.appServer.requestTimeoutMs,

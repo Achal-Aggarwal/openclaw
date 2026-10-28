@@ -6,6 +6,7 @@ import { shouldRequireCodexSandboxExecServerEnvironment } from "./dynamic-tool-b
 import { prepareCodexAttemptConnection } from "./run-attempt-connection.js";
 import {
   createParams,
+  createCodexRuntimePlanFixture,
   setupRunAttemptTestHooks,
   tempDir,
   threadStartResult,
@@ -13,7 +14,9 @@ import {
 import { createSandboxContext } from "./sandbox-exec-server.test-helpers.js";
 import {
   testCodexAppServerBindingStore,
+  buildCodexSupervisionTestConnectionFingerprint,
   registerCodexTestSessionIdentity,
+  writeCodexAppServerBinding,
 } from "./session-binding.test-helpers.js";
 import {
   createAppServerOptions,
@@ -243,6 +246,169 @@ it("selects the enrolled worker client without forwarding Gateway auth or local 
     connection.releaseBindingAuthority();
   }
 });
+
+it.each(["api-key", "subscription"] as const)(
+  "keeps worker %s route constraints through actual client startup without local login",
+  async (authRequirement) => {
+    vi.stubEnv("OPENCLAW_WORKER_CODEX_CONFIG_VERSION", "a".repeat(64));
+    const params = createParams(
+      path.join(tempDir, "worker-auth.jsonl"),
+      path.join(tempDir, "worker-auth-workspace"),
+    );
+    params.permissionMode = "full";
+    const sandbox = {
+      ...createSandboxContext({}),
+      backendId: "node",
+      placementExecutionMode: "remote-exec",
+      placementNodeId: "worker-node",
+      placementEnvironmentId: "worker-environment",
+      placementSessionId: params.sessionId,
+      placementOwnerEpoch: 1,
+    };
+    params.sandbox = sandbox;
+    const runtimePlan = createCodexRuntimePlanFixture();
+    params.runtimePlan = {
+      ...runtimePlan,
+      auth: {
+        ...runtimePlan.auth,
+        selectedAuthMode: authRequirement,
+        modelRoute: {
+          provider: "openai",
+          modelId: params.modelId,
+          api: authRequirement === "api-key" ? "openai-responses" : "openai-chatgpt-responses",
+          baseUrl:
+            authRequirement === "api-key"
+              ? "https://api.openai.com/v1"
+              : "https://chatgpt.com/backend-api/codex",
+          authRequirement,
+          requestTransportOverrides: "none",
+        },
+      },
+    };
+    const runtime = createPluginRuntimeMock();
+    const closed = Promise.withResolvers<void>();
+    let receive: ((frame: Uint8Array) => void | Promise<void>) | undefined;
+    const methods: string[] = [];
+    vi.spyOn(runtime.nodes, "openDuplex").mockImplementation(async () => ({
+      send: async (frame) => {
+        const request = JSON.parse(Buffer.from(frame).toString("utf8")) as {
+          id?: string | number;
+          method: string;
+        };
+        methods.push(request.method);
+        if (request.id !== undefined) {
+          const result =
+            request.method === "initialize"
+              ? { userAgent: "codex-cli/0.164.0" }
+              : { account: { type: authRequirement === "api-key" ? "chatgpt" : "apiKey" } };
+          await receive?.(Buffer.from(JSON.stringify({ id: request.id, result })));
+        }
+      },
+      onMessage: (listener) => {
+        receive = listener;
+        return () => {
+          receive = undefined;
+        };
+      },
+      close: () => closed.resolve(),
+      closed: closed.promise,
+    }));
+    const connection = await prepareCodexAttemptConnection({
+      params,
+      options: {
+        bindingStore: testCodexAppServerBindingStore,
+        runtime,
+        pluginConfig: { appServer: { workerHostedCloud: true } },
+      },
+    });
+    try {
+      const outcome = await connection
+        .attemptClientFactory({
+          authProfileId: connection.startupClientAuthProfileId,
+          preparedAuth: connection.startupPreparedAuth,
+          authRequirement: connection.startupAuthRequirement,
+        })
+        .then(
+          async (client) => {
+            await client.closeAndWait();
+            return undefined;
+          },
+          (error: unknown) => error,
+        );
+      expect(outcome).toMatchObject({ status: 401 });
+      expect(connection.startupAuthRequirement).toBe(authRequirement);
+      expect(connection.startupClientAuthProfileId).toBeNull();
+      expect(connection.startupPreparedAuth).toBeUndefined();
+      expect(methods).toContain("account/read");
+      expect(methods).not.toContain("account/login/start");
+      await closed.promise;
+    } finally {
+      connection.cancellation.dispose();
+      connection.releaseModelExecution();
+      connection.releaseBindingAuthority();
+    }
+  },
+);
+
+it.each(["explicit-profile", "forwarded-profile", "supervision"] as const)(
+  "rejects worker hosting instead of silently replacing %s ownership",
+  async (ownership) => {
+    const params = createParams(path.join(tempDir, "owned.jsonl"), path.join(tempDir, "owned"));
+    params.permissionMode = "full";
+    const sandbox = {
+      ...createSandboxContext({}),
+      backendId: "node",
+      placementExecutionMode: "remote-exec",
+      placementNodeId: "worker-node",
+    };
+    params.sandbox = sandbox;
+    if (ownership === "explicit-profile") {
+      params.authProfileId = "openai:chosen";
+    } else if (ownership === "forwarded-profile") {
+      const plan = createCodexRuntimePlanFixture();
+      params.runtimePlan = {
+        ...plan,
+        auth: { ...plan.auth, forwardedAuthProfileId: "openai:chosen" },
+      };
+    } else {
+      registerCodexTestSessionIdentity(params.sessionFile, params.sessionId, params.sessionKey);
+      await writeCodexAppServerBinding(params.sessionFile, {
+        threadId: "native-thread",
+        cwd: params.workspaceDir,
+        connectionScope: "supervision",
+        appServerRuntimeFingerprint: buildCodexSupervisionTestConnectionFingerprint({
+          appServer: { workerHostedCloud: true },
+          supervision: { enabled: true },
+        }),
+        supervisionSourceThreadId: "native-thread",
+        conversationSourceTransferComplete: true,
+        preserveNativeModel: true,
+        model: "native-model",
+        modelProvider: "openai",
+      });
+    }
+    const outcome = await prepareCodexAttemptConnection({
+      params,
+      options: {
+        bindingStore: testCodexAppServerBindingStore,
+        runtime: createPluginRuntimeMock(),
+        pluginConfig: { appServer: { workerHostedCloud: true }, supervision: { enabled: true } },
+      },
+    }).then(
+      (connection) => {
+        connection.cancellation.dispose();
+        connection.releaseModelExecution();
+        connection.releaseBindingAuthority();
+        return undefined;
+      },
+      (error: unknown) => error,
+    );
+    expect(outcome).toBeInstanceOf(Error);
+    expect(outcome).toMatchObject({
+      message: expect.stringContaining("worker-owned authentication"),
+    });
+  },
+);
 
 it("keeps non-node remote placements confined when worker hosting is configured", async () => {
   const sandbox = {

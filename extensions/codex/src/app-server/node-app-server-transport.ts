@@ -7,6 +7,7 @@ import { createBoundedLineFramer } from "openclaw/plugin-sdk/process-runtime";
 import type { SandboxContext } from "openclaw/plugin-sdk/sandbox";
 import { isRecord } from "openclaw/plugin-sdk/string-coerce-runtime";
 import { resolveCodexWorkerAppServerCommand } from "../node-app-server-command.js";
+import { applyCodexAppServerAuthProfile } from "./auth-bridge.js";
 import { CodexAppServerClient } from "./client.js";
 import { readCodexPlacementWorkspaceIdentity } from "./sandbox-exec-server.js";
 import { trackIsolatedCodexAppServerClient } from "./shared-client-lifecycle.js";
@@ -191,6 +192,15 @@ export function createCodexWorkerClientFactory(params: {
     try {
       assertCurrent();
       await client.initialize();
+      assertCurrent();
+      // Verify the worker-owned account without resolving or transferring host credentials.
+      await applyCodexAppServerAuthProfile({
+        client,
+        authProfileId: null,
+        authRequirement: options?.authRequirement,
+        assertCurrent,
+        assertCurrentAsync: options?.assertCurrentAsync,
+      });
       assertCurrent();
       if (params.workspaceReadiness) {
         const readiness = params.workspaceReadiness;
