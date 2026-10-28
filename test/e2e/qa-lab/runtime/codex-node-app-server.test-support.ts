@@ -16,6 +16,8 @@ export const MARKERS = {
   first: "P8_WORKER_FIRST",
   second: "P8_WORKER_SECOND",
   cancel: "P8_WORKER_CANCEL",
+  forbidden: "P8_WORKER_FORBIDDEN",
+  revoked: "P8_WORKER_REVOKED",
 } as const;
 export type Scenario = keyof typeof MARKERS;
 const WORKER_BEARER = "p8-worker-synthetic-bearer";
@@ -160,10 +162,12 @@ export async function stageWorkerCodex(params: {
   root: string;
   nodeState: string;
   providerBaseUrl: string;
+  receiptEndpoint?: string;
 }) {
   const sourceHome = path.join(params.root, "source-codex");
   const workerHome = path.join(params.nodeState, "codex-runtime");
   const observations = path.join(params.root, "auth-observations");
+  const authGate = path.join(params.root, "auth-effect-gate");
   await Promise.all(
     [sourceHome, workerHome, observations].map((dir) =>
       fs.mkdir(dir, { recursive: true, mode: 0o700 }),
@@ -181,14 +185,21 @@ export async function stageWorkerCodex(params: {
     'import fs from "node:fs";',
     'import path from "node:path";',
     'import { fileURLToPath } from "node:url";',
+    ...(params.receiptEndpoint ? [fixtureReceiptClientSource(params.receiptEndpoint)] : []),
     `const worker = fileURLToPath(import.meta.url) === ${JSON.stringify(workerHelper)};`,
     "if (worker) {",
+    `const gate = fs.existsSync(${JSON.stringify(authGate)}) ? fs.readFileSync(${JSON.stringify(authGate)}, "utf8").trim() : undefined;`,
     'const parentArgs = fs.readFileSync(`/proc/${process.ppid}/cmdline`, "utf8").split("\\0");',
     'const status = fs.readFileSync(`/proc/${process.ppid}/status`, "utf8");',
     "const nodePid = Number(status.match(/^PPid:\\s+(\\d+)/m)?.[1]);",
     'const nativePids = fs.readFileSync(`/proc/${nodePid}/task/${nodePid}/children`, "utf8").trim().split(/\\s+/).map(Number).filter(pid => { try { const args = fs.readFileSync(`/proc/${pid}/cmdline`, "utf8").split("\\0"); return args.includes("app-server") || args.includes("exec-server"); } catch { return false; } });',
-    'const evidence = { nativePids, appServerPid: process.ppid, nodePid, parentAppServer: parentArgs.includes("app-server"), home: process.env.HOME, codexHome: process.env.CODEX_HOME };',
+    'const evidence = { nativePids, startedAt: Date.now(), helperPid: process.pid, gate, appServerPid: process.ppid, nodePid, parentAppServer: parentArgs.includes("app-server"), home: process.env.HOME, codexHome: process.env.CODEX_HOME };',
     `fs.writeFileSync(path.join(${JSON.stringify(observations)}, process.pid + ".json"), JSON.stringify(evidence), { mode: 0o600 });`,
+    ...(params.receiptEndpoint
+      ? [
+          'if (gate) { sendReceipt(gate, "held-before-token"); await awaitRelease(gate, "continue"); sendReceipt(gate, "released"); }',
+        ]
+      : []),
     "}",
     `process.stdout.write((worker ? ${JSON.stringify(WORKER_BEARER)} : "p8-gateway-synthetic-bearer") + "\\n");`,
   ].join("\n");
@@ -227,6 +238,7 @@ export async function stageWorkerCodex(params: {
     sourceHelper,
     workerHome,
     observations,
+    authGate,
     version,
     command: `codex.app-server.stdio.v1.${version}`,
   };
