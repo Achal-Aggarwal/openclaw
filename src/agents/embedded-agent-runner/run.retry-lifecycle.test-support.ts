@@ -298,7 +298,9 @@ describe("direct embedded retry lifecycle", () => {
         await vi.importActual<typeof import("./run/payloads.js")>("./run/payloads.js");
       mockedBuildEmbeddedRunPayloads.mockImplementation(buildEmbeddedRunPayloads);
       let nowMs = Date.now();
+      let monotonicMs = performance.now();
       const now = vi.spyOn(Date, "now").mockImplementation(() => nowMs);
+      const monotonicNow = vi.spyOn(performance, "now").mockImplementation(() => monotonicMs);
       const onAgentEvent = vi.fn();
       let attempts = 0;
       try {
@@ -307,6 +309,7 @@ describe("direct embedded retry lifecycle", () => {
           if (attempts === 2) {
             // A resumed task can complete model/tool work for minutes before another outage.
             nowMs += 130_000;
+            monotonicMs += 130_000;
           }
           const failed = attempts < 3;
           const assistant = makeRetryAssistant(
@@ -346,6 +349,7 @@ describe("direct embedded retry lifecycle", () => {
           expect(attempt.prompt).not.toBe(session.runParams.prompt);
         }
       } finally {
+        monotonicNow.mockRestore();
         now.mockRestore();
       }
     },
