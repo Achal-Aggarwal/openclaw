@@ -1149,12 +1149,17 @@
 /* Code stays inset in its actual participant surface, including forwarded
    cards, while preserving the sender hue and the shared code layout. */
 .chat-group:is(.user, .chat-group--forwarded) .chat-bubble {
-  --chat-code-background: oklch(from var(--chat-bubble-background) calc(l + 0.025) c h);
+  --chat-code-background: oklch(
+    from var(--chat-bubble-background) calc(l - 0.035) calc(c * 0.55) h
+  );
   --chat-code-border: color-mix(in srgb, var(--text) 8%, var(--chat-code-background));
 }
 
 :where(:root[data-theme-mode="light"]) .chat-group:is(.user, .chat-group--forwarded) .chat-bubble {
-  --chat-code-background: oklch(from var(--chat-bubble-background) calc(l + 0.015) c h);
+  /* Leave chroma room in sRGB on near-white participant surfaces. */
+  --chat-code-background: oklch(
+    from var(--chat-bubble-background) min(calc(l + 0.035), 0.97) calc(c * 0.55) h
+  );
 }
 
 .chat-text :where(pre) {
