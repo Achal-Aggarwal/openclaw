@@ -11,9 +11,8 @@ import {
   type PersonalSessionGroup,
 } from "../lib/sessions/personal-groups.ts";
 import { isPinnableUiSessionRow, parseAgentSessionKey } from "../lib/sessions/session-key.ts";
-import { buildSessionListParams } from "../lib/sessions/session-requests.ts";
+import { buildSessionListParams, SESSION_SEARCH_SCOPE } from "../lib/sessions/session-requests.ts";
 import { showToast } from "../lib/toast.ts";
-import { SESSION_SEARCH_SCOPE } from "./command-palette-session-search.ts";
 import { showPersonalSessionGroupDialog } from "./personal-session-group-dialog.tsx";
 
 export type PersonalSessionGroupCandidate = {
