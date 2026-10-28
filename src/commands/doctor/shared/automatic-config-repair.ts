@@ -84,10 +84,7 @@ async function prepareAutomaticConfigRepairWrite(
 
 async function planConfigRepair(
   snapshot: ConfigFileSnapshot,
-  {
-    pluginContracts,
-    backupDiscovery = false,
-  }: { pluginContracts: boolean; backupDiscovery?: true },
+  { pluginContracts, backupDiscovery }: { pluginContracts: boolean; backupDiscovery?: true },
   additionalMigration?: { config: OpenClawConfig; changes: string[]; pendingStateMigration?: true },
 ): Promise<AutomaticConfigRepairPlan | null> {
   if (!canPlanAutomaticConfigRepair(snapshot, additionalMigration?.pendingStateMigration)) {
