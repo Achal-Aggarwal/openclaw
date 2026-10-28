@@ -1,11 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
 import { GatewayRequestError } from "../../../api/gateway-connect-errors.ts";
+import type { SessionWorkspaceListResult } from "../../../api/types.ts";
 import { gatewayHelloForMethods } from "../../../test-helpers/gateway-methods.ts";
 import { createSessionCapabilityFixture } from "../chat-session-capability.test-support.ts";
 import { createSessionWorkspaceHost } from "./chat-session-workspace-host.test-support.ts";
 import {
   createSidebarContentRecorder,
   loadedSidebarContent,
+  textFile,
+  workspaceFile,
 } from "./chat-session-workspace.test-support.ts";
 import { openSessionWorkspaceFile, type SessionWorkspaceHost } from "./chat-session-workspace.ts";
 
@@ -30,6 +33,27 @@ function createReferenceState(
   });
 }
 
+function missingFileError() {
+  return new GatewayRequestError({
+    code: "INVALID_REQUEST",
+    message: "session file not found",
+    details: { type: "session_file_not_found" },
+  });
+}
+
+type SearchEntries = Pick<
+  NonNullable<SessionWorkspaceListResult["browser"]>,
+  "entries" | "truncated"
+>;
+function searchListing(search: string, browser: SearchEntries) {
+  return {
+    sessionKey: "agent:main:current",
+    root: "/workspace",
+    files: [],
+    browser: { path: "", search, ...browser },
+  };
+}
+
 describe("session workspace file reference resolution", () => {
   it.each(["application/pdf", "application/octet-stream"])(
     "previews only detected PDFs and retains message-qualified downloads (%s)",
@@ -37,16 +61,12 @@ describe("session workspace file reference resolution", () => {
       const getFile = vi.fn<SessionWorkspaceHost["sessions"]["getFile"]>(async (sessionKey) => ({
         sessionKey,
         root: "/original-workspace",
-        file: {
-          path: "report.pdf",
+        file: workspaceFile("report.pdf", {
           workspacePath: "reports/report.pdf",
-          name: "report.pdf",
-          kind: "read",
-          missing: false,
           previewKind: "unsupported",
           mimeType,
           size: 300_000,
-        },
+        }),
       }));
       const state = createReferenceState(createSessionCapabilityFixture({ getFile }));
       const target = {
@@ -119,49 +139,23 @@ describe("session workspace file reference resolution", () => {
     const name = returnedPath.split("/").at(-1)!;
     const getFile = vi.fn<SessionWorkspaceHost["sessions"]["getFile"]>(async (sessionKey, path) => {
       if (path !== requestPath) {
-        throw new GatewayRequestError({
-          code: "INVALID_REQUEST",
-          message: "session file not found",
-          details: { type: "session_file_not_found" },
-        });
+        throw missingFileError();
       }
       return {
         sessionKey,
         root: "/workspace",
-        file: {
-          path: returnedPath,
-          workspacePath: returnedPath,
-          name,
-          kind: "read",
-          missing: false,
-          previewKind: "text",
-          contentEncoding: "utf8",
-          content,
-          hash: "hash",
-        },
+        file: textFile(returnedPath, content, { workspacePath: returnedPath, hash: "hash" }),
       };
     });
-    const listFiles = vi.fn().mockResolvedValue({
-      sessionKey: "agent:main:current",
-      root: "/workspace",
-      files: [],
-      browser: {
-        path: "",
-        search: name,
-        entries: [{ path: returnedPath, name, kind: "file" }],
-      },
-    });
+    const listFiles = vi
+      .fn()
+      .mockResolvedValue(
+        searchListing(name, { entries: [{ path: returnedPath, name, kind: "file" }] }),
+      );
     const setFile = vi.fn<SessionWorkspaceHost["sessions"]["setFile"]>(
       async (sessionKey, path) => ({
         sessionKey,
-        file: {
-          path,
-          workspacePath: path,
-          name: path.split("/").at(-1) ?? path,
-          kind: "modified",
-          missing: false,
-          hash: "saved-hash",
-        },
+        file: workspaceFile(path, { workspacePath: path, kind: "modified", hash: "saved-hash" }),
       }),
     );
     const state = createReferenceState(
@@ -219,22 +213,13 @@ describe("session workspace file reference resolution", () => {
           details: { type: "session_file_too_large", size: 4096 },
         });
       }
-      throw new GatewayRequestError({
-        code: "INVALID_REQUEST",
-        message: "session file not found",
-        details: { type: "session_file_not_found" },
-      });
+      throw missingFileError();
     });
-    const listFiles = vi.fn().mockResolvedValue({
-      sessionKey: "agent:main:current",
-      root: "/workspace",
-      files: [],
-      browser: {
-        path: "",
-        search: "REPORT.md",
+    const listFiles = vi.fn().mockResolvedValue(
+      searchListing("REPORT.md", {
         entries: [{ path: nestedPath, name: "REPORT.md", kind: "file" }],
-      },
-    });
+      }),
+    );
     const state = createReferenceState(createSessionCapabilityFixture({ getFile, listFiles }));
 
     void openSessionWorkspaceFile(state, { path: "REPORT.md" });
@@ -247,12 +232,10 @@ describe("session workspace file reference resolution", () => {
     expect(sidebarContent.rawText).toContain(`/workspace/${nestedPath}`);
   });
 
-  it.each([
+  it.each<{ label: string; browser: SearchEntries }>([
     {
       label: "several files share the name",
       browser: {
-        path: "",
-        search: "REPORT.md",
         entries: [
           { path: "a/REPORT.md", name: "REPORT.md", kind: "file" },
           { path: "b/REPORT.md", name: "REPORT.md", kind: "file" },
@@ -262,8 +245,6 @@ describe("session workspace file reference resolution", () => {
     {
       label: "the search listing was truncated",
       browser: {
-        path: "",
-        search: "REPORT.md",
         truncated: true,
         entries: [{ path: "a/REPORT.md", name: "REPORT.md", kind: "file" }],
       },
@@ -271,24 +252,13 @@ describe("session workspace file reference resolution", () => {
     {
       label: "the match is a directory",
       browser: {
-        path: "",
-        search: "REPORT.md",
         entries: [{ path: "a/REPORT.md", name: "REPORT.md", kind: "directory" }],
       },
     },
   ])("keeps the missing-file failure when $label", async ({ browser }) => {
-    const missing = new GatewayRequestError({
-      code: "INVALID_REQUEST",
-      message: "session file not found",
-      details: { type: "session_file_not_found" },
-    });
+    const missing = missingFileError();
     const getFile = vi.fn().mockRejectedValue(missing);
-    const listFiles = vi.fn().mockResolvedValue({
-      sessionKey: "agent:main:current",
-      root: "/workspace",
-      files: [],
-      browser,
-    });
+    const listFiles = vi.fn().mockResolvedValue(searchListing("REPORT.md", browser));
     const state = createReferenceState(createSessionCapabilityFixture({ getFile, listFiles }));
 
     void openSessionWorkspaceFile(state, { path: "REPORT.md" });
@@ -303,13 +273,7 @@ describe("session workspace file reference resolution", () => {
   });
 
   it("never searches for a reference that already carries a path", async () => {
-    const getFile = vi.fn().mockRejectedValue(
-      new GatewayRequestError({
-        code: "INVALID_REQUEST",
-        message: "session file not found",
-        details: { type: "session_file_not_found" },
-      }),
-    );
+    const getFile = vi.fn().mockRejectedValue(missingFileError());
     const listFiles = vi.fn();
     const state = createReferenceState(createSessionCapabilityFixture({ getFile, listFiles }));
 

@@ -36,6 +36,17 @@ function fileInfo<T extends object>(name: string, fields: T) {
   return { kind: "read", missing: false, name, path: name, workspacePath: name, ...fields };
 }
 
+function textPreview(path: string, content: string, fields: object = {}) {
+  return previewResponse(nodePath.posix.basename(path), {
+    path,
+    workspacePath: path,
+    content,
+    contentEncoding: "utf8",
+    previewKind: "text",
+    ...fields,
+  });
+}
+
 suite.define(() => {
   it.each([
     { kind: "managed", name: "log.md", root: "/workspace" },
@@ -76,12 +87,7 @@ suite.define(() => {
             ].map(({ path, request, name: fileName, content }) => ({
               match: { path: request },
               response: {
-                ...previewResponse(fileName, {
-                  path,
-                  workspacePath: path,
-                  content,
-                  contentEncoding: "utf8",
-                  previewKind: "text",
+                ...textPreview(path, content, {
                   mimeType: fileName === "README" ? "text/plain" : "text/markdown",
                 }),
                 root,
@@ -130,17 +136,7 @@ suite.define(() => {
     "shows a file tab before completion and honors the %s intent",
     async (intent) => {
       await withPage(async (page) => {
-        const file = {
-          root: "/workspace",
-          sessionKey,
-          file: fileInfo("slow.ts", {
-            previewKind: "text",
-            contentEncoding: "utf8",
-            content: "export const loaded = true;\n",
-            path: "src/slow.ts",
-            workspacePath: "src/slow.ts",
-          }),
-        };
+        const file = textPreview("src/slow.ts", "export const loaded = true;\n");
         const gateway = await installMockGateway(page, {
           deferredMethods: [
             "sessions.files.get",
@@ -246,17 +242,10 @@ suite.define(() => {
           "sessions.files.get": {
             cases: files.map((file) => ({
               match: { path: file.requestPath },
-              response: {
-                root: "/workspace",
-                sessionKey,
-                file: fileInfo(file.name, {
-                  content: `// 1\n// 2\n// 3\n// 4\n// 5\n// 6\n${file.marker}\n`,
-                  contentEncoding: "utf8",
-                  path: file.workspacePath,
-                  previewKind: "text",
-                  workspacePath: file.workspacePath,
-                }),
-              },
+              response: textPreview(
+                file.workspacePath,
+                `// 1\n// 2\n// 3\n// 4\n// 5\n// 6\n${file.marker}\n`,
+              ),
             })),
           },
         },
@@ -346,19 +335,11 @@ suite.define(() => {
       const fileResponse = (content: string, hash: string) => ({
         cases: ["README.md", "/workspace/packages/app/README.md"].map((requestPath) => ({
           match: { path: requestPath },
-          response: {
-            root: "/workspace",
-            sessionKey,
-            file: fileInfo("README.md", {
-              previewKind: "text",
-              contentEncoding: "utf8",
-              content,
-              hash,
-              kind: "modified",
-              workspacePath: "packages/app/README.md",
-              path: requestPath.replace(/^\/workspace\//, ""),
-            }),
-          },
+          response: textPreview(requestPath.replace(/^\/workspace\//, ""), content, {
+            hash,
+            kind: "modified",
+            workspacePath: "packages/app/README.md",
+          }),
         })),
       });
       const gateway = await installMockGateway(page, {
@@ -494,12 +475,9 @@ suite.define(() => {
     expect(png.byteLength).toBeLessThan(256 * 1024);
     const pngBase64 = png.toString("base64");
     const responses = {
-      "/workspace/notes.txt": previewResponse("notes.txt", {
-        content: "Exact-head workspace preview proof.\n",
-        contentEncoding: "utf8",
+      "/workspace/notes.txt": textPreview("notes.txt", "Exact-head workspace preview proof.\n", {
         hash: "a".repeat(64),
         mimeType: "text/plain",
-        previewKind: "text",
         size: 36,
       }),
       "/workspace/openclaw.png": previewResponse("openclaw.png", {
