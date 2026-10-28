@@ -469,13 +469,14 @@ describe("Claude native stdio boundary", () => {
         await fixtureReadyBeforeSettlement(context, "background.ready", running, signal);
         firstPid = Number(await readFixture(context, "fixture.pid"));
         expect(liveSession.current()?.isIdle()).toBe(false);
+        const assessment = status!.capture()!;
         if (termination === "abort") {
           controller.abort(new Error("Synthetic background turn cancelled."));
         } else {
           process.kill(firstPid, "SIGTERM");
         }
         expect(await withinTest(outcome, signal)).toBeInstanceOf(Error);
-        const assessment = status!.capture()!;
+        expect(status!.capture() === undefined).toBe(termination === "abort");
         await expect(assessment.assess({ signal })).resolves.toEqual(
           termination === "process exit"
             ? { state: "closed", basis: "transport_closed" }
@@ -671,7 +672,6 @@ describe("Claude native stdio boundary", () => {
         expect(detail.priorResponses).toMatchObject({
           "prior-pre": { hookSpecificOutput: { permissionDecision: "deny" } },
           "prior-permission": { behavior: "deny" },
-          "prior-context": {},
         });
         expect((detail.priorResponses as Record<string, unknown>)["prior-context"]).toEqual({});
       }
@@ -732,7 +732,7 @@ describe("Claude native stdio boundary", () => {
           "control_response",
         ]);
       }
-      expect(status!.capture()!.isCurrent()).toBe(false);
+      expect(status!.capture()).toBeUndefined();
       if (notificationReplay) {
         expect(detail.finalBackgroundAnswer).toBe(true);
       }
@@ -935,19 +935,30 @@ describe("Claude native stdio boundary", () => {
     expect(secondPid).not.toBe(firstPid);
     expect(context.liveSession.current()).toBeUndefined();
   });
-  it("withholds private context when its authority is revoked after sending the prompt", async () => {
-    let checks = 0;
-    const context = await createContext("normal", {
+  it("withholds private context when its authority is revoked after sending the prompt", async ({
+    signal,
+  }) => {
+    let active = true;
+    const context = await createContext("revoked-prompt", {
       prompt: "Remember orange.",
       promptContext: { prependContext: "saved private context" },
-      // The first check guards the prompt send; the login changes from there on.
       assertPrivateInputCurrent: () => {
-        if (++checks > 1) {
+        if (!active) {
           throw new Error("Synthetic account reassigned after send.");
         }
       },
     });
-    const detail = await runDetail(context);
+    const running = collect(context);
+    const outcome = running.catch((error: unknown) => error);
+    try {
+      await fixtureReadyBeforeSettlement(context, "prompt.ready", running, signal);
+      expect(await readFixture(context, "user.received")).toBe("Remember orange.");
+      active = false;
+    } finally {
+      await releaseFixture(context, "prompt");
+      await withinTest(outcome, signal);
+    }
+    const detail = resultDetail(await running);
     expect(detail).toMatchObject({ turn: 1, user: "Remember orange." });
     expect(detail.privateContext).toBeUndefined();
   });

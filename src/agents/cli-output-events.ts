@@ -531,8 +531,8 @@ export function dispatchClaudeCliThinking(params: {
         continue;
       }
       const previous = tracker.streamedByIndex.get(index) ?? "";
-      // A prefix snapshot is an older view, not a rollback. Retain the known block so
-      // replaying its full snapshot afterward cannot manufacture new progress.
+      // Treat prefix snapshots defensively as replays: keep the fuller display so
+      // replaying it afterward cannot manufacture new progress.
       if (previous.startsWith(block.thinking)) {
         continue;
       }

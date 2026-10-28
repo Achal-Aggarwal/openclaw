@@ -217,8 +217,7 @@ describe("createCliJsonlStreamingParser events", () => {
       ),
       claudeBlockStop(0),
     ];
-    parser.push(joinJsonlFrames(...events) + "\n");
-    parser.finish();
+    finishCliFrames(parser, ...events);
     expect(progress).toEqual([]);
     expect(starts).toEqual([toolStart("large", "Write", args)]);
   });
@@ -375,7 +374,9 @@ describe("createCliJsonlStreamingParser events", () => {
   it("lets plugin parsers own their frames before lazily parsing fallback JSON", () => {
     using parseSpy = vi.spyOn(JSON, "parse");
     const parseCountsAtPluginEntry: number[] = [];
+    const assistant: Array<{ text: string; delta: string }> = [];
     const parser = createPluginParser({
+      onAssistantDelta: ({ text, delta }) => assistant.push({ text, delta }),
       parseJsonlEvent: (line) => {
         parseCountsAtPluginEntry.push(parseSpy.mock.calls.length);
         if (line === "plain provider frame") {
@@ -394,6 +395,10 @@ describe("createCliJsonlStreamingParser events", () => {
 
     parser.push(`${JSON.stringify({ text: " provider JSON" })}\n`);
     expect(parseSpy).toHaveBeenCalledTimes(1);
+    expect(assistant).toEqual([
+      { text: "plain", delta: "plain" },
+      { text: "plain provider JSON", delta: " provider JSON" },
+    ]);
 
     parser.push(
       `${JSON.stringify({
@@ -403,6 +408,8 @@ describe("createCliJsonlStreamingParser events", () => {
     );
     expect(parseCountsAtPluginEntry).toEqual([0, 0, 1]);
     expect(parseSpy).toHaveBeenCalledTimes(2);
+    parser.finish();
+    expect(parser.getOutput()?.text).toBe("fallback");
   });
 
   it("projects lifecycle events without dropping fork-successor session metadata", () => {
@@ -482,21 +489,13 @@ describe("createCliJsonlStreamingParser events", () => {
   });
 
   it.each(["server_tool_use", "mcp_tool_use"])("recognizes %s blocks", (type) => {
-    const starts: CliToolUseStartDelta[] = [];
-    const parser = createClaudeParser({
-      backend: createClaudeBackend(),
-      onToolUseStart: (delta) => starts.push(delta),
-    });
-
-    parser.push(
-      joinJsonlFrames(
-        claudeBlockStart({ type, id: "toolu_hosted", name: "web_search", input: {} }, 0),
-        claudeInputJsonDelta('{"query":"openclaw"}', 0),
-        claudeBlockStop(0),
-        "",
-      ),
+    const { starts, parser } = createToolEventParser();
+    finishCliFrames(
+      parser,
+      claudeBlockStart({ type, id: "toolu_hosted", name: "web_search", input: {} }, 0),
+      claudeInputJsonDelta('{"query":"openclaw"}', 0),
+      claudeBlockStop(0),
     );
-    parser.finish();
 
     expect(starts).toEqual([
       {

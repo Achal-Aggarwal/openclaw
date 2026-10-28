@@ -296,7 +296,7 @@ export type ReplyBackendHandle = {
   isAbortable?: () => boolean;
   /** Recover a stalled model request while retaining this native turn for fallback. */
   recoverStalledModelCall?: () => boolean;
-  /** Stable registration identity; absent until this backend offers an assessment. */
+  /** Stable within one registration; re-read identity because it can be replaced or cleared. */
   readonly turnStatus?: ReplyBackendTurnStatus;
   /** @deprecated Compatibility for shipped embedded handles. Use messageInjection. */
   queueMessage?: ReplyBackendMessageInjection["queueMessage"];

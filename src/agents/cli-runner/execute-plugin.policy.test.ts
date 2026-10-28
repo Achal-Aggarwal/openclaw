@@ -534,14 +534,17 @@ describe("plugin-owned CLI same-turn input", () => {
       queued.push(text),
     );
 
-    await expect(
-      queue("revoked", undefined, () => {
-        throw new Error("source revoked");
-      }),
-    ).rejects.toThrow("source revoked");
-    await queue("steer");
-    finish.resolve();
-    await run;
+    try {
+      await expect(
+        queue("revoked", undefined, () => {
+          throw new Error("source revoked");
+        }),
+      ).rejects.toThrow("source revoked");
+      await queue("steer");
+    } finally {
+      finish.resolve();
+      await run;
+    }
 
     expect(queued).toEqual(["steer"]);
     expect(injection.isAvailable()).toBe(false);
@@ -578,27 +581,30 @@ describe("plugin-owned CLI same-turn input", () => {
         onQueueSettled: () => order.push(`settled:${label}`),
       }) as unknown as Parameters<typeof queue>[1];
 
-    await queue("steer", optionsFor(accepted, "steer"));
-    await expect(queue("refused", optionsFor(refused, "refused"))).rejects.toThrow(
-      "native refused",
-    );
-    // The input already reached the model: a transcript failure must not become a
-    // replay, but it must not pass for a committed one either.
-    await expect(queue("failing", optionsFor(failing, "failing"))).resolves.toMatchObject({
-      transcriptCommit: "unconfirmed",
-      errorMessage: expect.stringContaining("transcript store unavailable"),
-    });
-    for (const callback of ["onQueueAccepted", "onQueueSettled"] as const) {
-      await expect(
-        queue(callback, {
-          [callback]: () => {
-            throw new Error("observer failed");
-          },
-        }),
-      ).resolves.toMatchObject({ transcriptCommit: "unconfirmed" });
+    try {
+      await queue("steer", optionsFor(accepted, "steer"));
+      await expect(queue("refused", optionsFor(refused, "refused"))).rejects.toThrow(
+        "native refused",
+      );
+      // The input already reached the model: a transcript failure must not become a
+      // replay, but it must not pass for a committed one either.
+      await expect(queue("failing", optionsFor(failing, "failing"))).resolves.toMatchObject({
+        transcriptCommit: "unconfirmed",
+        errorMessage: expect.stringContaining("transcript store unavailable"),
+      });
+      for (const callback of ["onQueueAccepted", "onQueueSettled"] as const) {
+        await expect(
+          queue(callback, {
+            [callback]: () => {
+              throw new Error("observer failed");
+            },
+          }),
+        ).resolves.toMatchObject({ transcriptCommit: "unconfirmed" });
+      }
+    } finally {
+      finish.resolve();
+      await run;
     }
-    finish.resolve();
-    await run;
 
     expect(order).toEqual([
       "started:steer",
@@ -626,12 +632,15 @@ describe("plugin-owned CLI same-turn input", () => {
       target: () => undefined,
     });
 
-    await expect(
-      queue("unconfirmed", { userTurnTranscriptRecorder: recorder }),
-    ).resolves.toMatchObject({ transcriptCommit: "unconfirmed" });
-    expect(signal?.aborted).toBe(false);
-    finish.resolve();
-    await run;
+    try {
+      await expect(
+        queue("unconfirmed", { userTurnTranscriptRecorder: recorder }),
+      ).resolves.toMatchObject({ transcriptCommit: "unconfirmed" });
+      expect(signal?.aborted).toBe(false);
+    } finally {
+      finish.resolve();
+      await run;
+    }
 
     expect(recorder.isBlocked()).toBe(true);
     expect(recorder.hasPersisted()).toBe(false);
@@ -782,9 +791,17 @@ describe("plugin turn assessments through the operation watchdog", () => {
       }
     },
   );
-  it.each(["absent", "invalid", "throw", "closed", "busy", "transient", "unsupported"] as const)(
+  it.each([
+    ["absent", "unknown", "status_unsupported"],
+    ["invalid", "unknown", "invalid"],
+    ["throw", "unknown", "failed"],
+    ["closed", "closed", "transport_closed"],
+    ["busy", "unknown", "busy"],
+    ["transient", "unknown", "transient_error"],
+    ["unsupported", "unknown", "status_unsupported"],
+  ] as const)(
     "preserves bounded recovery and finite metadata for %s",
-    async (mode) => {
+    async (mode, state, basis) => {
       vi.useFakeTimers({ toFake: ["Date"] });
       vi.setSystemTime(0);
       const { context } = await createExecution({ timeoutMs: 600_000 });
@@ -803,18 +820,7 @@ describe("plugin turn assessments through the operation watchdog", () => {
         return (
           mode === "invalid"
             ? { state: "closed", basis: "invented", raw: "private" }
-            : mode === "closed"
-              ? { state: "closed", basis: "transport_closed", raw: "private" }
-              : {
-                  state: "unknown",
-                  basis:
-                    mode === "busy"
-                      ? "busy"
-                      : mode === "transient"
-                        ? "transient_error"
-                        : "status_unsupported",
-                  raw: "private",
-                }
+            : { state, basis, raw: "private" }
         ) as CliBackendTurnAssessment;
       });
       const run = runPlugin(
@@ -853,19 +859,8 @@ describe("plugin turn assessments through the operation watchdog", () => {
           expect(reason).not.toHaveProperty("assessment");
         } else {
           expect(reason).toHaveProperty("assessment", {
-            state: mode === "closed" ? "closed" : "unknown",
-            basis:
-              mode === "invalid"
-                ? "invalid"
-                : mode === "throw"
-                  ? "failed"
-                  : mode === "closed"
-                    ? "transport_closed"
-                    : mode === "busy"
-                      ? "busy"
-                      : mode === "transient"
-                        ? "transient_error"
-                        : "status_unsupported",
+            state,
+            basis,
             durationMs: 0,
           });
         }

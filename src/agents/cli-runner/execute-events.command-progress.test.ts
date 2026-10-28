@@ -132,6 +132,8 @@ it.each([
   ["replay after prefix", [snapshot("Known"), snapshot("Known analysis")], false],
   ["heartbeat", [{ type: "keep_alive" }], false],
   ["zero tokens", [thinking("", 0)], false],
+  ["unqualified text", [], false],
+  ["unqualified tokens", [], false],
   ["subagent", [{ ...thinking("Child analysis"), parent_tool_use_id: "child" }], false],
   ["stale attempt", [thinking("Old attempt")], false],
   ["active tool", [thinking("While tool runs")], false],
@@ -169,6 +171,12 @@ it.each([
       onThinkingProgress: handlers.emitCliThinkingProgress,
     });
     const push = (...records: unknown[]) => parser.push(joinJsonlFrames(...records, ""));
+    const displayed: Record<string, unknown>[] = [];
+    const dispose = onAgentEvent((event) => {
+      if (event.runId === context.params.runId && event.stream === "thinking") {
+        displayed.push(event.data);
+      }
+    });
     try {
       push(claudeMessageStart("message-a"), thinking("Known analysis"), thinking("", 100));
       vi.setSystemTime(359_000);
@@ -186,6 +194,21 @@ it.each([
         await resolveMcpLoopbackYieldContext(request)!.onYield("yield");
         markMcpLoopbackRequestFinished(request);
         expect(tracking.shouldSuppressAssistantOutput()).toBe(true);
+      }
+      if (kind === "unqualified text") {
+        handlers.emitCliThinkingDelta({
+          text: "Display only",
+          delta: "Display only",
+          isReasoningSnapshot: true,
+        });
+        expect(displayed.at(-1)).toEqual({
+          text: "Display only",
+          delta: "Display only",
+          isReasoningSnapshot: true,
+        });
+      } else if (kind === "unqualified tokens") {
+        handlers.emitCliThinkingProgress({ progressTokens: 123 });
+        expect(displayed.at(-1)).toEqual({ progressTokens: 123 });
       }
       push(...frames);
       vi.setSystemTime(360_000);
@@ -209,6 +232,7 @@ it.each([
       }
       expect(stop).toHaveBeenCalledOnce();
     } finally {
+      dispose();
       tracking.finalizeCapture(() => {});
       watchdog.close();
       vi.useRealTimers();

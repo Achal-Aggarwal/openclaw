@@ -27,8 +27,8 @@ type Assessment = {
 /** One private slot owned and timed by the operation watchdog, never by a plugin or registry. */
 export function createWatchdogAssessment(readOwner: () => Owner, onSettled: () => void) {
   let slot: Assessment | undefined;
-  const current = (target: Assessment) => {
-    const owned = () => {
+  const hostCurrent = (target: Assessment) => {
+    try {
       const owner = readOwner();
       return (
         slot === target &&
@@ -39,49 +39,77 @@ export function createWatchdogAssessment(readOwner: () => Owner, onSettled: () =
         owner.backend === target.backend &&
         target.backend.turnStatus === target.status
       );
-    };
-    try {
-      return owned() && (!target.captured || target.captured.isCurrent()) && owned();
     } catch {
       return false;
     }
   };
+  const evidenceCurrent = (target: Assessment) => {
+    try {
+      return !target.captured || target.captured.isCurrent();
+    } catch {
+      return false;
+    }
+  };
+  // Obsolete native evidence consumes this host episode; it cannot veto ordinary recovery.
+  const qualify = (
+    target: Assessment,
+    result: ReplyBackendTurnAssessment,
+  ): ReplyBackendTurnAssessment =>
+    evidenceCurrent(target) ? result : { state: "unknown", basis: "status_unsupported" };
   const clear = () => {
     const previous = slot;
     slot = undefined;
     previous?.controller.abort();
   };
   const settle = (target: Assessment, result: ReplyBackendTurnAssessment, at: number) => {
-    if (!current(target) || target.result) {
+    if (!hostCurrent(target) || target.result) {
+      return false;
+    }
+    const qualified = qualify(target, result);
+    if (!hostCurrent(target)) {
       return false;
     }
     const durationMs = Math.max(0, Math.min(at - target.startedAtMs, ASSESSMENT_MS));
     target.result =
-      result.state === "closed"
-        ? { state: "closed", basis: result.basis, durationMs }
-        : { state: "unknown", basis: result.basis, durationMs };
+      qualified.state === "closed"
+        ? { state: "closed", basis: qualified.basis, durationMs }
+        : { state: "unknown", basis: qualified.basis, durationMs };
     target.controller.abort();
     return true;
   };
   return {
     clear,
     check(at: number) {
-      if (slot && !current(slot)) {
-        clear();
+      const target = slot;
+      if (!target) {
+        return;
       }
-      if (slot && !slot.result && at >= slot.deadlineAtMs) {
-        settle(slot, { state: "unknown", basis: "timeout" }, at);
+      if (!hostCurrent(target)) {
+        clear();
+      } else if (!target.result) {
+        if (!evidenceCurrent(target)) {
+          settle(target, { state: "unknown", basis: "status_unsupported" }, at);
+        } else if (at >= target.deadlineAtMs) {
+          settle(target, { state: "unknown", basis: "timeout" }, at);
+        }
       }
     },
     pendingWait() {
-      return slot && !slot.result && current(slot)
+      return slot && !slot.result && hostCurrent(slot)
         ? { kind: "backend" as const, deadlineAtMs: slot.deadlineAtMs }
         : undefined;
     },
-    result: () => (slot && current(slot) ? slot.result : undefined),
+    result() {
+      const target = slot;
+      if (!target?.result || !hostCurrent(target)) {
+        return undefined;
+      }
+      const result = { ...qualify(target, target.result), durationMs: target.result.durationMs };
+      return hostCurrent(target) ? result : undefined;
+    },
     captureCurrent() {
       const target = slot;
-      return target && current(target) ? () => current(target) : undefined;
+      return target && hostCurrent(target) ? () => hostCurrent(target) : undefined;
     },
     begin(at: number, executionDeadlineAtMs?: number) {
       const { attempt, backend, sequence } = readOwner();
@@ -102,10 +130,10 @@ export function createWatchdogAssessment(readOwner: () => Owner, onSettled: () =
       slot = target;
       try {
         target.captured = status.capture();
-        if (current(target)) {
-          if (!target.captured) {
+        if (hostCurrent(target)) {
+          if (!target.captured || !evidenceCurrent(target)) {
             settle(target, { state: "unknown", basis: "status_unsupported" }, at);
-          } else {
+          } else if (hostCurrent(target)) {
             const finish = (result: ReplyBackendTurnAssessment) => {
               const finishedAt = Date.now();
               if (

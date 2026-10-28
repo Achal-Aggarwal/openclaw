@@ -116,6 +116,10 @@ for await (const line of createInterface({ input: process.stdin })) {
     user = message.message.content;
     synthetic = message.isSynthetic === true;
     writeFileSync("user.received", user);
+    if (scenario === "revoked-prompt") {
+      ready("prompt.ready");
+      while (!existsSync("prompt.release")) await delay(5);
+    }
     if ((capturedStopped || backgroundAgent) && turn > 1) {
       result();
       continue;

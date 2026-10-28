@@ -25,6 +25,9 @@ export function createClaudeTurnStatus(
           (session.currentTurn === turn || (session.closed && turn.error !== undefined))
         );
       };
+      if (!isCurrent()) {
+        return undefined;
+      }
       return {
         isCurrent,
         async assess({ signal }) {
@@ -36,7 +39,7 @@ export function createClaudeTurnStatus(
           if (session.closed) {
             return { state: "closed", basis: "transport_closed" };
           }
-          // No qualified read-only model-status request exists on this CLI transport.
+          // This adapter issues no fresh status request; process presence is not model progress.
           return {
             state: "unknown",
             basis:

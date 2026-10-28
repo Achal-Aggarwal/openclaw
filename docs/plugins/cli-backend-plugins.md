@@ -344,7 +344,9 @@ or enter the ordinary prompt queue. Older plugins and hosts can omit the registr
 
 The host permits one assessment per current target and silence episode, bounded
 by 10 seconds and the remaining hard execution budget. New semantic progress,
-Stop, and completion invalidate it. A timeout, failure, or live process proves
+Stop, and completion invalidate it. An unavailable or obsolete native capture under
+unchanged host ownership consumes that opportunity as unknown, without retrying
+the assessment or delaying ordinary recovery. A timeout, failure, or live process proves
 neither model progress nor death; the existing recovery policy still decides what
 to do. The native Claude adapter reports local transport facts only, not a fresh
 model-health response. This does not change the separate CLI no-output watchdog.
