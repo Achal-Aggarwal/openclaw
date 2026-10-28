@@ -272,8 +272,8 @@ async function measureLedgerWrites() {
   }
 }
 
-// Small, isolated owner workload. Imports, fixture creation, and verification
-// stay outside timing; synchronous read instrumentation is a separate mode.
+// Entry imports, fixture creation, and verification stay outside timing. Lazy
+// owner imports remain in first-capture timing; read instrumentation is separate.
 async function measureBackupCapture() {
   const mode = process.argv[6] ?? "auto";
   const payloadMiB = Number(process.argv[7] ?? 16);
@@ -326,7 +326,7 @@ async function measureBackupCapture() {
         file === payload ? payloadMiB * 1048576 : 1,
       );
     }
-    const expected = createHash("sha256").update(fs.readFileSync(payload)).digest("hex");
+    const expected = hashFile(payload);
     const identity = fs.statSync(payload, { bigint: true });
     const input = {
       stateDir,
@@ -354,6 +354,7 @@ async function measureBackupCapture() {
         mode,
         payloadMiB,
         controlCopyMethod,
+        resourceUsageMaxRSSScope: "process-lifetime",
         filesystemType: fs.statfsSync(fixtureRoot).type.toString(16),
         node: process.version,
         bun: process.versions.bun ?? null,
@@ -404,11 +405,8 @@ async function measureBackupCapture() {
       const captured = backup.databases.find((entry) => entry.path === payload);
       assert.ok(captured);
       assert.equal(captured.sha256, expected);
-      assert.equal(
-        createHash("sha256").update(fs.readFileSync(captured.snapshotPath)).digest("hex"),
-        expected,
-      );
-      assert.equal(createHash("sha256").update(fs.readFileSync(payload)).digest("hex"), expected);
+      assert.equal(hashFile(captured.snapshotPath), expected);
+      assert.equal(hashFile(payload), expected);
       assert.equal(typeof backup.sourceGenerations[payload], "string");
       console.log(
         JSON.stringify({
@@ -424,6 +422,7 @@ async function measureBackupCapture() {
           fsReadOperations: after.fsRead - before.fsRead,
           ...(process.platform === "linux" ? { logicalReadBytes: after.rchar - before.rchar } : {}),
           ...(measure === "counts" ? { sourceReadBytes, privateReadBytes } : {}),
+          // Lifetime high-water includes setup and verification, not just capture.
           resourceUsageMaxRSS: process.resourceUsage().maxRSS,
           load: loadavg(),
         }),
@@ -433,5 +432,23 @@ async function measureBackupCapture() {
   } finally {
     configureFsSafeNative(previous);
     fs.rmSync(fixtureRoot, { recursive: true, force: true });
+  }
+}
+
+// Keep this oracle independent of snapshot hashing without retaining payload-sized buffers.
+function hashFile(file: string): string {
+  const fd = fs.openSync(file, "r");
+  try {
+    const hash = createHash("sha256");
+    const buffer = Buffer.allocUnsafe(64 * 1024);
+    for (;;) {
+      const bytes = fs.readSync(fd, buffer, 0, buffer.length, null);
+      if (bytes === 0) {
+        return hash.digest("hex");
+      }
+      hash.update(buffer.subarray(0, bytes));
+    }
+  } finally {
+    fs.closeSync(fd);
   }
 }
