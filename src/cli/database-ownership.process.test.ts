@@ -83,14 +83,20 @@ describe("database ownership claim process boundary", () => {
         expect(result.code, result.stderr).toBe(1);
         expect(JSON.parse(result.stdout)).toMatchObject({
           ok: false,
-          error: { type: "cli_error", message: expect.stringMatching(/stop.*external supervisor/iu) },
+          error: {
+            type: "cli_error",
+            message: expect.stringMatching(/stop.*external supervisor/iu),
+          },
         });
         assert.deepStrictEqual(snapshot(database.path), before);
         const direct = await claim(env, true);
         expect(direct.code, direct.stderr).toBe(1);
         expect(JSON.parse(direct.stdout)).toMatchObject({
           ok: false,
-          error: { type: "cli_error", message: expect.stringMatching(/OpenClaw state database is busy/iu) },
+          error: {
+            type: "cli_error",
+            message: expect.stringMatching(/OpenClaw state database is busy/iu),
+          },
         });
         assert.deepStrictEqual(snapshot(database.path), before);
         expect(inspectOpenClawStateOwnershipAtPath(database.path)).toBeNull();

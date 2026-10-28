@@ -92,24 +92,22 @@ describe("MCP relay CLI", () => {
     expect(mocks.log).not.toHaveBeenCalled();
   });
 
+  it.each([false, true])("reports Gateway recovery instructions (json=%s)", async (json) => {
+    mocks.callGatewayFromCli.mockRejectedValue(
+      new Error("Gateway offline.", { cause: new Error("Private transport diagnostics.") }),
+    );
+    const result = runCli(["pair", ...(json ? ["--json"] : [])]);
+    const message =
+      "Gateway offline.\nCheck that the Gateway is running and mcp-relay is enabled with openclaw plugins enable mcp-relay, then retry.";
 
-it.each([false, true])("reports Gateway recovery instructions (json=%s)", async (json) => {
-  mocks.callGatewayFromCli.mockRejectedValue(
-    new Error("Gateway offline.", { cause: new Error("Private transport diagnostics.") }),
-  );
-  const result = runCli(["pair", ...(json ? ["--json"] : [])]);
-  const message =
-    "Gateway offline.\nCheck that the Gateway is running and mcp-relay is enabled with openclaw plugins enable mcp-relay, then retry.";
-
-  if (json) {
-    await expect(result).rejects.toThrow(message);
-    await expect(result).rejects.not.toHaveProperty("cause");
-  } else {
-    await result;
-    expect(mocks.error).toHaveBeenCalledExactlyOnceWith(message);
-    expect(mocks.exit).toHaveBeenCalledExactlyOnceWith(1);
-  }
-  expect(mocks.writeJson).not.toHaveBeenCalled();
+    if (json) {
+      await expect(result).rejects.toThrow(message);
+      await expect(result).rejects.not.toHaveProperty("cause");
+    } else {
+      await result;
+      expect(mocks.error).toHaveBeenCalledExactlyOnceWith(message);
+      expect(mocks.exit).toHaveBeenCalledExactlyOnceWith(1);
+    }
+    expect(mocks.writeJson).not.toHaveBeenCalled();
   });
-
 });

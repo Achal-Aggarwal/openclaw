@@ -388,7 +388,11 @@ it("loads skills when the workspace path has different casing on disk", async ({
   if (!existsSync(configuredWorkspace)) {
     skip("Requires a case-insensitive filesystem");
   }
-  await writeSkill({ dir: path.join(workspace, "skills", "case-skill"), name: "case-skill", description: "Case test" });
+  await writeSkill({
+    dir: path.join(workspace, "skills", "case-skill"),
+    name: "case-skill",
+    description: "Case test",
+  });
   const warn = captureWarningLogger();
 
   const entries = loadTestWorkspaceSkills(configuredWorkspace);
