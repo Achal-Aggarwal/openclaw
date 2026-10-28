@@ -2,15 +2,19 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { configureFsSafeNative, getFsSafeNativeConfig } from "@openclaw/fs-safe/config";
+import { collectNestedErrorCandidates } from "@openclaw/normalization-core/error-coercion";
 import { afterEach, expect, it, vi } from "vitest";
 import { useAutoCleanupTempDirTracker } from "../../test/helpers/temp-dir.js";
 import * as configIo from "../config/io.js";
 import * as databaseBackup from "../snapshot/database-backup.js";
 import * as fileGeneration from "./sqlite-file-generation.js";
 import * as sqliteIntegrity from "./sqlite-integrity.js";
+import { cleanupSnapshotOperations } from "./sqlite-readonly-location-cleanup.js";
 import * as readOnlyLocation from "./sqlite-readonly-location.js";
 import * as snapshotSource from "./sqlite-snapshot-source.js";
 import * as sqliteSnapshot from "./sqlite-snapshot.js";
+import * as walCheckpoint from "./sqlite-wal-checkpoint.js";
 import { discoverUpdateStateSchemaInspectionInProcess } from "./update-candidate-state.js";
 import { createUpdateDatabaseBackupInProcess } from "./update-database-backup.js";
 import {
@@ -63,6 +67,266 @@ async function fixture() {
       createUpdateDatabaseBackupInProcess({ ...input, inspectionPlan, ...options }),
   };
 }
+
+it.each(["auto", "off"] as const)(
+  "does not recapture verified generation bytes with native copying %s",
+  async (mode) => {
+    const f = await fixture();
+    const payload = path.join(f.root, "payload.sqlite");
+    {
+      using db = new DatabaseSync(payload);
+      db.exec(
+        "PRAGMA user_version=17; CREATE TABLE payload(value BLOB); INSERT INTO payload VALUES (zeroblob(2097152));",
+      );
+    }
+    const before = fs.readFileSync(payload);
+    const source = fs.statSync(payload, { bigint: true });
+    vi.spyOn(Date, "now").mockReturnValue(Date.now() + 3_000);
+    const originalRead = fs.readSync;
+    let privateReadBytes = 0;
+    vi.spyOn(fs, "readSync").mockImplementation(
+      (
+        descriptor: number,
+        buffer: NodeJS.ArrayBufferView,
+        offsetOrOptions: number | fs.ReadOptions = {},
+        length?: number,
+        position?: fs.ReadPosition | null,
+      ) => {
+        const options =
+          typeof offsetOrOptions === "number"
+            ? { offset: offsetOrOptions, length, position }
+            : offsetOrOptions;
+        const count = originalRead(descriptor, buffer, options);
+        const opened = fs.fstatSync(descriptor, { bigint: true });
+        if (
+          opened.isFile() &&
+          opened.size === source.size &&
+          (opened.dev !== source.dev || opened.ino !== source.ino)
+        ) {
+          privateReadBytes += count;
+        }
+        return count;
+      },
+    );
+    const previous = getFsSafeNativeConfig();
+    configureFsSafeNative({ mode });
+    let backup: Awaited<ReturnType<typeof f.capture>>;
+    try {
+      backup = await f.capture({ additionalPaths: [payload], preserveSourceArtifacts: true });
+    } finally {
+      configureFsSafeNative(previous);
+    }
+    // Before/after generation observations each verify one private image. The
+    // recovery snapshot must consume the first image without comparing a third.
+    expect(privateReadBytes).toBeLessThanOrEqual(2 * before.length + 512);
+    const entry = backup.databases.find((database) => database.path === payload);
+    expect(entry).toMatchObject({
+      userVersion: 17,
+      sizeBytes: before.length,
+      sha256: createHash("sha256").update(before).digest("hex"),
+    });
+    expect(backup.sourceGenerations[payload]).toEqual(expect.any(String));
+    expect(backup.warnings).toEqual([]);
+    expect(fs.readFileSync(entry!.snapshotPath)).toEqual(before);
+    expect(fs.readFileSync(payload)).toEqual(before);
+    expect(fs.readdirSync(f.stagingRoot)).toEqual([]);
+  },
+);
+
+it("retains the admitted inventory through cleanup and consumes each image without recapture", async () => {
+  const f = await fixture();
+  const second = path.join(f.root, "z-second.sqlite");
+  fs.copyFileSync(f.shared, second);
+  const prepared = new Map<string, string>();
+  f.generationImages.mockImplementation((file, _staging, ...rest) => {
+    const image = f.prepare(file, f.stagingRoot, ...rest);
+    if (!prepared.has(file)) {
+      prepared.set(file, image.location);
+    }
+    return image;
+  });
+  const capture = sqliteSnapshot.createVerifiedSqliteSnapshot;
+  const transferred: string[] = [];
+  vi.spyOn(sqliteSnapshot, "createVerifiedSqliteSnapshot").mockImplementation(async (options) => {
+    const image = options.sourceAcquisition?.preparedSource;
+    expect(image?.prepared.location).toBe(prepared.get(options.sourcePath));
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(image && fs.existsSync(image.prepared.location)).toBe(true);
+    transferred.push(options.sourcePath);
+    return capture(options);
+  });
+  let cleanup: Promise<void> | undefined;
+  const backup = await f.capture({
+    additionalPaths: [second],
+    onProgress: () => {
+      expect(prepared.size).toBe(2);
+      cleanup ??= cleanupSnapshotOperations();
+    },
+  });
+  await cleanup;
+  expect(transferred.toSorted()).toEqual([f.shared, second].toSorted());
+  expect(backup.warnings).toEqual([]);
+  expect(
+    Object.entries(backup.sourceGenerations)
+      .filter(([, value]) => value !== null)
+      .map(([file]) => file)
+      .toSorted(),
+  ).toEqual(transferred.toSorted());
+  for (const file of backup.missingPaths) {
+    expect(backup.sourceGenerations[file]).toBeNull();
+  }
+  expect(fs.readdirSync(f.stagingRoot)).toEqual([]);
+});
+
+it.each(["replace", "same-size-write", "wal", "journal"] as const)(
+  "refuses a retained image %s without reacquiring or publishing it",
+  async (change) => {
+    const f = await fixture();
+    const capture = sqliteSnapshot.createVerifiedSqliteSnapshot;
+    const reacquire = vi.spyOn(readOnlyLocation, "prepareSqliteReadOnlyCopyInProcess");
+    vi.spyOn(sqliteSnapshot, "createVerifiedSqliteSnapshot").mockImplementationOnce((options) => {
+      const image = options.sourceAcquisition?.preparedSource?.prepared.location;
+      expect(image).toEqual(expect.any(String));
+      if (!image) {
+        throw new Error("Expected the admitted generation image");
+      }
+      if (change === "replace") {
+        const replacement = `${image}.replacement`;
+        fs.copyFileSync(image, replacement);
+        fs.renameSync(replacement, image);
+      } else if (change === "same-size-write") {
+        const before = fs.statSync(image);
+        const bytes = fs.readFileSync(image);
+        bytes.write("replaced", bytes.indexOf("retained"));
+        fs.writeFileSync(image, bytes);
+        fs.utimesSync(image, before.atime, before.mtime);
+      } else {
+        fs.writeFileSync(`${image}-${change}`, Buffer.alloc(64));
+      }
+      return capture(options);
+    });
+    await expect(f.capture()).rejects.toThrow("prepared source changed before transfer");
+    expect(reacquire).not.toHaveBeenCalled();
+    expect(f.generationImages).toHaveBeenCalledTimes(1);
+    expect(fs.readdirSync(f.stagingRoot)).toEqual([]);
+  },
+);
+
+it("keeps the captured image but refuses automatic rollback after a later source write", async () => {
+  const f = await fixture();
+  let wrote = false;
+  const backup = await f.capture({
+    onProgress: ({ phase }) => {
+      if (wrote || phase !== "pre-migration database backup") {
+        return;
+      }
+      wrote = true;
+      using writer = new DatabaseSync(f.shared);
+      writer.exec("UPDATE payload SET value = 'new-value';");
+    },
+  });
+  expect(wrote).toBe(true);
+  expect(backup.sourceGenerations[f.shared]).toBeUndefined();
+  expect(backup.warnings).toContainEqual(
+    expect.stringContaining("snapshot requires manual recovery"),
+  );
+  using captured = new DatabaseSync(backup.databases[0]!.snapshotPath, { readOnly: true });
+  expect(captured.prepare("SELECT value FROM payload").get()).toEqual({ value: "retained" });
+  using source = new DatabaseSync(f.shared, { readOnly: true });
+  expect(source.prepare("SELECT value FROM payload").get()).toEqual({ value: "new-value" });
+});
+
+it.each(["success", "false", "throw"] as const)(
+  "joins every retained image after admission fails and preserves cleanup %s",
+  async (cleanup) => {
+    const f = await fixture();
+    const second = path.join(f.root, "z-second.sqlite");
+    fs.copyFileSync(f.shared, second);
+    const failure = new Error("capture cancelled before publication");
+    const cleanupFailure = new Error("retained cleanup refused");
+    let retired = 0;
+    f.generationImages.mockImplementation((file, _staging, ...rest) => {
+      const prepared = f.prepare(file, f.stagingRoot, ...rest);
+      return {
+        ...prepared,
+        async cleanupAsync() {
+          const result = await prepared.cleanupAsync();
+          retired++;
+          if (cleanup === "throw") {
+            throw cleanupFailure;
+          }
+          return cleanup === "false" ? false : result;
+        },
+      };
+    });
+    const pending = f.capture({
+      additionalPaths: [second],
+      onProgress: () => {
+        throw failure;
+      },
+    });
+    if (cleanup === "success") {
+      await expect(pending).rejects.toBe(failure);
+    } else {
+      await expect(pending).rejects.toMatchObject({
+        cause: failure,
+        errors: [failure, expect.any(Error), expect.any(Error)],
+      });
+    }
+    expect(retired).toBe(2);
+    expect(fs.readdirSync(f.directory)).toEqual([]);
+    expect(fs.readdirSync(f.stagingRoot)).toEqual([]);
+  },
+);
+
+it.each([
+  ["before-classification", "false"],
+  ["before-classification", "throw"],
+  ["postgres", "false"],
+  ["postgres", "throw"],
+] as const)("refuses %s capture when acquired-image cleanup returns %s", async (phase, outcome) => {
+  const f = await fixture();
+  const failure = new Error("checkpoint refused before classification");
+  const cleanupFailure = new Error("generation cleanup refused");
+  if (phase === "postgres") {
+    writePostgresAnchor(f.shared);
+  } else {
+    vi.spyOn(walCheckpoint, "truncateSqliteWal").mockImplementationOnce(() => {
+      throw failure;
+    });
+  }
+  f.generationImages.mockImplementationOnce((file, _staging, ...rest) => {
+    const prepared = f.prepare(file, f.stagingRoot, ...rest);
+    return {
+      ...prepared,
+      cleanup() {
+        prepared.cleanup();
+        if (outcome === "throw") {
+          throw cleanupFailure;
+        }
+        return false;
+      },
+    };
+  });
+  const reacquire = vi.spyOn(snapshotSource, "prepareSqliteReadOnlyLocationSync");
+  const publish = vi.spyOn(sqliteSnapshot, "createVerifiedSqliteSnapshot");
+  const captured = await f.capture().catch((error: unknown) => error);
+  expect(captured).toBeInstanceOf(Error);
+  const causes = collectNestedErrorCandidates(captured);
+  expect(causes).toContainEqual(
+    expect.objectContaining({ message: "Database generation snapshot cleanup failed" }),
+  );
+  if (phase === "before-classification") {
+    expect(causes).toContain(failure);
+  }
+  if (outcome === "throw") {
+    expect(causes).toContain(cleanupFailure);
+  }
+  expect(reacquire).not.toHaveBeenCalled();
+  expect(publish).not.toHaveBeenCalled();
+  expect(f.generationImages).toHaveBeenCalledTimes(1);
+  expect(fs.readdirSync(f.stagingRoot)).toEqual([]);
+});
 
 it.each(["acquisition", "settlement"] as const)(
   "keeps a manual recovery image after a generation %s failure without retrying that generation",
@@ -124,7 +388,7 @@ it("keeps classification errors fatal, including the private image cleanup failu
   await expect(f.capture()).rejects.toMatchObject({
     errors: [
       expect.objectContaining({ message: expect.stringContaining("Invalid PostgreSQL anchor") }),
-      cleanupFailure,
+      expect.objectContaining({ cause: cleanupFailure }),
     ],
     cause: expect.objectContaining({
       message: expect.stringContaining("Invalid PostgreSQL anchor"),
