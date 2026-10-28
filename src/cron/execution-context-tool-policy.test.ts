@@ -222,6 +222,36 @@ async function cliTools(run: Run, onYield = () => {}) {
   return scoped.tools;
 }
 
+async function ordinaryTools(runtime: "embedded" | "cli") {
+  const identity = {
+    sessionKey: PARENT_KEY,
+    sessionId: "parent-session",
+    runId: "turn-1",
+  };
+  if (runtime === "embedded") {
+    return await createOpenClawCodingToolsInternalAsync({
+      config: CFG,
+      agentId: "main",
+      ...identity,
+      toolConstructionPlan: {
+        includeBaseCodingTools: false,
+        includeShellTools: false,
+        includeChannelTools: false,
+        includeOpenClawTools: true,
+        includePluginTools: false,
+      },
+    });
+  }
+  const scoped = await resolveGatewayScopedTools({
+    cfg: CFG,
+    ...identity,
+    senderIsOwner: true,
+    surface: "loopback",
+    onYield: () => {},
+  });
+  return scoped.tools;
+}
+
 // Registers the run's automation invocation the way the cron runner does before
 // the runtime starts (src/cron/isolated-agent/run.ts). The returned close settles
 // it the same way: the invocation is marked closed, then the context released.
@@ -275,9 +305,23 @@ describe("scheduled automations scope", () => {
       expect(automations, "automations tool offered").toBeDefined();
       const actions = readActionEnum(automations!);
       expect(actions).toEqual(expect.arrayContaining(["status", "list", "get", "remove", "runs"]));
-      // No creation, edits, forced runs or wake: the parent wake action is not offered yet.
+      if (entry.placement === "in-session") {
+        // Compare through the same adapter so schema normalization stays equivalent.
+        const ordinary = (await ordinaryTools(runtime)).find(
+          (tool) => tool.name === AUTOMATIONS_TOOL_NAME,
+        );
+        expect(ordinary).toBeDefined();
+        expect(automations!.description).toBe(ordinary!.description);
+        expect(automations!.parameters).toEqual(ordinary!.parameters);
+      }
+      // Stable conversation catalogs do not grant scheduled execution authority.
       for (const action of ["add", "update", "run", "wake", "bind"]) {
-        expect(actions).not.toContain(action);
+        if (entry.placement !== "in-session") {
+          expect(actions).not.toContain(action);
+        }
+        expect(await callError(automations!, { action, jobId: entry.job.id })).toContain(
+          SCOPE_ERROR,
+        );
       }
       for (const action of ["get", "remove", "runs"]) {
         expect(await callError(automations!, { action, jobId: "sibling-job" })).toContain(
@@ -325,36 +369,13 @@ describe("scheduled automations scope", () => {
   it("a session: run keeps its session's CLI tool catalog", async () => {
     const run = await admitRun(job({ sessionTarget: `session:${PARENT_KEY}` }), PARENT_KEY, ["*"]);
     const scheduled = (await cliTools(run)).map((tool) => tool.name);
-    const ordinary = (
-      await resolveGatewayScopedTools({
-        cfg: CFG,
-        sessionKey: PARENT_KEY,
-        sessionId: "parent-session",
-        runId: "turn-1",
-        senderIsOwner: true,
-        surface: "loopback",
-        onYield: () => {},
-      })
-    ).tools.map((tool) => tool.name);
+    const ordinary = (await ordinaryTools("cli")).map((tool) => tool.name);
     expect(scheduled).toContain("sessions_yield");
     expect(ordinary).toContain("sessions_yield");
   });
 
   it("control: a session turn without a scheduled context keeps sessions_yield", async () => {
-    const tools = await createOpenClawCodingToolsInternalAsync({
-      config: CFG,
-      agentId: "main",
-      sessionKey: PARENT_KEY,
-      sessionId: "parent-session",
-      runId: "turn-1",
-      toolConstructionPlan: {
-        includeBaseCodingTools: false,
-        includeShellTools: false,
-        includeChannelTools: false,
-        includeOpenClawTools: true,
-        includePluginTools: false,
-      },
-    });
+    const tools = await ordinaryTools("embedded");
     expect(tools.map((tool) => tool.name)).toContain("sessions_yield");
   });
 });
