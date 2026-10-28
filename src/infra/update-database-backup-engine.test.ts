@@ -150,7 +150,9 @@ it("retains the admitted inventory through cleanup and consumes each image witho
   vi.spyOn(sqliteSnapshot, "createVerifiedSqliteSnapshot").mockImplementation(async (options) => {
     const image = options.sourceAcquisition?.preparedSource;
     expect(image?.prepared.location).toBe(prepared.get(options.sourcePath));
-    await new Promise<void>((resolve) => setImmediate(resolve));
+    await new Promise<void>((resolve) => {
+      setImmediate(resolve);
+    });
     expect(image && fs.existsSync(image.prepared.location)).toBe(true);
     transferred.push(options.sourcePath);
     return capture(options);

@@ -295,15 +295,15 @@ async function measureBackupCapture() {
   const previous = getFsSafeNativeConfig();
   const fixtureRoot = fs.mkdtempSync(path.join(tmpdir(), "update-capture-measure-"));
   try {
-    const stateDir = path.join(fixtureRoot, "state");
+    const captureStateDir = path.join(fixtureRoot, "state");
     const env = {
       ...process.env,
       HOME: path.join(fixtureRoot, "home"),
-      OPENCLAW_STATE_DIR: stateDir,
+      OPENCLAW_STATE_DIR: captureStateDir,
       OPENCLAW_CONFIG_PATH: path.join(fixtureRoot, "openclaw.json"),
     };
     fs.mkdirSync(env.HOME);
-    fs.mkdirSync(path.join(stateDir, "state"), { recursive: true });
+    fs.mkdirSync(path.join(captureStateDir, "state"), { recursive: true });
     fs.writeFileSync(env.OPENCLAW_CONFIG_PATH, '{"plugins":{"enabled":false}}');
     Object.assign(process.env, env);
     const load = (relative: string) => import(pathToFileURL(path.join(sourceRoot, relative)).href);
@@ -319,7 +319,7 @@ async function measureBackupCapture() {
     );
     const payload = path.join(fixtureRoot, "payload.sqlite");
     configureFsSafeNative({ mode });
-    for (const file of [path.join(stateDir, "state/openclaw.sqlite"), payload]) {
+    for (const file of [path.join(captureStateDir, "state/openclaw.sqlite"), payload]) {
       using db = new DatabaseSync(file);
       db.exec("PRAGMA user_version=17; CREATE TABLE payload(value BLOB);");
       db.prepare("INSERT INTO payload VALUES (zeroblob(?))").run(
@@ -329,13 +329,16 @@ async function measureBackupCapture() {
     const expected = hashFile(payload);
     const identity = fs.statSync(payload, { bigint: true });
     const input = {
-      stateDir,
+      stateDir: captureStateDir,
       config: {},
       env,
       additionalPaths: [payload],
       preserveSourceArtifacts: true,
     };
-    const inspectionPlan = await discoverUpdateStateSchemaInspectionInProcess(input);
+    const inspectionPlan = await discoverUpdateStateSchemaInspectionInProcess({
+      ...input,
+      stagingRoot: fixtureRoot,
+    });
     const copyPath = path.join(fixtureRoot, "copy-control.sqlite");
     const copy = copyRootFileSync({
       source: { rootPath: fixtureRoot, absolutePath: payload },
@@ -346,7 +349,9 @@ async function measureBackupCapture() {
     copy.close();
     fs.unlinkSync(copyPath);
     // Real clock age qualifies the existing digest memo; do not fake Date.now.
-    await new Promise((resolve) => setTimeout(resolve, 2100));
+    await new Promise((resolve) => {
+      setTimeout(resolve, 2100);
+    });
     console.log(
       JSON.stringify({
         label,
@@ -377,9 +382,11 @@ async function measureBackupCapture() {
             if (typeof count === "number" && typeof args[0] === "number") {
               const file = fs.fstatSync(args[0], { bigint: true });
               if (file.isFile() && file.size === identity.size) {
-                if (file.dev === identity.dev && file.ino === identity.ino)
+                if (file.dev === identity.dev && file.ino === identity.ino) {
                   sourceReadBytes += count;
-                else privateReadBytes += count;
+                } else {
+                  privateReadBytes += count;
+                }
               }
             }
             return count;
@@ -442,11 +449,11 @@ function hashFile(file: string): string {
     const hash = createHash("sha256");
     const buffer = Buffer.allocUnsafe(64 * 1024);
     for (;;) {
-      const bytes = fs.readSync(fd, buffer, 0, buffer.length, null);
-      if (bytes === 0) {
+      const readBytes = fs.readSync(fd, buffer, 0, buffer.length, null);
+      if (readBytes === 0) {
         return hash.digest("hex");
       }
-      hash.update(buffer.subarray(0, bytes));
+      hash.update(buffer.subarray(0, readBytes));
     }
   } finally {
     fs.closeSync(fd);

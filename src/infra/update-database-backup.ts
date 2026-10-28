@@ -469,7 +469,9 @@ export async function createUpdateDatabaseBackupInProcess(
         for (const { prepared } of heldImages) {
           try {
             if (!(await prepared.cleanupAsync())) {
-              throw new Error(`Update database image cleanup did not settle: ${prepared.location}`);
+              errors.push(
+                new Error(`Update database image cleanup did not settle: ${prepared.location}`),
+              );
             }
           } catch (error) {
             errors.push(error);
