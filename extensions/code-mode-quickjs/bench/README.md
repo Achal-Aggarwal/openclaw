@@ -472,8 +472,11 @@ checkpoints as they arrive, joins launched siblings before unwinding, joins all
 checkpoint disposals and attempts host and scheduler cleanup independently.
 It preserves workload and cleanup errors and clears both timers after cleanup
 settles. Three deterministic failure-path tests target this ownership boundary;
-they mock the executor and do not establish VM behavior. Their execution remains
-pending; a follow-up Testbox allocation was also stopped while queued.
+they mock the executor and do not establish VM behavior. The initial
+[CI execution](https://github.com/openclaw/openclaw/actions/runs/40708711969/job/122888857460)
+passed all three tests under a Bun host. This does not establish Node-host
+coverage. A follow-up Testbox allocation was also stopped while queued and
+supplied no execution proof.
 
 Pending cleanup can still leave the child alive until the parent's 180-second
 deadline. The pool-retirement and cumulative-budget limits above also remain

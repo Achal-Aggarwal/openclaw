@@ -76,7 +76,7 @@ function installExecutor(
       const guest = new Script(`(async (tool_0) => {${input.source}\n})`).runInNewContext() as (
         tool: (args: unknown) => Promise<unknown>,
       ) => Promise<unknown>;
-      const checkpoint = Symbol("checkpoint");
+      const checkpoint = new Error("checkpoint");
       let pending: PendingBridgeRequest | undefined;
       try {
         return completed(
@@ -106,7 +106,9 @@ function installExecutor(
           }),
         );
       } catch (error) {
-        if (error !== checkpoint || !pending) throw error;
+        if (error !== checkpoint || !pending) {
+          throw error;
+        }
         const continuation: CodeModeExecutorContinuation = {
           executor: "node",
           retainedBytes: 1,
@@ -169,7 +171,9 @@ beforeEach(() => {
 afterEach(() => {
   // A failing counterfactual must not leave the original probe's ref'ed timers alive.
   for (const result of vi.mocked(globalThis.setInterval).mock.results) {
-    if (result.type === "return") globalThis.clearInterval(result.value);
+    if (result.type === "return") {
+      globalThis.clearInterval(result.value);
+    }
   }
   vi.restoreAllMocks();
 });
@@ -177,14 +181,16 @@ afterEach(() => {
 it("joins rejected and pending checkpoint disposals before closing the host and scheduler", async ({
   signal,
 }) => {
-  const entered = createDeferred<void>();
-  const release = createDeferred<void>();
+  const entered = createDeferred();
+  const release = createDeferred();
   const cleanupError = new Error("dispose failed");
   let disposals = 0;
   const join = installExecutor(
     async (index, produce) => (index === 0 ? failed : produce()),
     async () => {
-      if (disposals++ === 0) throw cleanupError;
+      if (disposals++ === 0) {
+        throw cleanupError;
+      }
       entered.resolve();
       await release.promise;
     },
@@ -216,13 +222,15 @@ it("joins rejected and pending checkpoint disposals before closing the host and 
 it("joins a failed parallel execution before disposing a checkpoint returned later", async ({
   signal,
 }) => {
-  const entered = createDeferred<void>();
-  const release = createDeferred<void>();
+  const entered = createDeferred();
+  const release = createDeferred();
   const workloadError = new Error("execution failed");
   let disposed = 0;
   const join = installExecutor(
     async (index, produce) => {
-      if (index === 0) throw workloadError;
+      if (index === 0) {
+        throw workloadError;
+      }
       if (index === 1) {
         entered.resolve();
         await release.promise;
