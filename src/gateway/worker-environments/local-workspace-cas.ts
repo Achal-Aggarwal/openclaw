@@ -4,7 +4,7 @@ import { deflateRawSync, zstdCompressSync, zstdDecompressSync } from "node:zlib"
 import type { LocalWorkspaceManifestRecord } from "./local-workspace-manifest-tree.js";
 
 /** A directory's sibling treap is one immutable content-addressed pack. */
-export type LocalWorkspaceTreePack = {
+type LocalWorkspaceTreePack = {
   treeRef: string;
   records: LocalWorkspaceManifestRecord[];
   children: string[];
@@ -28,28 +28,27 @@ export function localWorkspaceDigestReference(bytes: Uint8Array): string {
   return `sha256:${Buffer.from(bytes).toString("hex")}`;
 }
 
-export function encodeLocalWorkspaceTreePacks(
+function encodeLocalWorkspaceTreePacks(
   records: ReadonlyMap<string, LocalWorkspaceManifestRecord>,
-  selected?: Iterable<LocalWorkspaceManifestRecord>,
+  selectedPaths?: Iterable<string>,
 ): LocalWorkspaceTreePack[] {
-  const roots = new Set<string>();
-  if (selected === undefined) {
-    roots.add("");
+  const roots = new Set<string>([""]);
+  if (selectedPaths === undefined) {
     for (const record of records.values()) {
       if (record.children !== null) {
         roots.add(record.children);
       }
     }
   } else {
-    // Changed sibling records select their containing directory's current treap root.
-    for (const { node } of selected) {
-      if (node.path === "") {
-        roots.add("");
+    // Removed records can promote an unchanged child to the containing pack root.
+    for (const entryPath of selectedPaths) {
+      if (entryPath === "") {
         continue;
       }
-      const parent = node.path.slice(0, Math.max(0, node.path.lastIndexOf("/")));
-      const children = records.get(parent)!.children;
-      if (children !== null) {
+      const parent = entryPath.slice(0, Math.max(0, entryPath.lastIndexOf("/")));
+      // Descendant deletions can also remove their containing directory.
+      const children = records.get(parent)?.children;
+      if (children != null) {
         roots.add(children);
       }
     }
@@ -78,9 +77,9 @@ export function encodeLocalWorkspaceTreePacks(
 
 export function prepareLocalWorkspaceTreePacks(
   records: ReadonlyMap<string, LocalWorkspaceManifestRecord>,
-  selected?: Iterable<LocalWorkspaceManifestRecord>,
+  selectedPaths?: Iterable<string>,
 ): Uint8Array[] {
-  const packs = encodeLocalWorkspaceTreePacks(records, selected);
+  const packs = encodeLocalWorkspaceTreePacks(records, selectedPaths);
   const batches: Uint8Array[] = [];
   for (let offset = 0; offset < packs.length; offset += LOCAL_WORKSPACE_CONTENT_BATCH) {
     batches.push(
