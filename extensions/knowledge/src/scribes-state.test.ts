@@ -85,6 +85,8 @@ describe("scribes catalog", () => {
     expect(prompt).toMatch(/^Repair the Knowledge scribe "Knowledge Consolidation"/);
     expect(prompt).toContain("- Runs nightly at 3:45 AM UTC (cron `45 3 * * *`).");
     expect(prompt).toContain("leave it as it is and go to the last step");
+    expect(prompt).toContain("Pass `enabled: true`");
+    expect(prompt).not.toContain("never turn on a paused");
     expect(prompt.endsWith("```text\nEdited run message\n```")).toBe(true);
     expect(
       repairPrompt("claim-consolidation", {
@@ -121,12 +123,21 @@ describe("scribes state", () => {
       if (method === "cron.list") {
         return {
           jobs: world.job
-            ? [{ ...world.job, declarationKey: "knowledge:scribe:conversations" }]
+            ? [
+                {
+                  sessionTarget: `session:${world.session?.key ?? "agent:main:dock:deleted"}`,
+                  ...world.job,
+                  declarationKey: "knowledge:scribe:conversations",
+                },
+              ]
             : [],
         };
       }
       if (method === "sessions.list") {
         return { sessions: params?.search === label && world.session ? [world.session] : [] };
+      }
+      if (method === "sessions.describe") {
+        return { session: world.session?.key === params?.key ? world.session : null };
       }
       return { messages: world.messages ?? [] };
     });
@@ -153,7 +164,7 @@ describe("scribes state", () => {
     ).toBeUndefined();
   });
 
-  it("derives Available, Starting, On, Paused, Failing, Done and Needs reauthorization", async () => {
+  it("derives Available, Starting, On, Paused, Failing, Done and Missing", async () => {
     const archived = { ...session, archived: true };
     const cases: [Parameters<typeof conversationsScribe>[0], string][] = [
       [{}, "available"],
@@ -175,8 +186,8 @@ describe("scribes state", () => {
       [{ session, messages: [result("done")] }, "done"],
       [{ session, messages: [result("failed")] }, "failing"],
       [{ session, messages: [result("on")] }, "available"],
-      [{ session: archived, job: job() }, "reauth"],
-      [{ job: job() }, "reauth"],
+      [{ session: archived, job: job() }, "missing"],
+      [{ job: job() }, "missing"],
       [{ session: archived }, "available"],
       [{ session, messages: [result("on"), start] }, "starting"],
     ];
@@ -185,13 +196,16 @@ describe("scribes state", () => {
     }
   });
 
-  it("finds sessions by display name and jobs by declarationKey through Gateway reads", async () => {
+  it("finds an automated scribe's conversation by key and others by display name", async () => {
     const review = scribeById("claim-consolidation")!,
       memory = scribeById("memory")!;
     const request = vi.fn(async (method: string, params?: Record<string, unknown>) => {
       if (method === "cron.list") {
         return {
-          jobs: [job(), { id: "other", declarationKey: "something:else", enabled: true }],
+          jobs: [
+            job({ sessionTarget: "session:s-review" }),
+            { id: "other", declarationKey: "something:else", enabled: true },
+          ],
           hasMore: false,
           nextOffset: null,
         };
@@ -205,6 +219,14 @@ describe("scribes state", () => {
           ],
         };
         return { sessions: typeof params?.search === "string" ? (rows[params.search] ?? []) : [] };
+      }
+      if (method === "sessions.describe") {
+        return {
+          session:
+            params?.key === "s-review"
+              ? { key: "s-review", displayName: scribeLabel(review) }
+              : null,
+        };
       }
       if (method === "chat.history") {
         return params?.sessionKey === "s-memory"
@@ -227,7 +249,7 @@ describe("scribes state", () => {
     expect(snapshots[2]!.result).toEqual({ state: "done", summary: "Saved 4" });
     expect(request).toHaveBeenCalledWith("sessions.list", {
       agentId: "main",
-      search: "Scribe · Knowledge Consolidation",
+      search: scribeLabel(memory),
       archived: "all",
       limit: 20,
     });
@@ -258,10 +280,8 @@ describe("scribes state", () => {
           ],
         };
       }
-      if (method === "sessions.list") {
-        return {
-          sessions: params?.search === label ? [{ key: "s-conv", displayName: label }] : [],
-        };
+      if (method === "sessions.describe") {
+        return { session: params?.key === "s-conv" ? { key: "s-conv", displayName: label } : null };
       }
       return { messages: [] };
     });
@@ -270,7 +290,7 @@ describe("scribes state", () => {
     expect([conversations.job?.id, conversations.status]).toEqual(["mine", "on"]);
   });
 
-  it("uses the conversation the automation targets over a newer one with the same title", async () => {
+  it("keeps an automated scribe paired with its conversation after a rename", async () => {
     const label = "Scribe · Learn from conversations";
     const request = vi.fn(async (method: string, params?: Record<string, unknown>) => {
       if (method === "cron.list") {
@@ -286,21 +306,23 @@ describe("scribes state", () => {
       }
       if (method === "sessions.list") {
         return {
-          sessions:
-            params?.search === label
-              ? [
-                  { key: "s-newer", displayName: label },
-                  { key: "s-owner", displayName: label },
-                  { key: "s-other", displayName: "Something else" },
-                ]
-              : [],
+          sessions: params?.search === label ? [{ key: "s-newer", displayName: label }] : [],
+        };
+      }
+      if (method === "sessions.describe") {
+        return {
+          session: params?.key === "s-owner" ? { key: "s-owner", displayName: "renamed" } : null,
         };
       }
       return { messages: [] };
     });
     const snapshots = await loadScribes({ request } as never, "main");
     const conversations = snapshots.find((snapshot) => snapshot.scribe.id === "conversations")!;
-    expect([conversations.session?.key, conversations.job?.id]).toEqual(["s-owner", "mine"]);
+    expect([conversations.session?.key, conversations.job?.id, conversations.status]).toEqual([
+      "s-owner",
+      "mine",
+      "on",
+    ]);
   });
 
   it("detects conversation counts and MEMORY.md, omitting what it cannot read", async () => {
