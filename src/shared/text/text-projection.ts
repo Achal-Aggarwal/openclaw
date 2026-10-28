@@ -636,7 +636,7 @@ function createDuplicateParagraphProjector(protectCode = true): TextProjector {
       // Inline code is compared byte-for-byte; block and nonlocal Markdown
       // ownership still use the canonical whole-source correction path.
       const probe = codeProbeTail === undefined ? input.text : codeProbeTail + appended;
-      nonlocalMarkersSeen ||= /[\[\]]/.test(probe);
+      nonlocalMarkersSeen ||= probe.includes("[") || probe.includes("]");
       backticksSeen ||= probe.includes("`");
       codeProtectionRequired ||=
         (nonlocalMarkersSeen && backticksSeen) ||
