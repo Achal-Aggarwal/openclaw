@@ -1001,6 +1001,29 @@ analysis to agent databases; Doctor's stopped-writer same-version media repair
 uses the same bounded statistics primitive.
 Modern version migrations leave unrelated planner statistics unchanged.
 
+## Historical import evidence
+
+Doctor recognizes historical agent-schema-24 pending inputs with
+`recovery_intent_json` and retains that exact nullable text column as archival
+evidence. It changes queued rows to interrupted in the migration transaction;
+input identities, serialized messages, cancellation state, and recovery envelopes
+remain intact. Fresh databases do not acquire the retired column, and runtime
+readers never use it to authorize replay. Other unexpected optional-table columns
+and different declarations remain incompatible.
+
+Historical image-project snapshots in shared schema 22 become the existing
+non-repository `runtimePreparation` shape. The original serialized profile is
+retained in `historicalProfileSnapshotJson`; it is evidence, not a second runtime
+preparation owner. The conversion preserves environment identities, leases, epochs,
+demand, expiry, consumption, and cleanup state. Conflicting or malformed preparation
+rolls back rather than silently dropping the environment. Doctor also repairs the
+data shape when a previous import already advanced the version markers.
+
+These imports reuse existing schema versions and maintenance/backup owners.
+They do not install retained-disk authority or create new persistence tables.
+Rollback requires the verified pre-migration backup and matching runtime, not
+manual edits to the version markers.
+
 ## Troubleshooting
 
 `SQLite read-only worker` failures append `code` and numeric SQLite `errcode` diagnostics when the underlying error supplies valid values, including through a bounded cause chain. Report the full code suffix when investigating a failure. Snapshot and integrity-child timeout errors include the applied budget and source file size; snapshot timeouts report an unknown size if the source stat failed. Integrity-child timeouts also retain `lastObservedPhase`. A generic `disk I/O error` or `SQLITE_IOERR` alone does not prove the disk is full.

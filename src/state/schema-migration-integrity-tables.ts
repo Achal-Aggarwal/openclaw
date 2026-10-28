@@ -97,6 +97,7 @@ const migrationTables: Readonly<
     ],
     24: ["session_nodes", "session_entry_snapshots"],
     25: [
+      "session_pending_inputs",
       "session_nodes",
       "session_windows",
       "session_key_contract",
