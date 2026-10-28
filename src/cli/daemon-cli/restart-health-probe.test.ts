@@ -121,6 +121,102 @@ describe("restart health", () => {
   });
 
   it.each([
+    {
+      label: "matching HTTP identity",
+      ready: true,
+      started: true,
+      version: "2026.10.4",
+      build: "candidate-build",
+      outcome: "healthy",
+    },
+    {
+      label: "failed readiness",
+      ready: false,
+      started: true,
+      version: "2026.10.4",
+      build: "candidate-build",
+      outcome: "auth-rejected",
+    },
+    {
+      label: "failed startup",
+      ready: true,
+      started: false,
+      version: "2026.10.4",
+      build: "candidate-build",
+      outcome: "auth-rejected",
+    },
+    {
+      label: "version mismatch",
+      ready: true,
+      started: true,
+      version: "2026.10.3",
+      build: "candidate-build",
+      outcome: "version-mismatch",
+    },
+    {
+      label: "build mismatch",
+      ready: true,
+      started: true,
+      version: "2026.10.4",
+      build: "old-build",
+      outcome: "build-id-mismatch",
+    },
+  ])(
+    "retains RPC auth warnings while settling twelve HTTP observations ($label)",
+    async (scenario) => {
+      const reason = "device identity required";
+      callGateway.mockRejectedValue(gatewayResponseError(reason));
+      inspectPortUsage.mockResolvedValue(ownedPortUsage);
+      requestStartupProbe.mockResolvedValue({
+        statusCode: scenario.started ? 200 : 503,
+        body: JSON.stringify({
+          ok: scenario.started,
+          status: scenario.started ? "started" : "starting",
+          version: scenario.version,
+          buildId: scenario.build,
+        }),
+      });
+      requestReadinessProbe.mockResolvedValue({
+        statusCode: scenario.ready ? 200 : 503,
+        body: JSON.stringify({ ready: scenario.ready }),
+      });
+      const observations: Array<{ healthy: boolean; authenticationError?: string }> = [];
+      const { waitForGatewayHealthyRestart } = await import("./restart-health.js");
+      const snapshot = await waitForGatewayHealthyRestart({
+        service: makeGatewayService({ status: "running", pid: 8000 }),
+        port: 18789,
+        expectedVersion: "2026.10.4",
+        expectedBuildId: "candidate-build",
+        requireRunningService: true,
+        requirePluginHealth: false,
+        requireChannelHealth: false,
+        settle: { probes: 12 },
+        timeoutMs: 15_000,
+        delayMs: 1_000,
+        onObservation: ({ healthy, authenticationError }) => {
+          observations.push({ healthy, authenticationError });
+        },
+      });
+      const healthy = scenario.outcome === "healthy";
+      expect(snapshot.waitOutcome).toBe(scenario.outcome);
+      expect(snapshot.healthy).toBe(healthy);
+      expect(snapshot.authenticationError).toBe(reason);
+      expect(observations).toHaveLength(healthy ? 12 : 1);
+      expect(observations.every((observation) => observation.authenticationError === reason)).toBe(
+        true,
+      );
+      expect(observations.every((observation) => observation.healthy === healthy)).toBe(true);
+      expect(callGateway).toHaveBeenCalledTimes(healthy ? 12 : 1);
+      // Each observation reads startup progress and then fallback identity.
+      expect(requestStartupProbe).toHaveBeenCalledTimes(healthy ? 24 : 2);
+      expect(requestReadinessProbe).toHaveBeenCalledTimes(healthy ? 12 : 1);
+      expect(sleep).toHaveBeenCalledTimes(healthy ? 11 : 0);
+      expect(sleep.mock.calls.every(([delay]) => delay === 1_000)).toBe(true);
+      expect(monotonicClock.nowMs).toBe(healthy ? 11_000 : 0);
+    },
+  );
+
+  it.each([
     { transport: "response", ready: true, build: "candidate-build", outcome: "healthy" },
     { transport: "close", ready: true, build: "candidate-build", outcome: "healthy" },
     { transport: "response", ready: false, build: "candidate-build", outcome: "auth-rejected" },
