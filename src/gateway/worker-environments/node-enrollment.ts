@@ -1,4 +1,6 @@
+import fs from "node:fs/promises";
 import os from "node:os";
+import path from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { isLinkLocalIpAddress, isUnspecifiedIpAddress } from "@openclaw/net-policy/ip";
 import { truncateUtf16Safe } from "@openclaw/normalization-core/utf16-slice";
@@ -42,6 +44,49 @@ type NodeEnrollmentBinding = {
   setupCredential?: { setupId: string; token: string; digest: string };
   close: () => void;
 };
+
+async function readWorkerCodexConfiguration(): Promise<WorkerNodeEnrollment["workerCodex"]> {
+  const names = [
+    "OPENCLAW_WORKER_CODEX_CONFIG_PATH",
+    "OPENCLAW_WORKER_CODEX_HELPER_PATH",
+    "OPENCLAW_WORKER_CODEX_CONFIG_VERSION",
+  ] as const;
+  const [configPath, helperPath, configVersion] = names.map((name) => process.env[name]?.trim());
+  if (!configPath && !helperPath && !configVersion) {
+    return undefined;
+  }
+  if (!configPath || !helperPath || !configVersion) {
+    throw new Error("Worker Codex configuration is incomplete");
+  }
+  if (
+    !/^[a-f0-9]{64}$/.test(configVersion) ||
+    !path.isAbsolute(configPath) ||
+    !path.isAbsolute(helperPath)
+  ) {
+    throw new Error("Worker Codex configuration version or source paths are invalid");
+  }
+  // Only these operator-provisioned sources cross enrollment, never Gateway auth or ambient env.
+  const readSource = async (file: string) => {
+    try {
+      const stat = await fs.stat(file);
+      if (!stat.isFile() || stat.size < 1 || stat.size > 16 * 1024) {
+        throw new Error("Invalid source size");
+      }
+      const bytes = await fs.readFile(file);
+      if (bytes.length < 1 || bytes.length > 16 * 1024) {
+        throw new Error("Invalid source size");
+      }
+      return bytes.toString("utf8");
+    } catch {
+      throw new Error("Worker Codex configuration source is unavailable or exceeds its size limit");
+    }
+  };
+  const [configToml, helperScript] = await Promise.all([
+    readSource(configPath),
+    readSource(helperPath),
+  ]);
+  return { configToml, helperScript, helperPath, configVersion };
+}
 
 type WorkerNodeEnrollmentManagerOptions = {
   store: WorkerEnvironmentStore;
@@ -258,6 +303,7 @@ export function createWorkerNodeEnrollmentManager(options: WorkerNodeEnrollmentM
     const { binding, enrollmentSignal, current: requireCurrent } = reserve(record, operationSignal);
     try {
       const prepared = await prepare(record, enrollmentSignal);
+      const workerCodex = await readWorkerCodexConfiguration();
       requireCurrent();
       await options.store.ensureNodeEnrollment(record.environmentId);
       let current = requireCurrent();
@@ -332,6 +378,7 @@ export function createWorkerNodeEnrollmentManager(options: WorkerNodeEnrollmentM
       };
       const enrollment: WorkerNodeEnrollment = {
         ...mode,
+        ...(workerCodex ? { workerCodex } : {}),
         ...grantRuntime(
           { ...prepared, url: gatewayUrl, tlsFingerprint },
           enrollmentSignal,

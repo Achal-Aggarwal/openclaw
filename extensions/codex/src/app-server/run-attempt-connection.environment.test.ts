@@ -1,6 +1,8 @@
 import path from "node:path";
+import { createPluginRuntimeMock } from "openclaw/plugin-sdk/plugin-test-runtime";
 import { describe, expect, it, vi } from "vitest";
 import { codexAppServerStartOptionsKey } from "./config-options.js";
+import { shouldRequireCodexSandboxExecServerEnvironment } from "./dynamic-tool-build.js";
 import { prepareCodexAttemptConnection } from "./run-attempt-connection.js";
 import {
   createParams,
@@ -193,4 +195,83 @@ describe("Codex local tool environment placement", () => {
       }
     },
   );
+});
+
+it("selects the enrolled worker client without forwarding Gateway auth or local environment", async () => {
+  vi.stubEnv("OPENCLAW_WORKER_CODEX_CONFIG_VERSION", "a".repeat(64));
+  const params = createParams(path.join(tempDir, "worker.jsonl"), path.join(tempDir, "workspace"));
+  params.permissionMode = "full";
+  const sandbox = {
+    ...createSandboxContext({}),
+    backendId: "node",
+    placementExecutionMode: "remote-exec",
+    placementNodeId: "worker-node",
+    placementEnvironmentId: "worker-environment",
+    placementSessionId: params.sessionId,
+    placementOwnerEpoch: 1,
+  };
+  params.sandbox = sandbox;
+  const runtime = createPluginRuntimeMock();
+  const open = vi
+    .spyOn(runtime.nodes, "openDuplex")
+    .mockRejectedValue(new Error("fixture worker dispatch reached"));
+  const connection = await prepareCodexAttemptConnection({
+    params,
+    options: {
+      bindingStore: testCodexAppServerBindingStore,
+      runtime,
+      pluginConfig: { appServer: { workerHostedCloud: true } },
+    },
+  });
+  try {
+    expect(connection.workerHostedCloud).toBe(true);
+    expect(connection.callerOwnedAttemptClient).toBe(true);
+    expect(connection.startupPreparedAuth).toBeUndefined();
+    expect(connection.appServer.connectionClass).toBe("remote");
+    expect(connection.effectiveWorkspace).toBe(params.sandbox.containerWorkdir);
+    await expect(connection.attemptClientFactory()).rejects.toThrow(
+      "fixture worker dispatch reached",
+    );
+    expect(open).toHaveBeenCalledOnce();
+    expect(open.mock.calls[0]?.[0]).toMatchObject({
+      nodeId: "worker-node",
+      params: { authorization: "session-full" },
+    });
+  } finally {
+    connection.cancellation.dispose();
+    connection.releaseModelExecution();
+    connection.releaseBindingAuthority();
+  }
+});
+
+it("keeps non-node remote placements confined when worker hosting is configured", async () => {
+  const sandbox = {
+    ...createSandboxContext({}),
+    backendId: "ssh",
+    placementExecutionMode: "remote-exec",
+  };
+  expect(
+    shouldRequireCodexSandboxExecServerEnvironment({
+      sandbox,
+      nativeToolSurfaceEnabled: true,
+      sandboxExecServerEnabled: true,
+      pluginConfig: { appServer: { workerHostedCloud: true } },
+    }),
+  ).toBe(true);
+  const params = createParams(
+    path.join(tempDir, "ssh-worker.jsonl"),
+    path.join(tempDir, "ssh-workspace"),
+  );
+  params.permissionMode = "full";
+  params.sandbox = sandbox;
+  await expect(
+    prepareCodexAttemptConnection({
+      params,
+      options: {
+        bindingStore: testCodexAppServerBindingStore,
+        runtime: createPluginRuntimeMock(),
+        pluginConfig: { appServer: { workerHostedCloud: true } },
+      },
+    }),
+  ).rejects.toThrow("requires an enrolled node");
 });

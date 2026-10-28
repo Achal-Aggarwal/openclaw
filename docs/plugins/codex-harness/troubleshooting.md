@@ -217,3 +217,42 @@ provider refs stay on their normal provider path in `auto` mode.
 `/codex computer-use status` from a fresh session. If a tool reports
 `Native hook relay unavailable`, use the native hook relay recovery above.
 See [Codex Computer Use](/plugins/codex-computer-use#troubleshooting).
+
+## Worker-hosted app-server
+
+The opt-in `plugins.entries.codex.config.appServer.workerHostedCloud` setting
+runs the pinned Codex app-server on an enrolled worker instead of running the
+model process on the Gateway. It requires a current Full remote-exec placement
+and the exact versioned `codex.app-server.stdio.v1.<version>` node command.
+Allow that exact command through the existing Gateway node command policy.
+There is no local fallback when the worker cannot start.
+
+Provision the Gateway with these operator-owned inputs before enrollment:
+
+- `OPENCLAW_WORKER_CODEX_CONFIG_PATH`: absolute path to the native TOML config.
+- `OPENCLAW_WORKER_CODEX_HELPER_PATH`: absolute path to the Node `.mjs` auth helper
+  referenced exactly once by the config.
+- `OPENCLAW_WORKER_CODEX_CONFIG_VERSION`: a 64-character lowercase hexadecimal
+  deployment identity. Change it when changing the config or helper.
+
+The selected native provider must use the Responses wire API and command auth
+with `command = "node"` and the helper path as its sole argument. Config and
+helper are limited to 16 KiB each. They are trusted executable deployment inputs,
+not user-provided session data. Enrollment delivers them privately into the
+lease's `codex-runtime` directory; image preparation does not capture them.
+A changed configuration on an existing lease requires reprovisioning.
+
+Only dedicated ephemeral, non-container nodes retain their platform-managed
+identity transport and CA settings. Ordinary paired nodes and container workers
+do not inherit these credentials. Gateway auth profiles and local GitHub identity
+environments are not forwarded. When a managed identity requires the host-owned
+tool surface, those tools continue to own command execution; this setting does
+not grant native commands access to that identity.
+
+Native hook policies still require the existing remote hook callback deployment
+(`appServer.nativeHookRelay`). A worker connection is not a Gateway-local process.
+Private workspace resources gate file/process effects, not the initial tool
+declaration. Cancellation closes the invocation and joins its worker cleanup.
+Native thread state lives under the existing workspace HOME owner and can resume
+while that workspace remains available. This mode does not provide retained-disk
+recovery, worker-loss history recovery, or a replacement workspace guarantee.

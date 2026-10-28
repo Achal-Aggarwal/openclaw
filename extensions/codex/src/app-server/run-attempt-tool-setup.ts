@@ -278,7 +278,12 @@ export async function prepareCodexAttemptTools(runtime: CodexAttemptRuntime) {
         config: params.config,
         timeoutMs: connection.appServer.requestTimeoutMs,
       }),
-    releaseClient: (client) => releaseCodexProbeClient(client, connection.attemptClientFactory),
+    releaseClient: (client) =>
+      releaseCodexProbeClient(
+        client,
+        connection.attemptClientFactory,
+        connection.callerOwnedAttemptClient,
+      ),
     assertCurrent: () => {
       runAbortController.signal.throwIfAborted();
       connection.assertCurrent();

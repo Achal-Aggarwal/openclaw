@@ -106,6 +106,18 @@ const isolatedTask = {
   outputTextPolicy: "strict-visible" as const,
 };
 
+it("requires the enrolled app-server command for worker-hosted execution", () => {
+  vi.stubEnv("OPENCLAW_WORKER_CODEX_CONFIG_VERSION", "a".repeat(64));
+  try {
+    const harness = makeHarness({ pluginConfig: { appServer: { workerHostedCloud: true } } });
+    expect(harness.cloudPlacement?.devicePlacement?.requiredNodeCommands).toEqual([
+      `codex.app-server.stdio.v1.${"a".repeat(64)}`,
+    ]);
+  } finally {
+    vi.unstubAllEnvs();
+  }
+});
+
 describe("Codex agent harness supports()", () => {
   const harness = supportHarness;
 

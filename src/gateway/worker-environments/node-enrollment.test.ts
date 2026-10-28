@@ -140,6 +140,13 @@ describe("worker node enrollment", () => {
   };
 
   beforeEach(async () => {
+    for (const name of [
+      "OPENCLAW_WORKER_CODEX_CONFIG_PATH",
+      "OPENCLAW_WORKER_CODEX_HELPER_PATH",
+      "OPENCLAW_WORKER_CODEX_CONFIG_VERSION",
+    ]) {
+      vi.stubEnv(name, undefined);
+    }
     root = await fs.mkdtemp(path.join(await fs.realpath(os.tmpdir()), "openclaw-node-enrollment-"));
     database = openOpenClawStateDatabase({ env: { OPENCLAW_STATE_DIR: root } });
     store = await createWorkerEnvironmentStore({ database, now: () => 1_000 });
@@ -154,6 +161,7 @@ describe("worker node enrollment", () => {
       manager.stop();
     }
     vi.restoreAllMocks();
+    vi.unstubAllEnvs();
     await closeOpenClawStateDatabaseAsync();
     closeOpenClawStateDatabaseForTest();
     await fs.rm(root, { recursive: true, force: true });
@@ -170,6 +178,70 @@ describe("worker node enrollment", () => {
     );
     expect(prepareArtifact).not.toHaveBeenCalled();
   });
+
+  it("delivers only explicitly configured Codex inputs at lease enrollment, never warm preparation", async () => {
+    const configPath = path.join(root, "codex.toml");
+    const helperPath = path.join(root, "token.mjs");
+    const configToml =
+      'model = "codex-test-model"\nauth = { command = "node", args = [' +
+      JSON.stringify(helperPath) +
+      "] }\n";
+    const helperScript = 'process.stdout.write("synthetic-worker-token")\n';
+    await fs.writeFile(configPath, configToml, { mode: 0o600 });
+    await fs.writeFile(helperPath, helperScript, { mode: 0o600 });
+    vi.stubEnv("OPENCLAW_WORKER_CODEX_CONFIG_PATH", configPath);
+    vi.stubEnv("OPENCLAW_WORKER_CODEX_HELPER_PATH", helperPath);
+    vi.stubEnv("OPENCLAW_WORKER_CODEX_CONFIG_VERSION", "a".repeat(64));
+    vi.stubEnv("OPENAI_API_KEY", "synthetic-gateway-only-token");
+    const record = await createProvisioning();
+    const manager = createManager();
+    const runtime = await manager.prepareRuntime(record, bundle());
+    expect(runtime).not.toHaveProperty("workerCodex");
+    const enrollment = await manager.begin(record);
+    expect(enrollment.workerCodex).toEqual({
+      configToml,
+      helperScript,
+      helperPath,
+      configVersion: "a".repeat(64),
+    });
+    expect(JSON.stringify(enrollment.nodeBootstrap)).not.toContain("synthetic-worker-token");
+    expect(JSON.stringify(enrollment)).not.toContain("synthetic-gateway-only-token");
+  });
+
+  it.each(["incomplete", "invalid version", "relative path", "empty", "oversized", "missing"])(
+    "rejects %s Codex enrollment inputs without issuing pairing credentials",
+    async (invalid) => {
+      const configPath = path.join(root, "codex.toml");
+      const helperPath = path.join(root, "token.mjs");
+      await fs.writeFile(configPath, invalid === "empty" ? "" : 'model = "fixture"\n');
+      await fs.writeFile(
+        helperPath,
+        invalid === "oversized" ? "x".repeat(16 * 1024 + 1) : "// helper\n",
+      );
+      vi.stubEnv(
+        "OPENCLAW_WORKER_CODEX_CONFIG_PATH",
+        invalid === "relative path" ? "codex.toml" : configPath,
+      );
+      vi.stubEnv("OPENCLAW_WORKER_CODEX_HELPER_PATH", helperPath);
+      vi.stubEnv(
+        "OPENCLAW_WORKER_CODEX_CONFIG_VERSION",
+        invalid === "incomplete"
+          ? undefined
+          : invalid === "invalid version"
+            ? "bad-version"
+            : "a".repeat(64),
+      );
+      if (invalid === "missing") {
+        await fs.unlink(helperPath);
+      }
+      const manager = createManager();
+      vi.mocked(ensureDevicePairSetupBootstrapToken).mockClear();
+      await expect(manager.begin(await createProvisioning())).rejects.toThrow(
+        "Worker Codex configuration",
+      );
+      expect(ensureDevicePairSetupBootstrapToken).not.toHaveBeenCalled();
+    },
+  );
 
   it("prepares requested-state artifacts without enrollment or transfer grants", async () => {
     const record = await createRequested();

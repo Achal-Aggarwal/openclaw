@@ -311,7 +311,11 @@ export async function prepareCodexAttemptRuntime(connection: CodexAttemptConnect
         nativeToolSurfaceEnabled = false;
         embeddedAgentLog.info("Codex managed-only hooks require sandbox-backed OpenClaw tools");
       } finally {
-        await releaseCodexProbeClient(client, attemptClientFactory);
+        await releaseCodexProbeClient(
+          client,
+          attemptClientFactory,
+          connection.callerOwnedAttemptClient,
+        );
       }
     }
     const configuredMcpSurface =
