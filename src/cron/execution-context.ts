@@ -12,6 +12,7 @@ import {
   decodeGatewayOperatorRecoverySource,
   type RestartRecoveryOperatorSource,
 } from "../gateway/operator-run-recovery-source.codec.js";
+import { INGRESS_GRANTABLE_OWNER_TOOLS } from "../security/dangerous-tools.js";
 import type { CronInferenceBinding } from "./inference-binding.js";
 import { resolveCronRunAdmissionSource } from "./run-authority.js";
 import type { CronRuntimeAuthority } from "./runtime-authority.js";
@@ -352,6 +353,18 @@ function resolveAutomationsScope(
   return { scope: "self", jobId: job.id };
 }
 
+// Only grantable names survive, however the admission facts were produced.
+function resolveIngressOwnerTools(
+  principal: ScheduledPrincipal,
+  requested: readonly string[] | undefined,
+): Pick<ScheduledToolPolicy, "ownerTools"> {
+  const granted =
+    principal.kind === "ingress"
+      ? INGRESS_GRANTABLE_OWNER_TOOLS.filter((name) => requested?.includes(name))
+      : [];
+  return granted.length > 0 ? { ownerTools: granted } : {};
+}
+
 function resolveInference(job: BuilderJob): ScheduledInferenceAccount {
   if (job.inferenceBinding) {
     return { kind: "bound", binding: job.inferenceBinding };
@@ -449,9 +462,7 @@ export function buildScheduledExecutionContext(
         ),
         ...(job.toolsAllowExecTarget ? { execTarget: job.toolsAllowExecTarget } : {}),
         automations: resolveAutomationsScope(job, principal, authority, allow),
-        ...(principal.kind === "ingress" && facts.ingressOwnerTools?.length
-          ? { ownerTools: facts.ingressOwnerTools }
-          : {}),
+        ...resolveIngressOwnerTools(principal, facts.ingressOwnerTools),
       },
       resources: {
         memory:

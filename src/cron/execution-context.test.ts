@@ -286,6 +286,17 @@ describe("buildScheduledExecutionContext principals", () => {
       }),
     );
     expect(granted.toolPolicy.ownerTools).toEqual(["gateway"]);
+    // Names a hook may not grant never reach the context, however facts were built.
+    const unsafe = ready(
+      job(),
+      facts({
+        trigger: "event",
+        ingress: "webhook",
+        ingressOwnerTools: ["intent", "conversations_send"],
+        parentRow: undefined,
+      }),
+    );
+    expect(unsafe.toolPolicy).not.toHaveProperty("ownerTools");
     const scheduled = ready(job(), facts({ ingressOwnerTools: ["gateway"] }));
     expect(scheduled.toolPolicy).not.toHaveProperty("ownerTools");
   });
